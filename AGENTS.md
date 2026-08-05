@@ -212,7 +212,7 @@
 - Placement panels use `NonConstrainingPanel`, not plain `NSPanel`.
 - Bottom-anchored panels use `screen.frame` for bottom Y and horizontal clamp; reserve `visibleFrame` for drawer top/menu-bar height cap.
 - Hover screen switching uses dwell, not instant edge-trigger.
-- Fullscreen hide hides capsule and closes drawer. `FullscreenWindowClassifier.isFullscreen` remains the single AX predicate, gated to real `AXWindow` roles.
+- Fullscreen hide hides capsule and closes drawer. `FullscreenWindowClassifier.isFullscreen` remains the single AX predicate, gated to real `AXWindow` roles. **Making the bar wakeable from the bottom edge while fullscreen was built and shelved (2026-08-05)** — it works, but the system Dock is woken by the same gesture and draws over us (Dock is window layer 20, our panels are `.floating`/3), and every way to stop that is dead. Do not re-derive it: measurements in `Docs/05-known-platform-quirks.md` §「全屏下的系统 Dock」, decision and reopen conditions in `Docs/27-product-decisions.md`, code parked on `parked/fullscreen-edge-wake`.
 
 ## Light / Dark Appearance
 

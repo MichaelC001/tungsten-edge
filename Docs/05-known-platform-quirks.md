@@ -70,6 +70,25 @@
 - 底边热区与多屏切换共用同一探测入口：当前屏底边直接走唤醒逻辑；另一块屏幕底边先经过约 `0.35s` 驻留切屏，切屏后再从 0 开始计算唤醒延迟。
 - 多显示器策略 UI 已移除，运行时固定为多屏自动切换语义。不要重新读取旧的 `displayMode` defaults key 来决定底边行为。
 
+## 全屏下的系统 Dock：底边唤出无法阻止（2026-08-05 实测）
+
+> 背景：owner 想要「全屏时鼠标移到最下方，出来的不是 Dock 而是钨极」。功能本身做得出来（面板确实能画在全屏空间上），但**系统 Dock 会同时被唤出并盖在钨极上面**，且这个冲突无法消除。四条路逐条实测走死，结论沉淀在这里，避免下一轮从头再问一遍。封存代码在 `parked/fullscreen-edge-wake`。
+
+**实测事实**（owner 实机 + CGWindowList / 二进制探针）：
+
+- **`autohide-delay` 管不到全屏。** 该键为 `999`（钨极滑杆的「不唤醒」档）时，桌面上确实不再唤醒，但全屏下贴底边 Dock 照样滑出。两条路径是分开的。
+- **Dock 在全屏下的唤出触发区贯穿整条屏幕底边**，不只是 Dock 自身那段宽度。在远离 Dock 本体的最左 1/4 屏宽处贴底边，Dock 同样出来 —— 所以靠横向位置与钨极热区错开是不可能的。
+- **窗口层级：Dock 可见窗口 `kCGWindowLayer == 20`，钨极所有面板是 `.floating`（layer 3）**，拖动载体是 `.popUpMenu`（101）。Dock 一旦出现就压在任务条上面。
+- **`autohide-time-modifier` 能压住全屏唤出**（调到 30 后全屏下 Dock 实际不再出现），但两条限制让它不可用：① 全局生效，桌面上主动召唤 Dock 也跟着变慢；② **值被 Dock 缓存在进程内存里，只在 Dock 启动时读一次** —— 改完不 `killall Dock` 完全无效（实测：plist 改回 1 后行为纹丝不动，直到重启 Dock）。因此「进全屏调慢、退出调回」必然每次闪一下屏，不可接受。
+- **`com.apple.dock.prefchanged` 这个分发通知名确实存在于 Dock 二进制，但对该键无效**：发完通知行为不变，仍需重启。不要再拿它当「免重启改 Dock 偏好」的通道试第二次。
+- `com.apple.dock` 当时全部 32 个键里，没有任何一个与全屏唤出相关。
+
+**为什么没有偏好项**（读 Dock 二进制得出，非运行时实测）：Dock 里有 `setShowDock:fullscreenMode:` / `uiModeFullscreenMode` / `setUiModeFullscreenMode:`，指向 `SetSystemUIMode` 那套。全屏下 Dock 处于 **suppressed（藏起来但可唤出）** 还是 **hidden（藏起来且不可唤出）**，由**当前全屏的那个 app** 决定，不由任何偏好决定。而 presentation options 只对**活跃 app** 生效 —— 钨极是 `.accessory` 且设计上永不抢焦点，所以够不着；让它去抢焦点比 Dock 冒头糟得多。
+
+**明确不走的路**：Dock 内部有 `setAutoHideSpeed:`，但那是它自己的 ObjC 方法，外部只能去戳 `com.apple.dock.server` 私有服务。公开发布的 app 不碰 —— 一次系统更新就可能失效。
+
+**尚未验证的推论**：把钨极面板层级抬过 20 应该能让它压住 Dock，但未实装验证。「Dock 会从钨极上沿露出约 12pt」是估算（`tilesize` 40 推得条高约 64pt，钨极中档 52pt），**没有实测** —— Dock 隐藏时那个 layer-20 窗口是铺满整屏的容器窗口，量不到条本身的高度。
+
 ## 原生标签组（NSWindow tabbing）与“哪个标签可见”的判定（2026-06-14 实测，Ghostty）
 
 > 这是“同 app 多标签合并”功能里反复踩坑后挖出来的平台事实。Obsidian 那份是产品/设计视角，这份是工程视角，写代码时按这条来。
