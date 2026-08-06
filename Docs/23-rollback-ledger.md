@@ -101,6 +101,23 @@ Owner 于 2026-07-25 决定本轮稳定重建停在 4.5；4.6 与后续一日回
 
 **该分支还有第二个不得删除的理由**（2026-07-29 审计补记）：Obsidian 地图与本账本引用的两条**回摘源提交** `0b74fa6`（启停首帧影子滑动，回摘为 master 的 `8af961c`）和 `5e2e82e`（消息区准入，回摘为 master 的 `aad543d`）**只靠这个分支保活**——实测它们不在 `master` 上，也没有任何标签指向。只按「四项封存资产」的理由判断而删掉该分支，会连带让这两条源提交变成悬空对象、被 `git gc` 回收，届时地图上的引用将无法追溯。
 
+## 第二条封存线：`parked/fullscreen-edge-wake`（2026-08-05）
+
+与上面那条废弃开发线无关，是一次**做完了但主动不上线**的功能，单独开线封存。**该分支不得删除。**
+
+| 项 | 内容 |
+| --- | --- |
+| 分支 / 提交 | `parked/fullscreen-edge-wake` @ `eac46e4` |
+| 内容 | 全屏下从底边唤出任务条。`PanelVisibilityState` 把 `.fullscreen` 拆成模式标志 `isFullscreen` + 独立隐藏原因 `.fullscreenConcealment`，新增纯判定 `FullscreenWakePolicy` / `FullscreenProbeDecision`；`PanelCoordinator` 引入 `effectiveEdgeDelay` 派生属性（替换 8 处）、全屏探针代次隔离、避让全屏门禁、冷启动与跨屏补探测、`DOCK_FULLSCREEN_WAKE` kill switch |
+| 验证状态 | Debug 构建通过、694 单测全绿（含 9 个新增全屏用例，逐个确认执行）。**未实机验收**——因 Dock 冲突无解，验收无从做起 |
+| 为什么不合入 | 全屏下贴底边时系统 Dock 被同一手势唤出并盖在任务条上（Dock 在窗口层级 20，本应用面板在 `.floating`/3），四条消除路径逐条实测走死。不选「合入但默认关」：这是任务条**核心显隐状态机**的重写，默认关等于让所有用户承担重构风险却无收益 |
+| 对当前稳定线的影响 | 零。master 的全屏行为与 v0.7.6 完全相同（`git diff v0.7.6..master` 在 `App/`、`Core/`、`Platform/`、`UI/` 上零改动） |
+| 取回方式 | 整体 `git merge` / `git cherry-pick eac46e4`；取回后必须先处理提交信息里列的 6 处待处理项，并重新实机验收 |
+
+**分支里另有三处与全屏唤出无关的现存 bug 修复，值得单独 cherry-pick**（`git checkout eac46e4 -- <path>` 取不了，改动与重构交织，需手工挑）：① 冷启动时用户已在全屏空间——主线完全不探测，任务条会盖在全屏画面上；② 任务条跨屏切到有全屏窗口的另一块屏——主线不重新判定，会浮在该应用画面上；③ 过期的异步 AX 全屏探针结果可以乱改可见性（主线无代次隔离）。
+
+技术实测细节见 `Docs/05-known-platform-quirks.md`《全屏下的系统 Dock：底边唤出无法阻止》，产品决定与再开条件见 `Docs/27-product-decisions.md`。
+
 ## 数据边界：UserDefaults 键迁移
 
 代码 revert 不会回退用户磁盘上的数据。`5f5efa0`（抽屉位置与保留拆分）和 `a25add5`（消息应用纳入统一保留勾选）两次改动的键矩阵与回滚后行为，见 `Docs/Archive/Engineering/25-userdefaults-data-boundaries.md`；键的当前权威定义在 `AGENTS.md` 的 Kept Apps 一节。
