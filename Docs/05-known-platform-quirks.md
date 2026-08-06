@@ -91,6 +91,24 @@
 
 **尚未验证的推论**：把钨极面板层级抬过 20 应该能让它压住 Dock，但未实装验证。「Dock 会从钨极上沿露出约 12pt」是估算（`tilesize` 40 推得条高约 64pt，钨极中档 52pt），**没有实测** —— Dock 隐藏时那个 layer-20 窗口是铺满整屏的容器窗口，量不到条本身的高度。
 
+## 进全屏时任务条闪一下：`activeSpaceDidChange` 太晚，救不回来（2026-08-06 实测）
+
+> 现象：从非全屏切到全屏的一瞬间，整条任务条**先消失 → 又冒出来一下 → 再消失**。退出全屏不闪，普通桌面之间切换也不闪。v0.7.6 上存在，**至今未修**。
+
+**曾经的根因判断（已被实测推翻，别再走这条路）**：以为是「隐藏得太晚」。依据是修复前的判定序列——空间切换通知那一刻同步 CG 探针答 `false`，21ms 后异步 AX 才给出 `true`；这 21ms 里任务条露在新空间上。
+
+**实测证伪**：把判定改成在 `activeSpaceDidChange` 那一刻**同步**给出（用下面那条 SkyLight 信号），进全屏的第一个判定从 `false` 变成 `true`、等待窗口从 21ms 压到 **0ms**，四次进全屏全是这个形态、前导 `false` 完全消失 —— **闪烁一点没变**。
+
+→ 所以 **`activeSpaceDidChange` 本身就晚于「任务条被合成到新空间上」的可见时刻**。任何「收到空间切换通知再反应」的修法都不可能有效，**不要再从"让判定更快"这个方向切入**。下一次要么找到早于空间切换的信号（AX 窗口尺寸观察、常驻轮询——两条都被现有护栏挡着，见 `AGENTS.md` 窗口清点一节与 `Docs/26`），要么接受它。试验代码封存在 `parked/fullscreen-flash-skylight`。
+
+**顺带坐实的 SkyLight 事实**（与上面成败无关，是可复用的零件）：
+
+- **managed space `type == 4` = 原生全屏空间，`type == 0` = 普通桌面空间。** 每 80ms 采样、只记变化，抓到三个完整周期 `0 → 4 → 0`
+- **该信号按显示器隔离**：全程第二块屏恒为 `0`，只有任务条所在屏在跳 —— 多屏方案可以依赖它
+- **调用开销 0.132 ms/次**（`SLSCopyManagedDisplaySpaces`，200 次 26.4ms），可以放心用在事件路径上
+- 符号在 `/System/Library/PrivateFrameworks/SkyLight.framework/SkyLight`：`SLSMainConnectionID` / `SLSCopyManagedDisplaySpaces`（旧名 `CGSMainConnectionID` / `CGSCopyManagedDisplaySpaces` 也还在）；字典键 `Display Identifier` / `Current Space` / `type`；**显示器必须按 `CGDisplayCreateUUIDFromDisplayID` 的 UUID 匹配，不能按数组顺序**
+- 它只能当**补充**信号：无边框全屏（游戏 / 网页全屏）不创建 type 4 空间，仍需 CG / AX 兜底
+
 ## 原生标签组（NSWindow tabbing）与“哪个标签可见”的判定（2026-06-14 实测，Ghostty）
 
 > 这是“同 app 多标签合并”功能里反复踩坑后挖出来的平台事实。Obsidian 那份是产品/设计视角，这份是工程视角，写代码时按这条来。

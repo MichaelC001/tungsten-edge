@@ -213,6 +213,7 @@
 - Bottom-anchored panels use `screen.frame` for bottom Y and horizontal clamp; reserve `visibleFrame` for drawer top/menu-bar height cap.
 - Hover screen switching uses dwell, not instant edge-trigger.
 - Fullscreen hide hides capsule and closes drawer. `FullscreenWindowClassifier.isFullscreen` remains the single AX predicate, gated to real `AXWindow` roles. **Making the bar wakeable from the bottom edge while fullscreen was built and shelved (2026-08-05)** — it works, but the system Dock is woken by the same gesture and draws over us (Dock is window layer 20, our panels are `.floating`/3), and every way to stop that is dead. Do not re-derive it: measurements in `Docs/05-known-platform-quirks.md` §「全屏下的系统 Dock」, decision and reopen conditions in `Docs/27-product-decisions.md`, code parked on `parked/fullscreen-edge-wake`.
+- **Entering fullscreen makes the bar blink (hide → reappear → hide); known, unfixed, and "react faster to `activeSpaceDidChange`" is measured-dead.** Collapsing the verdict latency from 21ms to 0ms (synchronous SkyLight managed-space `type == 4`) changed nothing — the notification itself lands after the bar is already composited onto the new Space. Do not retry that direction. Measurements + the reusable SkyLight facts: `Docs/05-known-platform-quirks.md` §「进全屏时任务条闪一下」; decision and reopen conditions: `Docs/27-product-decisions.md`; experiment parked on `parked/fullscreen-flash-skylight`.
 
 ## Light / Dark Appearance
 
