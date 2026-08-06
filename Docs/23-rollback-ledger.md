@@ -116,7 +116,9 @@ Owner 于 2026-07-25 决定本轮稳定重建停在 4.5；4.6 与后续一日回
 
 **分支里另有三处与全屏唤出无关的现存 bug 修复，值得单独 cherry-pick**（`git checkout eac46e4 -- <path>` 取不了，改动与重构交织，需手工挑）：① 冷启动时用户已在全屏空间——主线完全不探测，任务条会盖在全屏画面上；② 任务条跨屏切到有全屏窗口的另一块屏——主线不重新判定，会浮在该应用画面上；③ 过期的异步 AX 全屏探针结果可以乱改可见性（主线无代次隔离）。
 
-技术实测细节见 `Docs/05-known-platform-quirks.md`《全屏下的系统 Dock：底边唤出无法阻止》，产品决定与再开条件见 `Docs/27-product-decisions.md`。
+技术实测细节见 `Docs/05-known-platform-quirks.md`《全屏下的系统 Dock：四条配置路都阻止不了底边唤出》，产品决定与再开条件见 `Docs/27-product-decisions.md`。
+
+**2026-08-06 补记**：本条封存的前提正在被另一条线挑战——`codex/fullscreen-edge-filter-spike`（worktree 在 `../macos-dock-cc-v2-fullscreen-spike`，从 `eac46e4` 往上接着做）在试第五条路：用 `CGEventTap` 把光标从最底边夹开，让 Dock 的边缘触发根本不发生。若该方案成立，本条封存与 `Docs/27` 的暂缓决定都要重新评估。**在它有结论之前，不要按「已定不做」处置本分支。**
 
 ## 数据边界：UserDefaults 键迁移
 
