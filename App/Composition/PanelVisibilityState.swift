@@ -1,7 +1,9 @@
 import ApplicationServices
+import CoreGraphics
 
 enum PanelVisibilityReason: Hashable {
     case fullscreen
+    case fullscreenTransitionPending
     case edgeAutoHide
 }
 
@@ -49,11 +51,34 @@ enum EdgeAutoHideInhibitor: Hashable {
 struct PanelVisibilityState: Equatable {
     var hideReasons: Set<PanelVisibilityReason> = []
     var autoHideInhibitors: Set<EdgeAutoHideInhibitor> = []
+    private(set) var fullscreenTransitionGeneration: UInt64?
 
     var isVisible: Bool { hideReasons.isEmpty }
 
     mutating func setFullscreen(_ active: Bool) {
         setReason(.fullscreen, active: active)
+    }
+
+    mutating func beginFullscreenTransition(generation: UInt64) {
+        fullscreenTransitionGeneration = generation
+        hideReasons.insert(.fullscreenTransitionPending)
+    }
+
+    @discardableResult
+    mutating func confirmFullscreenTransition(generation: UInt64) -> Bool {
+        guard fullscreenTransitionGeneration == generation else { return false }
+        fullscreenTransitionGeneration = nil
+        hideReasons.remove(.fullscreenTransitionPending)
+        hideReasons.insert(.fullscreen)
+        return true
+    }
+
+    @discardableResult
+    mutating func timeoutFullscreenTransition(generation: UInt64) -> Bool {
+        guard fullscreenTransitionGeneration == generation else { return false }
+        fullscreenTransitionGeneration = nil
+        hideReasons.remove(.fullscreenTransitionPending)
+        return true
     }
 
     mutating func setEdgeAutoHidden(_ active: Bool) {
@@ -90,6 +115,7 @@ enum EdgeAutoHideRuntimeRules {
     static func canArmWake(state: PanelVisibilityState, delay: Double) -> Bool {
         state.hideReasons.contains(.edgeAutoHide)
             && !state.hideReasons.contains(.fullscreen)
+            && !state.hideReasons.contains(.fullscreenTransitionPending)
             && state.autoHideInhibitors.isEmpty
             && delay != AppSettingsStore.neverHideDelay
             && delay < AppSettingsStore.neverWakeDelay
@@ -98,6 +124,7 @@ enum EdgeAutoHideRuntimeRules {
     static func canArmIdleHide(state: PanelVisibilityState, delay: Double) -> Bool {
         !state.hideReasons.contains(.edgeAutoHide)
             && !state.hideReasons.contains(.fullscreen)
+            && !state.hideReasons.contains(.fullscreenTransitionPending)
             && state.autoHideInhibitors.isEmpty
             && delay != AppSettingsStore.neverHideDelay
     }

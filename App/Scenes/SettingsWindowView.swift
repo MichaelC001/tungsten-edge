@@ -56,6 +56,16 @@ struct SettingsWindowContent: View {
                     )
                 }
 
+                settingRow(note: "会监听全局鼠标点击和按键，只识别窗口绿灯与 Control-Command-F，不记录输入内容。") {
+                    Toggle(
+                        "进入全屏时避免闪烁",
+                        isOn: binding(
+                            get: { store.fullscreenIntentEnabled },
+                            set: store.setFullscreenIntentEnabled
+                        )
+                    )
+                }
+
                 Picker("任务条大小", selection: binding(get: { store.dockSize }, set: store.setDockSize)) {
                     ForEach(DockSize.allCases, id: \.self) { size in
                         Text(size.title).tag(size)

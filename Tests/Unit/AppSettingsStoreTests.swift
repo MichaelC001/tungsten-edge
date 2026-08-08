@@ -145,6 +145,20 @@ final class AppSettingsStoreTests: XCTestCase {
     }
 
     @MainActor
+    func testFullscreenIntentDefaultsToOnAndPersists() {
+        let defaults = makeDefaults()
+        XCTAssertTrue(AppSettingsStore(defaults: defaults).fullscreenIntentEnabled)
+
+        let store = AppSettingsStore(defaults: defaults)
+        store.setFullscreenIntentEnabled(false)
+        XCTAssertFalse(store.fullscreenIntentEnabled)
+        XCTAssertFalse(AppSettingsStore(defaults: defaults).fullscreenIntentEnabled)
+
+        store.setFullscreenIntentEnabled(true)
+        XCTAssertTrue(AppSettingsStore(defaults: defaults).fullscreenIntentEnabled)
+    }
+
+    @MainActor
     func testHoverStyleRewritesCorruptStoredValueToStandard() {
         let defaults = makeDefaults()
         defaults.set("silent", forKey: "com.tungsten.edge.hoverStyle")
@@ -957,6 +971,31 @@ final class AppSettingsStoreTests: XCTestCase {
         XCTAssertEqual(AppSettingsStore.sanitizedLastEnabledDelay(.nan, fallback: 1.0), 1.0)
         XCTAssertEqual(AppSettingsStore.sanitizedLastEnabledDelay(AppSettingsStore.neverHideDelay, fallback: 1.0), 1.0)
         XCTAssertEqual(AppSettingsStore.sanitizedLastEnabledDelay(2.0, fallback: 1.0), 2.0)
+    }
+
+    func testFullscreenPendingConfirmationIsAtomicAndStaleTimeoutCannotRevealPanels() {
+        var state = PanelVisibilityState()
+        state.beginFullscreenTransition(generation: 7)
+        XCTAssertFalse(state.isVisible)
+        XCTAssertFalse(state.timeoutFullscreenTransition(generation: 6))
+        XCTAssertFalse(state.isVisible)
+
+        XCTAssertTrue(state.confirmFullscreenTransition(generation: 7))
+        XCTAssertFalse(state.isVisible)
+        XCTAssertFalse(state.hideReasons.contains(.fullscreenTransitionPending))
+        XCTAssertTrue(state.hideReasons.contains(.fullscreen))
+    }
+
+    func testFullscreenPendingTimeoutPreservesEdgeHiddenStateAndBlocksEdgeTimers() {
+        var state = PanelVisibilityState()
+        state.setEdgeAutoHidden(true)
+        state.beginFullscreenTransition(generation: 8)
+        XCTAssertFalse(EdgeAutoHideRuntimeRules.canArmWake(state: state, delay: 0.5))
+        XCTAssertFalse(EdgeAutoHideRuntimeRules.canArmIdleHide(state: state, delay: 0.5))
+
+        XCTAssertTrue(state.timeoutFullscreenTransition(generation: 8))
+        XCTAssertFalse(state.isVisible)
+        XCTAssertTrue(state.hideReasons.contains(.edgeAutoHide))
     }
 
     private func makeDefaults() -> UserDefaults {

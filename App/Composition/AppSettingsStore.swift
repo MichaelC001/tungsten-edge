@@ -47,6 +47,8 @@ final class AppSettingsStore: ObservableObject {
     /// 最大化窗口避让任务条（菜单「最大化窗口避开任务条」）。**默认关**——
     /// 这个功能会真的去改写别人应用的窗口尺寸，没主动选过的人不该被改。
     @Published private(set) var windowLiftEnabled: Bool
+    /// 标准绿灯 / Control-Command-F 输入投递前预测隐藏任务条，默认开启。
+    @Published private(set) var fullscreenIntentEnabled: Bool
     @Published private(set) var nativeDockAutoHideDelay: Double
     @Published private(set) var edgeAutoHideDelay: Double
     /// 「自动隐藏」切换（菜单/全局快捷键）从常驻恢复时要回到的延迟值。
@@ -77,6 +79,7 @@ final class AppSettingsStore: ObservableObject {
         defaults.register(defaults: [
             Keys.launchAtLogin: false,
             Keys.showShelf: true,
+            Keys.fullscreenIntentEnabled: true,
             Keys.nativeDockAutoHideDelay: Self.defaultNativeDockAutoHideDelay,
             Keys.edgeAutoHideDelay: Self.defaultEdgeAutoHideDelay,
         ])
@@ -86,6 +89,7 @@ final class AppSettingsStore: ObservableObject {
         // 有意**不**进上面的 register：缺键即 false 正好是我们要的默认关。
         // 注册一个 false 只会让人误以为它跟 showShelf 一样是「默认开」。
         windowLiftEnabled = defaults.bool(forKey: Keys.windowLiftEnabled)
+        fullscreenIntentEnabled = defaults.bool(forKey: Keys.fullscreenIntentEnabled)
         // 坏值（手改过、旧版本残留、类型不对）一律回退中档并**立刻重写**，
         // 否则每次启动都要重新走一遍回退，且 UI 上勾选的档位和存的值对不上。
         dockSize = DockSize(rawValue: defaults.string(forKey: Keys.dockSize) ?? "") ?? .default
@@ -146,6 +150,12 @@ final class AppSettingsStore: ObservableObject {
         guard windowLiftEnabled != value else { return }
         windowLiftEnabled = value
         defaults.set(value, forKey: Keys.windowLiftEnabled)
+    }
+
+    func setFullscreenIntentEnabled(_ value: Bool) {
+        guard fullscreenIntentEnabled != value else { return }
+        fullscreenIntentEnabled = value
+        defaults.set(value, forKey: Keys.fullscreenIntentEnabled)
     }
 
     func setLaunchAtLogin(_ value: Bool) {
@@ -268,6 +278,7 @@ private enum Keys {
     static let dockSize = "com.tungsten.edge.dockSize"
     static let hoverStyle = "com.tungsten.edge.hoverStyle"
     static let windowLiftEnabled = "com.tungsten.edge.windowLiftEnabled"
+    static let fullscreenIntentEnabled = "com.tungsten.edge.fullscreenIntentEnabled"
     static let nativeDockAutoHideEnabled = "com.tungsten.edge.autoHide.nativeDock.enabled"
     static let nativeDockAutoHideDelay = "com.tungsten.edge.autoHide.nativeDock.delay"
     static let nativeDockAutoHideLastEnabledDelay = "com.tungsten.edge.autoHide.nativeDock.lastEnabledDelay"

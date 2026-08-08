@@ -48,6 +48,7 @@ Unlike a plain Windows-style task switcher, single-window apps stay collapsed as
 - **Edge auto-hide** — Tungsten Edge can hide itself and wake from the bottom edge after the delay you choose; moving away hides it again after about 0.2s.
 - **Frosted-glass look** — native-grade translucency that blends into the desktop.
 - **Multi-display follow** — resting the pointer on another screen's bottom edge moves the taskbar there automatically.
+- **Blink-free native fullscreen entry** — before a standard green-button or `Control-Command-F` fullscreen transition, Tungsten Edge moves its panels out of the transition snapshot. This is enabled by default and can be turned off in Settings.
 
 > **Note:** the app's interface is currently **Chinese only**. An English/localized UI is planned but not yet available — see [Roadmap](#roadmap).
 
@@ -56,6 +57,12 @@ Unlike a plain Windows-style task switcher, single-window apps stay collapsed as
 - macOS 12.0 (Monterey) or later
 - Intel and Apple Silicon (universal binary)
 - On first launch you'll be asked to grant **Accessibility** permission (used to read and manage windows; the app guides you through it).
+
+### Global input observation
+
+To avoid a one-frame taskbar blink during native fullscreen entry, Tungsten Edge observes global left-click and key-down events. It recognizes only the standard window green button and the exact `Control-Command-F` shortcut. Ordinary input is not recorded, logged, modified, or sent anywhere. The listener is enabled by default; turn off **进入全屏时避免闪烁** in Settings to disable it completely.
+
+macOS suppresses key events from global event taps while Secure Input is active, such as in a protected password field. During that time the keyboard shortcut cannot be recognized in advance; green-button detection is unaffected.
 
 ## Install
 

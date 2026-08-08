@@ -22,6 +22,14 @@ enum PopoverAnimation {
     }
 }
 
+private struct FullscreenIntentTransaction {
+    let generation: UInt64
+    let pid: pid_t
+    let focusedWindowID: CGWindowID
+    let initialWindowFrame: CGRect
+    let screenCGFrame: CGRect
+}
+
 /// CAMediaTimingFunction 的数值求解版：CALayer 隐式动画只能按"单一属性"整体插值，
 /// 而弹窗切换要按 centerX/bottomY/width/height 四个语义量分别插值再拼回 frame，
 /// 只能自己按时间步进算 progress。直接吃调用方已有的 CAMediaTimingFunction，不重复定义
@@ -173,6 +181,7 @@ final class PanelCoordinator: NSObject {
     private var dragSpringSubscription: AnyCancellable?
     private var dragInhibitorSubscription: AnyCancellable?
     private var edgeDelaySubscription: AnyCancellable?
+    private var fullscreenIntentEnabledSubscription: AnyCancellable?
     private var showShelfSubscription: AnyCancellable?
     private var dockSizeSubscription: AnyCancellable?
     /// 换档事务代次：吞掉换档过程中被其它路径排队的动画布局（见 beginDockSizeChange）。
@@ -207,8 +216,20 @@ final class PanelCoordinator: NSObject {
     /// 首帧布局强制瞬时（面板刚建好,别从初始/原点位置滑过来）。
     private var didInitialLayout = false
     private let logger = Logger(subsystem: "com.caye.macosdockcc.v2", category: "dock-panel")
+    private let fullscreenIntentLogger = Logger(
+        subsystem: "com.caye.macosdockcc.v2",
+        category: "FullscreenIntent"
+    )
 
     private var fullscreenReconcileTimer: Timer?
+    private var fullscreenIntentMonitor: FullscreenIntentMonitor?
+    private var fullscreenIntentTimeoutTimer: Timer?
+    private var fullscreenIntentStabilityTimer: Timer?
+    private var fullscreenIntentStabilityGeneration: UInt64 = 0
+    private var fullscreenIntentGeneration: UInt64 = 0
+    private var fullscreenIntentTransaction: FullscreenIntentTransaction?
+    private var fullscreenProbeGeneration: UInt64 = 0
+    private var lastActiveApplicationPID: pid_t?
     private var visibilityState = PanelVisibilityState()
     private var panelsAreVisible = true
     private var edgeIdleHideTimer: Timer?
@@ -263,6 +284,7 @@ final class PanelCoordinator: NSObject {
         subscribeSettings()
         subscribePinnedFolderStore()
         setupFullscreenMonitor()
+        reconcileFullscreenIntentMonitor()
         setupHoverDiagnostics()
         NotificationCenter.default.addObserver(
             self,
@@ -274,7 +296,10 @@ final class PanelCoordinator: NSObject {
 
     deinit {
         fullscreenReconcileTimer?.invalidate()
+        fullscreenIntentTimeoutTimer?.invalidate()
+        fullscreenIntentStabilityTimer?.invalidate()
         MainActor.assumeIsolated {
+            fullscreenIntentMonitor?.stop()
             removeHoverMouseMonitors()
             dismissWindowTitleTooltip()
         }
@@ -303,6 +328,12 @@ final class PanelCoordinator: NSObject {
     func suspendAndRelease() {
         guard !isSuspendedForPermissionLoss else { return }
         isSuspendedForPermissionLoss = true
+        fullscreenIntentMonitor?.stop()
+        fullscreenIntentMonitor = nil
+        fullscreenIntentTimeoutTimer?.invalidate()
+        fullscreenIntentTimeoutTimer = nil
+        fullscreenIntentStabilityTimer?.invalidate()
+        fullscreenIntentStabilityTimer = nil
 
         // 先回滚未提交的跨面板拖拽事务，再拆监视器。
         dragController?.cancelDrag()
@@ -482,6 +513,24 @@ final class PanelCoordinator: NSObject {
                 panel.orderOut(nil)
             }
         })
+    }
+
+    /// 全屏输入已经被 tap 暂停投递，不能等淡出动画；状态和监视器照常收口后立即移出 WindowServer。
+    private func closeDrawerImmediately() {
+        guard drawerWantsOpen || drawerPanel?.isVisible == true else { return }
+        drawerWantsOpen = false
+        setAutoHideInhibitor(.drawerOpen, active: false)
+        drawerSpringOpened = false
+        if let monitor = drawerLocalMonitor {
+            NSEvent.removeMonitor(monitor)
+            drawerLocalMonitor = nil
+        }
+        if let monitor = drawerGlobalMonitor {
+            NSEvent.removeMonitor(monitor)
+            drawerGlobalMonitor = nil
+        }
+        drawerPanel?.alphaValue = 0
+        drawerPanel?.orderOut(nil)
     }
 
     private func dismissDrawerIfOutside() {
@@ -1371,6 +1420,12 @@ final class PanelCoordinator: NSObject {
             .sink { [weak self] _ in
                 self?.reconcilePanelVisibility()
             }
+        fullscreenIntentEnabledSubscription = settingsStore.$fullscreenIntentEnabled
+            .removeDuplicates()
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self] _ in
+                self?.reconcileFullscreenIntentMonitor()
+            }
         // 中转格显隐会改变任务条内容宽度：只让 chip 消失不重排，面板会停在旧宽度，
         // 胶囊和打开着的抽屉也跟着停在旧位置。relayout 必须等 SwiftUI 这一轮布局跑完
         // （fittingSize 那时才是新值），所以再推一轮主队列。
@@ -1448,6 +1503,12 @@ final class PanelCoordinator: NSObject {
     /// 开屏/切屏/多屏悬停传 animated:false；内容变化、收纳/移回、抽屉尺寸变化传 animated:true。
     private func layoutPanels(contentWidth: CGFloat, on screen: NSScreen, animated: Bool) {
         guard let dock = dockPanel, let capsule = capsulePanel else { return }
+        let panelScreenCGFrame = Self.toCGRect(screen)
+        fullscreenIntentMonitor?.updatePanelScreen(panelScreenCGFrame)
+        if let transaction = fullscreenIntentTransaction,
+           transaction.screenCGFrame != panelScreenCGFrame {
+            cancelFullscreenIntent(generation: transaction.generation, reason: "panel-screen-changed")
+        }
         let anim = animated && didInitialLayout   // 首帧瞬时,别从初始位置滑过来
         didInitialLayout = true
 
@@ -1501,6 +1562,7 @@ final class PanelCoordinator: NSObject {
         dismissWindowTitleTooltip(suppressCurrentUntilExit: true)
         guard dockPanel != nil else { return }
         relayout(animated: false)      // 切屏瞬时,不滑
+        cancelFullscreenIntentIfContextChanged()
         reconcilePanelVisibility()
     }
 
@@ -1510,24 +1572,60 @@ final class PanelCoordinator: NSObject {
         let nc = NSWorkspace.shared.notificationCenter
         nc.addObserver(self, selector: #selector(handleSpaceChange), name: NSWorkspace.activeSpaceDidChangeNotification, object: nil)
         nc.addObserver(self, selector: #selector(handleAppActivated(_:)), name: NSWorkspace.didActivateApplicationNotification, object: nil)
+        lastActiveApplicationPID = NSWorkspace.shared.runningApplications.first(where: { $0.isActive })?.processIdentifier
         fullscreenReconcileTimer = Timer.scheduledTimer(withTimeInterval: 5.0, repeats: true) { [weak self] _ in
             Task { @MainActor [weak self] in self?.fullscreenReconcileIfNeeded() }
         }
         fullscreenReconcileTimer?.tolerance = 0.5
     }
 
+    private func reconcileFullscreenIntentMonitor() {
+        let enabled = FullscreenIntentDecision.isEnabled(
+            settingEnabled: settingsStore.fullscreenIntentEnabled,
+            environment: ProcessInfo.processInfo.environment
+        )
+        guard enabled, !isSuspendedForPermissionLoss else {
+            fullscreenIntentMonitor?.stop()
+            fullscreenIntentMonitor = nil
+            if let transaction = fullscreenIntentTransaction {
+                cancelFullscreenIntent(generation: transaction.generation, reason: "disabled")
+            }
+            return
+        }
+        guard fullscreenIntentMonitor == nil else { return }
+        let monitor = FullscreenIntentMonitor(
+            onIntent: { [weak self] request in
+                self?.beginFullscreenIntent(request)
+            },
+            onContextChange: { [weak self] change in
+                self?.handleFullscreenIntentContextChange(change)
+            }
+        )
+        fullscreenIntentMonitor = monitor
+        monitor.updatePanelScreen(currentPanelScreenCGFrame())
+        monitor.start()
+    }
+
     @objc private func handleSpaceChange() {
         // Sync CG check: fires before the panel has a chance to appear, no AX = no main-thread risk
         let cgFullscreen = checkFullscreenViaCGSync()
-        applyFullscreenVisibility(cgFullscreen)
+        applyFullscreenVisibility(
+            cgFullscreen,
+            source: "space-cg",
+            expectedIntentGeneration: fullscreenIntentTransaction?.generation,
+            pid: lastActiveApplicationPID,
+            screenCGFrame: currentPanelScreenCGFrame()
+        )
         // Async AX secondary check: catches edge cases CG misses (e.g. games on a non-zero layer)
-        triggerAsyncFullscreenCheck()
+        if !cgFullscreen || fullscreenIntentTransaction == nil { triggerAsyncFullscreenCheck() }
     }
 
     @objc private func handleAppActivated(_ note: Notification) {
         // 用通知携带的"刚激活的 app"，不读滞后的 frontmostApplication（AGENTS 守则）
         let activated = note.userInfo?[NSWorkspace.applicationUserInfoKey] as? NSRunningApplication
-        triggerAsyncFullscreenCheck(pid: activated?.processIdentifier)
+        lastActiveApplicationPID = activated?.processIdentifier
+        cancelFullscreenIntentIfContextChanged(activePID: activated?.processIdentifier)
+        triggerAsyncFullscreenCheck(pid: lastActiveApplicationPID)
     }
 
     // MARK: - Sync CG fullscreen probe (main thread only, no AX)
@@ -1556,13 +1654,25 @@ final class PanelCoordinator: NSObject {
         guard let panel = dockPanel else { return }
         // Convert to CG coords on main thread; AX kAXPositionAttribute also uses CG (top-left origin)
         let screenCGFrame = Self.toCGRect(panelCurrentScreen(panel: panel))
-        // NSWorkspace.frontmostApplication 是滞后缓存，可见性决策不可依赖（AGENTS 守则）——
-        // 无显式 PID 时改用新鲜的 isActive 扫描
-        let frontPID = explicitPID
-            ?? NSWorkspace.shared.runningApplications.first(where: { $0.isActive })?.processIdentifier
+        let frontPID = explicitPID ?? lastActiveApplicationPID
+        fullscreenProbeGeneration &+= 1
+        let probeGeneration = fullscreenProbeGeneration
+        let expectedIntentGeneration = fullscreenIntentTransaction?.generation
         Task.detached { [weak self] in
             let fullscreen = Self.detectFullscreenViaAX(pid: frontPID, screenCGFrame: screenCGFrame)
-            await MainActor.run { [weak self] in self?.applyFullscreenVisibility(fullscreen) }
+            await MainActor.run { [weak self] in
+                guard let self,
+                      probeGeneration == self.fullscreenProbeGeneration else {
+                    return
+                }
+                self.applyFullscreenVisibility(
+                    fullscreen,
+                    source: "ax",
+                    expectedIntentGeneration: expectedIntentGeneration,
+                    pid: frontPID,
+                    screenCGFrame: screenCGFrame
+                )
+            }
         }
     }
 
@@ -1571,17 +1681,254 @@ final class PanelCoordinator: NSObject {
         triggerAsyncFullscreenCheck()
     }
 
-    private func applyFullscreenVisibility(_ isFullscreen: Bool) {
+    private func applyFullscreenVisibility(
+        _ isFullscreen: Bool,
+        source: String,
+        expectedIntentGeneration: UInt64? = nil,
+        pid: pid_t? = nil,
+        screenCGFrame: CGRect? = nil
+    ) {
         if isFullscreen {
+            if let transaction = fullscreenIntentTransaction {
+                guard expectedIntentGeneration == transaction.generation,
+                      pid == transaction.pid,
+                      screenCGFrame == transaction.screenCGFrame,
+                      isFullscreenIntentContextCurrent(transaction),
+                      visibilityState.confirmFullscreenTransition(generation: transaction.generation) else {
+                    return
+                }
+                finishFullscreenIntentTransaction()
+                fullscreenIntentLogger.notice(
+                    "confirmed source=\(source, privacy: .public) generation=\(transaction.generation, privacy: .public)"
+                )
+            } else {
+                visibilityState.setFullscreen(true)
+            }
             closeDrawer()
             closeFolderPopup()
             dismissWindowTitleTooltip(suppressCurrentUntilExit: true)
-            visibilityState.setFullscreen(true)
         } else {
+            if fullscreenIntentTransaction != nil { return }
             visibilityState.setFullscreen(false)
         }
         reconcilePanelVisibility()
         logger.info("[fullscreen] active=\(isFullscreen, privacy: .public)")
+    }
+
+    private func beginFullscreenIntent(_ request: FullscreenIntentRequest) {
+        guard fullscreenIntentMonitor != nil,
+              fullscreenIntentTransaction == nil,
+              request.screenCGFrame == currentPanelScreenCGFrame(),
+              NSRunningApplication(processIdentifier: request.pid)?.isActive == true else {
+            return
+        }
+        fullscreenIntentGeneration &+= 1
+        let generation = fullscreenIntentGeneration
+        fullscreenProbeGeneration &+= 1
+        fullscreenIntentTransaction = FullscreenIntentTransaction(
+            generation: generation,
+            pid: request.pid,
+            focusedWindowID: request.focusedWindowID,
+            initialWindowFrame: request.windowFrame,
+            screenCGFrame: request.screenCGFrame
+        )
+        fullscreenIntentTimeoutTimer?.invalidate()
+        fullscreenIntentStabilityTimer?.invalidate()
+        visibilityState.beginFullscreenTransition(generation: generation)
+
+        edgeIdleHideTimer?.invalidate()
+        edgeIdleHideTimer = nil
+        cancelEdgeWake()
+
+        dragController?.cancelDrag()
+        closeDrawerImmediately()
+        closeFolderPopup(immediately: true)
+        dismissWindowTitleTooltip(suppressCurrentUntilExit: true)
+
+        panelsAreVisible = false
+        dockPanel?.orderOut(nil)
+        capsulePanel?.orderOut(nil)
+        drawerPanel?.orderOut(nil)
+        folderPopupPanel?.orderOut(nil)
+        windowTitleTooltipPanel?.orderOut(nil)
+        fullscreenIntentLogger.notice(
+            "pending source=\(request.source.rawValue, privacy: .public) generation=\(generation, privacy: .public) pid=\(request.pid, privacy: .public)"
+        )
+
+        let timer = Timer(timeInterval: 1.2, repeats: false) { [weak self] _ in
+            Task { @MainActor [weak self] in
+                self?.cancelFullscreenIntent(generation: generation, reason: "timeout")
+            }
+        }
+        RunLoop.main.add(timer, forMode: .common)
+        fullscreenIntentTimeoutTimer = timer
+
+        DispatchQueue.main.async { [weak self] in
+            guard let self, self.fullscreenIntentTransaction?.generation == generation else { return }
+            self.reconcilePanelVisibility()
+        }
+    }
+
+    private func cancelFullscreenIntent(generation: UInt64, reason: String) {
+        guard fullscreenIntentTransaction?.generation == generation,
+              visibilityState.timeoutFullscreenTransition(generation: generation) else {
+            return
+        }
+        finishFullscreenIntentTransaction()
+        fullscreenProbeGeneration &+= 1
+        fullscreenIntentLogger.notice(
+            "cancelled reason=\(reason, privacy: .public) generation=\(generation, privacy: .public)"
+        )
+        reconcilePanelVisibility()
+    }
+
+    private func finishFullscreenIntentTransaction() {
+        fullscreenIntentTransaction = nil
+        fullscreenIntentStabilityGeneration &+= 1
+        fullscreenIntentTimeoutTimer?.invalidate()
+        fullscreenIntentTimeoutTimer = nil
+        fullscreenIntentStabilityTimer?.invalidate()
+        fullscreenIntentStabilityTimer = nil
+    }
+
+    private func cancelFullscreenIntentIfContextChanged(activePID: pid_t? = nil) {
+        guard let transaction = fullscreenIntentTransaction else { return }
+        let currentPID = activePID ?? lastActiveApplicationPID
+        guard currentPID != transaction.pid || currentPanelScreenCGFrame() != transaction.screenCGFrame else {
+            return
+        }
+        cancelFullscreenIntent(generation: transaction.generation, reason: "context-changed")
+    }
+
+    private func isFullscreenIntentContextCurrent(_ transaction: FullscreenIntentTransaction) -> Bool {
+        NSRunningApplication(processIdentifier: transaction.pid)?.isActive == true
+            && currentPanelScreenCGFrame() == transaction.screenCGFrame
+    }
+
+    private func handleFullscreenIntentContextChange(
+        _ change: FullscreenIntentMonitor.ContextChange
+    ) {
+        if case let .activeApplication(pid) = change {
+            lastActiveApplicationPID = pid
+        }
+        guard let transaction = fullscreenIntentTransaction else { return }
+        switch change {
+        case let .activeApplication(pid):
+            if pid != transaction.pid {
+                cancelFullscreenIntent(generation: transaction.generation, reason: "app-changed")
+            }
+        case .focusedWindow:
+            cancelFullscreenIntent(generation: transaction.generation, reason: "focus-changed")
+        case let .windowDestroyed(windowID):
+            if windowID == nil || windowID == transaction.focusedWindowID {
+                cancelFullscreenIntent(generation: transaction.generation, reason: "window-destroyed")
+            }
+        case let .windowGeometry(windowID):
+            guard windowID == nil || windowID == transaction.focusedWindowID else {
+                cancelFullscreenIntent(generation: transaction.generation, reason: "window-changed")
+                return
+            }
+            armFullscreenIntentStabilityCheck(transaction: transaction)
+        }
+    }
+
+    private func armFullscreenIntentStabilityCheck(transaction: FullscreenIntentTransaction) {
+        fullscreenIntentStabilityTimer?.invalidate()
+        fullscreenIntentStabilityGeneration &+= 1
+        let stabilityGeneration = fullscreenIntentStabilityGeneration
+        guard let monitor = fullscreenIntentMonitor else { return }
+
+        monitor.verifyStableWindow(request: stabilityRequest(for: transaction)) { [weak self] first in
+            guard let self,
+                  let first,
+                  self.fullscreenIntentTransaction?.generation == transaction.generation,
+                  self.fullscreenIntentStabilityGeneration == stabilityGeneration else { return }
+            if self.confirmFullscreenIntentIfNeeded(first, transaction: transaction) { return }
+            guard first.screenCGFrame == transaction.screenCGFrame,
+                  FullscreenIntentStabilityDecision.isChangedNonFullscreen(
+                      initialWindowFrame: transaction.initialWindowFrame,
+                      currentWindowID: first.focusedWindowID,
+                      expectedWindowID: transaction.focusedWindowID,
+                      currentWindowFrame: first.windowFrame,
+                      isFullscreen: first.isFullscreen
+                  ) else {
+                if first.screenCGFrame != transaction.screenCGFrame {
+                    self.cancelFullscreenIntent(
+                        generation: transaction.generation,
+                        reason: "target-screen-changed"
+                    )
+                }
+                return
+            }
+
+            let timer = Timer(timeInterval: 0.2, repeats: false) { [weak self] _ in
+                Task { @MainActor [weak self] in
+                    guard let self,
+                          self.fullscreenIntentTransaction?.generation == transaction.generation,
+                          self.fullscreenIntentStabilityGeneration == stabilityGeneration,
+                          let monitor = self.fullscreenIntentMonitor else { return }
+                    monitor.verifyStableWindow(request: self.stabilityRequest(for: transaction)) { [weak self] second in
+                        guard let self,
+                              let second,
+                              self.fullscreenIntentTransaction?.generation == transaction.generation,
+                              self.fullscreenIntentStabilityGeneration == stabilityGeneration else { return }
+                        if self.confirmFullscreenIntentIfNeeded(second, transaction: transaction) { return }
+                        guard second.screenCGFrame == transaction.screenCGFrame else {
+                            self.cancelFullscreenIntent(
+                                generation: transaction.generation,
+                                reason: "target-screen-changed"
+                            )
+                            return
+                        }
+                        if FullscreenIntentStabilityDecision.shouldCancel(
+                            initialWindowFrame: transaction.initialWindowFrame,
+                            expectedWindowID: transaction.focusedWindowID,
+                            first: first,
+                            second: second
+                        ) {
+                            self.cancelFullscreenIntent(
+                                generation: transaction.generation,
+                                reason: "stable-nonfullscreen"
+                            )
+                        }
+                    }
+                }
+            }
+            RunLoop.main.add(timer, forMode: .common)
+            self.fullscreenIntentStabilityTimer = timer
+        }
+    }
+
+    private func stabilityRequest(for transaction: FullscreenIntentTransaction) -> FullscreenIntentRequest {
+        FullscreenIntentRequest(
+            source: .greenButton,
+            cacheGeneration: 0,
+            pid: transaction.pid,
+            focusedWindowID: transaction.focusedWindowID,
+            windowFrame: transaction.initialWindowFrame,
+            screenCGFrame: transaction.screenCGFrame
+        )
+    }
+
+    @discardableResult
+    private func confirmFullscreenIntentIfNeeded(
+        _ state: FullscreenIntentWindowState,
+        transaction: FullscreenIntentTransaction
+    ) -> Bool {
+        guard state.isFullscreen else { return false }
+        applyFullscreenVisibility(
+            true,
+            source: "intent-ax",
+            expectedIntentGeneration: transaction.generation,
+            pid: state.pid,
+            screenCGFrame: state.screenCGFrame
+        )
+        return fullscreenIntentTransaction?.generation != transaction.generation
+    }
+
+    private func currentPanelScreenCGFrame() -> CGRect? {
+        guard let panel = dockPanel else { return nil }
+        return Self.toCGRect(panelCurrentScreen(panel: panel))
     }
 
     private func panelCurrentScreen(panel: NSPanel) -> NSScreen {
@@ -1889,7 +2236,9 @@ final class PanelCoordinator: NSObject {
 
         if edgeDelay == AppSettingsStore.neverHideDelay {
             cancelEdgeWake()
-        } else if visibilityState.autoHideInhibitors.isEmpty, !visibilityState.hideReasons.contains(.fullscreen) {
+        } else if visibilityState.autoHideInhibitors.isEmpty,
+                  !visibilityState.hideReasons.contains(.fullscreen),
+                  !visibilityState.hideReasons.contains(.fullscreenTransitionPending) {
             if visibilityState.hideReasons.contains(.edgeAutoHide) {
                 if EdgeAutoHideRuntimeRules.canArmWake(state: visibilityState, delay: edgeDelay),
                    let screen = screenContainingMouse(),
