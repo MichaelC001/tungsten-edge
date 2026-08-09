@@ -56,16 +56,6 @@ struct SettingsWindowContent: View {
                     )
                 }
 
-                settingRow(note: "会监听全局鼠标点击和按键，只识别窗口绿灯与 Control-Command-F，不记录输入内容。") {
-                    Toggle(
-                        "进入全屏时避免闪烁",
-                        isOn: binding(
-                            get: { store.fullscreenIntentEnabled },
-                            set: store.setFullscreenIntentEnabled
-                        )
-                    )
-                }
-
                 Picker("任务条大小", selection: binding(get: { store.dockSize }, set: store.setDockSize)) {
                     ForEach(DockSize.allCases, id: \.self) { size in
                         Text(size.title).tag(size)
@@ -75,23 +65,30 @@ struct SettingsWindowContent: View {
 
                 // 唤醒时间是连续档位、会随手调，留在菜单里；这里只指路，别让人在设置窗口里
                 // 找自动隐藏找到死胡同（owner 2026-08-03 的分工：滑块类进菜单，开关类进这里）。
-                pointerNote("任务条的自动隐藏和唤醒时间在**菜单栏的钨极图标**里调——那条滑块拖着就生效，方便一边拖一边看。")
+                // 系统 Dock 相关的入口全在菜单里（滑块、确认行、「打开系统 Dock 设置…」）。
+                // 设置页原本还有一整组「系统 Dock」，只是指路 + 一个跟菜单项完全重复的按钮，
+                // 已于 2026-08-09 删除；这里顺带把它指到同一个地方，别在设置页找到死胡同。
+                pointerNote("任务条的自动隐藏和唤醒时间在**菜单栏的钨极图标**里调——那条滑块拖着就生效，方便一边拖一边看。macOS 自带程序坞的对应设置也在同一个菜单里。")
             }
 
             Divider()
 
-            settingsSection("系统 Dock") {
-                pointerNote("这一组说的是 macOS 自带的程序坞，不是钨极。它的自动隐藏和唤醒时间同样在**菜单栏的钨极图标**里调（改动要点「应用」才生效，生效时系统 Dock 会重启一下）。")
-
-                Button {
-                    if !coordinator.openNativeDockSettings() {
-                        presentedAlert = SettingsAlert(
-                            title: "无法打开系统 Dock 设置",
-                            message: "请从系统设置进入「桌面与程序坞」（macOS 12 为「程序坞与菜单栏」）。"
+            // 「高级」= 需要额外能力、默认就对、基本不用碰的开关。放这里不是为了藏，
+            // 而是让主设置面只留日常会调的东西；真想拒绝这个能力的人找得到（owner 2026-08-09）。
+            settingsSection("高级") {
+                settingRow(
+                    note: "为了不让任务条在切进全屏时闪一下，钨极需要在你的输入送到应用之前先把它藏起来。"
+                        + "因此会监听全局的鼠标左键按下、键盘按下和触控板手势，只识别窗口绿灯、"
+                        + "Control-Command-F、Control-左右方向键和三指水平滑动这四种；"
+                        + "不记录输入内容，也不写日志、不发送到任何地方。关闭后这些监听会被完全停用。"
+                ) {
+                    Toggle(
+                        "预测全屏切换，消除任务条闪烁",
+                        isOn: binding(
+                            get: { store.fullscreenIntentEnabled },
+                            set: store.setFullscreenIntentEnabled
                         )
-                    }
-                } label: {
-                    Label("打开系统 Dock 设置…", systemImage: "arrow.up.forward.app")
+                    )
                 }
             }
 

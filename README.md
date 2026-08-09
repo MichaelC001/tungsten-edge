@@ -60,9 +60,16 @@ Unlike a plain Windows-style task switcher, single-window apps stay collapsed as
 
 ### Global input observation
 
-To avoid a one-frame taskbar blink during native fullscreen entry, Tungsten Edge observes global left-click and key-down events. It recognizes only the standard window green button and the exact `Control-Command-F` shortcut. Ordinary input is not recorded, logged, modified, or sent anywhere. The listener is enabled by default; turn off **进入全屏时避免闪烁** in Settings to disable it completely.
+Entering a native fullscreen Space lets the system's transition snapshot catch the taskbar, which shows up as a one-frame blink. Removing it requires hiding the taskbar *before* your input reaches the target app, so Tungsten Edge observes global **left-click, key-down and trackpad gesture** events. It recognizes only these four:
 
-macOS suppresses key events from global event taps while Secure Input is active, such as in a protected password field. During that time the keyboard shortcut cannot be recognized in advance; green-button detection is unaffected.
+- the standard window green button
+- the exact `Control-Command-F` shortcut
+- `Control-Left` / `Control-Right` (when switching into an adjacent fullscreen Space)
+- a three-finger horizontal swipe (same case)
+
+Ordinary input is not recorded, logged, modified, or sent anywhere. The listener is enabled by default; turn off **预测全屏切换，消除任务条闪烁** under **高级** in Settings to disable it completely.
+
+macOS suppresses key events from global event taps while Secure Input is active, such as in a protected password field. During that time the keyboard shortcuts cannot be recognized in advance; green-button and trackpad-gesture detection are unaffected.
 
 ## Install
 
