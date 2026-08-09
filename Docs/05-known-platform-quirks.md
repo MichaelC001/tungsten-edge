@@ -92,22 +92,17 @@
 
 **尚未验证的推论**：把钨极面板层级抬过 20 应该能让它压住 Dock，但未实装验证。「Dock 会从钨极上沿露出约 12pt」是估算（`tilesize` 40 推得条高约 64pt，钨极中档 52pt），**没有实测** —— Dock 隐藏时那个 layer-20 窗口是铺满整屏的容器窗口，量不到条本身的高度。
 
-## 进全屏时任务条闪一下：`activeSpaceDidChange` 太晚，救不回来（2026-08-06 实测）
+## 进全屏时任务条闪一下：输入投递前隐藏已修复（2026-08-09）
 
-> 现象：从非全屏切到全屏的一瞬间，整条任务条**先消失 → 又冒出来一下 → 再消失**。退出全屏不闪，普通桌面之间切换也不闪。v0.7.6 上存在，**至今未修**。
+> v0.7.6 的现象是从非全屏切到原生全屏时，任务条**先消失 → 又冒出来一下 → 再消失**。当前实现对标准绿灯和精确 `Control-Command-F` 在输入投递前同步隐藏，owner 的 TextEdit 固定证书 Release 验收为 `0/3 + 0/3` 肉眼闪烁。
 
-**曾经的根因判断（已被实测推翻，别再走这条路）**：以为是「隐藏得太晚」。依据是修复前的判定序列——空间切换通知那一刻同步 CG 探针答 `false`，21ms 后异步 AX 才给出 `true`；这 21ms 里任务条露在新空间上。
+**为什么旧路线都无效**：`activeSpaceDidChange` 即使把判定从 21ms 压到 0ms，通知仍晚于 WindowServer 合成；撤掉 `.fullScreenAuxiliary` 与 control 的重叠约 `769ms / 776ms`，无差别；`AXWindowCreated/Resized` 能在全屏 CG 窗口前约 18ms 完成分类，但主线程 `orderOut` 仍错过过渡快照，约 345ms 重叠。不要重试更快 Space verdict、collection behavior 或同一 AX 通知链。
 
-**实测证伪**：把判定改成在 `activeSpaceDidChange` 那一刻**同步**给出（用下面那条 SkyLight 信号），进全屏的第一个判定从 `false` 变成 `true`、等待窗口从 21ms 压到 **0ms**，四次进全屏全是这个形态、前导 `false` 完全消失 —— **闪烁一点没变**。
+**有效信号是原始用户意图**：session `.defaultTap` 在目标应用收到标准绿灯或 `Control-Command-F` 之前命中缓存的聚焦窗口/全屏按钮几何，主线程完成 dock、capsule、drawer、folder popup、tooltip 的 `orderOut` 后才放行原事件。随后以 generation-guarded pending 等 Space/CG/AX 确认，1.2s 未确认则恢复原 edge-auto-hide 可见性。机器仍能量到绿灯样本约 `10–90ms` 的 CG 残留，但 owner 在看到数据后明确把发布判据改为肉眼 0 闪烁；这是验收口径反转，不是机器判据通过。
 
-→ 所以 **`activeSpaceDidChange` 本身就晚于「任务条被合成到新空间上」的可见时刻**。任何「收到空间切换通知再反应」的修法都不可能有效，**不要再从"让判定更快"这个方向切入**。试验代码封存在 `parked/fullscreen-flash-skylight`。
+**事件 tap 的平台边界**：tap 在专用线程 `.commonModes` 上运行；500 个非目标按键的开关 A/B 为 disabled `p95 0.191ms / p99 0.258ms`、enabled `p95 0.202ms / p99 0.242ms`，两组 `500/500`、零 disable。Secure Input 下系统不投递键盘事件，所以只能依赖后续常规全屏判定；绿灯不受影响。功能默认开启，设置可关，`DOCK_FULLSCREEN_INTENT=0` 优先。
 
-**2026-08-08 又证伪了两条更早路线**（固定证书 Release，TextEdit 原生全屏，`CGWindowList` 0.5–1ms 采样）：
-
-- **撤掉 `.fullScreenAuxiliary` 无效。** control 从全屏窗口进入 on-screen 到钨极消失重叠约 `776ms`；no-aux 约 `769ms`，等同噪声。动态 auxiliary 能在隐藏后把钨极重新带进全屏 Space，但不能消除进入时的过渡快照。
-- **事件驱动 AX 也仍然太晚。** `AXWindowCreated` 比全屏 CG 窗口约早 40–56ms；新元素是 `AXWindow / AXUnknown / 整屏 frame`，批量读取五个属性后尚能剩约 18ms。可是信号交回主线程并执行 `orderOut` 时，WindowServer 已抓取过渡快照；实测仍有约 345ms 的 on-screen 重叠。顺序读 AX 更慢，常驻/高频轮询没有加入。想在 `AXWindowCreated` 一到就无条件先藏会让普通“新建窗口”也闪一下，不能拿正常交互换这个视觉瑕疵。该主线实验已完整撤回，没有遗留运行代码。
-
-下一次只有找到**能在 WindowServer 抓取全屏过渡快照之前、且不会把普通窗口创建误判为全屏**的主线程信号才值得重开；更快的 Space 判定、collection behavior 和现有 AX 通知均已实测到头。
+**Space 切换没有新增拦截**：一次性探针对三指切 Space 的 14 次真实 `id64` 变化均未取得提前手势事件；物理方向键则固定携带 `Fn + NumericPad + nonCoalesced`，精确 Control-arrow 约早于 Space ID 变化 `548–575ms`。但正确的相邻全屏应用 `type 4 ↔ type 4` 场景当前肉眼无法复现闪烁：探针开时三指/方向键各 `0/6`，探针关后各 `0/2`。因此没有加入手势或方向键专用运行代码；若复发，必须按具体应用组合、显示器和启动状态用归档探针重新取样，不能把当前标准进入全屏修复描述成 Space 手势拦截。
 
 **顺带坐实的 SkyLight 事实**（与上面成败无关，是可复用的零件）：
 
