@@ -104,7 +104,7 @@
 
 **全屏 Space 互切已用状态 hold 修复，不是输入拦截**：早期探针开 `0/12`、探针关 `0/4` 的肉眼样本不能证明没有闪烁；fresh 进程随后稳定复现，遥测坐实路径为 `.fullscreen -> Space CG false -> SHOW -> AX true -> HIDE`，三次可见脉冲约 `11.3 / 3.4 / 2.2ms`。当前代码在已经确认 `.fullscreen` 时，遇到应用激活或 Space 通知先建立带代次的 hold，吞掉转场中的 false CG/AX；Space 通知后等 `120ms` 再用 CG + AX 作最终确认。owner 在清理失败实验后的 fixed-certificate Release 上复验：三指与 Control-arrow 全屏互切均不闪，全屏返回普通 Space 正常显示任务条。没有加入三指/方向键专用事件拦截。
 
-**普通 Space -> 已有全屏 Space 仍未修**：managed-space 预测实验能在 `activeSpaceDidChange` 前约 `35ms` 同步 `orderOut`，目标 AX 全屏也在通知后约 `0.2–1ms` 可读，但 owner 仍稳定观察到 `3/3` 闪烁，说明这两个信号都晚于 WindowServer 的转场快照；实验代码已删除。一次性探针对三指切 Space 的 14 次真实 `id64` 变化均未取得提前手势事件；Control-arrow 则约早于 Space ID 变化 `548–575ms`，但尚未实现键盘专用修复。不要把 full-to-full hold 泛化成普通到全屏已修，也不要重试 managed-space/app-activation 预测。
+**普通 Space -> 已有全屏 Space 仍未修**：managed-space 预测实验能在 `activeSpaceDidChange` 前约 `35ms` 同步 `orderOut`，目标 AX 全屏也在通知后约 `0.2–1ms` 可读，但 owner 仍稳定观察到闪烁，说明这两个信号都晚于 WindowServer 的转场快照；实验代码已删除。为排除“合并时删掉了有效代码”，2026-08-09 又原样恢复 `13:00` 的 SpacePrediction Release（原编译二进制 SHA-256 `819edbd2459e36f8af0763cd2d517763203d14009da909afa6da84cd4048da3b`）严格回放：三指 `3/3`、Control-arrow `3/3` 闪；6 次日志均先 hide、后 Space 通知，提前量 `27.8–35.3ms`，中间没有 show。画面闪烁因此是更早固化进 WindowServer 转场快照，不是合并后重新显示。一次性探针对三指切 Space 的 14 次真实 `id64` 变化均未取得提前手势事件；Control-arrow 则约早于 Space ID 变化 `548–575ms`，但尚未实现键盘专用修复。不要把 full-to-full hold 泛化成普通到全屏已修，也不要重试 managed-space/app-activation 预测。
 
 **顺带坐实的 SkyLight 事实**（与上面成败无关，是可复用的零件）：
 

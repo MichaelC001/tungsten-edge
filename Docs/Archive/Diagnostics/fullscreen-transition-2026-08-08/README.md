@@ -176,17 +176,28 @@ full-to-full switching did not blink, and full-to-windowed restored the taskbar.
 Unit suite: `707/707`; Release: universal `arm64 + x86_64`.
 
 Ordinary-Space-to-fullscreen remains unresolved. A managed-space experiment
-ordered the panels out about `35ms` before `activeSpaceDidChange`, and a fast AX
-probe saw the destination fullscreen around `0.2–1ms` after the notification,
-yet the owner still observed `3/3` blinks. Both signals are too late for the
-WindowServer transition snapshot, so the experiment was deleted. Three-finger
-input still has no usable early event; Control-arrow remains the only measured
-early route (`548–575ms`) and no keyboard-only runtime has been accepted.
+ordered the panels out before `activeSpaceDidChange`, and a fast AX probe saw
+the destination fullscreen around `0.2–1ms` after the notification, yet the
+owner still observed blinks. Both signals are too late for the WindowServer
+transition snapshot, so the experiment was deleted. Three-finger input still
+has no usable early event; Control-arrow remains the only measured early route
+(`548–575ms`) and no keyboard-only runtime has been accepted.
 
-The final fresh-PID unified-log stream was not persisted because its background
-logger exited with the launching shell. This archive therefore retains the
-focused telemetry measurements and visual acceptance result, but does not
-claim a raw final trace artifact.
+After integration, the original `13:00` SpacePrediction Release was restored to
+test the owner's concern that merging had removed an effective path. Its
+pre-resign compiled executable SHA-256 was
+`819edbd2459e36f8af0763cd2d517763203d14009da909afa6da84cd4048da3b`.
+The strict replay produced `3/3` three-finger and `3/3` Control-arrow blinks.
+All six entries logged `panel-action hide` before `space-notification`, by
+approximately `35.3 / 28.9 / 31.9 / 27.8 / 30.8 / 33.9ms`; no show occurred
+between prediction begin and fullscreen confirmation. This rules out the merge
+as the cause and locates the visible artifact in a WindowServer snapshot made
+before even that prediction. The replay restored the current mainline bundle
+byte-for-byte afterward.
+
+The earlier final fresh-PID hold-only log stream was not persisted because its
+background logger exited with the launching shell. The later prediction replay
+used a foreground stream and is preserved as raw evidence below.
 
 Raw evidence and source evolution:
 
@@ -196,11 +207,14 @@ Raw evidence and source evolution:
 - `space-input-fullscreen-pair.jsonl`
 - `space-hold-final-tests.log`
 - `space-hold-final-release.log`
+- `space-prediction-retest-runtime.log`
 
 Final hold test-log SHA-256:
 `8b97aedc4e5d6d3c15213b54be46e123a029a5f69c751360e74bda98bff7bcfa`.
 Final hold Release-log SHA-256:
 `cddf0177717cb4d2077d2dff2a28837ec74cd2c108c909a67bdb348a5bb83bf2`.
+SpacePrediction replay-log SHA-256:
+`c3e93d795514cbde6c2c08c2e764950fcf6bd0b80f716a3c5baed1820d0d1c01`.
 
 Final source SHA-256:
 `28ef6bb7af083e00e466636cd482d3539474c871e83f07d524096d0595e3011d`.
