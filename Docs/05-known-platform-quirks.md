@@ -102,7 +102,9 @@
 
 **事件 tap 的平台边界**：tap 在专用线程 `.commonModes` 上运行；500 个非目标按键的开关 A/B 为 disabled `p95 0.191ms / p99 0.258ms`、enabled `p95 0.202ms / p99 0.242ms`，两组 `500/500`、零 disable。Secure Input 下系统不投递键盘事件，所以只能依赖后续常规全屏判定；绿灯不受影响。功能默认开启，设置可关，`DOCK_FULLSCREEN_INTENT=0` 优先。
 
-**Space 切换没有新增拦截**：一次性探针对三指切 Space 的 14 次真实 `id64` 变化均未取得提前手势事件；物理方向键则固定携带 `Fn + NumericPad + nonCoalesced`，精确 Control-arrow 约早于 Space ID 变化 `548–575ms`。但正确的相邻全屏应用 `type 4 ↔ type 4` 场景当前肉眼无法复现闪烁：探针开时三指/方向键各 `0/6`，探针关后各 `0/2`。因此没有加入手势或方向键专用运行代码；若复发，必须按具体应用组合、显示器和启动状态用归档探针重新取样，不能把当前标准进入全屏修复描述成 Space 手势拦截。
+**全屏 Space 互切已用状态 hold 修复，不是输入拦截**：早期探针开 `0/12`、探针关 `0/4` 的肉眼样本不能证明没有闪烁；fresh 进程随后稳定复现，遥测坐实路径为 `.fullscreen -> Space CG false -> SHOW -> AX true -> HIDE`，三次可见脉冲约 `11.3 / 3.4 / 2.2ms`。当前代码在已经确认 `.fullscreen` 时，遇到应用激活或 Space 通知先建立带代次的 hold，吞掉转场中的 false CG/AX；Space 通知后等 `120ms` 再用 CG + AX 作最终确认。owner 在清理失败实验后的 fixed-certificate Release 上复验：三指与 Control-arrow 全屏互切均不闪，全屏返回普通 Space 正常显示任务条。没有加入三指/方向键专用事件拦截。
+
+**普通 Space -> 已有全屏 Space 仍未修**：managed-space 预测实验能在 `activeSpaceDidChange` 前约 `35ms` 同步 `orderOut`，目标 AX 全屏也在通知后约 `0.2–1ms` 可读，但 owner 仍稳定观察到 `3/3` 闪烁，说明这两个信号都晚于 WindowServer 的转场快照；实验代码已删除。一次性探针对三指切 Space 的 14 次真实 `id64` 变化均未取得提前手势事件；Control-arrow 则约早于 Space ID 变化 `548–575ms`，但尚未实现键盘专用修复。不要把 full-to-full hold 泛化成普通到全屏已修，也不要重试 managed-space/app-activation 预测。
 
 **顺带坐实的 SkyLight 事实**（与上面成败无关，是可复用的零件）：
 

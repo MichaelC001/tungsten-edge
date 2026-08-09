@@ -157,14 +157,36 @@ dictionaries.
   flags, exact Control-Left/Right arrived approximately `548-575ms` before the
   Space ID changed. A no-neighbor boundary sample reported
   `possible_targets.exists=false` and expired as `cancelled/no-transition`.
-- In the correct adjacent-fullscreen-app visual pass, the owner observed zero
+- In the initial adjacent-fullscreen-app visual pass, the owner observed zero
   blinks for three-finger switching (`0/6`) and Control-arrow switching (`0/6`)
-  with the probe running, then `0/2` and `0/2` with the probe stopped.
+  with the probe running, then `0/2` and `0/2` with the probe stopped. This
+  visual-only conclusion was later invalidated: a fresh process reproduced the
+  blink consistently, and focused telemetry showed `.fullscreen -> Space CG
+  false -> SHOW -> AX true -> HIDE`. Three measured visible pulses were about
+  `11.3 / 3.4 / 2.2ms`, short enough to fall inside one compositor frame.
 
-No Space-switch runtime was added. Gesture prediction has no usable public
-input signal in these samples, while a keyboard-only intervention is
-unnecessary for the currently accepted behavior and would create an
-interaction inconsistency.
+The accepted full-to-full fix does not predict user input. When Tungsten is
+already confirmed fullscreen, app activation or the Space notification starts
+a generation-guarded hold. Transitional false CG/AX verdicts cannot reveal the
+panels; `120ms` after the Space notification, CG plus AX makes the final
+fullscreen/windowed decision (`500ms` fallback when only activation arrived).
+After removing a failed managed-space prediction experiment, the owner verified
+on a fresh fixed-certificate Release that both three-finger and Control-arrow
+full-to-full switching did not blink, and full-to-windowed restored the taskbar.
+Unit suite: `707/707`; Release: universal `arm64 + x86_64`.
+
+Ordinary-Space-to-fullscreen remains unresolved. A managed-space experiment
+ordered the panels out about `35ms` before `activeSpaceDidChange`, and a fast AX
+probe saw the destination fullscreen around `0.2–1ms` after the notification,
+yet the owner still observed `3/3` blinks. Both signals are too late for the
+WindowServer transition snapshot, so the experiment was deleted. Three-finger
+input still has no usable early event; Control-arrow remains the only measured
+early route (`548–575ms`) and no keyboard-only runtime has been accepted.
+
+The final fresh-PID unified-log stream was not persisted because its background
+logger exited with the launching shell. This archive therefore retains the
+focused telemetry measurements and visual acceptance result, but does not
+claim a raw final trace artifact.
 
 Raw evidence and source evolution:
 
@@ -172,6 +194,13 @@ Raw evidence and source evolution:
 - `TungstenSpaceInputProbe-arrow-flags.swift` / `space-input-arrow-flags.jsonl`
 - `TungstenSpaceInputProbe-final.swift` / `space-input-keyboard-final.jsonl`
 - `space-input-fullscreen-pair.jsonl`
+- `space-hold-final-tests.log`
+- `space-hold-final-release.log`
+
+Final hold test-log SHA-256:
+`8b97aedc4e5d6d3c15213b54be46e123a029a5f69c751360e74bda98bff7bcfa`.
+Final hold Release-log SHA-256:
+`cddf0177717cb4d2077d2dff2a28837ec74cd2c108c909a67bdb348a5bb83bf2`.
 
 Final source SHA-256:
 `28ef6bb7af083e00e466636cd482d3539474c871e83f07d524096d0595e3011d`.
