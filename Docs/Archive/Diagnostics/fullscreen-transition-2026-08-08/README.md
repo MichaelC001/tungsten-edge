@@ -114,3 +114,66 @@ Raw evidence:
 - `intent-spike-enabled-runtime.log`
 - `green-corrected-spike-runtime.log`
 - `green-corrected-spike-window-overlap.log`
+
+## Cross-application v1 closeout
+
+The production-shaped monitor was moved to a dedicated session event-tap
+thread while retaining `.defaultTap` and `.commonModes`. A matched event waits
+up to 150ms for the main thread to finish `orderOut`; ordinary input stays off
+the main thread. The closeout removed the stable-nonfullscreen early-cancel AX
+chain, serialized AX cache refreshes into one in-flight read plus one trailing
+read, tightened green-button modifiers, used the tracked foreground pid during
+handoff, and removed the monitor's actor-unsafe `deinit` cleanup.
+
+- Full unit suite: `703/703`.
+- Release binary: universal `arm64 + x86_64`, fixed local certificate.
+- 500-event non-target input A/B: disabled `p95 0.191ms / p99 0.258ms`;
+  enabled `p95 0.202ms / p99 0.242ms`; both `500/500`, zero tap-disable.
+- Valid TextEdit visual pass after waiting for the old process to exit:
+  green button `0/3`, Control-Command-F `0/3` visible blinks.
+
+An earlier `3/3 + 3/3` run was invalid: an external defaults toggle was followed
+by `pkill` and `open` without waiting for the old process to terminate, so the
+new monitor was not proven to exist and no `pending` event was captured. A
+controlled restart produced a new pid before the valid pass above.
+
+## Space input probe (2026-08-09)
+
+The one-shot probe used a session `.defaultTap` for `keyDown` / `scrollWheel`,
+AppKit global gesture events, a 20ms safe projection of
+`SLSCopyManagedDisplaySpaces`, and `activeSpaceDidChange`. It persisted only
+display UUID, ordered Space `id64/type`, current Space, abstract arrow direction
+and modifier names, and gesture deltas/phases. It did not persist characters,
+ordinary key codes, process identities, titles, windows, or raw SkyLight
+dictionaries.
+
+- During the dedicated three-finger phase, SkyLight observed 14 real Space ID
+  changes and none had a preceding horizontal candidate. AppKit delivered zero
+  global gesture events and the session tap stayed enabled. The correct
+  fullscreen-to-fullscreen pass (`type 4 -> type 4`) likewise recorded six
+  three-finger transitions with no candidate.
+- Physical arrow events carry `Fn + NumericPad + nonCoalesced` even when the
+  user presses no such extra modifier. After treating those as intrinsic arrow
+  flags, exact Control-Left/Right arrived approximately `548-575ms` before the
+  Space ID changed. A no-neighbor boundary sample reported
+  `possible_targets.exists=false` and expired as `cancelled/no-transition`.
+- In the correct adjacent-fullscreen-app visual pass, the owner observed zero
+  blinks for three-finger switching (`0/6`) and Control-arrow switching (`0/6`)
+  with the probe running, then `0/2` and `0/2` with the probe stopped.
+
+No Space-switch runtime was added. Gesture prediction has no usable public
+input signal in these samples, while a keyboard-only intervention is
+unnecessary for the currently accepted behavior and would create an
+interaction inconsistency.
+
+Raw evidence and source evolution:
+
+- `TungstenSpaceInputProbe-v1.swift` / `space-input-phase1.jsonl`
+- `TungstenSpaceInputProbe-arrow-flags.swift` / `space-input-arrow-flags.jsonl`
+- `TungstenSpaceInputProbe-final.swift` / `space-input-keyboard-final.jsonl`
+- `space-input-fullscreen-pair.jsonl`
+
+Final source SHA-256:
+`28ef6bb7af083e00e466636cd482d3539474c871e83f07d524096d0595e3011d`.
+Fullscreen-pair JSONL SHA-256:
+`6450b41b05da895a92d6aee25217aac6e34eb35788b138792ebd168dfb24f877`.
