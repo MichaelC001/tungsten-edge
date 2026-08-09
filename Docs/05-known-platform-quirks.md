@@ -74,13 +74,14 @@
 
 > 背景：owner 想要「全屏时鼠标移到最下方，出来的不是 Dock 而是钨极」。功能本身做得出来（面板确实能画在全屏空间上），但**系统 Dock 会同时被唤出并盖在钨极上面**。下面四条路逐条实测走死，结论沉淀在这里，避免下一轮从头再问一遍。封存代码在 `parked/fullscreen-edge-wake`。
 >
-> **⚠️ 这节的适用范围（2026-08-06 更正）**：下面证明的是「**靠系统偏好与配置阻止不了**」，**不等于「没有任何办法」**。本节原标题写成「无法阻止」是过头了。至少还有一条**未在本轮评估**的路子：用 `CGEventTap` 在全屏期间把光标从最底边夹开，让 WindowServer / Dock 的边缘触发根本不发生，同时自己合成钨极的唤醒。该方案正在 `codex/fullscreen-edge-filter-spike` 上试（`Platform/CoreGraphics/FullscreenEdgeEventFilter.swift`，带 control / filter 两档 A/B，当前 `#if DEBUG`）。**结果出来前，不要引用本节断言"这件事做不到"**——只能引用"这四条配置路走不通"。
+> **2026-08-08 最终结论：非 root 的 session `CGEventTap` 也阻止不了。** `codex/fullscreen-edge-filter-spike` 先用合成事件测到全屏中央触底能从 `y=981` 夹到 `y=980`、钨极 `20/20` 唤醒，但 control 本身没有唤出 Dock，所以那轮不能下结论。随后用**同一个固定证书 Release 二进制**（SHA-256 `b333adeeab62830c6e500970c636a158015505cec70608027237dd4b98a78fa5`）完成真实物理 A/B：control 下钨极先在较宽的既有热区出现，继续压到物理底边后系统 Dock 出现并盖住它；filter 下 event tap 全程 enabled，30 个底边 episode 的应用层光标最高值都被夹在 `y=980.0–980.9`，证明过滤确实生效，但真实触底仍 `20/20` 唤出 Dock。结论是 WindowServer / Dock 在 session tap 之前已经消费了原始 HID 边缘信号；再早的 `kCGHIDEventTap` 需要 root，不符合公开应用约束。过滤器保持 `#if DEBUG`、默认关闭、只留实验 worktree，未进主线。不要再重试 session tap 或拿合成事件的 Dock `0` 当成功证据。
 
 **实测事实**（owner 实机 + CGWindowList / 二进制探针）：
 
 - **`autohide-delay` 管不到全屏。** 该键为 `999`（钨极滑杆的「不唤醒」档）时，桌面上确实不再唤醒，但全屏下贴底边 Dock 照样滑出。两条路径是分开的。
 - **Dock 在全屏下的唤出触发区贯穿整条屏幕底边**，不只是 Dock 自身那段宽度。在远离 Dock 本体的最左 1/4 屏宽处贴底边，Dock 同样出来 —— 所以靠横向位置与钨极热区错开是不可能的。
 - **窗口层级：Dock 可见窗口 `kCGWindowLayer == 20`，钨极所有面板是 `.floating`（layer 3）**，拖动载体是 `.popUpMenu`（101）。Dock 一旦出现就压在任务条上面。
+- **钨极热区比 Dock 的物理边缘触发区高。** control 实测鼠标下移时钨极先出现；再向下几个像素压到物理底边，Dock 才出现并覆盖它。这不是 filter 造成的偏移，而是两套原生触发范围本来就不同。session filter 只夹最后 `1pt`，没有改变钨极的既有提前唤醒距离，但仍来不及阻止 Dock。
 - **`autohide-time-modifier` 能压住全屏唤出**（调到 30 后全屏下 Dock 实际不再出现），但两条限制让它不可用：① 全局生效，桌面上主动召唤 Dock 也跟着变慢；② **值被 Dock 缓存在进程内存里，只在 Dock 启动时读一次** —— 改完不 `killall Dock` 完全无效（实测：plist 改回 1 后行为纹丝不动，直到重启 Dock）。因此「进全屏调慢、退出调回」必然每次闪一下屏，不可接受。
 - **`com.apple.dock.prefchanged` 这个分发通知名确实存在于 Dock 二进制，但对该键无效**：发完通知行为不变，仍需重启。不要再拿它当「免重启改 Dock 偏好」的通道试第二次。
 - `com.apple.dock` 当时全部 32 个键里，没有任何一个与全屏唤出相关。
@@ -99,7 +100,14 @@
 
 **实测证伪**：把判定改成在 `activeSpaceDidChange` 那一刻**同步**给出（用下面那条 SkyLight 信号），进全屏的第一个判定从 `false` 变成 `true`、等待窗口从 21ms 压到 **0ms**，四次进全屏全是这个形态、前导 `false` 完全消失 —— **闪烁一点没变**。
 
-→ 所以 **`activeSpaceDidChange` 本身就晚于「任务条被合成到新空间上」的可见时刻**。任何「收到空间切换通知再反应」的修法都不可能有效，**不要再从"让判定更快"这个方向切入**。下一次要么找到早于空间切换的信号（AX 窗口尺寸观察、常驻轮询——两条都被现有护栏挡着，见 `AGENTS.md` 窗口清点一节与 `Docs/26`），要么接受它。试验代码封存在 `parked/fullscreen-flash-skylight`。
+→ 所以 **`activeSpaceDidChange` 本身就晚于「任务条被合成到新空间上」的可见时刻**。任何「收到空间切换通知再反应」的修法都不可能有效，**不要再从"让判定更快"这个方向切入**。试验代码封存在 `parked/fullscreen-flash-skylight`。
+
+**2026-08-08 又证伪了两条更早路线**（固定证书 Release，TextEdit 原生全屏，`CGWindowList` 0.5–1ms 采样）：
+
+- **撤掉 `.fullScreenAuxiliary` 无效。** control 从全屏窗口进入 on-screen 到钨极消失重叠约 `776ms`；no-aux 约 `769ms`，等同噪声。动态 auxiliary 能在隐藏后把钨极重新带进全屏 Space，但不能消除进入时的过渡快照。
+- **事件驱动 AX 也仍然太晚。** `AXWindowCreated` 比全屏 CG 窗口约早 40–56ms；新元素是 `AXWindow / AXUnknown / 整屏 frame`，批量读取五个属性后尚能剩约 18ms。可是信号交回主线程并执行 `orderOut` 时，WindowServer 已抓取过渡快照；实测仍有约 345ms 的 on-screen 重叠。顺序读 AX 更慢，常驻/高频轮询没有加入。想在 `AXWindowCreated` 一到就无条件先藏会让普通“新建窗口”也闪一下，不能拿正常交互换这个视觉瑕疵。该主线实验已完整撤回，没有遗留运行代码。
+
+下一次只有找到**能在 WindowServer 抓取全屏过渡快照之前、且不会把普通窗口创建误判为全屏**的主线程信号才值得重开；更快的 Space 判定、collection behavior 和现有 AX 通知均已实测到头。
 
 **顺带坐实的 SkyLight 事实**（与上面成败无关，是可复用的零件）：
 
