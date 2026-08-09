@@ -199,7 +199,6 @@ final class WindowLiftAvoidanceController {
         case cancelled
     }
 
-    private static let pollInterval = WindowLiftAvoidance.globalDetectionInterval
     private static let trackedProbeInterval = WindowLiftAvoidance.trackedSessionProbeInterval
 
     private weak var host: PanelCoordinator?
@@ -208,6 +207,9 @@ final class WindowLiftAvoidanceController {
         category: "WindowLiftAvoidance"
     )
     private var pollTimer: Timer?
+    private var pollTimerInterval: TimeInterval?
+    private var eventPollTimer: Timer?
+    private var eventPollCoalescer = WindowLiftAvoidance.EventPollCoalescer()
     private var scanTask: Task<Void, Never>?
     private var trackedProbeTimer: Timer?
     private var trackedProbeTask: Task<Void, Never>?
@@ -217,6 +219,7 @@ final class WindowLiftAvoidanceController {
         WindowLiftAvoidance.WindowKey: [Task<Void, Never>]
     ] = [:]
     private var workspaceObservers: [NSObjectProtocol] = []
+    private var geometryObserver: FrontmostWindowGeometryObserver?
     private var states: [WindowLiftAvoidance.WindowKey: WindowLiftAvoidance.SessionState] = [:]
     private var managedFrames: [WindowLiftAvoidance.WindowKey: ManagedFrames] = [:]
     private var suppressedFrames: [WindowLiftAvoidance.WindowKey: ManagedFrames] = [:]
@@ -233,6 +236,9 @@ final class WindowLiftAvoidanceController {
     private var scanInFlight = false
     private var usesAnimatedLift = false
     private var traceEnabled = false
+    private var periodicPollCount: UInt64 = 0
+    private var eventPollCount: UInt64 = 0
+    private var trailingEventPollCount: UInt64 = 0
     private var isEnabled = false
     /// 用户设置（菜单「最大化窗口避开任务条」）。**默认关**，由 `AppDelegate` 起步时按
     /// 持久化值灌一次、之后订阅同步。放在控制器自己身上而不是只在调用方拦——
@@ -315,11 +321,15 @@ final class WindowLiftAvoidanceController {
         freezeGeneration &+= 1
         pollTimer?.invalidate()
         pollTimer = nil
+        pollTimerInterval = nil
+        resetEventPolling()
         scanGeneration &+= 1
         scanTask?.cancel()
         scanTask = nil
         scanInFlight = false
         stopTrackedProbe()
+        geometryObserver?.stop()
+        geometryObserver = nil
         for observer in workspaceObservers {
             NSWorkspace.shared.notificationCenter.removeObserver(observer)
         }
@@ -362,7 +372,8 @@ final class WindowLiftAvoidanceController {
 
     /// 破坏性入口的统一闸门，顺手做一次**静默**的受信自检（绝不带 prompt）。
     ///
-    /// 快照保护必须是控制器自己的事：看门狗 5 秒采样一次，而这里 0.2 秒轮询一次。
+    /// 快照保护必须是控制器自己的事：看门狗 5 秒采样一次；只要有会话、抑制帧或还原任务，
+    /// 这里仍保持 0.2 秒轮询。1 秒慢档只在没有任何快照要保护的空闲期启用。
     /// 撤权之后到看门狗看见第一次 false 之间那 0–5 秒里，只要用户切一次屏，
     /// `reconcileContext` 就会先清掉快照再去还原——而此刻 AX 已经写不动了。
     private func ensureTrustedOrFreeze() -> Bool {
@@ -396,7 +407,7 @@ final class WindowLiftAvoidanceController {
     }
 
     func start(environment: [String: String] = ProcessInfo.processInfo.environment) {
-        guard pollTimer == nil else { return }
+        guard !isEnabled else { return }
         guard isEnabledBySetting else { return }
         guard environment["DOCK_WINDOW_LIFT"] != "0" else {
             logger.info("window lift disabled by DOCK_WINDOW_LIFT=0")
@@ -406,12 +417,21 @@ final class WindowLiftAvoidanceController {
         isEnabled = true
         usesAnimatedLift = environment["DOCK_WINDOW_LIFT_ANIM"] != "0"
         traceEnabled = environment["DOCK_WINDOW_LIFT_TRACE"] == "1"
-        let timer = Timer(timeInterval: Self.pollInterval, repeats: true) { [weak self] _ in
-            Task { @MainActor [weak self] in self?.poll() }
-        }
-        RunLoop.main.add(timer, forMode: .common)
-        pollTimer = timer
+        periodicPollCount = 0
+        eventPollCount = 0
+        trailingEventPollCount = 0
         subscribeWorkspaceNotifications()
+
+        let geometryObserver = FrontmostWindowGeometryObserver()
+        geometryObserver.onEvent = { [weak self] _ in
+            self?.requestEventPoll()
+        }
+        self.geometryObserver = geometryObserver
+        let initialPID = NSWorkspace.shared.runningApplications.first(where: { $0.isActive })?
+            .processIdentifier
+        geometryObserver.start(pid: initialPID)
+
+        updatePollTimerLifecycle()
         poll()
         if traceEnabled {
             logger.info("window lift trace started animated=\(self.usesAnimatedLift, privacy: .public)")
@@ -421,15 +441,21 @@ final class WindowLiftAvoidanceController {
     func stop() {
         // 冻结之后 isEnabled 和 pollTimer 都已经清掉，只看这两个条件会让 stop() 空转、
         // 待还原的窗口永远回不去——所以还得看有没有欠着的还原。
-        guard isEnabled || pollTimer != nil || !states.isEmpty || !pendingRestorations.isEmpty else { return }
+        guard isEnabled || pollTimer != nil || geometryObserver != nil
+            || !states.isEmpty || !pendingRestorations.isEmpty else { return }
+        tracePollSummary(reason: "stop")
         isEnabled = false
         pollTimer?.invalidate()
         pollTimer = nil
+        pollTimerInterval = nil
+        resetEventPolling()
         scanGeneration &+= 1
         scanTask?.cancel()
         scanTask = nil
         scanInFlight = false
         stopTrackedProbe()
+        geometryObserver?.stop()
+        geometryObserver = nil
         for observer in workspaceObservers {
             NSWorkspace.shared.notificationCenter.removeObserver(observer)
         }
@@ -454,7 +480,12 @@ final class WindowLiftAvoidanceController {
         ) { [weak self] notification in
             let activePID = (notification.userInfo?[NSWorkspace.applicationUserInfoKey] as? NSRunningApplication)?
                 .processIdentifier
-            Task { @MainActor [weak self] in self?.cancelWrites(except: activePID) }
+            Task { @MainActor [weak self] in
+                guard let self else { return }
+                self.cancelWrites(except: activePID)
+                self.geometryObserver?.activate(pid: activePID)
+                self.requestEventPoll()
+            }
         })
         workspaceObservers.append(center.addObserver(
             forName: NSWorkspace.didTerminateApplicationNotification,
@@ -499,6 +530,116 @@ final class WindowLiftAvoidanceController {
                 )
             }
         }
+    }
+
+    private func updatePollTimerLifecycle() {
+        guard isEnabled else {
+            pollTimer?.invalidate()
+            pollTimer = nil
+            pollTimerInterval = nil
+            return
+        }
+
+        let interval = WindowLiftAvoidance.PollCadence.interval(
+            hasSessions: !states.isEmpty,
+            hasSuppressedFrames: !suppressedFrames.isEmpty,
+            isRestoring: restoreTask != nil
+        )
+        guard pollTimer == nil || pollTimerInterval != interval else { return }
+
+        let previousInterval = pollTimerInterval
+        if traceEnabled, let previous = previousInterval {
+            logger.info(
+                "lift trace cadence from=\(previous, privacy: .public) to=\(interval, privacy: .public)"
+            )
+        }
+        pollTimer?.invalidate()
+        resetEventPolling()
+        let timer = Timer(timeInterval: interval, repeats: true) { [weak self] _ in
+            Task { @MainActor [weak self] in
+                guard let self else { return }
+                self.periodicPollCount &+= 1
+                self.poll()
+            }
+        }
+        RunLoop.main.add(timer, forMode: .common)
+        pollTimer = timer
+        pollTimerInterval = interval
+
+        // The old fixed 0.2s timer always supplied one more convergence scan after a
+        // transient validation/session clear. Preserve that behavior when dropping to idle.
+        if previousInterval == WindowLiftAvoidance.globalDetectionInterval,
+           interval == WindowLiftAvoidance.PollCadence.idleInterval {
+            Task { @MainActor [weak self] in self?.requestEventPoll() }
+        }
+    }
+
+    private var usesFastPollCadence: Bool {
+        pollTimerInterval == WindowLiftAvoidance.globalDetectionInterval
+    }
+
+    private func requestEventPoll() {
+        guard isEnabled, !usesFastPollCadence else { return }
+        let action = eventPollCoalescer.request(
+            at: ProcessInfo.processInfo.systemUptime,
+            scanInFlight: scanInFlight
+        )
+        performEventPollAction(action, trailing: false)
+    }
+
+    private func finishEventPollAfterScan() {
+        guard isEnabled, !usesFastPollCadence else { return }
+        let action = eventPollCoalescer.scanCompleted(
+            at: ProcessInfo.processInfo.systemUptime
+        )
+        performEventPollAction(action, trailing: true)
+    }
+
+    private func performEventPollAction(
+        _ action: WindowLiftAvoidance.EventPollCoalescer.Action,
+        trailing: Bool
+    ) {
+        switch action {
+        case .none:
+            break
+        case .start:
+            eventPollTimer?.invalidate()
+            eventPollTimer = nil
+            if trailing {
+                trailingEventPollCount &+= 1
+            } else {
+                eventPollCount &+= 1
+            }
+            poll()
+        case .schedule(let delay):
+            guard eventPollTimer == nil else { return }
+            let timer = Timer(timeInterval: max(0, delay), repeats: false) { [weak self] _ in
+                Task { @MainActor [weak self] in
+                    guard let self else { return }
+                    self.eventPollTimer = nil
+                    let action = self.eventPollCoalescer.cooldownFired(
+                        at: ProcessInfo.processInfo.systemUptime,
+                        scanInFlight: self.scanInFlight
+                    )
+                    self.performEventPollAction(action, trailing: true)
+                }
+            }
+            RunLoop.main.add(timer, forMode: .common)
+            eventPollTimer = timer
+        }
+    }
+
+    private func resetEventPolling() {
+        eventPollTimer?.invalidate()
+        eventPollTimer = nil
+        eventPollCoalescer.reset()
+    }
+
+    private func tracePollSummary(reason: String) {
+        guard traceEnabled else { return }
+        logger.info(
+            "lift trace poll-summary reason=\(reason, privacy: .public) periodic=\(self.periodicPollCount, privacy: .public) event=\(self.eventPollCount, privacy: .public) trailing=\(self.trailingEventPollCount, privacy: .public)"
+        )
     }
 
     private func updateTrackedProbeLifecycle() {
@@ -653,6 +794,7 @@ final class WindowLiftAvoidanceController {
         scanTask?.cancel()
         scanTask = nil
         scanInFlight = false
+        updatePollTimerLifecycle()
 
         if lastContext != nil {
             restoreSettledWindowsAndClearSessions()
@@ -669,6 +811,7 @@ final class WindowLiftAvoidanceController {
         guard scanGeneration == self.scanGeneration else { return }
         scanTask = nil
         scanInFlight = false
+        defer { finishEventPollAfterScan() }
         // 已经排队的扫描回调也要过闸门：光给几个清理函数加 guard 挡不住在飞的工作。
         guard canMutateSessions() else { return }
         guard host?.windowLiftAvoidanceContext() == context else { return }
@@ -706,6 +849,7 @@ final class WindowLiftAvoidanceController {
             traceClassification(classification, for: candidate.key)
             guard classification == .native else { return }
             suppressedFrames.removeValue(forKey: candidate.key)
+            updatePollTimerLifecycle()
             if traceEnabled {
                 logger.info(
                     "lift trace suppression cleared pid=\(candidate.key.pid, privacy: .public) wid=\(candidate.key.cgWindowID, privacy: .public)"
@@ -1910,7 +2054,10 @@ final class WindowLiftAvoidanceController {
         validationGenerations.removeAll()
         lastTraceClassifications.removeAll()
         stopTrackedProbe()
-        guard !pendingRestorations.isEmpty || !cancelledWrites.isEmpty, restoreTask == nil else { return }
+        guard !pendingRestorations.isEmpty || !cancelledWrites.isEmpty, restoreTask == nil else {
+            updatePollTimerLifecycle()
+            return
+        }
 
         restoreGeneration &+= 1
         let generation = restoreGeneration
@@ -1943,9 +2090,11 @@ final class WindowLiftAvoidanceController {
             await MainActor.run { [weak self] in
                 guard let self, self.restoreGeneration == generation else { return }
                 self.restoreTask = nil
+                self.updatePollTimerLifecycle()
                 if self.isEnabled { self.poll() }
             }
         }
+        updatePollTimerLifecycle()
     }
 
     /// 长时间冻结之后才还原，中间什么都可能变过，所以每一项都要重新验一遍：
@@ -2025,6 +2174,7 @@ final class WindowLiftAvoidanceController {
             )
         }
         updateTrackedProbeLifecycle()
+        updatePollTimerLifecycle()
     }
 
     private func clearManagedSession(
@@ -2066,6 +2216,7 @@ final class WindowLiftAvoidanceController {
             )
         }
         updateTrackedProbeLifecycle()
+        updatePollTimerLifecycle()
     }
 
     private func traceClassification(

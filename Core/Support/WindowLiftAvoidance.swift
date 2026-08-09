@@ -38,6 +38,62 @@ enum WindowLiftAvoidance {
     /// 等不到 external 帧，永久锁 = 用户手不够慢就再也不抬。
     static let standoffLockBackoff: TimeInterval = 3.0
 
+    enum PollCadence {
+        static let idleInterval: TimeInterval = 1.0
+
+        static func interval(
+            hasSessions: Bool,
+            hasSuppressedFrames: Bool,
+            isRestoring: Bool
+        ) -> TimeInterval {
+            hasSessions || hasSuppressedFrames || isRestoring
+                ? globalDetectionInterval
+                : idleInterval
+        }
+    }
+
+    struct EventPollCoalescer: Equatable {
+        enum Action: Equatable {
+            case none
+            case start
+            case schedule(after: TimeInterval)
+        }
+
+        private(set) var pending = false
+        private(set) var lastStartedAt: TimeInterval?
+
+        mutating func request(at now: TimeInterval, scanInFlight: Bool) -> Action {
+            pending = true
+            return drain(at: now, scanInFlight: scanInFlight)
+        }
+
+        mutating func scanCompleted(at now: TimeInterval) -> Action {
+            guard pending else { return .none }
+            return drain(at: now, scanInFlight: false)
+        }
+
+        mutating func cooldownFired(at now: TimeInterval, scanInFlight: Bool) -> Action {
+            guard pending else { return .none }
+            return drain(at: now, scanInFlight: scanInFlight)
+        }
+
+        mutating func reset() {
+            pending = false
+            lastStartedAt = nil
+        }
+
+        private mutating func drain(at now: TimeInterval, scanInFlight: Bool) -> Action {
+            guard !scanInFlight else { return .none }
+            if let lastStartedAt {
+                let remaining = globalDetectionInterval - (now - lastStartedAt)
+                if remaining > 0.000_001 { return .schedule(after: remaining) }
+            }
+            pending = false
+            lastStartedAt = now
+            return .start
+        }
+    }
+
     /// cgWindowID 只在窗口仍存活的本轮会话内使用；控制器必须按 CG 全表定期 prune。
     struct WindowKey: Hashable {
         let pid: pid_t

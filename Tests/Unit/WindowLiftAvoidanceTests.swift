@@ -1269,6 +1269,73 @@ final class WindowLiftAvoidanceTests: XCTestCase {
         )
     }
 
+    func testPollCadenceUsesSlowIdleAndPreservesFastTrackedIntervals() {
+        XCTAssertEqual(
+            WindowLiftAvoidance.PollCadence.interval(
+                hasSessions: false,
+                hasSuppressedFrames: false,
+                isRestoring: false
+            ),
+            1.0,
+            accuracy: 0.0001
+        )
+
+        for input in [(true, false, false), (false, true, false), (false, false, true)] {
+            XCTAssertEqual(
+                WindowLiftAvoidance.PollCadence.interval(
+                    hasSessions: input.0,
+                    hasSuppressedFrames: input.1,
+                    isRestoring: input.2
+                ),
+                WindowLiftAvoidance.globalDetectionInterval,
+                accuracy: 0.0001
+            )
+        }
+    }
+
+    func testEventPollCoalescerStartsLeadingAndOneTrailingPoll() {
+        var coalescer = WindowLiftAvoidance.EventPollCoalescer()
+
+        XCTAssertEqual(coalescer.request(at: 10, scanInFlight: false), .start)
+        XCTAssertEqual(coalescer.request(at: 10.05, scanInFlight: true), .none)
+        XCTAssertTrue(coalescer.pending)
+
+        guard case let .schedule(delay) = coalescer.scanCompleted(at: 10.08) else {
+            return XCTFail("an event during the active scan must schedule a trailing poll")
+        }
+        XCTAssertEqual(delay, 0.12, accuracy: 0.0001)
+        XCTAssertEqual(coalescer.cooldownFired(at: 10.2, scanInFlight: false), .start)
+        XCTAssertFalse(coalescer.pending)
+    }
+
+    func testEventPollCoalescerRetainsEventWhilePeriodicScanIsInFlight() {
+        var coalescer = WindowLiftAvoidance.EventPollCoalescer()
+
+        XCTAssertEqual(coalescer.request(at: 20, scanInFlight: true), .none)
+        XCTAssertTrue(coalescer.pending)
+        XCTAssertEqual(coalescer.scanCompleted(at: 20.05), .start)
+        XCTAssertFalse(coalescer.pending)
+    }
+
+    func testEventPollCoalescerCollapsesCooldownBurstAndResetClearsIt() {
+        var coalescer = WindowLiftAvoidance.EventPollCoalescer()
+
+        XCTAssertEqual(coalescer.request(at: 30, scanInFlight: false), .start)
+        guard case let .schedule(firstDelay) = coalescer.request(at: 30.04, scanInFlight: false) else {
+            return XCTFail("cooldown event must schedule a trailing poll")
+        }
+        XCTAssertEqual(firstDelay, 0.16, accuracy: 0.0001)
+        guard case let .schedule(secondDelay) = coalescer.request(at: 30.1, scanInFlight: false) else {
+            return XCTFail("burst must remain coalesced behind the same cooldown")
+        }
+        XCTAssertEqual(secondDelay, 0.1, accuracy: 0.0001)
+
+        coalescer.reset()
+        XCTAssertFalse(coalescer.pending)
+        XCTAssertNil(coalescer.lastStartedAt)
+        XCTAssertEqual(coalescer.cooldownFired(at: 30.2, scanInFlight: false), .none)
+    }
+
     /// 默认时间轴：t=1000 检测、t=1000.6 写完（settledAt）。抢顶判定以 settledAt 为基准。
     private func completedLift(
         generation: UInt64,

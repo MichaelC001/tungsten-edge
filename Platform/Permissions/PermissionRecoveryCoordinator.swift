@@ -9,7 +9,8 @@ import Foundation
 /// `PermissionLossDetector` 按单调时间判「连续两次 false ≥ 5s」，丢样本**不会导致误判**
 /// （不会把还有权限判成丢失），但会**推迟**权限丢失的发现。这是刻意接受的：
 /// 采样本身若拖住主线程，代价是每次菜单/交互都被顶一下，比晚几秒发现权限丢失更糟。
-/// 真正保护已托举窗口的不是这条看门狗，是 `WindowLiftAvoidanceController` 自己 0.2 秒的自检。
+/// 真正保护已托举窗口的不是这条看门狗，是 `WindowLiftAvoidanceController` 在存在
+/// 会话/待还原状态时保持的 0.2 秒自检；1 秒慢档只用于没有快照的空闲期。
 struct PermissionWatchdogGate {
     private var generation: UInt64 = 0
     private var isProbeInFlight = false

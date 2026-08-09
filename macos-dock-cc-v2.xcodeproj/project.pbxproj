@@ -242,6 +242,7 @@
 		A00000000000000000009A02 /* WindowLiftAvoidance.swift in Sources */ = {isa = PBXBuildFile; fileRef = A00000000000000000009A00 /* WindowLiftAvoidance.swift */; };
 		A00000000000000000009A11 /* WindowLiftAvoidanceController.swift in Sources */ = {isa = PBXBuildFile; fileRef = A00000000000000000009A10 /* WindowLiftAvoidanceController.swift */; };
 		A00000000000000000009A21 /* WindowLiftAvoidanceTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A00000000000000000009A20 /* WindowLiftAvoidanceTests.swift */; };
+		A00000000000000000009A31 /* FrontmostWindowGeometryObserver.swift in Sources */ = {isa = PBXBuildFile; fileRef = A00000000000000000009A30 /* FrontmostWindowGeometryObserver.swift */; };
 		A00000000000000000009810 /* CGWindowSnapshot.swift in Sources */ = {isa = PBXBuildFile; fileRef = A00000000000000000009800 /* CGWindowSnapshot.swift */; };
 		A00000000000000000009811 /* CGWindowSnapshot.swift in Sources */ = {isa = PBXBuildFile; fileRef = A00000000000000000009800 /* CGWindowSnapshot.swift */; };
 		A00000000000000000009812 /* CGWindowSnapshotTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A00000000000000000009801 /* CGWindowSnapshotTests.swift */; };
@@ -293,6 +294,7 @@
 		A00000000000000000009A00 /* WindowLiftAvoidance.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WindowLiftAvoidance.swift; sourceTree = "<group>"; };
 		A00000000000000000009A10 /* WindowLiftAvoidanceController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WindowLiftAvoidanceController.swift; sourceTree = "<group>"; };
 		A00000000000000000009A20 /* WindowLiftAvoidanceTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WindowLiftAvoidanceTests.swift; sourceTree = "<group>"; };
+		A00000000000000000009A30 /* FrontmostWindowGeometryObserver.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FrontmostWindowGeometryObserver.swift; sourceTree = "<group>"; };
 		A00000000000000000009800 /* CGWindowSnapshot.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CGWindowSnapshot.swift; sourceTree = "<group>"; };
 		A00000000000000000009801 /* CGWindowSnapshotTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CGWindowSnapshotTests.swift; sourceTree = "<group>"; };
 		A00000000000000000009700 /* DragConversionPlan.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DragConversionPlan.swift; sourceTree = "<group>"; };
@@ -507,6 +509,7 @@
 				A00000000000000000009030 /* PanelVisibilityState.swift */,
 				A00000000000000000009080 /* PanelGeometry.swift */,
 				A00000000000000000009A10 /* WindowLiftAvoidanceController.swift */,
+				A00000000000000000009A30 /* FrontmostWindowGeometryObserver.swift */,
 				A000000000000000000019B2 /* BadgeStore.swift */,
 				A00000000000000000009200 /* PinnedFolderStore.swift */,
 				A00000000000000000009230 /* PinnedFolderCoverStore.swift */,
@@ -1016,6 +1019,7 @@
 					A00000000000000000009031 /* PanelVisibilityState.swift in Sources */,
 					A00000000000000000009081 /* PanelGeometry.swift in Sources */,
 					A00000000000000000009A11 /* WindowLiftAvoidanceController.swift in Sources */,
+					A00000000000000000009A31 /* FrontmostWindowGeometryObserver.swift in Sources */,
 					A00000000000000000009A01 /* WindowLiftAvoidance.swift in Sources */,
 				A00000000000000000009E1C /* BuildProvenance.swift in Sources */,
 					A00000000000000000008021 /* StatusMenuController.swift in Sources */,
