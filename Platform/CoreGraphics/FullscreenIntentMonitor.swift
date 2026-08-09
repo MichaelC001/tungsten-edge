@@ -51,15 +51,21 @@ private final class FullscreenIntentEventBridge {
     private let state: FullscreenIntentAtomicState
     private let logger: Logger
     private let onIntent: (FullscreenIntentRequest) -> Void
+    private let onSpaceSwitchIntent: () -> Void
+    private let spaceSwitchExperimentEnabled: Bool
 
     init(
         state: FullscreenIntentAtomicState,
         logger: Logger,
-        onIntent: @escaping (FullscreenIntentRequest) -> Void
+        spaceSwitchExperimentEnabled: Bool,
+        onIntent: @escaping (FullscreenIntentRequest) -> Void,
+        onSpaceSwitchIntent: @escaping () -> Void
     ) {
         self.state = state
         self.logger = logger
+        self.spaceSwitchExperimentEnabled = spaceSwitchExperimentEnabled
         self.onIntent = onIntent
+        self.onSpaceSwitchIntent = onSpaceSwitchIntent
     }
 
     func handle(type: CGEventType, event: CGEvent) {
@@ -72,25 +78,48 @@ private final class FullscreenIntentEventBridge {
                 snapshot: state.currentSnapshot()
             )
         case .keyDown:
+            let keyCode = CGKeyCode(event.getIntegerValueField(.keyboardEventKeycode))
+            let isRepeat = event.getIntegerValueField(.keyboardEventAutorepeat) != 0
+            // 空间切换实验先判：它不依赖 AX 快照（切空间时前台窗口能不能全屏无关紧要），
+            // 而 shortcutRequest 没有快照就直接返回 nil。
+            if spaceSwitchExperimentEnabled,
+               FullscreenSpaceSwitchDecision.isSpaceSwitchArrow(
+                   keyCode: keyCode,
+                   flags: event.flags,
+                   isRepeat: isRepeat
+               ) {
+                performHandoff(label: "spaceSwitch", pid: nil) { [weak self] in
+                    self?.onSpaceSwitchIntent()
+                }
+                return
+            }
             request = FullscreenIntentDecision.shortcutRequest(
-                keyCode: CGKeyCode(event.getIntegerValueField(.keyboardEventKeycode)),
+                keyCode: keyCode,
                 flags: event.flags,
-                isRepeat: event.getIntegerValueField(.keyboardEventAutorepeat) != 0,
+                isRepeat: isRepeat,
                 snapshot: state.currentSnapshot()
             )
         default:
             request = nil
         }
         guard let request else { return }
+        performHandoff(label: request.source.rawValue, pid: request.pid) { [weak self] in
+            self?.onIntent(request)
+        }
+    }
 
+    /// 命中后唯一的主线程交接：有上限地**同步**等待，`orderOut` 完成才放行原始输入 ——
+    /// 这是唯一被实测证明有效的时序条件，不能改成 `main.async`。超时后迟到的 block 由
+    /// `FullscreenIntentHandoffGate` 变成 no-op，输入原样放行（退化成今天的闪烁）。
+    private func performHandoff(label: String, pid: pid_t?, _ body: @escaping () -> Void) {
         let gate = FullscreenIntentHandoffGate()
         let completion = DispatchSemaphore(value: 0)
-        DispatchQueue.main.async { [weak self] in
+        DispatchQueue.main.async {
             guard gate.beginExecution() else {
                 completion.signal()
                 return
             }
-            self?.onIntent(request)
+            body()
             gate.complete()
             completion.signal()
         }
@@ -98,7 +127,7 @@ private final class FullscreenIntentEventBridge {
         if completion.wait(timeout: .now() + Self.handoffTimeout) == .timedOut {
             let cancelled = gate.cancelIfPending()
             logger.error(
-                "handoff-timeout source=\(request.source.rawValue, privacy: .public) pid=\(request.pid, privacy: .public) cancelled=\(cancelled, privacy: .public)"
+                "handoff-timeout source=\(label, privacy: .public) pid=\(pid ?? -1, privacy: .public) cancelled=\(cancelled, privacy: .public)"
             )
         }
     }
@@ -267,11 +296,18 @@ final class FullscreenIntentMonitor {
     )
     private let atomicState = FullscreenIntentAtomicState()
     private let onIntent: (FullscreenIntentRequest) -> Void
+    private let onSpaceSwitchIntent: () -> Void
     private let onContextChange: (ContextChange) -> Void
+    private let spaceSwitchExperimentEnabled: Bool
     private lazy var bridge = FullscreenIntentEventBridge(
         state: atomicState,
         logger: logger,
-        onIntent: { [weak self] request in self?.accept(request) }
+        spaceSwitchExperimentEnabled: spaceSwitchExperimentEnabled,
+        onIntent: { [weak self] request in self?.accept(request) },
+        onSpaceSwitchIntent: { [weak self] in
+            guard let self, self.started else { return }
+            self.onSpaceSwitchIntent()
+        }
     )
     private lazy var tapThread = FullscreenIntentEventTapThread(
         logger: logger,
@@ -292,10 +328,16 @@ final class FullscreenIntentMonitor {
     private var started = false
 
     init(
+        spaceSwitchExperimentEnabled: Bool = FullscreenSpaceSwitchDecision.isExperimentEnabled(
+            environment: ProcessInfo.processInfo.environment
+        ),
         onIntent: @escaping (FullscreenIntentRequest) -> Void,
+        onSpaceSwitchIntent: @escaping () -> Void,
         onContextChange: @escaping (ContextChange) -> Void
     ) {
+        self.spaceSwitchExperimentEnabled = spaceSwitchExperimentEnabled
         self.onIntent = onIntent
+        self.onSpaceSwitchIntent = onSpaceSwitchIntent
         self.onContextChange = onContextChange
     }
 

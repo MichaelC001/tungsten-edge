@@ -234,6 +234,10 @@ final class PanelCoordinator: NSObject {
     private var fullscreenSpaceHoldGeneration: UInt64 = 0
     private var fullscreenSpaceHold: FullscreenSpaceHold?
     private var fullscreenSpaceHoldTimer: Timer?
+    /// Control+←/→ 预测隐藏实验（`DOCK_SPACE_INTENT_EXPERIMENT=1`）。与窗口级意图事务共用
+    /// `visibilityState` 的 `.fullscreenTransitionPending` 槽位，因此两者互斥、同时只能有一个。
+    private var fullscreenSpaceIntentGeneration: UInt64?
+    private var fullscreenSpaceIntentTimer: Timer?
     private var lastActiveApplicationPID: pid_t?
     private var visibilityState = PanelVisibilityState()
     private var panelsAreVisible = true
@@ -303,6 +307,7 @@ final class PanelCoordinator: NSObject {
         fullscreenReconcileTimer?.invalidate()
         fullscreenIntentTimeoutTimer?.invalidate()
         fullscreenSpaceHoldTimer?.invalidate()
+        fullscreenSpaceIntentTimer?.invalidate()
         MainActor.assumeIsolated {
             fullscreenIntentMonitor?.stop()
             removeHoverMouseMonitors()
@@ -340,6 +345,7 @@ final class PanelCoordinator: NSObject {
         fullscreenSpaceHoldTimer?.invalidate()
         fullscreenSpaceHoldTimer = nil
         fullscreenSpaceHold = nil
+        clearFullscreenSpaceArrowIntent()
 
         // 先回滚未提交的跨面板拖拽事务，再拆监视器。
         dragController?.cancelDrag()
@@ -1596,12 +1602,18 @@ final class PanelCoordinator: NSObject {
             if let transaction = fullscreenIntentTransaction {
                 cancelFullscreenIntent(generation: transaction.generation, reason: "disabled")
             }
+            if let spaceGeneration = fullscreenSpaceIntentGeneration {
+                cancelFullscreenSpaceArrowIntent(generation: spaceGeneration, reason: "disabled")
+            }
             return
         }
         guard fullscreenIntentMonitor == nil else { return }
         let monitor = FullscreenIntentMonitor(
             onIntent: { [weak self] request in
                 self?.beginFullscreenIntent(request)
+            },
+            onSpaceSwitchIntent: { [weak self] in
+                self?.beginFullscreenSpaceArrowIntent()
             },
             onContextChange: { [weak self] change in
                 self?.handleFullscreenIntentContextChange(change)
@@ -1722,6 +1734,29 @@ final class PanelCoordinator: NSObject {
         expectedSpaceHoldGeneration: UInt64? = nil,
         isFinalSpaceHoldWindowedConfirmation: Bool = false
     ) {
+        // 方向键预测进行中：这一段由预测自己收口，不进下面的常规判定。
+        if let spaceGeneration = fullscreenSpaceIntentGeneration {
+            if isFullscreen {
+                guard visibilityState.confirmFullscreenTransition(generation: spaceGeneration) else {
+                    return
+                }
+                clearFullscreenSpaceArrowIntent()
+                fullscreenIntentLogger.notice(
+                    "space-confirmed source=\(source, privacy: .public) generation=\(spaceGeneration, privacy: .public)"
+                )
+                closeDrawer()
+                closeFolderPopup()
+                dismissWindowTitleTooltip(suppressCurrentUntilExit: true)
+                reconcilePanelVisibility()
+                logger.info("[fullscreen] active=true")
+                return
+            }
+            // 空间确实换完了、目标却不是全屏（预测落空）→ 立刻撤销，别白藏满 1.2 秒。
+            // 只认 `space-cg`：它是空间切换那一刻的同步 CG 判定。预测期间其它来源的
+            // false 判定（异步 AX、旧探针）一律忽略，否则会在转场中途把面板放回来。
+            guard source == "space-cg" else { return }
+            cancelFullscreenSpaceArrowIntent(generation: spaceGeneration, reason: "space-windowed")
+        }
         switch FullscreenSpaceHoldDecision.disposition(
             isFullscreenVerdict: isFullscreen,
             expectedGeneration: expectedSpaceHoldGeneration,
@@ -1787,17 +1822,7 @@ final class PanelCoordinator: NSObject {
         edgeIdleHideTimer = nil
         cancelEdgeWake()
 
-        dragController?.cancelDrag()
-        closeDrawerImmediately()
-        closeFolderPopup(immediately: true)
-        dismissWindowTitleTooltip(suppressCurrentUntilExit: true)
-
-        panelsAreVisible = false
-        dockPanel?.orderOut(nil)
-        capsulePanel?.orderOut(nil)
-        drawerPanel?.orderOut(nil)
-        folderPopupPanel?.orderOut(nil)
-        windowTitleTooltipPanel?.orderOut(nil)
+        orderOutPanelsForFullscreenPrediction()
         fullscreenIntentLogger.notice(
             "pending source=\(request.source.rawValue, privacy: .public) generation=\(generation, privacy: .public) pid=\(request.pid, privacy: .public)"
         )
@@ -1835,6 +1860,83 @@ final class PanelCoordinator: NSObject {
         fullscreenIntentTimeoutTimer = nil
     }
 
+    /// 预测命中后把每一块面板都移出 WindowServer。抽屉/弹窗必须走「立即」路径：输入已经
+    /// 被 tap 扣住了，等不了淡出动画。
+    private func orderOutPanelsForFullscreenPrediction() {
+        edgeIdleHideTimer?.invalidate()
+        edgeIdleHideTimer = nil
+        cancelEdgeWake()
+
+        dragController?.cancelDrag()
+        closeDrawerImmediately()
+        closeFolderPopup(immediately: true)
+        dismissWindowTitleTooltip(suppressCurrentUntilExit: true)
+
+        panelsAreVisible = false
+        dockPanel?.orderOut(nil)
+        capsulePanel?.orderOut(nil)
+        drawerPanel?.orderOut(nil)
+        folderPopupPanel?.orderOut(nil)
+        windowTitleTooltipPanel?.orderOut(nil)
+    }
+
+    // MARK: - Control+←/→ 空间切换预测（实验，默认关）
+
+    /// 实验目的：方向键按下比空间真正切换早约 `548–575ms`，验证这个提前量够不够消掉
+    /// 「普通桌面 → 全屏空间」的闪烁。**刻意不判断相邻空间是不是全屏**——那部分对结论没贡献。
+    private func beginFullscreenSpaceArrowIntent() {
+        guard fullscreenIntentMonitor != nil,
+              fullscreenIntentTransaction == nil,
+              fullscreenSpaceIntentGeneration == nil,
+              !isSuspendedForPermissionLoss,
+              // 已经在全屏空间里（任务条本就藏着）→ 没有可闪的东西，别插手。
+              !visibilityState.hideReasons.contains(.fullscreen) else {
+            return
+        }
+        fullscreenIntentGeneration &+= 1
+        let generation = fullscreenIntentGeneration
+        fullscreenSpaceIntentGeneration = generation
+        fullscreenProbeGeneration &+= 1
+        visibilityState.beginFullscreenTransition(generation: generation)
+
+        orderOutPanelsForFullscreenPrediction()
+        fullscreenIntentLogger.notice(
+            "space-pending generation=\(generation, privacy: .public)"
+        )
+
+        let timer = Timer(timeInterval: 1.2, repeats: false) { [weak self] _ in
+            Task { @MainActor [weak self] in
+                self?.cancelFullscreenSpaceArrowIntent(generation: generation, reason: "timeout")
+            }
+        }
+        RunLoop.main.add(timer, forMode: .common)
+        fullscreenSpaceIntentTimer = timer
+
+        DispatchQueue.main.async { [weak self] in
+            guard let self, self.fullscreenSpaceIntentGeneration == generation else { return }
+            self.reconcilePanelVisibility()
+        }
+    }
+
+    private func cancelFullscreenSpaceArrowIntent(generation: UInt64, reason: String) {
+        guard fullscreenSpaceIntentGeneration == generation,
+              visibilityState.timeoutFullscreenTransition(generation: generation) else {
+            return
+        }
+        clearFullscreenSpaceArrowIntent()
+        fullscreenProbeGeneration &+= 1
+        fullscreenIntentLogger.notice(
+            "space-cancelled reason=\(reason, privacy: .public) generation=\(generation, privacy: .public)"
+        )
+        reconcilePanelVisibility()
+    }
+
+    private func clearFullscreenSpaceArrowIntent() {
+        fullscreenSpaceIntentGeneration = nil
+        fullscreenSpaceIntentTimer?.invalidate()
+        fullscreenSpaceIntentTimer = nil
+    }
+
     @discardableResult
     private func beginFullscreenSpaceHold(
         pid: pid_t?,
@@ -1842,7 +1944,7 @@ final class PanelCoordinator: NSObject {
     ) -> UInt64? {
         guard FullscreenSpaceHoldDecision.shouldBegin(
             isFullscreen: visibilityState.hideReasons.contains(.fullscreen),
-            hasInputIntent: fullscreenIntentTransaction != nil
+            hasInputIntent: fullscreenIntentTransaction != nil || fullscreenSpaceIntentGeneration != nil
         ) else {
             return nil
         }

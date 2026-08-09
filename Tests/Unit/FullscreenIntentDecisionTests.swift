@@ -237,6 +237,70 @@ final class FullscreenIntentDecisionTests: XCTestCase {
         XCTAssertEqual(gate.currentState, .completed)
     }
 
+    // MARK: - Control+←/→ 空间切换实验
+
+    /// 这一条是整个实验最容易翻车的地方：**物理方向键天生带 Fn + 小键盘 + nonCoalesced**，
+    /// 用户一个附加键都没按也是如此。照 `FullscreenIntentDecision.normalizedModifiers`
+    /// 那套比对会永远匹配不上，得到一个「什么都不触发」的假阴性，而它极容易被读成
+    /// 「548ms 提前量不够，这条路走不通」。
+    func testPhysicalArrowIntrinsicFlagsDoNotBlockTheMatch() {
+        let physicalControlLeft: CGEventFlags = [
+            .maskControl, .maskSecondaryFn, .maskNumericPad, .maskNonCoalesced
+        ]
+        XCTAssertTrue(FullscreenSpaceSwitchDecision.isSpaceSwitchArrow(
+            keyCode: FullscreenSpaceSwitchDecision.leftArrowKeyCode,
+            flags: physicalControlLeft,
+            isRepeat: false
+        ))
+        XCTAssertTrue(FullscreenSpaceSwitchDecision.isSpaceSwitchArrow(
+            keyCode: FullscreenSpaceSwitchDecision.rightArrowKeyCode,
+            flags: physicalControlLeft,
+            isRepeat: false
+        ))
+    }
+
+    func testSpaceSwitchArrowRejectsEveryOtherShape() {
+        let intrinsic: CGEventFlags = [.maskSecondaryFn, .maskNumericPad, .maskNonCoalesced]
+        // 没按 Control
+        XCTAssertFalse(FullscreenSpaceSwitchDecision.isSpaceSwitchArrow(
+            keyCode: FullscreenSpaceSwitchDecision.leftArrowKeyCode,
+            flags: intrinsic,
+            isRepeat: false
+        ))
+        // 多带了别的修饰键
+        for extra: CGEventFlags in [.maskCommand, .maskAlternate, .maskShift, .maskHelp] {
+            XCTAssertFalse(FullscreenSpaceSwitchDecision.isSpaceSwitchArrow(
+                keyCode: FullscreenSpaceSwitchDecision.leftArrowKeyCode,
+                flags: intrinsic.union([.maskControl]).union(extra),
+                isRepeat: false
+            ), "\(extra) 不该放行")
+        }
+        // 上下方向键不是切空间
+        for keyCode in [CGKeyCode(125), CGKeyCode(126)] {
+            XCTAssertFalse(FullscreenSpaceSwitchDecision.isSpaceSwitchArrow(
+                keyCode: keyCode,
+                flags: intrinsic.union([.maskControl]),
+                isRepeat: false
+            ))
+        }
+        // 长按重复不再触发
+        XCTAssertFalse(FullscreenSpaceSwitchDecision.isSpaceSwitchArrow(
+            keyCode: FullscreenSpaceSwitchDecision.rightArrowKeyCode,
+            flags: intrinsic.union([.maskControl]),
+            isRepeat: true
+        ))
+    }
+
+    func testSpaceSwitchExperimentIsOffUnlessExplicitlyEnabled() {
+        XCTAssertFalse(FullscreenSpaceSwitchDecision.isExperimentEnabled(environment: [:]))
+        XCTAssertFalse(FullscreenSpaceSwitchDecision.isExperimentEnabled(
+            environment: ["DOCK_SPACE_INTENT_EXPERIMENT": "0"]
+        ))
+        XCTAssertTrue(FullscreenSpaceSwitchDecision.isExperimentEnabled(
+            environment: ["DOCK_SPACE_INTENT_EXPERIMENT": "1"]
+        ))
+    }
+
     private func makeSnapshot(
         generation: UInt64 = 9,
         focusedWindowID: CGWindowID = 456,
