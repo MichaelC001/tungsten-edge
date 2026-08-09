@@ -1518,7 +1518,7 @@ final class PanelCoordinator: NSObject {
     private func layoutPanels(contentWidth: CGFloat, on screen: NSScreen, animated: Bool) {
         guard let dock = dockPanel, let capsule = capsulePanel else { return }
         let panelScreenCGFrame = Self.toCGRect(screen)
-        fullscreenIntentMonitor?.updatePanelScreen(panelScreenCGFrame)
+        fullscreenIntentMonitor?.updatePanelScreen(panelScreenCGFrame, screen: screen)
         if let transaction = fullscreenIntentTransaction,
            transaction.screenCGFrame != panelScreenCGFrame {
             cancelFullscreenIntent(generation: transaction.generation, reason: "panel-screen-changed")
@@ -1614,15 +1614,18 @@ final class PanelCoordinator: NSObject {
             onIntent: { [weak self] request in
                 self?.beginFullscreenIntent(request)
             },
-            onSpaceSwitchIntent: { [weak self] in
-                self?.beginFullscreenSpaceArrowIntent()
+            onSpaceSwitchIntent: { [weak self] direction in
+                self?.beginFullscreenSpaceIntent(direction: direction)
             },
             onContextChange: { [weak self] change in
                 self?.handleFullscreenIntentContextChange(change)
             }
         )
         fullscreenIntentMonitor = monitor
-        monitor.updatePanelScreen(currentPanelScreenCGFrame())
+        monitor.updatePanelScreen(
+            currentPanelScreenCGFrame(),
+            screen: dockPanel.map { panelCurrentScreen(panel: $0) }
+        )
         monitor.start()
     }
 
@@ -1891,11 +1894,15 @@ final class PanelCoordinator: NSObject {
         windowTitleTooltipPanel?.orderOut(nil)
     }
 
-    // MARK: - Control+←/→ 空间切换预测（实验，默认关）
+    // MARK: - 切换到全屏空间的预测隐藏（Control+←/→ 与三指水平滑动）
 
-    /// 实验目的：方向键按下比空间真正切换早约 `548–575ms`，验证这个提前量够不够消掉
-    /// 「普通桌面 → 全屏空间」的闪烁。**刻意不判断相邻空间是不是全屏**——那部分对结论没贡献。
-    private func beginFullscreenSpaceArrowIntent() {
+    /// 从普通桌面切到全屏空间时，系统的空间切换通知晚于 WindowServer 抓取过渡快照，
+    /// 所以事后再藏一定来不及（`Docs/05` 已实测）。这里在**输入投递之前**先藏：
+    /// 方向键领先空间切换约 `550ms`，三指滑动约 `950–1130ms`，两者都已实测足够。
+    ///
+    /// 触发条件里「目标方向的相邻空间必须是全屏空间」那道闸在 `FullscreenIntentMonitor`
+    /// 里就判掉了，到这里的都是真要进全屏空间的。
+    private func beginFullscreenSpaceIntent(direction: SpaceSwitchDirection) {
         guard fullscreenIntentMonitor != nil,
               fullscreenIntentTransaction == nil,
               fullscreenSpaceIntentGeneration == nil,
@@ -1912,10 +1919,12 @@ final class PanelCoordinator: NSObject {
 
         orderOutPanelsForFullscreenPrediction()
         fullscreenIntentLogger.notice(
-            "space-pending generation=\(generation, privacy: .public)"
+            "space-pending generation=\(generation, privacy: .public) direction=\(direction.rawValue, privacy: .public)"
         )
 
-        let timer = Timer(timeInterval: 1.2, repeats: false) { [weak self] _ in
+        // 2s 而不是 1.2s：实测从输入到全屏确认要 1.05s，1.2s 只剩 130ms 余量，
+        // 系统稍慢一次就会超时把任务条弹回全屏画面上——正是这个功能要消掉的瑕疵。
+        let timer = Timer(timeInterval: 2.0, repeats: false) { [weak self] _ in
             Task { @MainActor [weak self] in
                 self?.cancelFullscreenSpaceArrowIntent(generation: generation, reason: "timeout")
             }

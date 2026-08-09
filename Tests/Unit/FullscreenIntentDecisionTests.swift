@@ -291,14 +291,92 @@ final class FullscreenIntentDecisionTests: XCTestCase {
         ))
     }
 
-    func testSpaceSwitchExperimentIsOffUnlessExplicitlyEnabled() {
-        XCTAssertFalse(FullscreenSpaceSwitchDecision.isExperimentEnabled(environment: [:]))
-        XCTAssertFalse(FullscreenSpaceSwitchDecision.isExperimentEnabled(
-            environment: ["DOCK_SPACE_INTENT_EXPERIMENT": "0"]
-        ))
-        XCTAssertTrue(FullscreenSpaceSwitchDecision.isExperimentEnabled(
-            environment: ["DOCK_SPACE_INTENT_EXPERIMENT": "1"]
-        ))
+    func testArrowDirectionMapsKeyCodes() {
+        let physical: CGEventFlags = [.maskControl, .maskSecondaryFn, .maskNumericPad, .maskNonCoalesced]
+        XCTAssertEqual(
+            FullscreenSpaceSwitchDecision.arrowDirection(
+                keyCode: FullscreenSpaceSwitchDecision.leftArrowKeyCode,
+                flags: physical, isRepeat: false
+            ),
+            .left
+        )
+        XCTAssertEqual(
+            FullscreenSpaceSwitchDecision.arrowDirection(
+                keyCode: FullscreenSpaceSwitchDecision.rightArrowKeyCode,
+                flags: physical, isRepeat: false
+            ),
+            .right
+        )
+    }
+
+    // MARK: - 相邻空间闸
+
+    private func layout(current: Int, fullscreen: Set<Int> = [3]) -> SpaceLayoutSnapshot {
+        SpaceLayoutSnapshot(
+            orderedSpaceIDs: [1, 2, 3, 4],
+            fullscreenSpaceIDs: fullscreen,
+            currentSpaceID: current
+        )
+    }
+
+    func testNeighborGateOnlyOpensTowardAFullscreenSpace() {
+        // 空间 3 是全屏；站在 2 往右、站在 4 往左才该开
+        XCTAssertTrue(layout(current: 2).neighborIsFullscreen(.right))
+        XCTAssertFalse(layout(current: 2).neighborIsFullscreen(.left))
+        XCTAssertTrue(layout(current: 4).neighborIsFullscreen(.left))
+        XCTAssertFalse(layout(current: 4).neighborIsFullscreen(.right))
+        // 两个普通桌面之间：两侧都不开——否则那里本来没问题的地方会被藏一下
+        XCTAssertFalse(layout(current: 1, fullscreen: []).hasAnyFullscreenNeighbor)
+    }
+
+    func testNeighborGateHandlesEdgesAndUnknownCurrentSpace() {
+        XCTAssertFalse(layout(current: 1).neighborIsFullscreen(.left))   // 最左边没有左邻
+        XCTAssertFalse(layout(current: 4).neighborIsFullscreen(.right))  // 最右边没有右邻
+        XCTAssertFalse(layout(current: 99).hasAnyFullscreenNeighbor)     // 当前空间不在列表里
+    }
+
+    // MARK: - 三指水平滑动
+
+    /// 实测映射（14/14 一致）：自然滚动下**手指向左滑去右边的空间**。
+    func testSwipeDirectionFollowsNaturalScrollingSetting() {
+        var tracker = SpaceSwipeTracker()
+        XCTAssertNil(tracker.consume(touches: 3, x: 0.5, y: 0.5, naturalScrolling: true))
+        XCTAssertEqual(
+            tracker.consume(touches: 3, x: 0.3, y: 0.5, naturalScrolling: true), .right
+        )
+        tracker.reset()
+        XCTAssertNil(tracker.consume(touches: 3, x: 0.5, y: 0.5, naturalScrolling: false))
+        XCTAssertEqual(
+            tracker.consume(touches: 3, x: 0.3, y: 0.5, naturalScrolling: false), .left
+        )
+    }
+
+    /// 三指**上下**滑动（Mission Control）实测 10 次里有 1 次水平漂移越过阈值；
+    /// 「水平位移必须压过垂直位移」这一条把 10/10 全部排除。删掉它就会误藏任务条。
+    func testVerticalThreeFingerSwipeNeverFires() {
+        var tracker = SpaceSwipeTracker()
+        _ = tracker.consume(touches: 3, x: 0.50, y: 0.50, naturalScrolling: true)
+        // 实测最坏样本：水平 0.055、垂直 0.267
+        XCTAssertNil(tracker.consume(touches: 3, x: 0.555, y: 0.767, naturalScrolling: true))
+    }
+
+    func testSwipeNeedsThreeFingersAndResetsWhenFingersLift() {
+        var tracker = SpaceSwipeTracker()
+        // 两指滚动：再大的水平位移也不触发
+        _ = tracker.consume(touches: 2, x: 0.5, y: 0.5, naturalScrolling: true)
+        XCTAssertNil(tracker.consume(touches: 2, x: 0.1, y: 0.5, naturalScrolling: true))
+        // 手指抬起（触点不足三根）会重新起锚，跨串的位移不累计
+        _ = tracker.consume(touches: 3, x: 0.5, y: 0.5, naturalScrolling: true)
+        _ = tracker.consume(touches: 0, x: 0.0, y: 0.0, naturalScrolling: true)
+        XCTAssertNil(tracker.consume(touches: 3, x: 0.1, y: 0.5, naturalScrolling: true))
+    }
+
+    func testSwipeFiresOnlyOncePerBurst() {
+        var tracker = SpaceSwipeTracker()
+        _ = tracker.consume(touches: 3, x: 0.6, y: 0.5, naturalScrolling: true)
+        XCTAssertEqual(tracker.consume(touches: 3, x: 0.4, y: 0.5, naturalScrolling: true), .right)
+        XCTAssertNil(tracker.consume(touches: 3, x: 0.2, y: 0.5, naturalScrolling: true))
+        XCTAssertNil(tracker.consume(touches: 3, x: 0.9, y: 0.5, naturalScrolling: true))
     }
 
     private func makeSnapshot(

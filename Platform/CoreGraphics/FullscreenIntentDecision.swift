@@ -94,6 +94,83 @@ enum FullscreenIntentDecision {
     }
 }
 
+enum SpaceSwitchDirection: String, Equatable {
+    case left
+    case right
+}
+
+/// 一块显示器上的空间布局快照（SkyLight `SLSCopyManagedDisplaySpaces` 的纯数据投影）。
+struct SpaceLayoutSnapshot: Equatable {
+    /// 按 Mission Control 的左右顺序排列的空间 id。
+    let orderedSpaceIDs: [Int]
+    /// 全屏空间（`type == 4`）的 id 集合。
+    let fullscreenSpaceIDs: Set<Int>
+    let currentSpaceID: Int
+
+    static let fullscreenSpaceType = 4
+
+    /// 目标方向的相邻空间是不是全屏空间。**这道闸是整个预测隐藏的前提**：
+    /// 没有它，在两个普通桌面之间切换也会把任务条藏一下，而那里本来什么问题都没有。
+    func neighborIsFullscreen(_ direction: SpaceSwitchDirection) -> Bool {
+        guard let index = orderedSpaceIDs.firstIndex(of: currentSpaceID) else { return false }
+        let neighbor = direction == .right ? index + 1 : index - 1
+        guard orderedSpaceIDs.indices.contains(neighbor) else { return false }
+        return fullscreenSpaceIDs.contains(orderedSpaceIDs[neighbor])
+    }
+
+    var hasAnyFullscreenNeighbor: Bool {
+        neighborIsFullscreen(.left) || neighborIsFullscreen(.right)
+    }
+}
+
+/// 三指水平滑动的纯状态机。事件流里每个手势事件喂一次，够条件就吐出方向。
+///
+/// 判据来自 2026-08-09 实测（样本见诊断归档）：**≥3 指 + 水平位移 > 阈值 + 水平位移压过垂直位移**。
+/// - 只用「水平 > 阈值」会误命中三指上下滑（10 次里中 1 次）；加上「水平 > 垂直」后 10/10 全部排除。
+/// - 阈值取 0.03 / 0.05 / 0.08 结果完全一致 —— 信号本身就分得开，不是调参调出来的。
+/// - 日常两指滚动 / 点击 / 移光标（约 45 秒样本）一次都不触发：它们凑不够三根手指。
+struct SpaceSwipeTracker: Equatable {
+    static let minimumTouches = 3
+    static let horizontalThreshold = 0.05
+
+    private var anchorX: Double?
+    private var anchorY: Double?
+    private var firedInThisBurst = false
+
+    /// 手指离开（触点少于三根）就结束这一串，下一串重新起锚。
+    mutating func reset() {
+        anchorX = nil
+        anchorY = nil
+        firedInThisBurst = false
+    }
+
+    /// - Parameter naturalScrolling: 系统「自然滚动」。实测（14/14 一致）：自然滚动下
+    ///   **手指向左滑去右边的空间**，方向与位移符号相反；关掉自然滚动则同号。
+    mutating func consume(
+        touches: Int,
+        x: Double,
+        y: Double,
+        naturalScrolling: Bool
+    ) -> SpaceSwitchDirection? {
+        guard touches >= Self.minimumTouches else {
+            reset()
+            return nil
+        }
+        guard let ax = anchorX, let ay = anchorY else {
+            anchorX = x
+            anchorY = y
+            return nil
+        }
+        guard !firedInThisBurst else { return nil }
+        let dx = x - ax
+        let dy = y - ay
+        guard abs(dx) > Self.horizontalThreshold, abs(dx) > abs(dy) else { return nil }
+        firedInThisBurst = true
+        let movesRight = naturalScrolling ? (dx < 0) : (dx > 0)
+        return movesRight ? .right : .left
+    }
+}
+
 /// 实验：Control+←/→ 切换空间的预测隐藏（`DOCK_SPACE_INTENT_EXPERIMENT=1`，默认关）。
 ///
 /// 只回答一个问题：方向键按下比空间真正切换早约 `548–575ms`（已实测归档），这个提前量
@@ -118,20 +195,25 @@ enum FullscreenSpaceSwitchDecision {
         flags.intersection(userModifiers)
     }
 
+    static func arrowDirection(
+        keyCode: CGKeyCode,
+        flags: CGEventFlags,
+        isRepeat: Bool
+    ) -> SpaceSwitchDirection? {
+        guard !isRepeat, normalizedModifiers(flags) == [.maskControl] else { return nil }
+        switch keyCode {
+        case leftArrowKeyCode: return .left
+        case rightArrowKeyCode: return .right
+        default: return nil
+        }
+    }
+
     static func isSpaceSwitchArrow(
         keyCode: CGKeyCode,
         flags: CGEventFlags,
         isRepeat: Bool
     ) -> Bool {
-        guard !isRepeat,
-              keyCode == leftArrowKeyCode || keyCode == rightArrowKeyCode else {
-            return false
-        }
-        return normalizedModifiers(flags) == [.maskControl]
-    }
-
-    static func isExperimentEnabled(environment: [String: String]) -> Bool {
-        environment["DOCK_SPACE_INTENT_EXPERIMENT"] == "1"
+        arrowDirection(keyCode: keyCode, flags: flags, isRepeat: isRepeat) != nil
     }
 }
 
