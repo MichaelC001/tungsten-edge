@@ -26,7 +26,6 @@ private struct FullscreenIntentTransaction {
     let generation: UInt64
     let pid: pid_t
     let focusedWindowID: CGWindowID
-    let initialWindowFrame: CGRect
     let screenCGFrame: CGRect
 }
 
@@ -224,8 +223,6 @@ final class PanelCoordinator: NSObject {
     private var fullscreenReconcileTimer: Timer?
     private var fullscreenIntentMonitor: FullscreenIntentMonitor?
     private var fullscreenIntentTimeoutTimer: Timer?
-    private var fullscreenIntentStabilityTimer: Timer?
-    private var fullscreenIntentStabilityGeneration: UInt64 = 0
     private var fullscreenIntentGeneration: UInt64 = 0
     private var fullscreenIntentTransaction: FullscreenIntentTransaction?
     private var fullscreenProbeGeneration: UInt64 = 0
@@ -297,7 +294,6 @@ final class PanelCoordinator: NSObject {
     deinit {
         fullscreenReconcileTimer?.invalidate()
         fullscreenIntentTimeoutTimer?.invalidate()
-        fullscreenIntentStabilityTimer?.invalidate()
         MainActor.assumeIsolated {
             fullscreenIntentMonitor?.stop()
             removeHoverMouseMonitors()
@@ -332,8 +328,6 @@ final class PanelCoordinator: NSObject {
         fullscreenIntentMonitor = nil
         fullscreenIntentTimeoutTimer?.invalidate()
         fullscreenIntentTimeoutTimer = nil
-        fullscreenIntentStabilityTimer?.invalidate()
-        fullscreenIntentStabilityTimer = nil
 
         // 先回滚未提交的跨面板拖拽事务，再拆监视器。
         dragController?.cancelDrag()
@@ -1719,7 +1713,7 @@ final class PanelCoordinator: NSObject {
         guard fullscreenIntentMonitor != nil,
               fullscreenIntentTransaction == nil,
               request.screenCGFrame == currentPanelScreenCGFrame(),
-              NSRunningApplication(processIdentifier: request.pid)?.isActive == true else {
+              lastActiveApplicationPID == request.pid else {
             return
         }
         fullscreenIntentGeneration &+= 1
@@ -1729,11 +1723,9 @@ final class PanelCoordinator: NSObject {
             generation: generation,
             pid: request.pid,
             focusedWindowID: request.focusedWindowID,
-            initialWindowFrame: request.windowFrame,
             screenCGFrame: request.screenCGFrame
         )
         fullscreenIntentTimeoutTimer?.invalidate()
-        fullscreenIntentStabilityTimer?.invalidate()
         visibilityState.beginFullscreenTransition(generation: generation)
 
         edgeIdleHideTimer?.invalidate()
@@ -1784,11 +1776,8 @@ final class PanelCoordinator: NSObject {
 
     private func finishFullscreenIntentTransaction() {
         fullscreenIntentTransaction = nil
-        fullscreenIntentStabilityGeneration &+= 1
         fullscreenIntentTimeoutTimer?.invalidate()
         fullscreenIntentTimeoutTimer = nil
-        fullscreenIntentStabilityTimer?.invalidate()
-        fullscreenIntentStabilityTimer = nil
     }
 
     private func cancelFullscreenIntentIfContextChanged(activePID: pid_t? = nil) {
@@ -1823,107 +1812,7 @@ final class PanelCoordinator: NSObject {
             if windowID == nil || windowID == transaction.focusedWindowID {
                 cancelFullscreenIntent(generation: transaction.generation, reason: "window-destroyed")
             }
-        case let .windowGeometry(windowID):
-            guard windowID == nil || windowID == transaction.focusedWindowID else {
-                cancelFullscreenIntent(generation: transaction.generation, reason: "window-changed")
-                return
-            }
-            armFullscreenIntentStabilityCheck(transaction: transaction)
         }
-    }
-
-    private func armFullscreenIntentStabilityCheck(transaction: FullscreenIntentTransaction) {
-        fullscreenIntentStabilityTimer?.invalidate()
-        fullscreenIntentStabilityGeneration &+= 1
-        let stabilityGeneration = fullscreenIntentStabilityGeneration
-        guard let monitor = fullscreenIntentMonitor else { return }
-
-        monitor.verifyStableWindow(request: stabilityRequest(for: transaction)) { [weak self] first in
-            guard let self,
-                  let first,
-                  self.fullscreenIntentTransaction?.generation == transaction.generation,
-                  self.fullscreenIntentStabilityGeneration == stabilityGeneration else { return }
-            if self.confirmFullscreenIntentIfNeeded(first, transaction: transaction) { return }
-            guard first.screenCGFrame == transaction.screenCGFrame,
-                  FullscreenIntentStabilityDecision.isChangedNonFullscreen(
-                      initialWindowFrame: transaction.initialWindowFrame,
-                      currentWindowID: first.focusedWindowID,
-                      expectedWindowID: transaction.focusedWindowID,
-                      currentWindowFrame: first.windowFrame,
-                      isFullscreen: first.isFullscreen
-                  ) else {
-                if first.screenCGFrame != transaction.screenCGFrame {
-                    self.cancelFullscreenIntent(
-                        generation: transaction.generation,
-                        reason: "target-screen-changed"
-                    )
-                }
-                return
-            }
-
-            let timer = Timer(timeInterval: 0.2, repeats: false) { [weak self] _ in
-                Task { @MainActor [weak self] in
-                    guard let self,
-                          self.fullscreenIntentTransaction?.generation == transaction.generation,
-                          self.fullscreenIntentStabilityGeneration == stabilityGeneration,
-                          let monitor = self.fullscreenIntentMonitor else { return }
-                    monitor.verifyStableWindow(request: self.stabilityRequest(for: transaction)) { [weak self] second in
-                        guard let self,
-                              let second,
-                              self.fullscreenIntentTransaction?.generation == transaction.generation,
-                              self.fullscreenIntentStabilityGeneration == stabilityGeneration else { return }
-                        if self.confirmFullscreenIntentIfNeeded(second, transaction: transaction) { return }
-                        guard second.screenCGFrame == transaction.screenCGFrame else {
-                            self.cancelFullscreenIntent(
-                                generation: transaction.generation,
-                                reason: "target-screen-changed"
-                            )
-                            return
-                        }
-                        if FullscreenIntentStabilityDecision.shouldCancel(
-                            initialWindowFrame: transaction.initialWindowFrame,
-                            expectedWindowID: transaction.focusedWindowID,
-                            first: first,
-                            second: second
-                        ) {
-                            self.cancelFullscreenIntent(
-                                generation: transaction.generation,
-                                reason: "stable-nonfullscreen"
-                            )
-                        }
-                    }
-                }
-            }
-            RunLoop.main.add(timer, forMode: .common)
-            self.fullscreenIntentStabilityTimer = timer
-        }
-    }
-
-    private func stabilityRequest(for transaction: FullscreenIntentTransaction) -> FullscreenIntentRequest {
-        FullscreenIntentRequest(
-            source: .greenButton,
-            cacheGeneration: 0,
-            pid: transaction.pid,
-            focusedWindowID: transaction.focusedWindowID,
-            windowFrame: transaction.initialWindowFrame,
-            screenCGFrame: transaction.screenCGFrame
-        )
-    }
-
-    @discardableResult
-    private func confirmFullscreenIntentIfNeeded(
-        _ state: FullscreenIntentWindowState,
-        transaction: FullscreenIntentTransaction
-    ) -> Bool {
-        guard state.isFullscreen else { return false }
-        applyFullscreenVisibility(
-            true,
-            source: "intent-ax",
-            expectedIntentGeneration: transaction.generation,
-            pid: state.pid,
-            screenCGFrame: state.screenCGFrame
-        )
-        return fullscreenIntentTransaction?.generation != transaction.generation
     }
 
     private func currentPanelScreenCGFrame() -> CGRect? {

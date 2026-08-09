@@ -248,7 +248,6 @@ final class FullscreenIntentMonitor {
         case activeApplication(pid_t?)
         case focusedWindow
         case windowDestroyed(CGWindowID?)
-        case windowGeometry(CGWindowID?)
     }
 
     private struct AXReadResult {
@@ -289,6 +288,7 @@ final class FullscreenIntentMonitor {
     private var panelScreenCGFrame: CGRect?
     private var observationGeneration: UInt64 = 0
     private var cacheGeneration: UInt64 = 0
+    private var refreshCoalescer = FullscreenIntentRefreshCoalescer()
     private var started = false
 
     init(
@@ -297,10 +297,6 @@ final class FullscreenIntentMonitor {
     ) {
         self.onIntent = onIntent
         self.onContextChange = onContextChange
-    }
-
-    deinit {
-        MainActor.assumeIsolated { stop() }
     }
 
     func start() {
@@ -326,6 +322,7 @@ final class FullscreenIntentMonitor {
         started = false
         observationGeneration &+= 1
         cacheGeneration &+= 1
+        refreshCoalescer.reset()
         atomicState.replaceSnapshot(nil)
         if let observer = workspaceActivationObserver {
             NSWorkspace.shared.notificationCenter.removeObserver(observer)
@@ -338,35 +335,6 @@ final class FullscreenIntentMonitor {
     func updatePanelScreen(_ frame: CGRect?) {
         panelScreenCGFrame = frame
         atomicState.updatePanelScreen(frame)
-    }
-
-    func verifyStableWindow(
-        request: FullscreenIntentRequest,
-        completion: @escaping (FullscreenIntentWindowState?) -> Void
-    ) {
-        let expectedObservation = observationGeneration
-        let screens = Self.screenFrames()
-        Task.detached(priority: .userInitiated) {
-            let result = Self.readAXState(pid: request.pid, screenFrames: screens)
-            await MainActor.run { [weak self] in
-                guard let self,
-                      self.started,
-                      expectedObservation == self.observationGeneration,
-                      self.activePID == request.pid,
-                      let result,
-                      result.windowID == request.focusedWindowID else {
-                    completion(nil)
-                    return
-                }
-                completion(FullscreenIntentWindowState(
-                    pid: result.pid,
-                    focusedWindowID: result.windowID,
-                    windowFrame: result.windowFrame,
-                    screenCGFrame: result.screenCGFrame,
-                    isFullscreen: result.isFullscreen
-                ))
-            }
-        }
     }
 
     private func accept(_ request: FullscreenIntentRequest) {
@@ -420,43 +388,72 @@ final class FullscreenIntentMonitor {
 
     private func refreshCache() {
         guard let pid = activePID else { return }
-        cacheGeneration &+= 1
+        guard let token = refreshCoalescer.request() else { return }
+        startCacheRefresh(token: token, pid: pid)
+    }
+
+    private func startCacheRefresh(token: UInt64, pid: pid_t) {
         let expectedCache = cacheGeneration
         let expectedObservation = observationGeneration
         let screens = Self.screenFrames()
         Task.detached(priority: .userInitiated) {
             let result = Self.readAXState(pid: pid, screenFrames: screens)
             await MainActor.run { [weak self] in
-                guard let self,
-                      FullscreenIntentCacheDecision.shouldApplyRefresh(
-                          started: self.started,
-                          expectedObservation: expectedObservation,
-                          currentObservation: self.observationGeneration,
-                          expectedCache: expectedCache,
-                          currentCache: self.cacheGeneration,
-                          requestedPID: pid,
-                          activePID: self.activePID
-                      ) else {
-                    return
-                }
-                guard let result else {
-                    self.atomicState.replaceSnapshot(nil)
-                    self.unregisterFocusedElement(observer: self.axObserver)
-                    return
-                }
-                self.registerFocusedElement(result.element, windowID: result.windowID)
-                self.atomicState.replaceSnapshot(FullscreenIntentSnapshot(
+                self?.finishCacheRefresh(
+                    token: token,
+                    result: result,
+                    pid: pid,
+                    expectedCache: expectedCache,
+                    expectedObservation: expectedObservation
+                )
+            }
+        }
+    }
+
+    private func finishCacheRefresh(
+        token: UInt64,
+        result: AXReadResult?,
+        pid: pid_t,
+        expectedCache: UInt64,
+        expectedObservation: UInt64
+    ) {
+        let completion = refreshCoalescer.complete(token: token)
+        guard completion != .ignored else { return }
+
+        if FullscreenIntentCacheDecision.shouldApplyRefresh(
+            started: started,
+            expectedObservation: expectedObservation,
+            currentObservation: observationGeneration,
+            expectedCache: expectedCache,
+            currentCache: cacheGeneration,
+            requestedPID: pid,
+            activePID: activePID
+        ) {
+            if let result {
+                registerFocusedElement(result.element, windowID: result.windowID)
+                atomicState.replaceSnapshot(FullscreenIntentSnapshot(
                     generation: expectedCache,
                     pid: result.pid,
                     focusedWindowID: result.windowID,
                     buttonFrame: result.buttonFrame,
                     windowFrame: result.windowFrame,
                     screenCGFrame: result.screenCGFrame,
-                    panelScreenCGFrame: self.panelScreenCGFrame,
+                    panelScreenCGFrame: panelScreenCGFrame,
                     isFullscreen: result.isFullscreen,
                     buttonEnabled: result.buttonEnabled
                 ))
+            } else {
+                atomicState.replaceSnapshot(nil)
+                unregisterFocusedElement(observer: axObserver)
             }
+        }
+
+        if case let .start(nextToken) = completion {
+            guard started, let nextPID = activePID else {
+                refreshCoalescer.reset()
+                return
+            }
+            startCacheRefresh(token: nextToken, pid: nextPID)
         }
     }
 
@@ -490,7 +487,7 @@ final class FullscreenIntentMonitor {
         focusedWindowID = nil
     }
 
-    private func handleAXNotification(element: AXUIElement, notification: CFString) {
+    private func handleAXNotification(_ notification: CFString) {
         let name = notification as String
         if name == (kAXFocusedWindowChangedNotification as String) {
             invalidateCache()
@@ -502,11 +499,7 @@ final class FullscreenIntentMonitor {
             refreshCache()
         } else if name == (kAXWindowMovedNotification as String)
             || name == (kAXWindowResizedNotification as String) {
-            // These notifications are registered only on focusedElement. Keep AX reads off this
-            // main-thread invalidation path; the background refresh rebuilds all geometry.
-            let windowID = focusedWindowID
             invalidateCache()
-            onContextChange(.windowGeometry(windowID))
             refreshCache()
         } else if name == (kAXUIElementDestroyedNotification as String) {
             let windowID = focusedWindowID
@@ -517,13 +510,13 @@ final class FullscreenIntentMonitor {
         }
     }
 
-    private static let axCallback: AXObserverCallback = { _, element, notification, refcon in
+    private static let axCallback: AXObserverCallback = { _, _, notification, refcon in
         guard let refcon else { return }
         let monitor = Unmanaged<FullscreenIntentMonitor>.fromOpaque(refcon).takeUnretainedValue()
         // The observer source is installed on CFRunLoopGetMain(), so invalidate during the
         // notification turn instead of adding a second main-queue hop.
         MainActor.assumeIsolated {
-            monitor.handleAXNotification(element: element, notification: notification)
+            monitor.handleAXNotification(notification)
         }
     }
 

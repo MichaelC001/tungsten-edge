@@ -24,25 +24,20 @@ struct FullscreenIntentRequest: Equatable {
     let cacheGeneration: UInt64
     let pid: pid_t
     let focusedWindowID: CGWindowID
-    let windowFrame: CGRect
     let screenCGFrame: CGRect
-}
-
-struct FullscreenIntentWindowState: Equatable {
-    let pid: pid_t
-    let focusedWindowID: CGWindowID
-    let windowFrame: CGRect
-    let screenCGFrame: CGRect
-    let isFullscreen: Bool
 }
 
 enum FullscreenIntentDecision {
     static let ansiFKeyCode = CGKeyCode(3)
 
-    private static let shortcutModifiers: CGEventFlags = [
+    private static let intentModifiers: CGEventFlags = [
         .maskCommand, .maskControl, .maskAlternate, .maskShift, .maskSecondaryFn, .maskHelp,
         .maskNumericPad
     ]
+
+    static func normalizedModifiers(_ flags: CGEventFlags) -> CGEventFlags {
+        flags.intersection(intentModifiers)
+    }
 
     static func greenButtonRequest(
         location: CGPoint,
@@ -53,8 +48,7 @@ enum FullscreenIntentDecision {
               snapshot.buttonEnabled,
               !snapshot.isFullscreen,
               snapshot.panelScreenCGFrame == snapshot.screenCGFrame,
-              !flags.contains(.maskAlternate),
-              !flags.contains(.maskShift),
+              normalizedModifiers(flags).isEmpty,
               snapshot.buttonFrame.contains(location) else {
             return nil
         }
@@ -73,7 +67,7 @@ enum FullscreenIntentDecision {
               snapshot.panelScreenCGFrame == snapshot.screenCGFrame,
               !isRepeat,
               keyCode == ansiFKeyCode,
-              flags.intersection(shortcutModifiers) == [.maskCommand, .maskControl] else {
+              normalizedModifiers(flags) == [.maskCommand, .maskControl] else {
             return nil
         }
         return request(source: .keyboardShortcut, snapshot: snapshot)
@@ -95,9 +89,50 @@ enum FullscreenIntentDecision {
             cacheGeneration: snapshot.generation,
             pid: snapshot.pid,
             focusedWindowID: snapshot.focusedWindowID,
-            windowFrame: snapshot.windowFrame,
             screenCGFrame: snapshot.screenCGFrame
         )
+    }
+}
+
+struct FullscreenIntentRefreshCoalescer: Equatable {
+    enum Completion: Equatable {
+        case ignored
+        case idle
+        case start(UInt64)
+    }
+
+    private(set) var activeToken: UInt64?
+    private(set) var needsTrailingRefresh = false
+    private var nextToken: UInt64 = 0
+
+    mutating func request() -> UInt64? {
+        guard activeToken == nil else {
+            needsTrailingRefresh = true
+            return nil
+        }
+        return begin()
+    }
+
+    mutating func complete(token: UInt64) -> Completion {
+        guard activeToken == token else { return .ignored }
+        if needsTrailingRefresh {
+            needsTrailingRefresh = false
+            let trailingToken = begin()
+            return .start(trailingToken)
+        }
+        activeToken = nil
+        return .idle
+    }
+
+    mutating func reset() {
+        activeToken = nil
+        needsTrailingRefresh = false
+    }
+
+    private mutating func begin() -> UInt64 {
+        nextToken &+= 1
+        activeToken = nextToken
+        return nextToken
     }
 }
 
@@ -128,45 +163,6 @@ enum FullscreenIntentCacheDecision {
             && snapshot.pid == request.pid
             && snapshot.focusedWindowID == request.focusedWindowID
             && snapshot.screenCGFrame == request.screenCGFrame
-    }
-}
-
-enum FullscreenIntentStabilityDecision {
-    static func isChangedNonFullscreen(
-        initialWindowFrame: CGRect,
-        currentWindowID: CGWindowID,
-        expectedWindowID: CGWindowID,
-        currentWindowFrame: CGRect,
-        isFullscreen: Bool
-    ) -> Bool {
-        currentWindowID == expectedWindowID
-            && !isFullscreen
-            && currentWindowFrame != initialWindowFrame
-    }
-
-    static func shouldCancel(
-        initialWindowFrame: CGRect,
-        expectedWindowID: CGWindowID,
-        first: FullscreenIntentWindowState,
-        second: FullscreenIntentWindowState
-    ) -> Bool {
-        isChangedNonFullscreen(
-            initialWindowFrame: initialWindowFrame,
-            currentWindowID: first.focusedWindowID,
-            expectedWindowID: expectedWindowID,
-            currentWindowFrame: first.windowFrame,
-            isFullscreen: first.isFullscreen
-        )
-            && isChangedNonFullscreen(
-                initialWindowFrame: initialWindowFrame,
-                currentWindowID: second.focusedWindowID,
-                expectedWindowID: expectedWindowID,
-                currentWindowFrame: second.windowFrame,
-                isFullscreen: second.isFullscreen
-            )
-            && first.pid == second.pid
-            && first.screenCGFrame == second.screenCGFrame
-            && first.windowFrame == second.windowFrame
     }
 }
 

@@ -4,11 +4,11 @@ import XCTest
 final class FullscreenIntentDecisionTests: XCTestCase {
     private let screen = CGRect(x: 0, y: 0, width: 1512, height: 982)
 
-    func testGreenButtonAcceptsExactHitWithoutWindowUnderPointerData() {
+    func testGreenButtonAcceptsExactHitAndIgnoresNonModifierFlags() {
         let snapshot = makeSnapshot()
         let request = FullscreenIntentDecision.greenButtonRequest(
             location: CGPoint(x: 120, y: 110),
-            flags: [],
+            flags: [.maskAlphaShift, .maskNonCoalesced],
             snapshot: snapshot
         )
         XCTAssertEqual(request?.source, .greenButton)
@@ -17,12 +17,14 @@ final class FullscreenIntentDecisionTests: XCTestCase {
 
     func testGreenButtonRejectsModifiersCapabilityAndContextMismatches() {
         let point = CGPoint(x: 120, y: 110)
-        XCTAssertNil(FullscreenIntentDecision.greenButtonRequest(
-            location: point, flags: .maskAlternate, snapshot: makeSnapshot()
-        ))
-        XCTAssertNil(FullscreenIntentDecision.greenButtonRequest(
-            location: point, flags: .maskShift, snapshot: makeSnapshot()
-        ))
+        for modifier: CGEventFlags in [
+            .maskControl, .maskCommand, .maskAlternate, .maskShift,
+            .maskSecondaryFn, .maskHelp, .maskNumericPad
+        ] {
+            XCTAssertNil(FullscreenIntentDecision.greenButtonRequest(
+                location: point, flags: modifier, snapshot: makeSnapshot()
+            ))
+        }
         XCTAssertNil(FullscreenIntentDecision.greenButtonRequest(
             location: CGPoint(x: 200, y: 200), flags: [], snapshot: makeSnapshot()
         ))
@@ -48,7 +50,7 @@ final class FullscreenIntentDecisionTests: XCTestCase {
     func testShortcutAcceptsExactControlCommandAndCapsLock() {
         let request = FullscreenIntentDecision.shortcutRequest(
             keyCode: FullscreenIntentDecision.ansiFKeyCode,
-            flags: [.maskControl, .maskCommand, .maskAlphaShift],
+            flags: [.maskControl, .maskCommand, .maskAlphaShift, .maskNonCoalesced],
             isRepeat: false,
             snapshot: makeSnapshot()
         )
@@ -173,6 +175,34 @@ final class FullscreenIntentDecisionTests: XCTestCase {
         ))
     }
 
+    func testRefreshCoalescerCollapsesBurstIntoOneTrailingRefresh() {
+        var coalescer = FullscreenIntentRefreshCoalescer()
+        let first = coalescer.request()!
+        XCTAssertNil(coalescer.request())
+        XCTAssertNil(coalescer.request())
+        XCTAssertTrue(coalescer.needsTrailingRefresh)
+
+        guard case let .start(second) = coalescer.complete(token: first) else {
+            return XCTFail("burst must schedule exactly one trailing refresh")
+        }
+        XCTAssertNotEqual(first, second)
+        XCTAssertFalse(coalescer.needsTrailingRefresh)
+        XCTAssertEqual(coalescer.complete(token: first), .ignored)
+        XCTAssertEqual(coalescer.complete(token: second), .idle)
+        XCTAssertNil(coalescer.activeToken)
+    }
+
+    func testRefreshCoalescerResetInvalidatesOldCompletion() {
+        var coalescer = FullscreenIntentRefreshCoalescer()
+        let old = coalescer.request()!
+        coalescer.reset()
+        let current = coalescer.request()!
+
+        XCTAssertEqual(coalescer.complete(token: old), .ignored)
+        XCTAssertEqual(coalescer.activeToken, current)
+        XCTAssertEqual(coalescer.complete(token: current), .idle)
+    }
+
     func testTapRecoveryFusesOnFourthDisableWithinWindow() {
         var policy = FullscreenEventTapRecoveryPolicy()
         XCTAssertTrue(policy.recordDisable(at: 0))
@@ -207,63 +237,6 @@ final class FullscreenIntentDecisionTests: XCTestCase {
         XCTAssertEqual(gate.currentState, .completed)
     }
 
-    func testChangedNonFullscreenRequiresSameWindowAndChangedFrame() {
-        let initial = CGRect(x: 10, y: 10, width: 800, height: 600)
-        let changed = CGRect(x: 10, y: 10, width: 900, height: 700)
-        XCTAssertTrue(FullscreenIntentStabilityDecision.isChangedNonFullscreen(
-            initialWindowFrame: initial,
-            currentWindowID: 7,
-            expectedWindowID: 7,
-            currentWindowFrame: changed,
-            isFullscreen: false
-        ))
-        XCTAssertFalse(FullscreenIntentStabilityDecision.isChangedNonFullscreen(
-            initialWindowFrame: initial,
-            currentWindowID: 8,
-            expectedWindowID: 7,
-            currentWindowFrame: changed,
-            isFullscreen: false
-        ))
-        XCTAssertFalse(FullscreenIntentStabilityDecision.isChangedNonFullscreen(
-            initialWindowFrame: initial,
-            currentWindowID: 7,
-            expectedWindowID: 7,
-            currentWindowFrame: initial,
-            isFullscreen: false
-        ))
-        XCTAssertFalse(FullscreenIntentStabilityDecision.isChangedNonFullscreen(
-            initialWindowFrame: initial,
-            currentWindowID: 7,
-            expectedWindowID: 7,
-            currentWindowFrame: changed,
-            isFullscreen: true
-        ))
-    }
-
-    func testStableNonFullscreenRequiresTwoMatchingSamples() {
-        let initial = CGRect(x: 10, y: 10, width: 800, height: 600)
-        let changed = CGRect(x: 10, y: 10, width: 900, height: 700)
-        let first = makeWindowState(frame: changed)
-        XCTAssertTrue(FullscreenIntentStabilityDecision.shouldCancel(
-            initialWindowFrame: initial,
-            expectedWindowID: 456,
-            first: first,
-            second: first
-        ))
-        XCTAssertFalse(FullscreenIntentStabilityDecision.shouldCancel(
-            initialWindowFrame: initial,
-            expectedWindowID: 456,
-            first: first,
-            second: makeWindowState(frame: CGRect(x: 10, y: 10, width: 901, height: 700))
-        ))
-        XCTAssertFalse(FullscreenIntentStabilityDecision.shouldCancel(
-            initialWindowFrame: initial,
-            expectedWindowID: 456,
-            first: first,
-            second: makeWindowState(frame: changed, isFullscreen: true)
-        ))
-    }
-
     private func makeSnapshot(
         generation: UInt64 = 9,
         focusedWindowID: CGWindowID = 456,
@@ -284,16 +257,4 @@ final class FullscreenIntentDecisionTests: XCTestCase {
         )
     }
 
-    private func makeWindowState(
-        frame: CGRect,
-        isFullscreen: Bool = false
-    ) -> FullscreenIntentWindowState {
-        FullscreenIntentWindowState(
-            pid: 123,
-            focusedWindowID: 456,
-            windowFrame: frame,
-            screenCGFrame: screen,
-            isFullscreen: isFullscreen
-        )
-    }
 }
