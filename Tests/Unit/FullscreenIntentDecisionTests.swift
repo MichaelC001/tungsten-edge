@@ -340,14 +340,14 @@ final class FullscreenIntentDecisionTests: XCTestCase {
     /// 实测映射（14/14 一致）：自然滚动下**手指向左滑去右边的空间**。
     func testSwipeDirectionFollowsNaturalScrollingSetting() {
         var tracker = SpaceSwipeTracker()
-        XCTAssertNil(tracker.consume(touches: 3, x: 0.5, y: 0.5, naturalScrolling: true))
+        XCTAssertNil(tracker.consume(touches: 3, x: 0.5, y: 0.5, at: 0, naturalScrolling: true))
         XCTAssertEqual(
-            tracker.consume(touches: 3, x: 0.3, y: 0.5, naturalScrolling: true), .right
+            tracker.consume(touches: 3, x: 0.3, y: 0.5, at: 0, naturalScrolling: true), .right
         )
         tracker.reset()
-        XCTAssertNil(tracker.consume(touches: 3, x: 0.5, y: 0.5, naturalScrolling: false))
+        XCTAssertNil(tracker.consume(touches: 3, x: 0.5, y: 0.5, at: 0, naturalScrolling: false))
         XCTAssertEqual(
-            tracker.consume(touches: 3, x: 0.3, y: 0.5, naturalScrolling: false), .left
+            tracker.consume(touches: 3, x: 0.3, y: 0.5, at: 0, naturalScrolling: false), .left
         )
     }
 
@@ -355,28 +355,28 @@ final class FullscreenIntentDecisionTests: XCTestCase {
     /// 「水平位移必须压过垂直位移」这一条把 10/10 全部排除。删掉它就会误藏任务条。
     func testVerticalThreeFingerSwipeNeverFires() {
         var tracker = SpaceSwipeTracker()
-        _ = tracker.consume(touches: 3, x: 0.50, y: 0.50, naturalScrolling: true)
+        _ = tracker.consume(touches: 3, x: 0.50, y: 0.50, at: 0, naturalScrolling: true)
         // 实测最坏样本：水平 0.055、垂直 0.267
-        XCTAssertNil(tracker.consume(touches: 3, x: 0.555, y: 0.767, naturalScrolling: true))
+        XCTAssertNil(tracker.consume(touches: 3, x: 0.555, y: 0.767, at: 0, naturalScrolling: true))
     }
 
     func testSwipeNeedsThreeFingersAndResetsWhenFingersLift() {
         var tracker = SpaceSwipeTracker()
         // 两指滚动：再大的水平位移也不触发
-        _ = tracker.consume(touches: 2, x: 0.5, y: 0.5, naturalScrolling: true)
-        XCTAssertNil(tracker.consume(touches: 2, x: 0.1, y: 0.5, naturalScrolling: true))
+        _ = tracker.consume(touches: 2, x: 0.5, y: 0.5, at: 0, naturalScrolling: true)
+        XCTAssertNil(tracker.consume(touches: 2, x: 0.1, y: 0.5, at: 0, naturalScrolling: true))
         // 手指抬起（触点不足三根）会重新起锚，跨串的位移不累计
-        _ = tracker.consume(touches: 3, x: 0.5, y: 0.5, naturalScrolling: true)
-        _ = tracker.consume(touches: 0, x: 0.0, y: 0.0, naturalScrolling: true)
-        XCTAssertNil(tracker.consume(touches: 3, x: 0.1, y: 0.5, naturalScrolling: true))
+        _ = tracker.consume(touches: 3, x: 0.5, y: 0.5, at: 0, naturalScrolling: true)
+        _ = tracker.consume(touches: 0, x: 0.0, y: 0.0, at: 0, naturalScrolling: true)
+        XCTAssertNil(tracker.consume(touches: 3, x: 0.1, y: 0.5, at: 0, naturalScrolling: true))
     }
 
     func testSwipeFiresOnlyOncePerBurst() {
         var tracker = SpaceSwipeTracker()
-        _ = tracker.consume(touches: 3, x: 0.6, y: 0.5, naturalScrolling: true)
-        XCTAssertEqual(tracker.consume(touches: 3, x: 0.4, y: 0.5, naturalScrolling: true), .right)
-        XCTAssertNil(tracker.consume(touches: 3, x: 0.2, y: 0.5, naturalScrolling: true))
-        XCTAssertNil(tracker.consume(touches: 3, x: 0.9, y: 0.5, naturalScrolling: true))
+        _ = tracker.consume(touches: 3, x: 0.6, y: 0.5, at: 0, naturalScrolling: true)
+        XCTAssertEqual(tracker.consume(touches: 3, x: 0.4, y: 0.5, at: 0, naturalScrolling: true), .right)
+        XCTAssertNil(tracker.consume(touches: 3, x: 0.2, y: 0.5, at: 0, naturalScrolling: true))
+        XCTAssertNil(tracker.consume(touches: 3, x: 0.9, y: 0.5, at: 0, naturalScrolling: true))
     }
 
     private func makeSnapshot(

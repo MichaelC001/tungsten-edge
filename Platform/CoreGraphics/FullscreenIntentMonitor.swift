@@ -140,22 +140,41 @@ private final class FullscreenIntentEventBridge {
     private let logger: Logger
     private let onIntent: (FullscreenIntentRequest) -> Void
     private let onSpaceSwitchIntent: (SpaceSwitchDirection) -> Void
+    private let onGestureSample: (CGEvent) -> Void
     private let spaceSwitchEnabled: Bool
-    /// 只在事件线程读写（tap 回调是串行的），不加锁。
-    private var swipeTracker = SpaceSwipeTracker()
+    private var gestureHopLock = os_unfair_lock_s()
+    private var gestureHopInFlight = false
+    /// `DOCK_SPACE_INTENT_TRACE=1` 时的手势诊断：每 60 个手势事件汇报一次去向，
+    /// 避免每秒两百条日志把事件线程拖慢。默认关，零成本。
+    private static let traceEnabled =
+        ProcessInfo.processInfo.environment["DOCK_SPACE_INTENT_TRACE"] == "1"
+    private var gestureSeen: UInt64 = 0
+    private var traceCounts: [String: Int] = [:]
+
+    private func trace(_ outcome: String) {
+        guard Self.traceEnabled else { return }
+        traceCounts[outcome, default: 0] += 1
+        guard gestureSeen % 60 == 0 else { return }
+        let summary = traceCounts.sorted { $0.key < $1.key }
+            .map { "\($0.key)=\($0.value)" }
+            .joined(separator: " ")
+        logger.notice("[space-trace] seen=\(self.gestureSeen, privacy: .public) \(summary, privacy: .public)")
+    }
 
     init(
         state: FullscreenIntentAtomicState,
         logger: Logger,
         spaceSwitchEnabled: Bool,
         onIntent: @escaping (FullscreenIntentRequest) -> Void,
-        onSpaceSwitchIntent: @escaping (SpaceSwitchDirection) -> Void
+        onSpaceSwitchIntent: @escaping (SpaceSwitchDirection) -> Void,
+        onGestureSample: @escaping (CGEvent) -> Void
     ) {
         self.state = state
         self.logger = logger
         self.spaceSwitchEnabled = spaceSwitchEnabled
         self.onIntent = onIntent
         self.onSpaceSwitchIntent = onSpaceSwitchIntent
+        self.onGestureSample = onGestureSample
     }
 
     func handle(type: CGEventType, event: CGEvent) {
@@ -199,32 +218,44 @@ private final class FullscreenIntentEventBridge {
         }
     }
 
-    /// 三指水平滑动。**常态是提前退出**：这块屏两侧都没有全屏空间时连 `NSEvent` 转换都不做——
-    /// 手势事件在手指接触触控板期间约每秒 200 个，全部转换会白白压在系统输入路径上。
+    /// 三指水平滑动只做两件事：提前退出，以及把事件**异步**丢给主线程。
+    ///
+    /// **触控点必须在主线程用 CGEvent 现造 NSEvent 才读得到**（2026-08-09 受控实测：
+    /// 事件线程上 `allTouches()` / `touches(matching:)` 都是 780/780 空集，把事件线程造出来的
+    /// NSEvent 搬到主线程读同样是空的；只有在主线程重新 `NSEvent(cgEvent:)` 才有数据）。
+    ///
+    /// 这里可以异步、不必像绿灯那条一样卡住输入：三指滑动领先空间切换约 `950–1130ms`，
+    /// 几毫秒的线程跳转无关紧要。同时用 in-flight 标志合并——手指按在触控板上时手势事件
+    /// 约每秒 200 个，全部投到主线程既没必要（判据只要几十毫秒的位移）又会压垮主线程。
     private func handleGesture(_ event: CGEvent) {
-        guard let context = state.currentSpaceContext() else {
-            swipeTracker.reset()
+        gestureSeen &+= 1
+        guard state.currentSpaceContext() != nil else {
+            trace("no-space-context")
             return
         }
-        // 只有手势类事件能问触控点；对 ScrollWheel 调 touches(matching:) 会抛异常。
-        guard let ns = NSEvent(cgEvent: event) else { return }
-        let touching = ns.touches(matching: .touching, in: nil)
-        guard !touching.isEmpty else {
-            swipeTracker.reset()
+        var shouldHop = false
+        os_unfair_lock_lock(&gestureHopLock)
+        if !gestureHopInFlight {
+            gestureHopInFlight = true
+            shouldHop = true
+        }
+        os_unfair_lock_unlock(&gestureHopLock)
+        guard shouldHop else {
+            trace("coalesced")
             return
         }
-        let xs = touching.map { $0.normalizedPosition.x }
-        let ys = touching.map { $0.normalizedPosition.y }
-        guard let direction = swipeTracker.consume(
-            touches: touching.count,
-            x: xs.reduce(0, +) / Double(xs.count),
-            y: ys.reduce(0, +) / Double(ys.count),
-            naturalScrolling: context.naturalScrolling
-        ) else { return }
-        guard context.layout.neighborIsFullscreen(direction) else { return }
-        performHandoff(label: "swipe", pid: nil) { [weak self] in
-            self?.onSpaceSwitchIntent(direction)
+        guard let copy = event.copy() else {
+            finishGestureHop()
+            return
         }
+        trace("hop")
+        onGestureSample(copy)
+    }
+
+    func finishGestureHop() {
+        os_unfair_lock_lock(&gestureHopLock)
+        gestureHopInFlight = false
+        os_unfair_lock_unlock(&gestureHopLock)
     }
 
     private func handleSpaceSwitch(direction: SpaceSwitchDirection, label: String) {
@@ -440,6 +471,12 @@ final class FullscreenIntentMonitor {
         onSpaceSwitchIntent: { [weak self] direction in
             guard let self, self.started else { return }
             self.onSpaceSwitchIntent(direction)
+        },
+        onGestureSample: { [weak self] event in
+            // 触控点只有在主线程现造 NSEvent 才读得到（见 handleGesture 的注释）。
+            DispatchQueue.main.async {
+                MainActor.assumeIsolated { self?.processGestureSample(event) }
+            }
         }
     )
     private lazy var tapThread = FullscreenIntentEventTapThread(
@@ -458,6 +495,8 @@ final class FullscreenIntentMonitor {
     private var observationGeneration: UInt64 = 0
     private var cacheGeneration: UInt64 = 0
     private var refreshCoalescer = FullscreenIntentRefreshCoalescer()
+    /// 只在主线程读写（`processGestureSample`）。
+    private var swipeTracker = SpaceSwipeTracker()
     private var spaceObserver: NSObjectProtocol?
     private var screenObserver: NSObjectProtocol?
     private var panelScreen: NSScreen?
@@ -557,6 +596,58 @@ final class FullscreenIntentMonitor {
             panelScreen = screen
             refreshSpaceLayout()
         }
+    }
+
+    private static let mainTraceEnabled =
+        ProcessInfo.processInfo.environment["DOCK_SPACE_INTENT_TRACE"] == "1"
+    private var mainTraceSeen: UInt64 = 0
+    private var mainTraceCounts: [String: Int] = [:]
+
+    private func mainTrace(_ outcome: String) {
+        guard Self.mainTraceEnabled else { return }
+        mainTraceSeen &+= 1
+        mainTraceCounts[outcome, default: 0] += 1
+        guard mainTraceSeen % 60 == 0 else { return }
+        let summary = mainTraceCounts.sorted { $0.key < $1.key }
+            .map { "\($0.key)=\($0.value)" }.joined(separator: " ")
+        logger.notice("[space-main] seen=\(self.mainTraceSeen, privacy: .public) \(summary, privacy: .public)")
+    }
+
+    /// 主线程侧的三指判定：现造 NSEvent → 读触控点 → 喂纯状态机 → 过相邻空间闸。
+    /// 必须在主线程；事件线程造出来的 NSEvent 读不到触控点（受控实测）。
+    private func processGestureSample(_ event: CGEvent) {
+        defer { bridge.finishGestureHop() }
+        guard started, spaceSwitchEnabled else { return mainTrace("not-started") }
+        guard let context = atomicState.currentSpaceContext() else {
+            return mainTrace("no-context")
+        }
+        guard let ns = NSEvent(cgEvent: event) else { return mainTrace("nsevent-nil") }
+        // **`NSTouch.Phase.touching` 是组合值（began|moved|stationary），必须用交集判断。**
+        // 写成 `phase.contains(.touching)` 要求单个触点同时具备三种状态，永远不成立——
+        // 2026-08-09 实测：`allTouches()` 明明给出 3 个触点，过滤后恒为 0，功能完全不触发。
+        // 独立探针里用的是 `touches(matching:)`，那个 API 内部就是取交集，所以没暴露这个错。
+        let all = ns.allTouches()
+        let touching = all.filter { !$0.phase.intersection(.touching).isEmpty }
+        mainTrace("all=\(all.count) touching=\(touching.count)")
+        // 手势事件里约三分之一不带触控数据（magnify 之类）：跳过即可，**不要当作
+        // 「手指抬起」去重置状态机**，否则一串滑动会被反复打断。串的结束交给
+        // `SpaceSwipeTracker` 的时间间隔判定。
+        guard !touching.isEmpty else { return }
+        let xs = touching.map { $0.normalizedPosition.x }
+        let ys = touching.map { $0.normalizedPosition.y }
+        guard let direction = swipeTracker.consume(
+            touches: touching.count,
+            x: xs.reduce(0, +) / Double(xs.count),
+            y: ys.reduce(0, +) / Double(ys.count),
+            at: ProcessInfo.processInfo.systemUptime,
+            naturalScrolling: context.naturalScrolling
+        ) else { return }
+        guard context.layout.neighborIsFullscreen(direction) else {
+            mainTrace("gate-closed-\(direction.rawValue)")
+            return
+        }
+        logger.notice("space-swipe direction=\(direction.rawValue, privacy: .public)")
+        onSpaceSwitchIntent(direction)
     }
 
     private func accept(_ request: FullscreenIntentRequest) {

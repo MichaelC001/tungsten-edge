@@ -132,15 +132,20 @@ struct SpaceLayoutSnapshot: Equatable {
 struct SpaceSwipeTracker: Equatable {
     static let minimumTouches = 3
     static let horizontalThreshold = 0.05
+    /// 超过这个间隔没收到有效采样就重新起锚。**必须有它**：手势事件里约三分之一
+    /// （magnify 之类）根本不带触控数据，不能把「这一条没数据」当成「手指抬起来了」，
+    /// 否则一串滑动会被反复打断、锚点永远重置，判据一次都不会成立。
+    static let burstGap: TimeInterval = 0.4
 
     private var anchorX: Double?
     private var anchorY: Double?
+    private var lastSampleAt: TimeInterval?
     private var firedInThisBurst = false
 
-    /// 手指离开（触点少于三根）就结束这一串，下一串重新起锚。
     mutating func reset() {
         anchorX = nil
         anchorY = nil
+        lastSampleAt = nil
         firedInThisBurst = false
     }
 
@@ -150,12 +155,15 @@ struct SpaceSwipeTracker: Equatable {
         touches: Int,
         x: Double,
         y: Double,
+        at now: TimeInterval,
         naturalScrolling: Bool
     ) -> SpaceSwitchDirection? {
+        if let last = lastSampleAt, now - last > Self.burstGap { reset() }
         guard touches >= Self.minimumTouches else {
             reset()
             return nil
         }
+        lastSampleAt = now
         guard let ax = anchorX, let ay = anchorY else {
             anchorX = x
             anchorY = y
