@@ -238,6 +238,7 @@ final class PanelCoordinator: NSObject {
     /// `visibilityState` 的 `.fullscreenTransitionPending` 槽位，因此两者互斥、同时只能有一个。
     private var fullscreenSpaceIntentGeneration: UInt64?
     private var fullscreenSpaceIntentTimer: Timer?
+    private var fullscreenSpaceIntentVerdictTimer: Timer?
     private var lastActiveApplicationPID: pid_t?
     private var visibilityState = PanelVisibilityState()
     private var panelsAreVisible = true
@@ -308,6 +309,7 @@ final class PanelCoordinator: NSObject {
         fullscreenIntentTimeoutTimer?.invalidate()
         fullscreenSpaceHoldTimer?.invalidate()
         fullscreenSpaceIntentTimer?.invalidate()
+        fullscreenSpaceIntentVerdictTimer?.invalidate()
         MainActor.assumeIsolated {
             fullscreenIntentMonitor?.stop()
             removeHoverMouseMonitors()
@@ -1690,6 +1692,7 @@ final class PanelCoordinator: NSObject {
         pid explicitPID: pid_t? = nil,
         expectedSpaceHoldGeneration explicitSpaceHoldGeneration: UInt64? = nil,
         isFinalSpaceHoldWindowedConfirmation: Bool = false,
+        isFinalSpaceIntentVerdict: Bool = false,
         source: String = "ax"
     ) {
         guard let panel = dockPanel else { return }
@@ -1714,7 +1717,8 @@ final class PanelCoordinator: NSObject {
                     pid: frontPID,
                     screenCGFrame: screenCGFrame,
                     expectedSpaceHoldGeneration: expectedSpaceHoldGeneration,
-                    isFinalSpaceHoldWindowedConfirmation: isFinalSpaceHoldWindowedConfirmation
+                    isFinalSpaceHoldWindowedConfirmation: isFinalSpaceHoldWindowedConfirmation,
+                    isFinalSpaceIntentVerdict: isFinalSpaceIntentVerdict
                 )
             }
         }
@@ -1732,7 +1736,8 @@ final class PanelCoordinator: NSObject {
         pid: pid_t? = nil,
         screenCGFrame: CGRect? = nil,
         expectedSpaceHoldGeneration: UInt64? = nil,
-        isFinalSpaceHoldWindowedConfirmation: Bool = false
+        isFinalSpaceHoldWindowedConfirmation: Bool = false,
+        isFinalSpaceIntentVerdict: Bool = false
     ) {
         // 方向键预测进行中：这一段由预测自己收口，不进下面的常规判定。
         if let spaceGeneration = fullscreenSpaceIntentGeneration {
@@ -1751,10 +1756,16 @@ final class PanelCoordinator: NSObject {
                 logger.info("[fullscreen] active=true")
                 return
             }
-            // 空间确实换完了、目标却不是全屏（预测落空）→ 立刻撤销，别白藏满 1.2 秒。
-            // 只认 `space-cg`：它是空间切换那一刻的同步 CG 判定。预测期间其它来源的
-            // false 判定（异步 AX、旧探针）一律忽略，否则会在转场中途把面板放回来。
-            guard source == "space-cg" else { return }
+            // **不能采信空间切换那一刻的 false 判定**——2026-08-09 实测：桌面→全屏时
+            // `space-cg` 在通知当下一律返回 false（过渡期假判定），照它撤销就是把刚藏好的
+            // 任务条又放回全屏画面上，闪烁与「任务条停在全屏应用上面」都是这么来的。
+            // `FullscreenSpaceHold` 当初等 120ms 再定，就是为了躲同一个坑，这里沿用它的节奏。
+            guard isFinalSpaceIntentVerdict else {
+                if source == "space-cg" {
+                    scheduleFullscreenSpaceIntentVerdict(generation: spaceGeneration)
+                }
+                return
+            }
             cancelFullscreenSpaceArrowIntent(generation: spaceGeneration, reason: "space-windowed")
         }
         switch FullscreenSpaceHoldDecision.disposition(
@@ -1935,6 +1946,37 @@ final class PanelCoordinator: NSObject {
         fullscreenSpaceIntentGeneration = nil
         fullscreenSpaceIntentTimer?.invalidate()
         fullscreenSpaceIntentTimer = nil
+        fullscreenSpaceIntentVerdictTimer?.invalidate()
+        fullscreenSpaceIntentVerdictTimer = nil
+    }
+
+    /// 空间已经切完，但那一刻的 CG 判定不可信。等和 `FullscreenSpaceHold` 同一个 120ms，
+    /// 再用 CG（不行就 AX 兜底）给最终判定；只有最终判定说"不是全屏"才撤销预测。
+    private func scheduleFullscreenSpaceIntentVerdict(generation: UInt64) {
+        guard fullscreenSpaceIntentVerdictTimer == nil else { return }
+        let timer = Timer(
+            timeInterval: FullscreenSpaceHoldDecision.postSpaceConfirmationDelay,
+            repeats: false
+        ) { [weak self] _ in
+            Task { @MainActor [weak self] in
+                self?.resolveFullscreenSpaceArrowIntent(generation: generation)
+            }
+        }
+        RunLoop.main.add(timer, forMode: .common)
+        fullscreenSpaceIntentVerdictTimer = timer
+    }
+
+    private func resolveFullscreenSpaceArrowIntent(generation: UInt64) {
+        guard fullscreenSpaceIntentGeneration == generation else { return }
+        fullscreenSpaceIntentVerdictTimer = nil
+        if checkFullscreenViaCGSync() {
+            applyFullscreenVisibility(true, source: "space-intent-delayed-cg")
+            return
+        }
+        triggerAsyncFullscreenCheck(
+            isFinalSpaceIntentVerdict: true,
+            source: "space-intent-final-ax"
+        )
     }
 
     @discardableResult
