@@ -998,6 +998,77 @@ final class AppSettingsStoreTests: XCTestCase {
         XCTAssertTrue(state.hideReasons.contains(.edgeAutoHide))
     }
 
+    func testFullscreenSpaceHoldBeginsOnlyFromConfirmedFullscreen() {
+        XCTAssertTrue(FullscreenSpaceHoldDecision.shouldBegin(isFullscreen: true, hasInputIntent: false))
+        XCTAssertFalse(FullscreenSpaceHoldDecision.shouldBegin(isFullscreen: false, hasInputIntent: false))
+        XCTAssertFalse(FullscreenSpaceHoldDecision.shouldBegin(isFullscreen: true, hasInputIntent: true))
+    }
+
+    func testFullscreenSpaceHoldSuppressesTransientFalseButAcceptsFullscreen() {
+        XCTAssertEqual(
+            FullscreenSpaceHoldDecision.disposition(
+                isFullscreenVerdict: false,
+                expectedGeneration: 4,
+                activeGeneration: 4,
+                isFinalWindowedConfirmation: false
+            ),
+            .hold
+        )
+        XCTAssertEqual(
+            FullscreenSpaceHoldDecision.disposition(
+                isFullscreenVerdict: true,
+                expectedGeneration: 4,
+                activeGeneration: 4,
+                isFinalWindowedConfirmation: false
+            ),
+            .apply
+        )
+    }
+
+    func testFullscreenSpaceHoldRequiresFinalConfirmationBeforeWindowedReveal() {
+        XCTAssertEqual(
+            FullscreenSpaceHoldDecision.disposition(
+                isFullscreenVerdict: false,
+                expectedGeneration: 7,
+                activeGeneration: 7,
+                isFinalWindowedConfirmation: true
+            ),
+            .apply
+        )
+        XCTAssertEqual(FullscreenSpaceHoldDecision.postSpaceConfirmationDelay, 0.12)
+        XCTAssertEqual(FullscreenSpaceHoldDecision.activationFallbackDelay, 0.5)
+    }
+
+    func testFullscreenSpaceHoldRejectsOldGenerationAndAppliesWithoutHold() {
+        XCTAssertEqual(
+            FullscreenSpaceHoldDecision.disposition(
+                isFullscreenVerdict: false,
+                expectedGeneration: 8,
+                activeGeneration: 9,
+                isFinalWindowedConfirmation: true
+            ),
+            .stale
+        )
+        XCTAssertEqual(
+            FullscreenSpaceHoldDecision.disposition(
+                isFullscreenVerdict: false,
+                expectedGeneration: 9,
+                activeGeneration: nil,
+                isFinalWindowedConfirmation: true
+            ),
+            .stale
+        )
+        XCTAssertEqual(
+            FullscreenSpaceHoldDecision.disposition(
+                isFullscreenVerdict: false,
+                expectedGeneration: nil,
+                activeGeneration: nil,
+                isFinalWindowedConfirmation: false
+            ),
+            .apply
+        )
+    }
+
     private func makeDefaults() -> UserDefaults {
         let suiteName = "com.tungsten.edge.tests.\(UUID().uuidString)"
         let defaults = UserDefaults(suiteName: suiteName)!

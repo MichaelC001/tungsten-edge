@@ -29,6 +29,12 @@ private struct FullscreenIntentTransaction {
     let screenCGFrame: CGRect
 }
 
+private struct FullscreenSpaceHold {
+    let generation: UInt64
+    let pid: pid_t?
+    let screenCGFrame: CGRect?
+}
+
 /// CAMediaTimingFunction 的数值求解版：CALayer 隐式动画只能按"单一属性"整体插值，
 /// 而弹窗切换要按 centerX/bottomY/width/height 四个语义量分别插值再拼回 frame，
 /// 只能自己按时间步进算 progress。直接吃调用方已有的 CAMediaTimingFunction，不重复定义
@@ -219,13 +225,15 @@ final class PanelCoordinator: NSObject {
         subsystem: "com.caye.macosdockcc.v2",
         category: "FullscreenIntent"
     )
-
     private var fullscreenReconcileTimer: Timer?
     private var fullscreenIntentMonitor: FullscreenIntentMonitor?
     private var fullscreenIntentTimeoutTimer: Timer?
     private var fullscreenIntentGeneration: UInt64 = 0
     private var fullscreenIntentTransaction: FullscreenIntentTransaction?
     private var fullscreenProbeGeneration: UInt64 = 0
+    private var fullscreenSpaceHoldGeneration: UInt64 = 0
+    private var fullscreenSpaceHold: FullscreenSpaceHold?
+    private var fullscreenSpaceHoldTimer: Timer?
     private var lastActiveApplicationPID: pid_t?
     private var visibilityState = PanelVisibilityState()
     private var panelsAreVisible = true
@@ -294,6 +302,7 @@ final class PanelCoordinator: NSObject {
     deinit {
         fullscreenReconcileTimer?.invalidate()
         fullscreenIntentTimeoutTimer?.invalidate()
+        fullscreenSpaceHoldTimer?.invalidate()
         MainActor.assumeIsolated {
             fullscreenIntentMonitor?.stop()
             removeHoverMouseMonitors()
@@ -328,6 +337,9 @@ final class PanelCoordinator: NSObject {
         fullscreenIntentMonitor = nil
         fullscreenIntentTimeoutTimer?.invalidate()
         fullscreenIntentTimeoutTimer = nil
+        fullscreenSpaceHoldTimer?.invalidate()
+        fullscreenSpaceHoldTimer = nil
+        fullscreenSpaceHold = nil
 
         // 先回滚未提交的跨面板拖拽事务，再拆监视器。
         dragController?.cancelDrag()
@@ -1601,6 +1613,10 @@ final class PanelCoordinator: NSObject {
     }
 
     @objc private func handleSpaceChange() {
+        let spaceHoldGeneration = beginFullscreenSpaceHold(
+            pid: lastActiveApplicationPID,
+            confirmationDelay: FullscreenSpaceHoldDecision.postSpaceConfirmationDelay
+        )
         // Sync CG check: fires before the panel has a chance to appear, no AX = no main-thread risk
         let cgFullscreen = checkFullscreenViaCGSync()
         applyFullscreenVisibility(
@@ -1608,18 +1624,32 @@ final class PanelCoordinator: NSObject {
             source: "space-cg",
             expectedIntentGeneration: fullscreenIntentTransaction?.generation,
             pid: lastActiveApplicationPID,
-            screenCGFrame: currentPanelScreenCGFrame()
+            screenCGFrame: currentPanelScreenCGFrame(),
+            expectedSpaceHoldGeneration: spaceHoldGeneration
         )
         // Async AX secondary check: catches edge cases CG misses (e.g. games on a non-zero layer)
-        if !cgFullscreen || fullscreenIntentTransaction == nil { triggerAsyncFullscreenCheck() }
+        if !cgFullscreen || fullscreenIntentTransaction == nil {
+            triggerAsyncFullscreenCheck(
+                expectedSpaceHoldGeneration: spaceHoldGeneration,
+                source: "space-ax"
+            )
+        }
     }
 
     @objc private func handleAppActivated(_ note: Notification) {
         // 用通知携带的"刚激活的 app"，不读滞后的 frontmostApplication（AGENTS 守则）
         let activated = note.userInfo?[NSWorkspace.applicationUserInfoKey] as? NSRunningApplication
         lastActiveApplicationPID = activated?.processIdentifier
+        let spaceHoldGeneration = beginFullscreenSpaceHold(
+            pid: lastActiveApplicationPID,
+            confirmationDelay: FullscreenSpaceHoldDecision.activationFallbackDelay
+        )
         cancelFullscreenIntentIfContextChanged(activePID: activated?.processIdentifier)
-        triggerAsyncFullscreenCheck(pid: lastActiveApplicationPID)
+        triggerAsyncFullscreenCheck(
+            pid: lastActiveApplicationPID,
+            expectedSpaceHoldGeneration: spaceHoldGeneration,
+            source: "app-activation-ax"
+        )
     }
 
     // MARK: - Sync CG fullscreen probe (main thread only, no AX)
@@ -1644,7 +1674,12 @@ final class PanelCoordinator: NSObject {
 
     // MARK: - Async AX fullscreen probe (secondary / fallback)
 
-    private func triggerAsyncFullscreenCheck(pid explicitPID: pid_t? = nil) {
+    private func triggerAsyncFullscreenCheck(
+        pid explicitPID: pid_t? = nil,
+        expectedSpaceHoldGeneration explicitSpaceHoldGeneration: UInt64? = nil,
+        isFinalSpaceHoldWindowedConfirmation: Bool = false,
+        source: String = "ax"
+    ) {
         guard let panel = dockPanel else { return }
         // Convert to CG coords on main thread; AX kAXPositionAttribute also uses CG (top-left origin)
         let screenCGFrame = Self.toCGRect(panelCurrentScreen(panel: panel))
@@ -1652,19 +1687,22 @@ final class PanelCoordinator: NSObject {
         fullscreenProbeGeneration &+= 1
         let probeGeneration = fullscreenProbeGeneration
         let expectedIntentGeneration = fullscreenIntentTransaction?.generation
+        let expectedSpaceHoldGeneration = explicitSpaceHoldGeneration ?? fullscreenSpaceHold?.generation
         Task.detached { [weak self] in
             let fullscreen = Self.detectFullscreenViaAX(pid: frontPID, screenCGFrame: screenCGFrame)
             await MainActor.run { [weak self] in
-                guard let self,
-                      probeGeneration == self.fullscreenProbeGeneration else {
+                guard let self else { return }
+                guard probeGeneration == self.fullscreenProbeGeneration else {
                     return
                 }
                 self.applyFullscreenVisibility(
                     fullscreen,
-                    source: "ax",
+                    source: source,
                     expectedIntentGeneration: expectedIntentGeneration,
                     pid: frontPID,
-                    screenCGFrame: screenCGFrame
+                    screenCGFrame: screenCGFrame,
+                    expectedSpaceHoldGeneration: expectedSpaceHoldGeneration,
+                    isFinalSpaceHoldWindowedConfirmation: isFinalSpaceHoldWindowedConfirmation
                 )
             }
         }
@@ -1680,8 +1718,25 @@ final class PanelCoordinator: NSObject {
         source: String,
         expectedIntentGeneration: UInt64? = nil,
         pid: pid_t? = nil,
-        screenCGFrame: CGRect? = nil
+        screenCGFrame: CGRect? = nil,
+        expectedSpaceHoldGeneration: UInt64? = nil,
+        isFinalSpaceHoldWindowedConfirmation: Bool = false
     ) {
+        switch FullscreenSpaceHoldDecision.disposition(
+            isFullscreenVerdict: isFullscreen,
+            expectedGeneration: expectedSpaceHoldGeneration,
+            activeGeneration: fullscreenSpaceHold?.generation,
+            isFinalWindowedConfirmation: isFinalSpaceHoldWindowedConfirmation
+        ) {
+        case .stale:
+            return
+        case .hold:
+            return
+        case .apply:
+            if let hold = fullscreenSpaceHold {
+                finishFullscreenSpaceHold(generation: hold.generation)
+            }
+        }
         if isFullscreen {
             if let transaction = fullscreenIntentTransaction {
                 guard expectedIntentGeneration == transaction.generation,
@@ -1778,6 +1833,93 @@ final class PanelCoordinator: NSObject {
         fullscreenIntentTransaction = nil
         fullscreenIntentTimeoutTimer?.invalidate()
         fullscreenIntentTimeoutTimer = nil
+    }
+
+    @discardableResult
+    private func beginFullscreenSpaceHold(
+        pid: pid_t?,
+        confirmationDelay: TimeInterval
+    ) -> UInt64? {
+        guard FullscreenSpaceHoldDecision.shouldBegin(
+            isFullscreen: visibilityState.hideReasons.contains(.fullscreen),
+            hasInputIntent: fullscreenIntentTransaction != nil
+        ) else {
+            return nil
+        }
+
+        let screenCGFrame = currentPanelScreenCGFrame()
+        let hold: FullscreenSpaceHold
+        if let current = fullscreenSpaceHold,
+           current.pid == pid,
+           current.screenCGFrame == screenCGFrame {
+            hold = current
+        } else {
+            fullscreenSpaceHoldGeneration &+= 1
+            fullscreenProbeGeneration &+= 1
+            hold = FullscreenSpaceHold(
+                generation: fullscreenSpaceHoldGeneration,
+                pid: pid,
+                screenCGFrame: screenCGFrame
+            )
+            fullscreenSpaceHold = hold
+        }
+        scheduleFullscreenSpaceHoldConfirmation(
+            generation: hold.generation,
+            after: confirmationDelay
+        )
+        return hold.generation
+    }
+
+    private func scheduleFullscreenSpaceHoldConfirmation(
+        generation: UInt64,
+        after delay: TimeInterval
+    ) {
+        fullscreenSpaceHoldTimer?.invalidate()
+        let timer = Timer(timeInterval: delay, repeats: false) { [weak self] _ in
+            Task { @MainActor [weak self] in
+                self?.confirmFullscreenSpaceHoldWindowed(generation: generation)
+            }
+        }
+        RunLoop.main.add(timer, forMode: .common)
+        fullscreenSpaceHoldTimer = timer
+    }
+
+    private func confirmFullscreenSpaceHoldWindowed(generation: UInt64) {
+        guard let hold = fullscreenSpaceHold,
+              hold.generation == generation else {
+            return
+        }
+        guard hold.pid == lastActiveApplicationPID,
+              hold.screenCGFrame == currentPanelScreenCGFrame() else {
+            finishFullscreenSpaceHold(generation: generation)
+            triggerAsyncFullscreenCheck(pid: lastActiveApplicationPID)
+            return
+        }
+        fullscreenSpaceHoldTimer = nil
+        let cgFullscreen = checkFullscreenViaCGSync()
+        if cgFullscreen {
+            applyFullscreenVisibility(
+                true,
+                source: "space-hold-delayed-cg",
+                pid: hold.pid,
+                screenCGFrame: hold.screenCGFrame,
+                expectedSpaceHoldGeneration: generation
+            )
+            return
+        }
+        triggerAsyncFullscreenCheck(
+            pid: hold.pid,
+            expectedSpaceHoldGeneration: generation,
+            isFinalSpaceHoldWindowedConfirmation: true,
+            source: "space-hold-final-ax"
+        )
+    }
+
+    private func finishFullscreenSpaceHold(generation: UInt64) {
+        guard fullscreenSpaceHold?.generation == generation else { return }
+        fullscreenSpaceHoldTimer?.invalidate()
+        fullscreenSpaceHoldTimer = nil
+        fullscreenSpaceHold = nil
     }
 
     private func cancelFullscreenIntentIfContextChanged(activePID: pid_t? = nil) {

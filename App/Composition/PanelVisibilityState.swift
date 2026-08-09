@@ -7,6 +7,35 @@ enum PanelVisibilityReason: Hashable {
     case edgeAutoHide
 }
 
+enum FullscreenSpaceHoldDisposition: Equatable {
+    case apply
+    case hold
+    case stale
+}
+
+enum FullscreenSpaceHoldDecision {
+    static let postSpaceConfirmationDelay: TimeInterval = 0.12
+    static let activationFallbackDelay: TimeInterval = 0.5
+
+    static func shouldBegin(isFullscreen: Bool, hasInputIntent: Bool) -> Bool {
+        isFullscreen && !hasInputIntent
+    }
+
+    static func disposition(
+        isFullscreenVerdict: Bool,
+        expectedGeneration: UInt64?,
+        activeGeneration: UInt64?,
+        isFinalWindowedConfirmation: Bool
+    ) -> FullscreenSpaceHoldDisposition {
+        guard let activeGeneration else {
+            return expectedGeneration == nil ? .apply : .stale
+        }
+        guard expectedGeneration == activeGeneration else { return .stale }
+        if isFullscreenVerdict || isFinalWindowedConfirmation { return .apply }
+        return .hold
+    }
+}
+
 // 异步 AX 全屏探测的纯判定（PanelCoordinator.detectFullscreenViaAX 调用）。
 // role 门禁是硬约束：Finder 挂着一个桌面伪窗口（role=AXScrollArea，frame 恰好等于整屏），
 // 恢复最小化窗口的瞬间它会成为 AXFocusedWindow —— 没有门禁就命中 frame≈整屏兜底，任务条被误隐藏。
