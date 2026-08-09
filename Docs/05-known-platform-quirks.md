@@ -104,7 +104,30 @@
 
 **全屏 Space 互切已用状态 hold 修复，不是输入拦截**：早期探针开 `0/12`、探针关 `0/4` 的肉眼样本不能证明没有闪烁；fresh 进程随后稳定复现，遥测坐实路径为 `.fullscreen -> Space CG false -> SHOW -> AX true -> HIDE`，三次可见脉冲约 `11.3 / 3.4 / 2.2ms`。当前代码在已经确认 `.fullscreen` 时，遇到应用激活或 Space 通知先建立带代次的 hold，吞掉转场中的 false CG/AX；Space 通知后等 `120ms` 再用 CG + AX 作最终确认。owner 在清理失败实验后的 fixed-certificate Release 上复验：三指与 Control-arrow 全屏互切均不闪，全屏返回普通 Space 正常显示任务条。没有加入三指/方向键专用事件拦截。
 
-**普通 Space -> 已有全屏 Space 仍未修**：managed-space 预测实验能在 `activeSpaceDidChange` 前约 `35ms` 同步 `orderOut`，目标 AX 全屏也在通知后约 `0.2–1ms` 可读，但 owner 仍稳定观察到闪烁，说明这两个信号都晚于 WindowServer 的转场快照；实验代码已删除。为排除“合并时删掉了有效代码”，2026-08-09 又原样恢复 `13:00` 的 SpacePrediction Release（原编译二进制 SHA-256 `819edbd2459e36f8af0763cd2d517763203d14009da909afa6da84cd4048da3b`）严格回放：三指 `3/3`、Control-arrow `3/3` 闪；6 次日志均先 hide、后 Space 通知，提前量 `27.8–35.3ms`，中间没有 show。画面闪烁因此是更早固化进 WindowServer 转场快照，不是合并后重新显示。一次性探针对三指切 Space 的 14 次真实 `id64` 变化均未取得提前手势事件；Control-arrow 则约早于 Space ID 变化 `548–575ms`，但尚未实现键盘专用修复。不要把 full-to-full hold 泛化成普通到全屏已修，也不要重试 managed-space/app-activation 预测。
+**普通 Space -> 已有全屏 Space：已用输入预测修复（2026-08-09）**。
+
+先说走死的：managed-space 预测能在 `activeSpaceDidChange` 前约 `35ms` 同步 `orderOut`，目标 AX 全屏也在通知后约 `0.2–1ms` 可读，但仍稳定看到闪烁 —— 两个信号都晚于 WindowServer 的转场快照。为排除「合并时删掉了有效代码」，原样恢复 `13:00` 的 SpacePrediction Release（SHA-256 `819edbd2459e36f8af0763cd2d517763203d14009da909afa6da84cd4048da3b`）严格回放：三指 `3/3`、Control-arrow `3/3` 闪，6 次都先 hide 再 Space 通知、提前量 `27.8–35.3ms`、中间没有 show。**约 30ms 的提前量不够，不要再重试 managed-space / app-activation 这一族预测。**
+
+**有效的是提前量大一个数量级的原始输入**（实测领先「空间 ID 真正变化」）：
+
+| 输入 | 领先量 | 备注 |
+|---|---|---|
+| `Control+←/→` | `548–575ms` | 键按下即已决定 |
+| 三指水平滑动 | `945–1130ms` | 手势串起点，比键盘还早一倍 |
+
+「三指拿不到提前事件」这个旧结论是**错的**，来源是当时的探针只挂了 `keyDown | scrollWheel` —— 而三指切空间产生的是**手势事件**（`NSEvent.EventType` 原始值 18/19/20/29–32），不是滚轮事件。session tap 完全看得见它们。
+
+**三指的触发判据**（`SpaceSwipeTracker`，纯判定 + 单测）：`≥3 指` + 水平位移 `> 0.05` + **水平位移压过垂直位移**。实测：切空间 14/15 命中；三指上下滑（Mission Control）10 次里有 1 次水平漂移越过阈值，加上「水平 > 垂直」后 10/10 全部排除；日常两指滚动 / 点击 / 移光标约 45 秒 0 误触发。阈值取 `0.03 / 0.05 / 0.08` 结果完全一致 —— 信号本身就分得开，不是调参调出来的。方向映射实测 14/14 一致：**自然滚动开启时手指向左滑去右边的空间**（关闭则同号），按 `com.apple.swipescrolldirection` 换算。
+
+**三个会让功能静默失效的 API 陷阱**（这一轮全部实测踩过，每个都表现为「一次都不触发」而不是报错）：
+
+1. **`NSEvent(cgEvent:)` 必须在主线程构造，触控点才存在。** 受控 A/B/C/D 四路对比：事件线程上 `allTouches()` 与 `touches(matching:)` 都是 `780/780` 空集；把事件线程造出来的 NSEvent 搬到主线程读**仍然是空的**（残缺对象救不回来）；只有在主线程重新从 CGEvent 造 NSEvent 才有数据（`501/780` 有触点，其余是本就不带触控数据的 magnify 之类）。
+2. **要用 `allTouches()`，不能用 `touches(matching:in:)`。** 后者带视图语义，在有 `NSApplication` 的进程里被解释成「我自己视图上的触点」，而这是别的应用的事件 → 恒空。独立命令行探针因为没有 `NSApplication` 反而正常，正是这个差别骗过了第一轮排查。
+3. **`NSTouch.Phase.touching` 是组合值（`began|moved|stationary`），必须取交集。** 写成 `phase.contains(.touching)` 要求单个触点同时具备三种状态，永不成立 —— 实测 `allTouches()` 明明给出 3 个触点，过滤后恒为 0。
+
+**手势事件的成本与限流**：手指按在触控板上时手势事件约每秒 200 个。实现上事件线程只做两件事 —— 相邻空间闸的提前退出（两侧都不是全屏空间就直接返回，连 `NSEvent` 转换都不做），以及 in-flight 合并后**异步**投给主线程。三指有近 1 秒提前量，不需要像绿灯那条一样同步卡住输入。
+
+**空间切换那一刻的 CG 判定不可信**：桌面→全屏时 `checkFullscreenViaCGSync()` 在 `activeSpaceDidChange` 当下一律返回 `false`（过渡期假判定）。照它撤销预测就是把刚藏好的任务条又放回全屏画面上 —— 实测表现为「闪一下 + 任务条停在全屏应用上面不走」。沿用 `FullscreenSpaceHold` 的 `120ms` 节奏给最终判定即可。预测超时取 `2s`：实测输入到全屏确认要 `1.05s`，`1.2s` 只剩 `130ms` 余量。
 
 **顺带坐实的 SkyLight 事实**（与上面成败无关，是可复用的零件）：
 
