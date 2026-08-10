@@ -51,6 +51,14 @@ Owner 于 2026-07-25 决定本轮稳定重建停在 4.5；4.6 与后续一日回
 
 2026-08-01 发布 `v0.7.3@418233b`（**附注标签**）。内容 = v0.7.2 之后两项：启动弹跳提前停在最高点（`a645590`，动画作用域 + 启动会话双修）、剪映点不开 + 系统设置弹跳 20 秒（`6414f9d`，启动目标包解析 + 空标题标准窗口准入）。发布提交同样直接打在 `master`，版本号 `0.7.3 (15)`。**本版无用户可见的行为反转**，三项都是修复，交互与设置一律不变。Homebrew cask 已同步至 `0.7.3`（`moonbai-studio/homebrew-tungsten-edge@0ad7cac`）。发布后 `master` 未再 bump，**开发构建与已发布包同为 `0.7.3 (15)`**，排查问题先比对提交。发版前全表复检结果见上方 2026-08-01 那条（46 条 / 6 条仍可单点撤销 / 唯一新增衰减 `a645590`）。
 
+2026-08-10 发布 `v0.7.7@5df6ba6`（**附注标签**）。内容 = v0.7.6 之后五块：进原生全屏 / 切进全屏空间不再闪烁（`b4b07d0`+`93908d8` 绿灯与 `Control-Command-F`、`ef78c3e` 全屏互切 hold、`5331f47`+`c81970e`+`32b311f`+`3ee5e5e` 键盘与三指预测）、设置页新增「高级」组并删掉重复的系统 Dock 组（`1c5483b`）、最大化避让空闲扫描事件化（`8c558a3`，开启避让时空闲 CPU −29%、避让自身开销 −73%）、四项设置与抽屉改动（`797ac81`：拖入即保留 / 外观手动挡 / 空抽屉提示 / 删指路文案）。发布提交直接打在 `master`，版本号 `0.7.7 (19)`。
+
+⚠️ **本版有两条用户可见的行为变更**，且**版本号是 patch，不会向用户暗示行为变更**，因此两条都放在发布说明最前面：（一）**拖进抽屉即自动勾「在程序坞中保留」**——位置与保留不再完全正交，每次拖入都重新勾上（有意，非一次性播种），只管进不管出；老用户升级后拖入抽屉的应用会被写进 `keptAppBundleIDsV3`，要退出得右键取消勾选。（二）**设置页整个「系统 Dock」组删除**，系统 Dock 的入口只剩菜单栏图标的菜单。另有一条默认开启的新能力：全屏预测（`com.tungsten.edge.fullscreenIntentEnabled` 默认 `true`），它开启常驻的全局键盘/鼠标/触控板观察。
+
+⚠️ **发布说明里刻意没有写全局输入监听披露——这是 owner 2026-08-10 的决定**（理由：担心敏感用户观感）。当时提出的异议记在这里以备复议：披露已公开存在于设置页「高级」那段说明与中英文 README 的《全局输入监听说明》，`AGENTS.md` 也有「披露不准确比没有披露更糟」的护栏，所以发布说明成了唯一没提的地方。**owner 复议后仍选择不写，三处既有披露一字未削减**。以后若因此收到用户质疑，先看这一段，别以为是漏写。
+
+Homebrew cask 已同步至 `0.7.7`（`moonbai-studio/homebrew-tungsten-edge@520d1bc`）。发布后 `master` 未再 bump，**开发构建与已发布包同为 `0.7.7 (19)`**，排查问题先比对提交。发版前全表复检见下方 2026-08-10 那条（表格行 110 条 / 7 条仍可单点撤销 / 新增衰减 3 条全属预期；登记提交后复跑 112 条 / 8 条 / 零自伤）。**上一版遗留的用户反馈仍未解决**：锁屏恢复后消息应用的聊天窗跑回窗口区最左，等复现。
+
 2026-08-05 发布 `v0.7.6@693bab8`（**附注标签**）。内容 = v0.7.5 之后三项，全部来自用户 Phoebus 的反馈：跨机器重启保持普通 kept 应用的图标次序 + 运行态 POSIX 兜底对账（`7bd9910`）、多进程应用重复兜底卡（`84157c9`，WPS 两个窗口显示三张卡）、窗口收编逐进程诊断（`6bbe3fe`，默认关）。发布提交直接打在 `master`，版本号 `0.7.6 (18)`。**本版无用户可见的行为反转**——三项都是修复，没有拿掉任何用户选过的东西；但「重启后保留应用的图标顺序会保持」是**用户能直接看出来的新行为**，且版本号是 patch 不会暗示有变动，因此仍按 runbook 放在发布说明最前面，并写明「窗口卡片的顺序依旧不跨重启保留」这个刻意的边界。Homebrew cask 已同步至 `0.7.6`（`moonbai-studio/homebrew-tungsten-edge@04a41d4`）。发布后 `master` 未再 bump，**开发构建与已发布包同为 `0.7.6 (18)`**，排查问题先比对提交。发版前全表复检见下方 2026-08-05 那条（表内 99 条 / 7 条仍可单点撤销 / 唯一新增衰减 `8af961c`）。**本轮唯一未解决的用户反馈**：锁屏恢复后消息应用的聊天窗跑回窗口区最左，诊断已随包发出（默认关），等复现。
 
 2026-08-04 发布 `v0.7.5@ce7b4cd`（**附注标签**）。内容 = v0.7.4 之后两项：一页式设置窗口 + 右键任务条弹菜单 + 修掉空白「设置」死入口（`f3b43a1`）、菜单粘滞修复 + 设置面系统读取移出主线程（`aad9ce3`）。发布提交直接打在 `master`，版本号 `0.7.5 (17)`。⚠️ **本版有一条用户可见的行为反转**：菜单里可点的「显示/隐藏 Tungsten Edge 钨极」命令删除，外观四项（显示中转站 / 鼠标悬停显示应用名 / 最大化窗口避开任务条 / 任务条大小）搬进新的设置窗口；**版本号是 patch，不会向用户暗示行为变更**，因此放在发布说明最前面。Homebrew cask 已同步至 `0.7.5`（`moonbai-studio/homebrew-tungsten-edge@810ea70`）。发布后 `master` 未再 bump，**开发构建与已发布包同为 `0.7.5 (17)`**，排查问题先比对提交。发版前全表复检见上方 2026-08-04 那条（24 条 / 2 条仍可单点撤销 / 零意外衰减）。
@@ -61,6 +69,8 @@ Owner 于 2026-07-25 决定本轮稳定重建停在 4.5；4.6 与后续一日回
 
 安装回退：若需恢复上一稳定安装版 4.4，使用备份 `/Users/caye/Projects/tungsten-edge-rebuild-artifacts/2026-07-25-stage4/4.5-process-liveness/rollback/Tungsten Edge.app`；若需恢复 4.3，使用备份 `/Users/caye/Projects/tungsten-edge-rebuild-artifacts/2026-07-24-stage4/4.4-messaging-admission/rollback/Tungsten Edge.app`；若需恢复 4.2，使用备份 `/Users/caye/Projects/tungsten-edge-rebuild-artifacts/2026-07-24-stage4/4.3-quit-last/rollback/Tungsten Edge.app`；若需恢复 4.1，使用备份 `/Users/caye/Projects/tungsten-edge-rebuild-artifacts/2026-07-24-stage4/4.2-open-gray/rollback/Tungsten Edge.app`；若需恢复到 v0.6.5 原始安装，使用官方备份 `/Users/caye/Projects/tungsten-edge-rebuild-artifacts/2026-07-23-stage4/4.1-f2-first-frame-position/rollback/official-v065-20260723-221811/Tungsten Edge.app`（executable 名均为 `macos-dock-cc-v2`）。
 
+- GitHub `v0.7.7` DMG hash: `5d4133899b59d8f3798d2d9a39418f979c37362a68d9abc7ffb7c069fce7b6f8`
+- GitHub `v0.7.7` ZIP hash: `a909ebc3d0a8756056966aa11bdb2c0702059f36f310e44daf970cb930b23478`（Homebrew cask `moonbai-studio/homebrew-tungsten-edge@520d1bc` 引用此值；**推 cask 之前**已从 GitHub 下回已发布的 zip 实测比对，cask / 已发布包 / 本地产物三方一致）
 - GitHub `v0.7.6` DMG hash: `97f6a47336137f65c29d80c7aca3aab68613a640f2d96f0f33339f5f7b88c48a`
 - GitHub `v0.7.6` ZIP hash: `86fd1e96e7c5a1308b47733f4ecd96ad5d023baa837aeceeb6c7592e2e3a0f33`（Homebrew cask `moonbai-studio/homebrew-tungsten-edge@04a41d4` 引用此值；**推 cask 之前**已从 GitHub 下回已发布的 zip 实测比对，cask / 已发布包 / 本地产物三方一致）
 - GitHub `v0.7.5` DMG hash: `f93892cbd8f7de2e22253d0b114e43e0957d606e90e1fcc58ff20cafd3a7f489`
