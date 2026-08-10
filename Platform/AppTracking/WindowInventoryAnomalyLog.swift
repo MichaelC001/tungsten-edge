@@ -58,6 +58,15 @@ struct InventoryReconcileUnreadPayload: Codable, Equatable {
     let errorCode: Int32
 }
 
+struct InventoryTitleHeldPayload: Codable, Equatable {
+    let context: InventoryReconcileContext
+    let pid: Int32
+    let bundleID: String?
+    let seatToken: String
+    let activeCgID: CGWindowID
+    let errorCode: Int32
+}
+
 struct InventoryLogRect: Codable, Equatable {
     let x: Double
     let y: Double
@@ -369,6 +378,7 @@ enum WindowInventoryLogEvent: Encodable {
     case orderChipPlaced(InventoryOrderChipPlacedPayload)
     case admissionProbe(InventoryAdmissionProbePayload)
     case reconcileUnread(InventoryReconcileUnreadPayload)
+    case titleHeld(InventoryTitleHeldPayload)
 
     var name: String {
         switch self {
@@ -383,6 +393,7 @@ enum WindowInventoryLogEvent: Encodable {
         case .orderChipPlaced: return "orderChipPlaced"
         case .admissionProbe: return "admissionProbe"
         case .reconcileUnread: return "reconcileUnread"
+        case .titleHeld: return "titleHeld"
         }
     }
 
@@ -399,6 +410,7 @@ enum WindowInventoryLogEvent: Encodable {
         case .orderChipPlaced(let payload): try payload.encode(to: encoder)
         case .admissionProbe(let payload): try payload.encode(to: encoder)
         case .reconcileUnread(let payload): try payload.encode(to: encoder)
+        case .titleHeld(let payload): try payload.encode(to: encoder)
         }
     }
 }

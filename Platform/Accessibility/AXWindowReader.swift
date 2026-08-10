@@ -4,16 +4,50 @@ import CoreGraphics
 import Darwin
 import Foundation
 
+enum AXWindowTitleRead: Equatable {
+    case value(String)
+    case empty
+    case unread(AXError)
+
+    var title: String? {
+        if case .value(let title) = self { return title }
+        return nil
+    }
+
+    func resolvedTitle(previousTitle: String? = nil) -> String {
+        switch self {
+        case .value(let title): return title
+        case .empty: return ""
+        case .unread: return previousTitle ?? ""
+        }
+    }
+
+    static func classify(result: AXError, value: CFTypeRef?) -> Self {
+        switch result {
+        case .success:
+            guard let text = value as? String else { return .unread(.failure) }
+            let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+            return trimmed.isEmpty ? .empty : .value(trimmed)
+        case .attributeUnsupported, .noValue:
+            return .empty
+        default:
+            return .unread(result)
+        }
+    }
+}
+
 struct AXWindowSnapshot {
     let pid: Int32
     let cgWindowID: UInt32?
-    let title: String?
+    let titleRead: AXWindowTitleRead
     let bounds: CGRect?
     let role: String?
     let subrole: String?
     let isMinimized: Bool
     let isFocusedWindow: Bool
     let element: AXUIElement
+
+    var title: String? { titleRead.title }
 }
 
 struct AXWindowTarget {
@@ -158,7 +192,7 @@ struct AXWindowReader: AppTrackerWindowReading, Sendable {
             return AXWindowSnapshot(
                 pid: pid,
                 cgWindowID: cgWindowID(for: element, maxAttempts: maxAttempts),
-                title: stringAttribute(kAXTitleAttribute as CFString, from: element, maxAttempts: maxAttempts),
+                titleRead: titleAttribute(from: element, maxAttempts: maxAttempts),
                 bounds: frame(of: element, maxAttempts: maxAttempts),
                 role: stringAttribute(kAXRoleAttribute as CFString, from: element, maxAttempts: maxAttempts),
                 subrole: stringAttribute(kAXSubroleAttribute as CFString, from: element, maxAttempts: maxAttempts),
@@ -290,6 +324,17 @@ struct AXWindowReader: AppTrackerWindowReading, Sendable {
         }
         let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
         return trimmed.isEmpty ? nil : trimmed
+    }
+
+    func titleAttribute(from element: AXUIElement, maxAttempts: Int = 2) -> AXWindowTitleRead {
+        var value: CFTypeRef?
+        let result = copyAttributeValue(
+            kAXTitleAttribute as CFString,
+            from: element,
+            into: &value,
+            maxAttempts: maxAttempts
+        )
+        return AXWindowTitleRead.classify(result: result, value: value)
     }
 
     func boolAttribute(_ attribute: CFString, from element: AXUIElement, maxAttempts: Int = 2) -> Bool? {

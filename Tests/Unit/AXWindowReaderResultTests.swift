@@ -7,7 +7,7 @@ final class AXWindowReaderResultTests: XCTestCase {
         let snapshot = AXWindowSnapshot(
             pid: 42,
             cgWindowID: 123,
-            title: "test",
+            titleRead: .value("test"),
             bounds: nil,
             role: nil,
             subrole: nil,
@@ -21,6 +21,7 @@ final class AXWindowReaderResultTests: XCTestCase {
         XCTAssertEqual(windows.count, 1)
         XCTAssertEqual(windows[0].pid, snapshot.pid)
         XCTAssertEqual(windows[0].cgWindowID, snapshot.cgWindowID)
+        XCTAssertEqual(windows[0].title, "test")
     }
 
     func testUnreadStillMapsToEmptyArrayAndKeepsError() {
@@ -31,6 +32,31 @@ final class AXWindowReaderResultTests: XCTestCase {
             return XCTFail("expected unread")
         }
         XCTAssertEqual(error, .cannotComplete)
+    }
+
+    func testTitleReadClassifiesNonEmptyAndKnownEmptyValues() {
+        XCTAssertEqual(
+            AXWindowTitleRead.classify(result: .success, value: "  Window  " as CFString),
+            .value("Window")
+        )
+        XCTAssertEqual(AXWindowTitleRead.classify(result: .success, value: "" as CFString), .empty)
+        XCTAssertEqual(
+            AXWindowTitleRead.classify(result: .success, value: " \n\t " as CFString),
+            .empty
+        )
+        XCTAssertEqual(AXWindowTitleRead.classify(result: .noValue, value: nil), .empty)
+        XCTAssertEqual(AXWindowTitleRead.classify(result: .attributeUnsupported, value: nil), .empty)
+    }
+
+    func testTitleReadKeepsFailuresDistinctFromEmpty() {
+        XCTAssertEqual(
+            AXWindowTitleRead.classify(result: .cannotComplete, value: nil),
+            .unread(.cannotComplete)
+        )
+        XCTAssertEqual(
+            AXWindowTitleRead.classify(result: .success, value: NSNumber(value: 7)),
+            .unread(.failure)
+        )
     }
 }
 
@@ -220,6 +246,173 @@ final class AppTrackerReadSemanticsTests: XCTestCase {
         XCTAssertEqual(tracker.fixtureAppForTesting(pid: pid)?.shadowTabCgIDs, [88, 89])
     }
 
+    func testSameWindowUnreadTitlePreservesKnownTitleAndLogsHold() throws {
+        let logDirectory = FileManager.default.temporaryDirectory
+            .appendingPathComponent("AppTrackerTitleHeldTests-\(UUID().uuidString)", isDirectory: true)
+        defer { try? FileManager.default.removeItem(at: logDirectory) }
+        let inventoryLog = WindowInventoryAnomalyLog(configuration: .init(
+            enabled: true,
+            directoryURL: logDirectory,
+            maxFileSize: 1_000_000,
+            archiveCount: 1
+        ))
+        let tracker = AppTracker(inventoryLog: inventoryLog, eventAXAsyncEnabled: true)
+        tracker.installFixtureForTesting(makeApp())
+
+        _ = reconcile(
+            tracker,
+            eligible: [makeSnapshot(cgWindowID: cgWindowID, titleRead: .unread(.cannotComplete))]
+        )
+
+        XCTAssertEqual(tracker.fixtureAppForTesting(pid: pid)?.windowsByID[cgWindowID]?.title, "Window")
+        inventoryLog.flush()
+        let records = try jsonRecords(at: inventoryLog.currentFileURL)
+        let held = try XCTUnwrap(records.first { $0["event"] as? String == "titleHeld" })
+        let payload = try XCTUnwrap(held["payload"] as? [String: Any])
+        XCTAssertEqual(payload["pid"] as? Int, Int(pid))
+        XCTAssertEqual(payload["seatToken"] as? String, "tabgrp-\(pid)-s1")
+        XCTAssertEqual(payload["activeCgID"] as? Int, Int(cgWindowID))
+        XCTAssertEqual(payload["errorCode"] as? Int, Int(AXError.cannotComplete.rawValue))
+        XCTAssertNil(payload["title"])
+        XCTAssertNil(payload["previousTitle"])
+    }
+
+    func testTitleHeldIsNotLoggedWhenNoPreviousTitleIsInherited() throws {
+        let logDirectory = FileManager.default.temporaryDirectory
+            .appendingPathComponent("AppTrackerTitleNotHeldTests-\(UUID().uuidString)", isDirectory: true)
+        defer { try? FileManager.default.removeItem(at: logDirectory) }
+        let inventoryLog = WindowInventoryAnomalyLog(configuration: .init(
+            enabled: true,
+            directoryURL: logDirectory,
+            maxFileSize: 1_000_000,
+            archiveCount: 1
+        ))
+
+        let knownEmptyTracker = AppTracker(inventoryLog: inventoryLog, eventAXAsyncEnabled: true)
+        knownEmptyTracker.installFixtureForTesting(makeApp())
+        _ = reconcile(
+            knownEmptyTracker,
+            eligible: [makeSnapshot(cgWindowID: cgWindowID, titleRead: .empty)]
+        )
+
+        let knownValueTracker = AppTracker(inventoryLog: inventoryLog, eventAXAsyncEnabled: true)
+        knownValueTracker.installFixtureForTesting(makeApp())
+        _ = reconcile(
+            knownValueTracker,
+            eligible: [makeSnapshot(cgWindowID: cgWindowID, titleRead: .value("Updated"))]
+        )
+
+        let replacementID: CGWindowID = 88
+        let replacementTracker = AppTracker(inventoryLog: inventoryLog, eventAXAsyncEnabled: true)
+        replacementTracker.installFixtureForTesting(makeApp())
+        _ = reconcile(
+            replacementTracker,
+            eligible: [makeSnapshot(cgWindowID: replacementID, titleRead: .unread(.cannotComplete))],
+            allCGWindowIDs: [cgWindowID, replacementID]
+        )
+
+        let newWindowID: CGWindowID = 99
+        let newSeatTracker = AppTracker(inventoryLog: inventoryLog, eventAXAsyncEnabled: true)
+        newSeatTracker.installFixtureForTesting(makeApp())
+        _ = reconcile(
+            newSeatTracker,
+            eligible: [
+                makeSnapshot(cgWindowID: cgWindowID, titleRead: .value("Window")),
+                makeSnapshot(
+                    cgWindowID: newWindowID,
+                    titleRead: .unread(.cannotComplete),
+                    bounds: CGRect(x: 700, y: 20, width: 500, height: 400)
+                ),
+            ],
+            allCGWindowIDs: [cgWindowID, newWindowID]
+        )
+
+        inventoryLog.flush()
+        let records = try jsonRecords(at: inventoryLog.currentFileURL)
+        XCTAssertFalse(records.contains { $0["event"] as? String == "titleHeld" })
+    }
+
+    func testSameWindowKnownEmptyTitleClearsKnownTitle() {
+        let tracker = AppTracker(eventAXAsyncEnabled: true)
+        tracker.installFixtureForTesting(makeApp())
+
+        _ = reconcile(tracker, eligible: [makeSnapshot(cgWindowID: cgWindowID, titleRead: .empty)])
+
+        XCTAssertEqual(tracker.fixtureAppForTesting(pid: pid)?.windowsByID[cgWindowID]?.title, "")
+    }
+
+    func testSameWindowKnownTitleUpdatesKnownTitle() {
+        let tracker = AppTracker(eventAXAsyncEnabled: true)
+        tracker.installFixtureForTesting(makeApp())
+
+        _ = reconcile(
+            tracker,
+            eligible: [makeSnapshot(cgWindowID: cgWindowID, titleRead: .value("Updated"))]
+        )
+
+        XCTAssertEqual(tracker.fixtureAppForTesting(pid: pid)?.windowsByID[cgWindowID]?.title, "Updated")
+    }
+
+    func testTabReplacementDoesNotInheritUnreadTitle() {
+        let replacementID: CGWindowID = 88
+        let tracker = AppTracker(eventAXAsyncEnabled: true)
+        tracker.installFixtureForTesting(makeApp())
+
+        _ = reconcile(
+            tracker,
+            eligible: [makeSnapshot(cgWindowID: replacementID, titleRead: .unread(.cannotComplete))],
+            allCGWindowIDs: [cgWindowID, replacementID]
+        )
+
+        let app = tracker.fixtureAppForTesting(pid: pid)
+        XCTAssertEqual(app?.windowOrder, [replacementID])
+        XCTAssertEqual(app?.windowsByID[replacementID]?.title, "")
+    }
+
+    func testTearOutReplacementDoesNotInheritUnreadTitle() {
+        let replacementID: CGWindowID = 88
+        let tracker = AppTracker(eventAXAsyncEnabled: true)
+        tracker.installFixtureForTesting(makeApp())
+        let originalBounds = CGRect(x: 10, y: 20, width: 500, height: 400)
+        let movedBounds = CGRect(x: 700, y: 20, width: 500, height: 400)
+
+        _ = reconcile(
+            tracker,
+            eligible: [
+                makeSnapshot(cgWindowID: cgWindowID, titleRead: .value("Moved"), bounds: movedBounds),
+                makeSnapshot(
+                    cgWindowID: replacementID,
+                    titleRead: .unread(.cannotComplete),
+                    bounds: originalBounds
+                ),
+            ],
+            allCGWindowIDs: [cgWindowID, replacementID]
+        )
+
+        XCTAssertEqual(tracker.fixtureAppForTesting(pid: pid)?.windowsByID[replacementID]?.title, "")
+    }
+
+    func testNewSeatDoesNotInheritUnreadTitle() {
+        let newWindowID: CGWindowID = 99
+        let tracker = AppTracker(eventAXAsyncEnabled: true)
+        tracker.installFixtureForTesting(makeApp())
+
+        _ = reconcile(
+            tracker,
+            eligible: [
+                makeSnapshot(cgWindowID: cgWindowID, titleRead: .value("Window")),
+                makeSnapshot(
+                    cgWindowID: newWindowID,
+                    titleRead: .unread(.cannotComplete),
+                    bounds: CGRect(x: 700, y: 20, width: 500, height: 400)
+                ),
+            ],
+            allCGWindowIDs: [cgWindowID, newWindowID]
+        )
+
+        XCTAssertEqual(tracker.fixtureAppForTesting(pid: pid)?.windowsByID[newWindowID]?.title, "")
+    }
+
     func testEventBurstRunsOneLeadingAndExactlyOneTrailingRead() async {
         let reader = ControlledAppTrackerReader()
         let tracker = AppTracker(
@@ -385,6 +578,52 @@ final class AppTrackerReadSemanticsTests: XCTestCase {
             isHidden: false,
             shadowTabCgIDs: shadowIDs
         )
+    }
+
+    @discardableResult
+    private func reconcile(
+        _ tracker: AppTracker,
+        eligible: [AXWindowSnapshot],
+        allCGWindowIDs: Set<CGWindowID>? = nil
+    ) -> Bool {
+        let ids = allCGWindowIDs ?? Set(eligible.compactMap(\.cgWindowID))
+        return tracker.reconcileFixtureForTesting(
+            pid: pid,
+            cgSnapshot: AppTrackerCGWindowSnapshot(
+                allWindowIDs: ids,
+                onScreenWindowIDs: ids,
+                windowIDsByPID: [pid: ids],
+                alphaByWindowID: [:]
+            ),
+            now: Date(),
+            eligible: eligible,
+            readOutcome: .success(count: eligible.count)
+        )
+    }
+
+    private func makeSnapshot(
+        cgWindowID: CGWindowID,
+        titleRead: AXWindowTitleRead,
+        bounds: CGRect = CGRect(x: 10, y: 20, width: 500, height: 400)
+    ) -> AXWindowSnapshot {
+        AXWindowSnapshot(
+            pid: pid,
+            cgWindowID: cgWindowID,
+            titleRead: titleRead,
+            bounds: bounds,
+            role: kAXWindowRole as String,
+            subrole: kAXStandardWindowSubrole as String,
+            isMinimized: false,
+            isFocusedWindow: true,
+            element: AXUIElementCreateApplication(pid)
+        )
+    }
+
+    private func jsonRecords(at url: URL) throws -> [[String: Any]] {
+        let text = try String(contentsOf: url, encoding: .utf8)
+        return try text.split(separator: "\n").map { line in
+            try XCTUnwrap(JSONSerialization.jsonObject(with: Data(line.utf8)) as? [String: Any])
+        }
     }
 
     private nonisolated func emptyCGSnapshot() -> AppTrackerCGWindowSnapshot {

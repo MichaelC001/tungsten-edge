@@ -317,9 +317,10 @@ final class AppTracker: ObservableObject {
         // history = 座位延续时继承的「曾任活跃标签」集合。与 CG 全列表求交集：真关掉的标签
         // 随之出列，防 cgID 复用后被误折叠进旧座位。wasEverVisible = 座位此前是否可见过（延续时
         // 继承）；本次以 min=false 现身也算——幽灵座位永远凑不齐这个标记（自愈判定的头号门槛）。
-        func make(token: String, _ s: AXWindowSnapshot, history: Set<CGWindowID> = [],
-                  wasEverVisible: Bool = false) -> WindowEntry {
-            WindowEntry(cgWindowID: s.cgWindowID!, token: token, title: s.title ?? "",
+        func make(token: String, _ s: AXWindowSnapshot, previousTitle: String? = nil,
+                  history: Set<CGWindowID> = [], wasEverVisible: Bool = false) -> WindowEntry {
+            WindowEntry(cgWindowID: s.cgWindowID!, token: token,
+                        title: s.titleRead.resolvedTitle(previousTitle: previousTitle),
                         bounds: s.bounds, isMinimized: s.isMinimized, isFocused: s.isFocusedWindow,
                         everSeenVisible: wasEverVisible || !s.isMinimized,
                         formerCgIDs: history.subtracting([s.cgWindowID!]).intersection(cgIDs))
@@ -362,7 +363,18 @@ final class AppTracker: ObservableObject {
                     // X 不标 used → 落到 Pass B 成新座位（被赶出去的当前标签）
                 } else {
                     // 普通：跟着 X（frame 可移动）
-                    place(make(token: seat.token, snapX, history: seat.formerCgIDs,
+                    if case .unread(let error) = snapX.titleRead, let reconcileContext {
+                        inventoryLog.record(.titleHeld(InventoryTitleHeldPayload(
+                            context: reconcileContext,
+                            pid: pid,
+                            bundleID: app.bundleIdentifier,
+                            seatToken: seat.token,
+                            activeCgID: X,
+                            errorCode: error.rawValue
+                        )))
+                    }
+                    place(make(token: seat.token, snapX, previousTitle: seat.title,
+                               history: seat.formerCgIDs,
                                wasEverVisible: seat.everSeenVisible))
                     usedEligible.insert(X)
                 }

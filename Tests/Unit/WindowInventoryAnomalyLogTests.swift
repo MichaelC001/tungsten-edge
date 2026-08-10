@@ -493,6 +493,39 @@ final class WindowInventoryAnomalyLogTests: XCTestCase {
         XCTAssertEqual(payload["errorCode"] as? Int, Int(AXError.cannotComplete.rawValue))
     }
 
+    func testTitleHeldJSONLOmitsTitleText() throws {
+        let directory = makeRoot().appendingPathComponent("logs")
+        let log = makeLogger(directory: directory)
+        let context = InventoryReconcileContext(
+            roundID: 9,
+            appReconcileOrdinal: 3,
+            source: .frontmostPoll,
+            gapMs: 500,
+            usedPreloadedAX: true,
+            axReadOutcome: .success(count: 2)
+        )
+        log.record(.titleHeld(.init(
+            context: context,
+            pid: 4242,
+            bundleID: "com.example.slow-app",
+            seatToken: "tabgrp-4242-s1",
+            activeCgID: 77,
+            errorCode: AXError.cannotComplete.rawValue
+        )))
+        log.flush()
+
+        let record = try XCTUnwrap(jsonRecords(at: log.currentFileURL).first)
+        XCTAssertEqual(record["event"] as? String, "titleHeld")
+        let payload = try XCTUnwrap(record["payload"] as? [String: Any])
+        XCTAssertEqual(payload["pid"] as? Int, 4242)
+        XCTAssertEqual(payload["bundleID"] as? String, "com.example.slow-app")
+        XCTAssertEqual(payload["seatToken"] as? String, "tabgrp-4242-s1")
+        XCTAssertEqual(payload["activeCgID"] as? Int, 77)
+        XCTAssertEqual(payload["errorCode"] as? Int, Int(AXError.cannotComplete.rawValue))
+        XCTAssertNil(payload["title"])
+        XCTAssertNil(payload["previousTitle"])
+    }
+
     private func makeLogger(
         directory: URL,
         enabled: Bool = true,
