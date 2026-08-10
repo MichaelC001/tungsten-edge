@@ -192,7 +192,7 @@ final class AppTrackerReadSemanticsTests: XCTestCase {
         let episode = UUID()
         tracker.installFixtureForTesting(makeApp(
             isMinimized: true,
-            absentSince: absence,
+            minAbsentSince: absence,
             episodeID: episode,
             shadowIDs: [88, 89]
         ))
@@ -225,8 +225,17 @@ final class AppTrackerReadSemanticsTests: XCTestCase {
         XCTAssertEqual(payload["errorCode"] as? Int, Int(AXError.cannotComplete.rawValue))
     }
 
-    func testSuccessfulEmptyRoundKeepsShadowPoolWhenCGStillHasWindows() {
-        let tracker = AppTracker(eventAXAsyncEnabled: true)
+    func testSuccessfulEmptyRoundsKeepCGPresentSeatAndShadowPool() throws {
+        let logDirectory = FileManager.default.temporaryDirectory
+            .appendingPathComponent("AppTrackerEmptyInventoryTests-\(UUID().uuidString)", isDirectory: true)
+        defer { try? FileManager.default.removeItem(at: logDirectory) }
+        let inventoryLog = WindowInventoryAnomalyLog(configuration: .init(
+            enabled: true,
+            directoryURL: logDirectory,
+            maxFileSize: 1_000_000,
+            archiveCount: 1
+        ))
+        let tracker = AppTracker(inventoryLog: inventoryLog, eventAXAsyncEnabled: true)
         tracker.installFixtureForTesting(makeApp(shadowIDs: [88, 89]))
         let cgSnapshot = AppTrackerCGWindowSnapshot(
             allWindowIDs: [cgWindowID, 88, 89],
@@ -235,15 +244,226 @@ final class AppTrackerReadSemanticsTests: XCTestCase {
             alphaByWindowID: [:]
         )
 
+        for now in [Date(timeIntervalSince1970: 100), Date(timeIntervalSince1970: 110)] {
+            _ = tracker.reconcileFixtureForTesting(
+                pid: pid,
+                cgSnapshot: cgSnapshot,
+                now: now,
+                eligible: [],
+                readOutcome: .success(count: 0)
+            )
+        }
+
+        let app = tracker.fixtureAppForTesting(pid: pid)
+        XCTAssertEqual(app?.windowOrder, [cgWindowID])
+        XCTAssertEqual(app?.windowsByID[cgWindowID]?.token, "tabgrp-\(pid)-s1")
+        XCTAssertEqual(app?.windowsByID[cgWindowID]?.title, "Window")
+        XCTAssertEqual(
+            app?.windowsByID[cgWindowID]?.bounds,
+            CGRect(x: 10, y: 20, width: 500, height: 400)
+        )
+        XCTAssertEqual(app?.windowsByID[cgWindowID]?.isFocused, false)
+        XCTAssertEqual(app?.shadowTabCgIDs, [88, 89])
+
+        inventoryLog.flush()
+        let records = try jsonRecords(at: inventoryLog.currentFileURL)
+        XCTAssertFalse(records.contains { record in
+            guard record["event"] as? String == "seatReleased",
+                  let payload = record["payload"] as? [String: Any] else { return false }
+            return payload["reason"] as? String == "absentBeyondGrace"
+        })
+    }
+
+    func testUnidentifiedSnapshotDoesNotReleaseCGPresentSeat() {
+        let tracker = AppTracker(eventAXAsyncEnabled: true)
+        tracker.installFixtureForTesting(makeApp())
+        let cgSnapshot = AppTrackerCGWindowSnapshot(
+            allWindowIDs: [cgWindowID],
+            onScreenWindowIDs: [cgWindowID],
+            windowIDsByPID: [pid: [cgWindowID]],
+            alphaByWindowID: [:]
+        )
+
         _ = tracker.reconcileFixtureForTesting(
             pid: pid,
             cgSnapshot: cgSnapshot,
-            now: Date(),
+            now: Date(timeIntervalSince1970: 100),
+            eligible: [makeSnapshot(cgWindowID: nil, titleRead: .value("Unknown ID"))],
+            readOutcome: .success(count: 1)
+        )
+
+        let app = tracker.fixtureAppForTesting(pid: pid)
+        XCTAssertEqual(app?.windowOrder, [cgWindowID])
+        XCTAssertEqual(app?.windowsByID[cgWindowID]?.token, "tabgrp-\(pid)-s1")
+        XCTAssertEqual(app?.windowsByID[cgWindowID]?.title, "Window")
+    }
+
+    func testPartialInventoryRetainsOldSeatAndSideWindowStillClosesNormally() throws {
+        let sideWindowID: CGWindowID = 88
+        let logDirectory = FileManager.default.temporaryDirectory
+            .appendingPathComponent("AppTrackerPartialInventoryTests-\(UUID().uuidString)", isDirectory: true)
+        defer { try? FileManager.default.removeItem(at: logDirectory) }
+        let inventoryLog = WindowInventoryAnomalyLog(configuration: .init(
+            enabled: true,
+            directoryURL: logDirectory,
+            maxFileSize: 1_000_000,
+            archiveCount: 1
+        ))
+        let tracker = AppTracker(inventoryLog: inventoryLog, eventAXAsyncEnabled: true)
+        tracker.installFixtureForTesting(makeApp(seatToken: "existing-seat"))
+        let cgSnapshot = AppTrackerCGWindowSnapshot(
+            allWindowIDs: [cgWindowID, sideWindowID],
+            onScreenWindowIDs: [cgWindowID, sideWindowID],
+            windowIDsByPID: [pid: [cgWindowID, sideWindowID]],
+            alphaByWindowID: [:]
+        )
+
+        _ = tracker.reconcileFixtureForTesting(
+            pid: pid,
+            cgSnapshot: cgSnapshot,
+            now: Date(timeIntervalSince1970: 100),
+            eligible: [
+                makeSnapshot(cgWindowID: nil, titleRead: .value("Unknown ID")),
+                makeSnapshot(
+                    cgWindowID: sideWindowID,
+                    titleRead: .value("Side"),
+                    bounds: CGRect(x: 700, y: 20, width: 500, height: 400)
+                ),
+            ],
+            readOutcome: .success(count: 2)
+        )
+
+        let app = tracker.fixtureAppForTesting(pid: pid)
+        XCTAssertEqual(app?.windowOrder, [cgWindowID, sideWindowID])
+        XCTAssertEqual(app?.windowsByID[cgWindowID]?.token, "existing-seat")
+        XCTAssertEqual(app?.windowsByID[cgWindowID]?.title, "Window")
+        XCTAssertEqual(app?.windowsByID[sideWindowID]?.title, "Side")
+        XCTAssertNotEqual(app?.windowsByID[sideWindowID]?.token, "existing-seat")
+
+        let mainOnlyCGSnapshot = AppTrackerCGWindowSnapshot(
+            allWindowIDs: [cgWindowID],
+            onScreenWindowIDs: [cgWindowID],
+            windowIDsByPID: [pid: [cgWindowID]],
+            alphaByWindowID: [:]
+        )
+        _ = tracker.reconcileFixtureForTesting(
+            pid: pid,
+            cgSnapshot: mainOnlyCGSnapshot,
+            now: Date(timeIntervalSince1970: 110),
+            eligible: [makeSnapshot(cgWindowID: cgWindowID, titleRead: .value("Window"))],
+            readOutcome: .success(count: 1)
+        )
+
+        let finalApp = tracker.fixtureAppForTesting(pid: pid)
+        XCTAssertEqual(finalApp?.windowOrder, [cgWindowID])
+        XCTAssertEqual(finalApp?.windowsByID[cgWindowID]?.token, "existing-seat")
+        inventoryLog.flush()
+        let records = try jsonRecords(at: inventoryLog.currentFileURL)
+        let sideRelease = try XCTUnwrap(records.first { record in
+            guard record["event"] as? String == "seatReleased",
+                  let payload = record["payload"] as? [String: Any] else { return false }
+            return payload["activeCgID"] as? Int == Int(sideWindowID)
+        })
+        let payload = try XCTUnwrap(sideRelease["payload"] as? [String: Any])
+        XCTAssertEqual(payload["reason"] as? String, "leftCGList")
+    }
+
+    func testRetainedSeatReappearsWithSameTokenAndHeldTitle() {
+        let tracker = AppTracker(eventAXAsyncEnabled: true)
+        tracker.installFixtureForTesting(makeApp())
+        let cgSnapshot = AppTrackerCGWindowSnapshot(
+            allWindowIDs: [cgWindowID],
+            onScreenWindowIDs: [cgWindowID],
+            windowIDsByPID: [pid: [cgWindowID]],
+            alphaByWindowID: [:]
+        )
+
+        _ = tracker.reconcileFixtureForTesting(
+            pid: pid,
+            cgSnapshot: cgSnapshot,
+            now: Date(timeIntervalSince1970: 100),
+            eligible: [],
+            readOutcome: .success(count: 0)
+        )
+        _ = tracker.reconcileFixtureForTesting(
+            pid: pid,
+            cgSnapshot: cgSnapshot,
+            now: Date(timeIntervalSince1970: 110),
+            eligible: [makeSnapshot(cgWindowID: cgWindowID, titleRead: .unread(.cannotComplete))],
+            readOutcome: .success(count: 1)
+        )
+
+        let seat = tracker.fixtureAppForTesting(pid: pid)?.windowsByID[cgWindowID]
+        XCTAssertEqual(seat?.token, "tabgrp-\(pid)-s1")
+        XCTAssertEqual(seat?.title, "Window")
+    }
+
+    func testCGDisappearanceReleasesSeatAsLeftCGList() throws {
+        let logDirectory = FileManager.default.temporaryDirectory
+            .appendingPathComponent("AppTrackerCGCloseTests-\(UUID().uuidString)", isDirectory: true)
+        defer { try? FileManager.default.removeItem(at: logDirectory) }
+        let inventoryLog = WindowInventoryAnomalyLog(configuration: .init(
+            enabled: true,
+            directoryURL: logDirectory,
+            maxFileSize: 1_000_000,
+            archiveCount: 1
+        ))
+        let tracker = AppTracker(inventoryLog: inventoryLog, eventAXAsyncEnabled: true)
+        tracker.installFixtureForTesting(makeApp())
+
+        _ = tracker.reconcileFixtureForTesting(
+            pid: pid,
+            cgSnapshot: emptyCGSnapshot(),
+            now: Date(timeIntervalSince1970: 100),
             eligible: [],
             readOutcome: .success(count: 0)
         )
 
-        XCTAssertEqual(tracker.fixtureAppForTesting(pid: pid)?.shadowTabCgIDs, [88, 89])
+        XCTAssertEqual(tracker.fixtureAppForTesting(pid: pid)?.windowOrder, [])
+        inventoryLog.flush()
+        let records = try jsonRecords(at: inventoryLog.currentFileURL)
+        let release = try XCTUnwrap(records.first { $0["event"] as? String == "seatReleased" })
+        let payload = try XCTUnwrap(release["payload"] as? [String: Any])
+        XCTAssertEqual(payload["reason"] as? String, "leftCGList")
+        XCTAssertEqual(payload["seatToken"] as? String, "tabgrp-\(pid)-s1")
+    }
+
+    func testDestroyTombstoneReleasesSeatEvenWhileCGStillListsIt() throws {
+        let logDirectory = FileManager.default.temporaryDirectory
+            .appendingPathComponent("AppTrackerDestroyCloseTests-\(UUID().uuidString)", isDirectory: true)
+        defer { try? FileManager.default.removeItem(at: logDirectory) }
+        let inventoryLog = WindowInventoryAnomalyLog(configuration: .init(
+            enabled: true,
+            directoryURL: logDirectory,
+            maxFileSize: 1_000_000,
+            archiveCount: 1
+        ))
+        let reader = ControlledAppTrackerReader(
+            untimedResult: .success([]),
+            blocksTimedReads: false
+        )
+        let cgSnapshot = AppTrackerCGWindowSnapshot(
+            allWindowIDs: [cgWindowID],
+            onScreenWindowIDs: [],
+            windowIDsByPID: [pid: [cgWindowID]],
+            alphaByWindowID: [:]
+        )
+        let tracker = AppTracker(
+            inventoryLog: inventoryLog,
+            reader: reader,
+            cgSnapshotProvider: { cgSnapshot },
+            eventAXAsyncEnabled: true
+        )
+        tracker.installFixtureForTesting(makeApp())
+
+        tracker.destroyForTesting(pid: pid, cgWindowID: cgWindowID)
+
+        XCTAssertEqual(tracker.fixtureAppForTesting(pid: pid)?.windowOrder, [])
+        inventoryLog.flush()
+        let records = try jsonRecords(at: inventoryLog.currentFileURL)
+        let release = try XCTUnwrap(records.first { $0["event"] as? String == "seatReleased" })
+        let payload = try XCTUnwrap(release["payload"] as? [String: Any])
+        XCTAssertEqual(payload["reason"] as? String, "leftCGList")
     }
 
     func testSameWindowUnreadTitlePreservesKnownTitleAndLogsHold() throws {
@@ -551,19 +771,19 @@ final class AppTrackerReadSemanticsTests: XCTestCase {
 
     private func makeApp(
         isMinimized: Bool = false,
-        absentSince: Date? = nil,
+        minAbsentSince: Date? = nil,
         episodeID: UUID? = nil,
-        shadowIDs: Set<CGWindowID> = []
+        shadowIDs: Set<CGWindowID> = [],
+        seatToken: String? = nil
     ) -> AppEntry {
         let seat = WindowEntry(
             cgWindowID: cgWindowID,
-            token: "tabgrp-\(pid)-s1",
+            token: seatToken ?? "tabgrp-\(pid)-s1",
             title: "Window",
             bounds: CGRect(x: 10, y: 20, width: 500, height: 400),
             isMinimized: isMinimized,
             isFocused: !isMinimized,
-            absentSince: absentSince,
-            minAbsentSince: absentSince,
+            minAbsentSince: minAbsentSince,
             absenceEpisodeID: episodeID,
             everSeenVisible: true
         )
@@ -602,7 +822,7 @@ final class AppTrackerReadSemanticsTests: XCTestCase {
     }
 
     private func makeSnapshot(
-        cgWindowID: CGWindowID,
+        cgWindowID: CGWindowID?,
         titleRead: AXWindowTitleRead,
         bounds: CGRect = CGRect(x: 10, y: 20, width: 500, height: 400)
     ) -> AXWindowSnapshot {

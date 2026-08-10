@@ -30,11 +30,7 @@ struct WindowEntry {
     var bounds: CGRect?
     var isMinimized: Bool
     var isFocused: Bool
-    /// 这个座位从 AX 枚举里消失、却只有 CG 还留着的「起始时刻」(nil = 当前 AX 能看到)。
-    /// 仅作「曾经 AX 缺席」的标记，用来在 AX 重新看到它时清零；【不据此回收座位】——实测
-    /// Safari 等正常窗口一最小化就整个离开 AX，按缺席回收会误删。座位回收只看 CG 全列表是否消失。
-    var absentSince: Date? = nil
-    /// min/隐藏保留分支里的 AX 连续缺席起始时刻（与 absentSince 分开，不碰 closedReapGrace 语义）。
+    /// min/隐藏保留分支里的 AX 连续缺席起始时刻。
     /// 只喂给幽灵座位自愈判定（PhantomSeatDecision，五门槛），重新在 AX 出现随 make() 自然清零。
     var minAbsentSince: Date? = nil
     /// 仅用于诊断：与 `minAbsentSince` 同时置位/清除，标识一次连续 AX 缺席 episode。
@@ -86,9 +82,6 @@ final class AppTracker: ObservableObject {
     private var isScanningCandidates = false
     private var destroyedCGIDs: [CGWindowID: Date] = [:]
     private static let tombstoneTTL: TimeInterval = 3.0
-    /// 一个「本来正常、却离开了 AX、但还赖在 CG 全列表」的座位，持续多久判定为关窗后残留并删。
-    /// 给一点 grace 扛 AX 偶发漏读（真窗口短暂漏一两次不该被删）。最小化/隐藏的座位不走这条（豁免）。
-    private static let closedReapGrace: TimeInterval = 1.5
     /// 幽灵座位自愈门槛：min 保留的座位 AX 连续缺席多久后才允许进入 PhantomSeatDecision 判定
     /// （还要过 everSeenVisible / CG 在场 / AX 读健康 / 有 AX 在场兄弟座位 四道门）。
     private static let phantomReapGrace: TimeInterval = 10.0
@@ -457,16 +450,13 @@ final class AppTracker: ObservableObject {
                                 )))
                             }
                             seat.isFocused = false
-                            seat.absentSince = nil
                             place(seat)                   // 真最小化(Safari 离开 AX)/ 应用隐藏 → 保座位
                         }
-                    } else if let since = seat.absentSince, now.timeIntervalSince(since) >= Self.closedReapGrace {
-                        // 正常窗口却离开 AX 且持续超过 grace → 判定关窗后赖在 CG,删座位（不 place）
-                        releasedSeats.append((seat, .absentBeyondGrace))
                     } else {
-                        if seat.absentSince == nil { seat.absentSince = now }
                         seat.isFocused = false
-                        place(seat)                       // grace 内暂留(扛 AX 偶发漏读),【不强制标 min】
+                        // AX 成功不代表窗口清单完整。只要 CG 仍确认当前 activeCgID 存在且没有
+                        // destroy tombstone，就保留原座位；AX 缺席永远不能自行证明窗口已关闭。
+                        place(seat)
                     }
                 } else {
                     // 连 CG 都没了 → 真关闭，丢弃。

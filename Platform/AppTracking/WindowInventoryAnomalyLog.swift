@@ -186,10 +186,11 @@ struct InventoryPhantomHealedPayload: Codable, Equatable {
     let ownerCandidateCount: Int
 }
 
-/// Every path that drops a stable seat records one of these reasons.
+/// Stable-seat release reasons, including values retained for historical JSONL interpretation.
 enum InventorySeatReleasedReason: String, Codable {
     case processGone
     case leftCGList
+    /// Historical schema value. Current inventory code must not infer closure from AX absence.
     case absentBeyondGrace
     case phantomHealed
 }
