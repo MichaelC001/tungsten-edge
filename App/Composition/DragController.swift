@@ -107,8 +107,26 @@ final class DragController: ObservableObject {
     /// 固定文件夹拖拽松手落定。PanelCoordinator 执行 store / Finder 副作用；controller 只负责可靠收尾。
     var onFolderDragEnded: ((String, FolderChipDropZone) -> Void)?
 
+    /// 本次拖动的**原始来源**。转换会翻 `draggingPayload.source`（进抽屉体后变 `.drawer`），
+    /// 所以判「这次拖动是不是把它从抽屉外带进来的」只能看这个。唯一权威是 `conversion` 里的
+    /// 回滚快照——**不另设并行字段**（见 `CrossPanelConversion` 的注释：不再叠布尔标志）。
+    private var originSource: DragSource? {
+        guard let payload = draggingPayload else { return nil }
+        switch conversion {
+        case let .stripToDrawer(original),
+             let .messagingToDrawer(original),
+             let .drawerToMessaging(original):
+            return original.source
+        case .drawerToStrip:
+            return .drawer
+        case nil:
+            return payload.source
+        }
+    }
+
     private let drawerStore: DrawerStore
     private let messagingStore: MessagingAppStore
+    private let keptAppStore: KeptAppStore
     /// 按来源给投放候选区（屏幕坐标，已 inset+容错）：strip/messaging→胶囊(+抽屉)；drawer→任务条 dock 面板。
     private let dropZonesProvider: (DragSource) -> [CGRect]
     private let screenProvider: () -> NSScreen
@@ -121,11 +139,13 @@ final class DragController: ObservableObject {
 
     init(drawerStore: DrawerStore,
          messagingStore: MessagingAppStore,
+         keptAppStore: KeptAppStore,
          dropZonesProvider: @escaping (DragSource) -> [CGRect],
          screenProvider: @escaping () -> NSScreen,
          carrierFactory: @escaping (DragController) -> NSView) {
         self.drawerStore = drawerStore
         self.messagingStore = messagingStore
+        self.keptAppStore = keptAppStore
         self.dropZonesProvider = dropZonesProvider
         self.screenProvider = screenProvider
         self.carrierFactory = carrierFactory
@@ -258,6 +278,7 @@ final class DragController: ObservableObject {
         let external = isOverDropZone
         let converted = isConvertedToStrip
         let convertedBid = convertedDrawerBundleID
+        let origin = originSource ?? p.source   // 必须赶在 teardown() 清 conversion 之前取
         let finalLocation = globalLocation
         let folderZone = folderDropGeometry?.classify(screenPoint: finalLocation) ?? .folderZone
         let action = DragConversionPlan.endAction(source: p.source,
@@ -270,7 +291,8 @@ final class DragController: ObservableObject {
             onFolderDragEnded?(p.id, folderZone)
         case .strip:
             // 进过抽屉体的卡已被 convertStripToDrawer 转成 .drawer（落在里面 = 已是成员、不走这里）。
-            // 走到这支 = 没进抽屉体的卡：在投放区(胶囊)松手 → 改 drawer placement；kept 不变。
+            // 走到这支 = 没进抽屉体的卡：在投放区(胶囊)松手 → 改 drawer placement。
+            // kept 不在这里动——四条入口共用 switch 之后那段统一判据。
             if external {
                 drawerStore.add(p.bundleID)
             }
@@ -296,6 +318,15 @@ final class DragController: ObservableObject {
             case .none, .stashMessagingChip:
                 break
             }
+        }
+
+        // 收纳落定 → 打开「在程序坞中保留」（owner 2026-08-06）。放在 switch **之后**：
+        // 此刻 drawerStore 已是最终成员关系，四条入口路径（任务条/消息 chip × 抽屉体/胶囊）
+        // 共用一个判据，也天然排除了抽屉内重排、转正进任务条、降级移出这些不该开启的情形。
+        // 语义（只进不出、每次拖入都重新打开）见 DragConversionPlan.enablesKeptOnDrop。
+        if DragConversionPlan.enablesKeptOnDrop(originSource: origin,
+                                                endedInDrawer: drawerStore.contains(p.bundleID)) {
+            keptAppStore.add(p.bundleID)
         }
     }
 

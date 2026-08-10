@@ -194,6 +194,38 @@ final class AppSettingsStoreTests: XCTestCase {
         XCTAssertFalse(HoverStyle.quiet.isExpressive)
     }
 
+    @MainActor
+    func testAppearanceModeDefaultsToSystemAndPersists() {
+        let defaults = makeDefaults()
+        XCTAssertEqual(AppSettingsStore(defaults: defaults).appearanceMode, .system, "默认跟随系统，升级用户零变化")
+
+        let store = AppSettingsStore(defaults: defaults)
+        store.setAppearanceMode(.dark)
+        XCTAssertEqual(store.appearanceMode, .dark)
+        XCTAssertEqual(AppSettingsStore(defaults: defaults).appearanceMode, .dark, "档位要跨重启保持")
+
+        store.setAppearanceMode(.system)
+        XCTAssertEqual(AppSettingsStore(defaults: defaults).appearanceMode, .system)
+    }
+
+    @MainActor
+    func testAppearanceModeRewritesCorruptStoredValueToSystem() {
+        let defaults = makeDefaults()
+        defaults.set("sepia", forKey: "com.tungsten.edge.appearanceMode")
+        XCTAssertEqual(AppSettingsStore(defaults: defaults).appearanceMode, .system)
+        XCTAssertEqual(defaults.string(forKey: "com.tungsten.edge.appearanceMode"), AppearanceMode.system.rawValue)
+
+        defaults.set(42, forKey: "com.tungsten.edge.appearanceMode")
+        XCTAssertEqual(AppSettingsStore(defaults: defaults).appearanceMode, .system, "类型不对也要回退")
+    }
+
+    func testAppearanceModeRawValuesAreStableAcrossReleases() {
+        // 同 dockSize：raw value 进了 UserDefaults，改名等于把所有老用户悄悄重置回跟随系统。
+        XCTAssertEqual(AppearanceMode.allCases.map(\.rawValue), ["system", "light", "dark"])
+        XCTAssertEqual(AppearanceMode.allCases.map(\.title), ["跟随系统", "浅色", "深色"])
+        XCTAssertEqual(AppearanceMode.default, .system)
+    }
+
     func testDockSizeRawValuesAreStableAcrossReleases() {
         // raw value 进了 UserDefaults，改名等于把所有老用户的档位悄悄重置成中档。
         XCTAssertEqual(DockSize.allCases.map(\.rawValue), ["small", "medium", "large", "extraLarge"])

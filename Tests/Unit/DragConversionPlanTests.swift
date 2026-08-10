@@ -90,4 +90,29 @@ final class DragConversionPlanTests: XCTestCase {
         XCTAssertEqual(DragConversionPlan.endAction(
             source: .drawer, isConvertedToStrip: false, isOverDropZone: false, isMessagingMember: false), .none)
     }
+
+    // MARK: - 拖入抽屉落定 → 自动打开 kept
+
+    /// 从抽屉外（任务条 / 消息区）带进来才打开。
+    func testDropFromOutsideIntoDrawerEnablesKept() {
+        XCTAssertTrue(DragConversionPlan.enablesKeptOnDrop(originSource: .strip, endedInDrawer: true))
+        XCTAssertTrue(DragConversionPlan.enablesKeptOnDrop(originSource: .messaging, endedInDrawer: true))
+    }
+
+    /// 起拖来源就是抽屉 = 它本来就在里面（抽屉内重排、转正撤回），不是「拖入」。
+    func testDragStartingInDrawerNeverEnablesKept() {
+        XCTAssertFalse(DragConversionPlan.enablesKeptOnDrop(originSource: .drawer, endedInDrawer: true))
+    }
+
+    /// 文件夹 chip 与收纳语义完全隔离，永不进这条路。
+    func testFolderDragNeverEnablesKept() {
+        XCTAssertFalse(DragConversionPlan.enablesKeptOnDrop(originSource: .folder, endedInDrawer: true))
+    }
+
+    /// 落定后不在抽屉里 → 一律不打开，不管从哪儿来（撤销、降级移出、转正进任务条都走这支）。
+    func testNotEndingInDrawerNeverEnablesKept() {
+        for source in [DragSource.strip, .drawer, .folder, .messaging] {
+            XCTAssertFalse(DragConversionPlan.enablesKeptOnDrop(originSource: source, endedInDrawer: false))
+        }
+    }
 }

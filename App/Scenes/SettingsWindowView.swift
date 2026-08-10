@@ -31,6 +31,13 @@ struct SettingsWindowContent: View {
         VStack(alignment: .leading, spacing: 22) {
             settingsSection("通用") {
                 launchAtLoginRow
+
+                Picker("外观", selection: binding(get: { store.appearanceMode }, set: store.setAppearanceMode)) {
+                    ForEach(AppearanceMode.allCases, id: \.self) { mode in
+                        Text(mode.title).tag(mode)
+                    }
+                }
+                .pickerStyle(.segmented)
             }
 
             Divider()
@@ -62,13 +69,6 @@ struct SettingsWindowContent: View {
                     }
                 }
                 .pickerStyle(.segmented)
-
-                // 唤醒时间是连续档位、会随手调，留在菜单里；这里只指路，别让人在设置窗口里
-                // 找自动隐藏找到死胡同（owner 2026-08-03 的分工：滑块类进菜单，开关类进这里）。
-                // 系统 Dock 相关的入口全在菜单里（滑块、确认行、「打开系统 Dock 设置…」）。
-                // 设置页原本还有一整组「系统 Dock」，只是指路 + 一个跟菜单项完全重复的按钮，
-                // 已于 2026-08-09 删除；这里顺带把它指到同一个地方，别在设置页找到死胡同。
-                pointerNote("任务条的自动隐藏和唤醒时间在**菜单栏的钨极图标**里调——那条滑块拖着就生效，方便一边拖一边看。macOS 自带程序坞的对应设置也在同一个菜单里。")
             }
 
             Divider()
@@ -199,16 +199,6 @@ struct SettingsWindowContent: View {
                 .fixedSize(horizontal: false, vertical: true)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
-    }
-
-    /// 指路行：这条设置不在本窗口里，告诉用户去哪调。**必须写清去处**——
-    /// 少了它，用户在设置窗口里找自动隐藏就是撞死胡同，而"找不到设置"正是这轮的起因。
-    private func pointerNote(_ markdown: String) -> some View {
-        Text(.init(markdown))
-            .font(.caption)
-            .foregroundStyle(.secondary)
-            .fixedSize(horizontal: false, vertical: true)
-            .frame(maxWidth: .infinity, alignment: .leading)
     }
 
     private func binding<Value>(

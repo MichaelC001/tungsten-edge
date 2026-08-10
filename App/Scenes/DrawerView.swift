@@ -7,8 +7,13 @@ import SwiftUI
 /// - 运行区：收纳的、且进程在跑的 app（亮图标 + 圆点）。点击 = app 级唤出/收起（`LauncherChip.handleTap`）。
 /// - 启动区：没在跑、但有 kept / messaging 永久身份的 app（暗图标，点击启动）。
 ///
-/// DrawerStore 只记 placement，KeptAppStore 决定退出后是否继续显示；两者正交。排序始终按完整
-/// placement 集合记，隐藏成员下次启动仍回原位。拖动两向只改 placement，不改 kept。
+/// DrawerStore 只记 placement，KeptAppStore 决定退出后是否继续显示。排序始终按完整
+/// placement 集合记，隐藏成员下次启动仍回原位。
+///
+/// 两者**不再完全正交**（owner 2026-08-06）：**拖入**方向落定后会顺手打开 kept——不打开的话，
+/// 拖进抽屉的普通应用一退出就从抽屉里消失了，不符合「收进抽屉 = 我要它一直在那儿」的心智。
+/// **拖回任务条**方向仍然一律不动 kept。转换预览与回滚阶段也一律不碰 kept，只有 `endDrag()`
+/// 落定那一刻才写。判据与完整语义见 `DragConversionPlan.enablesKeptOnDrop`。
 struct DrawerView: View {
     /// 抽屉内容区最大高度（胶囊上方锚点 → 屏幕上沿可用高度，PanelCoordinator 开抽屉时算好传入）。
     /// 内容超过它就内部滚动,绝不靠下压底边塞下（防与下方胶囊/任务条重叠）。
@@ -152,6 +157,9 @@ struct DrawerView: View {
         let launchIDs = launchZoneIDs
         let hasRunningZone = !runningIDs.isEmpty
         return VStack(alignment: .leading, spacing: 0) {
+            if runningIDs.isEmpty && launchIDs.isEmpty {
+                emptyHint
+            }
             if hasRunningZone {
                 LazyVGrid(columns: columns, spacing: 8) {
                     ForEach(Array(runningIDs.enumerated()), id: \.element) { index, id in 
@@ -176,6 +184,25 @@ struct DrawerView: View {
         .background(GeometryReader { g in
             Color.clear.preference(key: DrawerContentHeightKey.self, value: g.size.height)
         })
+    }
+
+    /// 空抽屉提示。没有它时两区都空 → `VStack` 零子视图 → 内容只剩 12pt padding，
+    /// 面板缩成 24×24 的毛玻璃小方块：既看不出这是干嘛的，也几乎没法当拖放目标。
+    ///
+    /// 宽度写死 186pt = **满行 5 列网格的宽度**（`5 × 44×0.7 + 4 × 8`），这样第一次
+    /// 拖进应用、提示换成网格时面板宽度不跳变。颜色必须走 token（浅深各一套），
+    /// 不许写字面量 opacity。
+    ///
+    /// 拖动预览期间无需特判：任务条卡一进抽屉体就被 `convertStripToDrawer` 转成真成员，
+    /// `runningZoneIDs` 立刻非空，提示自然让位给网格。
+    private var emptyHint: some View {
+        Text("将应用拖入抽屉区")
+            .font(.system(size: 11))
+            .foregroundStyle(theme.labelInactive.color)
+            .multilineTextAlignment(.center)
+            .fixedSize(horizontal: false, vertical: true)
+            .frame(width: 5 * 44 * 0.7 + 4 * 8)
+            .padding(.vertical, 10)
     }
 
     // MARK: - 单个图标（含拖动）

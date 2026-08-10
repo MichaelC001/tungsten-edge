@@ -32,7 +32,12 @@ final class AppMembershipController: ObservableObject {
         }
     }
 
-    /// Placement-only move. An explicit kept choice survives drawer round-trips.
+    /// Placement-only move: this API never touches kept.
+    ///
+    /// Auto-enabling kept on stash is a **drag-landing** policy, not a placement-API one —
+    /// it lives in `DragController.endDrag()` via `DragConversionPlan.enablesKeptOnDrop`.
+    /// So do not restate it here, and note this method has no production caller today
+    /// (menus offer no drawer placement action; drag is the only way in).
     func moveToDrawer(_ bundleID: String) {
         guard canChangeMembership(bundleID) else { return }
         drawerStore.add(bundleID)

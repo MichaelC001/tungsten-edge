@@ -28,6 +28,7 @@ final class DragControllerConversionTests: XCTestCase {
         controller = DragController(
             drawerStore: drawer,
             messagingStore: messaging,
+            keptAppStore: kept,
             dropZonesProvider: { [dropZone] _ in [dropZone] },
             screenProvider: { NSScreen.main ?? NSScreen.screens[0] },
             carrierFactory: { _ in NSView() }
@@ -207,5 +208,111 @@ final class DragControllerConversionTests: XCTestCase {
         controller.cancelDrag()
         XCTAssertTrue(cancelled)
         XCTAssertTrue(drawer.contains("app"))
+    }
+
+    // MARK: - 拖入抽屉落定 → 自动打开 kept（owner 2026-08-06）
+
+    /// 入口 1/4：任务条卡拖进抽屉体，抽屉里松手。
+    func testStripCardDroppedInsideDrawerEnablesKept() {
+        begin(.strip, "app", at: outsideZone)
+        controller.convertStripToDrawer()
+        controller.endDrag()
+        XCTAssertTrue(drawer.contains("app"))
+        XCTAssertTrue(kept.contains("app"))
+    }
+
+    /// 入口 2/4：任务条卡没进抽屉体，直接落在胶囊上。
+    func testStripCardDroppedOnCapsuleEnablesKept() {
+        begin(.strip, "app", at: insideZone)
+        controller.endDrag()
+        XCTAssertTrue(drawer.contains("app"))
+        XCTAssertTrue(kept.contains("app"))
+    }
+
+    /// 入口 3/4：消息区 chip 拖进抽屉体。消息身份不受影响。
+    func testMessagingChipDroppedInsideDrawerEnablesKept() {
+        messaging.mark("chat")
+        begin(.messaging, "chat", at: outsideZone)
+        controller.convertMessagingToDrawer()
+        controller.endDrag()
+        XCTAssertTrue(drawer.contains("chat"))
+        XCTAssertTrue(kept.contains("chat"))
+        XCTAssertTrue(messaging.contains("chat"))
+    }
+
+    /// 入口 4/4：消息区 chip 落在胶囊上。
+    func testMessagingChipDroppedOnCapsuleEnablesKept() {
+        messaging.mark("chat")
+        begin(.messaging, "chat", at: insideZone)
+        controller.endDrag()
+        XCTAssertTrue(drawer.contains("chat"))
+        XCTAssertTrue(kept.contains("chat"))
+    }
+
+    /// 负样本：抽屉内重排落定 —— 没有新成员加入，不该打开 kept。
+    func testDrawerInternalReorderDoesNotEnableKept() {
+        drawer.add("app")
+        begin(.drawer, "app", at: outsideZone)
+        controller.endDrag()
+        XCTAssertTrue(drawer.contains("app"))
+        XCTAssertFalse(kept.contains("app"), "抽屉内重排不是「拖入」")
+    }
+
+    /// 负样本：拖进抽屉体又拖出来（撤销）→ 落定时已不在抽屉，不该打开 kept。
+    func testStripCardRevertedOutOfDrawerDoesNotEnableKept() {
+        begin(.strip, "app", at: outsideZone)
+        controller.convertStripToDrawer()
+        controller.revertStripFromDrawer()
+        controller.endDrag()
+        XCTAssertFalse(drawer.contains("app"))
+        XCTAssertFalse(kept.contains("app"))
+    }
+
+    /// 负样本：抽屉图标转正进任务条后又撤回 —— 起拖来源是 `.drawer`，它本来就在抽屉里，
+    /// 不是这次拖动带进来的，所以不该打开 kept。
+    func testDrawerToStripRevertedDoesNotEnableKept() {
+        drawer.add("app")
+        begin(.drawer, "app", at: outsideZone)
+        controller.convertDrawerToStrip()
+        controller.revertDrawerToStrip()
+        controller.endDrag()
+        XCTAssertTrue(drawer.contains("app"))
+        XCTAssertFalse(kept.contains("app"))
+    }
+
+    /// 负样本：转正进任务条并落定 —— 落定后已不在抽屉。
+    func testCommittedDrawerToStripDoesNotEnableKept() {
+        drawer.add("app")
+        begin(.drawer, "app", at: outsideZone)
+        controller.convertDrawerToStrip()
+        controller.endDrag()
+        XCTAssertFalse(drawer.contains("app"))
+        XCTAssertFalse(kept.contains("app"))
+    }
+
+    /// **语义锁**（owner 2026-08-06）：手动取消勾选后再拖进来会**重新**勾上。
+    /// 这不是 bug —— 每次拖入都算重新表达「我要它长期放这里」。要改这条得先问 owner。
+    func testDraggingInAgainReEnablesKeptAfterManualUncheck() {
+        begin(.strip, "app", at: insideZone)
+        controller.endDrag()
+        XCTAssertTrue(kept.contains("app"))
+
+        // 拖回任务条（kept 不动），再手动取消勾选。
+        begin(.drawer, "app", at: outsideZone)
+        controller.convertDrawerToStrip()
+        controller.endDrag()
+        XCTAssertTrue(kept.contains("app"), "拖出抽屉不关 kept")
+        kept.remove("app")
+
+        begin(.strip, "app", at: insideZone)
+        controller.endDrag()
+        XCTAssertTrue(kept.contains("app"), "再次拖入重新打开 kept")
+    }
+
+    /// Finder 永不进 kept —— `KeptAppStore.add` 自带拒收，这里锁住拖拽路径也不例外。
+    func testFinderNeverEntersKeptThroughDrop() {
+        begin(.strip, "com.apple.finder", at: insideZone)
+        controller.endDrag()
+        XCTAssertFalse(kept.contains("com.apple.finder"))
     }
 }

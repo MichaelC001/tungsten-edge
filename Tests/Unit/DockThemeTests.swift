@@ -301,6 +301,16 @@ final class DockThemeTests: XCTestCase {
             }
         }
     }
+
+    // MARK: - 外观档位 → NSAppearance
+
+    /// 这个映射是整条「浅色 / 深色」功能的唯一执行点：设到 `NSApp.appearance` 上，
+    /// 主题色、毛玻璃材质、菜单、之后新建的面板全跟着它走。
+    func testAppearanceModeMapsToNSAppearance() {
+        XCTAssertNil(AppearanceMode.system.nsAppearance, "跟随系统 = 交还给系统，不能设成 .aqua")
+        XCTAssertEqual(AppearanceMode.light.nsAppearance?.name, .aqua)
+        XCTAssertEqual(AppearanceMode.dark.nsAppearance?.name, .darkAqua)
+    }
 }
 
 // MARK: - 测试辅助

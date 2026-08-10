@@ -56,6 +56,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var workspaceObservers: [NSObjectProtocol] = []
     private var messagingAutoRegisterSubscription: AnyCancellable?
     private var windowLiftSettingSubscription: AnyCancellable?
+    private var appearanceSubscription: AnyCancellable?
     private let permissionService = PermissionService()
     private var installLocation: AppInstallLocation = .other
     private var permissionCoordinator: PermissionRecoveryCoordinator?
@@ -84,6 +85,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // 行缓冲 stdout：从命令行/后台启动时，print() 输出到文件默认是块缓冲，
         // 日志要攒满缓冲区才落盘。改成行缓冲后每条 print 立即写出，便于实时读日志。
         setvbuf(stdout, nil, _IOLBF, 0)
+
+        // 外观档位排在最前面：搬家引导、权限引导、正常启动三条分支的第一个窗口就得是对的外观。
+        // `@Published` 订阅时先发一次当前值，所以这一句同时完成「启动时应用」和「之后跟随」。
+        appearanceSubscription = settingsStore.$appearanceMode
+            .sink { NSApp.appearance = $0.nsAppearance }
 
         // 位置分类必须排在接管其他实例和注册热键**之前**。
         // 挂载磁盘映像双击运行时，那份临时副本一旦执行 terminateOtherInstances()，

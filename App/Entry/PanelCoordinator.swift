@@ -902,6 +902,7 @@ final class PanelCoordinator: NSObject {
         dragController = DragController(
             drawerStore: drawerStore,
             messagingStore: messagingStore,
+            keptAppStore: keptAppStore,
             dropZonesProvider: { [weak self] source in self?.dragDropZones(for: source) ?? [] },
             screenProvider: { [weak self] in self?.carrierTargetScreen() ?? (NSScreen.main ?? NSScreen.screens[0]) },
             carrierFactory: { [runtime = self.runtime,

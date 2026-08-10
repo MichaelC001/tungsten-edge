@@ -68,4 +68,27 @@ enum DragConversionPlan {
             return .fallbackUnstash
         }
     }
+
+    /// 拖动落定后是否给这个 app 打开「在程序坞中保留」（owner 2026-08-06 定）。
+    ///
+    /// **只管进、不管出**：只有这次拖动把它从抽屉外带进抽屉才打开；从抽屉拖回
+    /// 任务条一律不关（用户可能本来就自己勾过保留，反向关掉会抹掉与抽屉无关的设置）。
+    ///
+    /// **每次拖入都会重新打开**，不是一生只播种一次。用户手动取消勾选后再拖进来会
+    /// 再次被勾上——这是 owner 定的语义：拖进抽屉是明确的主动动作，每次都算重新表达
+    /// 「我要它长期放这里」。**别拿它类比 `AppMembershipController.markMessaging`**：
+    /// 那条靠 `MessagingAppStore.mark` 的首次返回值实现真正的一次性播种，这里有意
+    /// 不引入等价的「曾经自动勾过谁」历史存档（为边角场景加一份永久数据不划算）。
+    /// `DragControllerConversionTests` 有一条用例专门锁这个行为，别当 bug 修。
+    ///
+    /// 只在 `endDrag()` 落定后调用。转换预览（`convert*`）与回滚（`revert*` /
+    /// `cancelDrag`）阶段**一律不碰 kept**，所以那套对称的 placement 事务不变。
+    ///
+    /// - Parameter originSource: **起拖时**的来源。不能传 `draggingPayload.source`——
+    ///   进抽屉体的转换会把它翻成 `.drawer`，与抽屉内重排撞车。
+    /// - Parameter endedInDrawer: 落定后它到底还在不在抽屉里（读 `DrawerStore`）。
+    static func enablesKeptOnDrop(originSource: DragSource, endedInDrawer: Bool) -> Bool {
+        guard endedInDrawer else { return false }
+        return originSource == .strip || originSource == .messaging
+    }
 }

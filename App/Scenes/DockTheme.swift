@@ -22,6 +22,29 @@ extension DockThemeTokens {
     }
 }
 
+extension AppearanceMode {
+    /// 设到 `NSApp.appearance` 上；`nil` = 交还系统。
+    ///
+    /// 为什么是 `NSApp` 这一处、而不是 SwiftUI 的 `.preferredColorScheme()`：毛玻璃
+    /// `DockVisualEffectView` 包的是 `NSVisualEffectView`，它跟**窗口**的
+    /// `effectiveAppearance` 走、不看 SwiftUI 环境，所以 `.preferredColorScheme()` 只会翻
+    /// 主题色而留下对不上的材质。而我们所有面板/窗口都没设过自己的 `appearance`，
+    /// 会一路回落到 `NSApp.effectiveAppearance` —— 一处翻转就同时管住主题色、毛玻璃材质、
+    /// 状态栏菜单，**以及之后才新建的面板**（抽屉、文件夹/中转站弹窗、tooltip、拖动载体
+    /// 都是按需新建的）。也正因如此，三个长寿 hosting root 那条「各自 observe
+    /// AppSettingsStore」的规矩在这条功能上不适用：变化是顺 AppKit 外观继承链下来的，
+    /// 不是一个 SwiftUI 值，别为此去补注入。
+    ///
+    /// 状态栏图标不受影响：它是 template image，由菜单栏按系统外观自己染色。
+    var nsAppearance: NSAppearance? {
+        switch self {
+        case .system: return nil
+        case .light: return NSAppearance(named: .aqua)
+        case .dark: return NSAppearance(named: .darkAqua)
+        }
+    }
+}
+
 extension DockTint {
     var color: Color {
         switch base {
