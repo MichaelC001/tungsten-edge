@@ -200,16 +200,241 @@ struct ChipHoverProgress<Content: View>: View, Animatable {
 
 enum ChipAnimationTrace {
     private static let enabled = ProcessInfo.processInfo.environment["DOCK_CHIP_ANIM_TRACE"] == "1"
+    private static let runtime = Runtime()
     private static let logger = Logger(
         subsystem: Bundle.main.bundleIdentifier ?? "com.caye.macosdockcc.v2",
         category: "ChipAnimation"
     )
 
-    static func record(chipID: String, kind: String, visual: ChipHoverVisual) {
+    static func record(
+        chipID: String,
+        kind: String,
+        visual: ChipHoverVisual,
+        isTapPressed: Bool,
+        showsHover: Bool
+    ) {
         guard enabled else { return }
-        logger.debug(
-            "chip=\(chipID, privacy: .public) kind=\(kind, privacy: .public) progress=\(visual.progress) pillHeight=\(visual.pillHeight) pillShift=\(visual.pillShift) subtitleOpacity=\(visual.subtitleOpacity)"
+        runtime.record(
+            chipID: chipID,
+            kind: kind,
+            uptime: ProcessInfo.processInfo.systemUptime,
+            visual: visual,
+            state: ChipAnimationTraceState(isTapPressed: isTapPressed, showsHover: showsHover)
         )
+    }
+
+    static func event(
+        chipID: String,
+        kind: String,
+        event: String,
+        isTapPressed: Bool,
+        showsHover: Bool
+    ) {
+        guard enabled else { return }
+        runtime.event(
+            chipID: chipID,
+            kind: kind,
+            uptime: ProcessInfo.processInfo.systemUptime,
+            event: event,
+            state: ChipAnimationTraceState(isTapPressed: isTapPressed, showsHover: showsHover)
+        )
+    }
+
+    private final class Runtime: @unchecked Sendable {
+        private let queue = DispatchQueue(label: "com.caye.macosdockcc.v2.chip-animation-trace")
+        private let fileManager = FileManager.default
+        private var buffer = ChipAnimationTraceBuffer(capacity: 4_096)
+        private var sessionByChip: [String: UUID] = [:]
+        private var lastVisualByChip: [String: ChipHoverVisual] = [:]
+        private var quiescenceGeneration: UInt64 = 0
+
+        func record(
+            chipID: String,
+            kind: String,
+            uptime: TimeInterval,
+            visual: ChipHoverVisual,
+            state: ChipAnimationTraceState
+        ) {
+            queue.async { [self] in
+                let key = "\(kind)\u{0}\(chipID)"
+                let isNewSession = sessionByChip[key] == nil
+                let sessionID = sessionByChip[key] ?? UUID()
+                sessionByChip[key] = sessionID
+                lastVisualByChip[key] = visual
+                appendSample(
+                    sessionID: sessionID,
+                    chipID: chipID,
+                    kind: kind,
+                    uptime: uptime,
+                    visual: visual,
+                    state: state,
+                    event: isNewSession ? "sessionStart" : nil
+                )
+                scheduleExportAfterQuiescence()
+            }
+        }
+
+        func event(
+            chipID: String,
+            kind: String,
+            uptime: TimeInterval,
+            event: String,
+            state: ChipAnimationTraceState
+        ) {
+            queue.async { [self] in
+                let key = "\(kind)\u{0}\(chipID)"
+                let sessionID = sessionByChip[key] ?? UUID()
+                sessionByChip[key] = sessionID
+                appendSample(
+                    sessionID: sessionID,
+                    chipID: chipID,
+                    kind: kind,
+                    uptime: uptime,
+                    visual: lastVisualByChip[key],
+                    state: state,
+                    event: event
+                )
+                scheduleExportAfterQuiescence()
+            }
+        }
+
+        private func appendSample(
+            sessionID: UUID,
+            chipID: String,
+            kind: String,
+            uptime: TimeInterval,
+            visual: ChipHoverVisual?,
+            state: ChipAnimationTraceState,
+            event: String?
+        ) {
+            buffer.append(ChipAnimationTraceSample(
+                sessionID: sessionID,
+                chipID: chipID,
+                kind: kind,
+                uptime: uptime,
+                hoverProgress: visual.map { Double($0.progress) },
+                bareIconSize: visual.map { Double($0.bareIconSize) },
+                pillHeight: visual.map { Double($0.pillHeight) },
+                pillIconSize: visual.map { Double($0.pillIconSize) },
+                pillShift: visual.map { Double($0.pillShift) },
+                subtitleSlotWidth: visual.map { Double($0.subtitleSlotWidth) },
+                subtitleOpacity: visual?.subtitleOpacity,
+                emphasisProgress: visual?.emphasisProgress,
+                isTapPressed: state.isTapPressed,
+                showsHover: state.showsHover,
+                event: event
+            ))
+        }
+
+        private func scheduleExportAfterQuiescence() {
+            quiescenceGeneration &+= 1
+            let generation = quiescenceGeneration
+            queue.asyncAfter(deadline: .now() + 0.4) { [weak self] in
+                guard let self, self.quiescenceGeneration == generation else { return }
+                self.exportBufferedSamples()
+            }
+        }
+
+        private func exportBufferedSamples() {
+            let samples = buffer.drain()
+            guard !samples.isEmpty else { return }
+            sessionByChip.removeAll(keepingCapacity: true)
+            lastVisualByChip.removeAll(keepingCapacity: true)
+
+            do {
+                let url = try traceFileURL()
+                let encoder = JSONEncoder()
+                encoder.outputFormatting = [.sortedKeys]
+                var payload = Data()
+                for sample in samples {
+                    payload.append(try encoder.encode(sample))
+                    payload.append(0x0A)
+                }
+                let handle = try FileHandle(forWritingTo: url)
+                defer { try? handle.close() }
+                try handle.seekToEnd()
+                try handle.write(contentsOf: payload)
+                let sessionCount = Set(samples.map(\.sessionID)).count
+                ChipAnimationTrace.logger.info(
+                    "exported samples=\(samples.count) sessions=\(sessionCount) path=\(url.path, privacy: .public)"
+                )
+            } catch {
+                ChipAnimationTrace.logger.error("trace export failed: \(error.localizedDescription, privacy: .public)")
+            }
+        }
+
+        private func traceFileURL() throws -> URL {
+            let library = fileManager.urls(for: .libraryDirectory, in: .userDomainMask).first
+                ?? fileManager.homeDirectoryForCurrentUser.appendingPathComponent("Library", isDirectory: true)
+            let directory = library
+                .appendingPathComponent("Logs", isDirectory: true)
+                .appendingPathComponent("com.caye.macosdockcc.v2", isDirectory: true)
+            try fileManager.createDirectory(
+                at: directory,
+                withIntermediateDirectories: true,
+                attributes: [.posixPermissions: 0o700]
+            )
+            let url = directory.appendingPathComponent("chip-animation-trace.jsonl")
+            if !fileManager.fileExists(atPath: url.path) {
+                guard fileManager.createFile(
+                    atPath: url.path,
+                    contents: nil,
+                    attributes: [.posixPermissions: 0o600]
+                ) else {
+                    throw CocoaError(.fileWriteUnknown)
+                }
+            }
+            return url
+        }
+    }
+}
+
+struct ChipAnimationTraceState: Equatable {
+    let isTapPressed: Bool
+    let showsHover: Bool
+}
+
+enum ChipAnimationTraceEvent {
+    static func hover(_ hovering: Bool) -> String { hovering ? "hoverEntered" : "hoverExited" }
+    static func tap(_ pressed: Bool) -> String { pressed ? "tapPressed" : "tapReleased" }
+}
+
+struct ChipAnimationTraceSample: Codable, Equatable {
+    let sessionID: UUID
+    let chipID: String
+    let kind: String
+    let uptime: TimeInterval
+    let hoverProgress: Double?
+    let bareIconSize: Double?
+    let pillHeight: Double?
+    let pillIconSize: Double?
+    let pillShift: Double?
+    let subtitleSlotWidth: Double?
+    let subtitleOpacity: Double?
+    let emphasisProgress: Double?
+    let isTapPressed: Bool
+    let showsHover: Bool
+    let event: String?
+}
+
+struct ChipAnimationTraceBuffer {
+    let capacity: Int
+    private(set) var samples: [ChipAnimationTraceSample] = []
+
+    init(capacity: Int) {
+        self.capacity = max(1, capacity)
+    }
+
+    mutating func append(_ sample: ChipAnimationTraceSample) {
+        if samples.count == capacity {
+            samples.removeFirst()
+        }
+        samples.append(sample)
+    }
+
+    mutating func drain() -> [ChipAnimationTraceSample] {
+        defer { samples.removeAll(keepingCapacity: true) }
+        return samples
     }
 }
 

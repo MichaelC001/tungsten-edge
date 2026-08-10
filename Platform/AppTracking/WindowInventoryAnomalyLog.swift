@@ -42,6 +42,22 @@ struct InventoryReconcileContext: Codable, Equatable {
     let axReadOutcome: InventoryAXReadOutcome
 }
 
+enum InventoryReconcileReadMode: String, Codable {
+    case timed
+    case untimed
+}
+
+/// An unread reconcile round is recorded separately because it intentionally has no
+/// `InventoryReconcileContext`: creating that context advances diagnostic round clocks.
+struct InventoryReconcileUnreadPayload: Codable, Equatable {
+    let pid: Int32
+    let bundleID: String?
+    let source: InventoryReconcileSource
+    let readMode: InventoryReconcileReadMode
+    let usedPreloadedAX: Bool
+    let errorCode: Int32
+}
+
 struct InventoryLogRect: Codable, Equatable {
     let x: Double
     let y: Double
@@ -352,6 +368,7 @@ enum WindowInventoryLogEvent: Encodable {
     case orderMemoryDropped(InventoryOrderMemoryDroppedPayload)
     case orderChipPlaced(InventoryOrderChipPlacedPayload)
     case admissionProbe(InventoryAdmissionProbePayload)
+    case reconcileUnread(InventoryReconcileUnreadPayload)
 
     var name: String {
         switch self {
@@ -365,6 +382,7 @@ enum WindowInventoryLogEvent: Encodable {
         case .orderMemoryDropped: return "orderMemoryDropped"
         case .orderChipPlaced: return "orderChipPlaced"
         case .admissionProbe: return "admissionProbe"
+        case .reconcileUnread: return "reconcileUnread"
         }
     }
 
@@ -380,6 +398,7 @@ enum WindowInventoryLogEvent: Encodable {
         case .orderMemoryDropped(let payload): try payload.encode(to: encoder)
         case .orderChipPlaced(let payload): try payload.encode(to: encoder)
         case .admissionProbe(let payload): try payload.encode(to: encoder)
+        case .reconcileUnread(let payload): try payload.encode(to: encoder)
         }
     }
 }

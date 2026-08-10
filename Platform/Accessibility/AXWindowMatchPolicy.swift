@@ -2,6 +2,11 @@ import CoreGraphics
 import Foundation
 
 struct AXWindowMatchPolicy {
+    struct Candidate: Equatable {
+        let title: String?
+        let bounds: CGRect?
+    }
+
     static func matchScore(
         targetTitle: String?,
         targetBounds: CGRect?,
@@ -36,6 +41,24 @@ struct AXWindowMatchPolicy {
         }
 
         return score
+    }
+
+    static func uniqueBestMatchIndex(
+        targetTitle: String?,
+        targetBounds: CGRect?,
+        candidates: [Candidate]
+    ) -> Int? {
+        let scored = candidates.enumerated().compactMap { index, candidate -> (Int, Int)? in
+            matchScore(
+                targetTitle: targetTitle,
+                targetBounds: targetBounds,
+                candidateTitle: candidate.title,
+                candidateBounds: candidate.bounds
+            ).map { (index, $0) }
+        }
+        guard let bestScore = scored.map(\.1).min() else { return nil }
+        let bestMatches = scored.filter { $0.1 == bestScore }
+        return bestMatches.count == 1 ? bestMatches[0].0 : nil
     }
 
     private static func normalizedTitle(_ title: String) -> String {

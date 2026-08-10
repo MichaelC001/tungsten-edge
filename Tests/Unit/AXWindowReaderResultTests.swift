@@ -35,6 +35,46 @@ final class AXWindowReaderResultTests: XCTestCase {
 }
 
 final class ActionExecutionSwitchesTests: XCTestCase {
+    func testFastHandleMetadataPreservesSnapshotTarget() {
+        let bounds = CGRect(x: 10, y: 20, width: 900, height: 700)
+        let rawHandle = AXWindowHandle(
+            pid: 42,
+            title: nil,
+            bounds: nil,
+            element: AXUIElementCreateApplication(42)
+        )
+        let handle = AccessibilityWindowActionExecutor.fastHandle(
+            from: rawHandle,
+            target: .init(pid: 42, title: "Project Window", bounds: bounds)
+        )
+
+        XCTAssertEqual(handle.pid, 42)
+        XCTAssertEqual(handle.title, "Project Window")
+        XCTAssertEqual(handle.bounds, bounds)
+    }
+
+    func testTargetMetadataSelectsOneWindowWhileMissingMetadataStaysAmbiguous() {
+        let targetBounds = CGRect(x: 10, y: 20, width: 900, height: 700)
+        let candidates = [
+            AXWindowMatchPolicy.Candidate(
+                title: "Project Window",
+                bounds: CGRect(x: 1000, y: 20, width: 900, height: 700)
+            ),
+            AXWindowMatchPolicy.Candidate(title: "Project Window", bounds: targetBounds),
+        ]
+
+        XCTAssertEqual(AXWindowMatchPolicy.uniqueBestMatchIndex(
+            targetTitle: "Project Window",
+            targetBounds: targetBounds,
+            candidates: candidates
+        ), 1)
+        XCTAssertNil(AXWindowMatchPolicy.uniqueBestMatchIndex(
+            targetTitle: nil,
+            targetBounds: nil,
+            candidates: candidates
+        ))
+    }
+
     func testDefaultsUseFastHandleAndDisableDiagnosticsAndMinimizeFallback() {
         let switches = ActionExecutionSwitches(environment: [:])
 
@@ -111,8 +151,17 @@ final class AppTrackerReadSemanticsTests: XCTestCase {
     private let pid: pid_t = 4242
     private let cgWindowID: CGWindowID = 77
 
-    func testUnreadRoundPreservesSeatAbsenceAndShadowState() {
-        let tracker = AppTracker(eventAXAsyncEnabled: true)
+    func testUnreadRoundPreservesSeatAbsenceAndShadowState() throws {
+        let logDirectory = FileManager.default.temporaryDirectory
+            .appendingPathComponent("AppTrackerUnreadTests-\(UUID().uuidString)", isDirectory: true)
+        defer { try? FileManager.default.removeItem(at: logDirectory) }
+        let inventoryLog = WindowInventoryAnomalyLog(configuration: .init(
+            enabled: true,
+            directoryURL: logDirectory,
+            maxFileSize: 1_000_000,
+            archiveCount: 1
+        ))
+        let tracker = AppTracker(inventoryLog: inventoryLog, eventAXAsyncEnabled: true)
         let absence = Date(timeIntervalSince1970: 10)
         let episode = UUID()
         tracker.installFixtureForTesting(makeApp(
@@ -136,6 +185,18 @@ final class AppTrackerReadSemanticsTests: XCTestCase {
         XCTAssertEqual(app?.shadowTabCgIDs, [88, 89])
         XCTAssertEqual(app?.windowsByID[cgWindowID]?.minAbsentSince, absence)
         XCTAssertEqual(app?.windowsByID[cgWindowID]?.absenceEpisodeID, episode)
+
+        inventoryLog.flush()
+        let text = try String(contentsOf: inventoryLog.currentFileURL, encoding: .utf8)
+        let record = try XCTUnwrap(text.split(separator: "\n").first)
+        let json = try XCTUnwrap(
+            JSONSerialization.jsonObject(with: Data(record.utf8)) as? [String: Any]
+        )
+        XCTAssertEqual(json["event"] as? String, "reconcileUnread")
+        let payload = try XCTUnwrap(json["payload"] as? [String: Any])
+        XCTAssertEqual(payload["readMode"] as? String, "timed")
+        XCTAssertEqual(payload["usedPreloadedAX"] as? Bool, true)
+        XCTAssertEqual(payload["errorCode"] as? Int, Int(AXError.cannotComplete.rawValue))
     }
 
     func testSuccessfulEmptyRoundKeepsShadowPoolWhenCGStillHasWindows() {
@@ -181,6 +242,27 @@ final class AppTrackerReadSemanticsTests: XCTestCase {
         await waitUntil { !tracker.hasPendingEventReadForTesting(pid: self.pid) }
 
         XCTAssertEqual(reader.readCount, 2)
+    }
+
+    func testFrontmostPollUsesTimedBackgroundReader() async {
+        let reader = ControlledAppTrackerReader(result: .success([]))
+        let tracker = AppTracker(
+            reader: reader,
+            processProvider: FixedAppTrackerProcessProvider(pid: pid),
+            cgSnapshotProvider: { self.emptyCGSnapshot() },
+            onScreenWindowIDsProvider: { [] },
+            eventAXAsyncEnabled: true
+        )
+        tracker.installFixtureForTesting(makeApp())
+
+        tracker.scheduleFrontmostPollForTesting(pid: pid)
+
+        await waitUntil { reader.readCount == 1 }
+        XCTAssertEqual(reader.untimedReadCount, 0)
+        XCTAssertTrue(tracker.hasPendingEventReadForTesting(pid: pid))
+
+        reader.releaseOne()
+        await waitUntil { !tracker.hasPendingEventReadForTesting(pid: self.pid) }
     }
 
     func testMinimizeMutationRejectsOlderAsyncRead() async {

@@ -217,6 +217,59 @@ final class ChipHoverVisualTests: XCTestCase {
     }
 }
 
+final class ChipAnimationTraceTests: XCTestCase {
+    func testStateEventNamesAreDirectional() {
+        XCTAssertEqual(ChipAnimationTraceEvent.hover(true), "hoverEntered")
+        XCTAssertEqual(ChipAnimationTraceEvent.hover(false), "hoverExited")
+        XCTAssertEqual(ChipAnimationTraceEvent.tap(true), "tapPressed")
+        XCTAssertEqual(ChipAnimationTraceEvent.tap(false), "tapReleased")
+    }
+
+    func testRingBufferKeepsNewestSamplesAndDrainClearsIt() throws {
+        var buffer = ChipAnimationTraceBuffer(capacity: 2)
+        let first = sample(progress: 0.1, event: "sessionStart")
+        let second = sample(progress: 0.5, event: nil)
+        let third = sample(progress: 0.9, event: "tapReleased")
+
+        buffer.append(first)
+        buffer.append(second)
+        buffer.append(third)
+
+        XCTAssertEqual(buffer.samples, [second, third])
+        let drained = buffer.drain()
+        XCTAssertEqual(drained, [second, third])
+        XCTAssertTrue(buffer.samples.isEmpty)
+
+        let json = try XCTUnwrap(
+            JSONSerialization.jsonObject(with: JSONEncoder().encode(third)) as? [String: Any]
+        )
+        XCTAssertEqual(try XCTUnwrap(json["hoverProgress"] as? Double), 0.9, accuracy: 0.0001)
+        XCTAssertEqual(json["isTapPressed"] as? Bool, false)
+        XCTAssertEqual(json["showsHover"] as? Bool, false)
+        XCTAssertEqual(json["event"] as? String, "tapReleased")
+    }
+
+    private func sample(progress: Double, event: String?) -> ChipAnimationTraceSample {
+        ChipAnimationTraceSample(
+            sessionID: UUID(uuidString: "11111111-2222-3333-4444-555555555555")!,
+            chipID: "tabgrp-42-s1",
+            kind: "window",
+            uptime: 123.4,
+            hoverProgress: progress,
+            bareIconSize: 30,
+            pillHeight: 31,
+            pillIconSize: 20,
+            pillShift: 1,
+            subtitleSlotWidth: 80,
+            subtitleOpacity: progress,
+            emphasisProgress: progress,
+            isTapPressed: false,
+            showsHover: false,
+            event: event
+        )
+    }
+}
+
 final class ScreenRectReaderTests: XCTestCase {
     private final class Task: ScreenRectDeliveryTask {
         private let action: () -> Void

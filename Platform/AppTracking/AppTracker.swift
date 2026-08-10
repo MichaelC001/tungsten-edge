@@ -252,7 +252,8 @@ final class AppTracker: ObservableObject {
         now: Date,
         source: InventoryReconcileSource,
         preloadedEligible: [AXWindowSnapshot]? = nil,
-        preloadedReadOutcome: InventoryAXReadOutcome? = nil
+        preloadedReadOutcome: InventoryAXReadOutcome? = nil,
+        preloadedReadMode: InventoryReconcileReadMode? = nil
     ) -> Bool {
         guard var app = apps[pid] else { return false }
         let cgIDs = cgSnapshot.allWindowIDs
@@ -284,6 +285,14 @@ final class AppTracker: ObservableObject {
         if axReadOutcome.kind == .unread {
             // An unread AX round is unknown, never evidence of absence. In particular it must not
             // start grace periods, update the shadow-tab pool, or advance phantom healing.
+            inventoryLog.record(.reconcileUnread(InventoryReconcileUnreadPayload(
+                pid: pid,
+                bundleID: app.bundleIdentifier,
+                source: source,
+                readMode: preloadedReadMode ?? .untimed,
+                usedPreloadedAX: preloadedEligible != nil,
+                errorCode: axReadOutcome.errorCode ?? AXError.failure.rawValue
+            )))
             return false
         }
         let reconcileContext = inventoryLog.isEnabled
@@ -835,7 +844,8 @@ final class AppTracker: ObservableObject {
                     now: Date(),
                     source: .seed,
                     preloadedEligible: probedEligible,
-                    preloadedReadOutcome: inventoryReadOutcome
+                    preloadedReadOutcome: inventoryReadOutcome,
+                    preloadedReadMode: useTimeout ? .timed : .untimed
                 )
                 admittedCount += 1
                 continue
@@ -849,7 +859,8 @@ final class AppTracker: ObservableObject {
                     now: Date(),
                     source: .seed,
                     preloadedEligible: probedEligible,
-                    preloadedReadOutcome: inventoryReadOutcome
+                    preloadedReadOutcome: inventoryReadOutcome,
+                    preloadedReadMode: useTimeout ? .timed : .untimed
                 )
                 admittedCount += 1
             }
@@ -1198,14 +1209,18 @@ final class AppTracker: ObservableObject {
                 readOutcome = .unread(errorCode: error.rawValue)
                 eligible = []
             }
-            if reconcileSeats(
+            let onScreenChanged = request.source == .frontmostPoll
+                && cgSnapshot.onScreenWindowIDs != lastOnScreenCGIDs
+            let seatsChanged = reconcileSeats(
                 pid: pid,
                 cgSnapshot: cgSnapshot,
                 now: Date(),
                 source: request.source,
                 preloadedEligible: eligible,
-                preloadedReadOutcome: readOutcome
-            ) {
+                preloadedReadOutcome: readOutcome,
+                preloadedReadMode: .timed
+            )
+            if seatsChanged || onScreenChanged {
                 rebuildSnapshot(onScreenCGIDs: cgSnapshot.onScreenWindowIDs)
             }
         }
@@ -1239,6 +1254,19 @@ final class AppTracker: ObservableObject {
         guard AXIsProcessTrusted() else { return }
         guard let pid = NSWorkspace.shared.frontmostApplication?.processIdentifier,
               apps[pid] != nil else { return }
+
+        scheduleFrontmostPoll(pid: pid)
+    }
+
+    private func scheduleFrontmostPoll(pid: pid_t) {
+        guard apps[pid] != nil else { return }
+
+        // Keep the 0.5s cadence, but never perform the full AXWindows read on the main actor.
+        // Slow frontmost apps previously blocked SwiftUI animation for 200-400ms every tick.
+        if eventAXAsyncEnabled {
+            scheduleEventRead(pid: pid, source: .frontmostPoll)
+            return
+        }
 
         // 单座位模型下：标签窗口切标签 = 座位 activeCgID 被顶替，reconcileSeats 即时收敛。
         // 前台 app 每 0.5s 跑一次,切标签/最小化/拽出都能秒级反映(不再依赖 AX 事件可靠性)。
@@ -1415,7 +1443,8 @@ final class AppTracker: ObservableObject {
             now: Date(),
             source: .initialEnumeration,
             preloadedEligible: prepared.eligible,
-            preloadedReadOutcome: readOutcome
+            preloadedReadOutcome: readOutcome,
+            preloadedReadMode: .timed
         )
         logger.info("scan: admitted pid=\(pid) (\(app.localizedName ?? app.bundleIdentifier ?? "?"))")
     }
@@ -1561,6 +1590,7 @@ final class AppTracker: ObservableObject {
         app.bundleIdentifier != DockWindowEligibilityPolicy.selfBundleIdentifier
     }
 
+    #if DEBUG
     // MARK: - Deterministic inventory fixtures
 
     func installFixtureForTesting(_ app: AppEntry) {
@@ -1579,7 +1609,8 @@ final class AppTracker: ObservableObject {
         cgSnapshot: AppTrackerCGWindowSnapshot,
         now: Date,
         eligible: [AXWindowSnapshot],
-        readOutcome: InventoryAXReadOutcome
+        readOutcome: InventoryAXReadOutcome,
+        readMode: InventoryReconcileReadMode = .timed
     ) -> Bool {
         reconcileSeats(
             pid: pid,
@@ -1587,12 +1618,17 @@ final class AppTracker: ObservableObject {
             now: now,
             source: .periodicReconcile,
             preloadedEligible: eligible,
-            preloadedReadOutcome: readOutcome
+            preloadedReadOutcome: readOutcome,
+            preloadedReadMode: readMode
         )
     }
 
     func scheduleEventReadForTesting(pid: pid_t, source: InventoryReconcileSource) {
         scheduleEventRead(pid: pid, source: source)
+    }
+
+    func scheduleFrontmostPollForTesting(pid: pid_t) {
+        scheduleFrontmostPoll(pid: pid)
     }
 
     func minimizeForTesting(pid: pid_t, cgWindowID: CGWindowID) {
@@ -1610,4 +1646,5 @@ final class AppTracker: ObservableObject {
     func hasPendingEventReadForTesting(pid: pid_t) -> Bool {
         pendingEventReads[pid] != nil || trailingEventSources[pid] != nil
     }
+    #endif
 }

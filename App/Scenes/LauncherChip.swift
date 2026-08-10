@@ -54,7 +54,13 @@ struct LauncherChip: View {
         let visual = LauncherChipVisualPlan.visual(isRunning: isRunning)
         return ChipHoverProgress(progress: showsHover ? 1 : 0) { progress in
             let hover = ChipHoverVisual.resolve(progress: progress, scale: scale, subtitleNaturalWidth: 0)
-            let _ = ChipAnimationTrace.record(chipID: bundleID, kind: "launcher", visual: hover)
+            let _ = ChipAnimationTrace.record(
+                chipID: bundleID,
+                kind: "launcher",
+                visual: hover,
+                isTapPressed: false,
+                showsHover: showsHover
+            )
             VStack(spacing: 0) {
                 Spacer(minLength: 0)
                 ZStack(alignment: .top) {
@@ -92,7 +98,16 @@ struct LauncherChip: View {
             }
         }
         .contentShape(Rectangle())
-        .onHover { isHovering = $0 }
+        .onHover { hovering in
+            isHovering = hovering
+            ChipAnimationTrace.event(
+                chipID: bundleID,
+                kind: "launcher",
+                event: ChipAnimationTraceEvent.hover(hovering),
+                isTapPressed: false,
+                showsHover: hoverStyle.isExpressive && hovering
+            )
+        }
         .onTapGesture { handlePrimaryTap() }
         .nativeContextMenu { buildLauncherMenu() }
         .help(displayName)

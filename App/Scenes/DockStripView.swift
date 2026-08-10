@@ -1209,11 +1209,40 @@ struct ChipView: View {
     /// Visual hover state: the real pointer hover OR forced (drag copy)，再受悬停档位一道总闸。
     /// 「安静」档下恒 false，于是图标不缩、应用名不冒、胶囊底色不提亮、整行不重排。
     private var showsHover: Bool { hoverStyle.isExpressive && (forceHover || isHovering) }
+    private var animationTraceKind: String {
+        !iconOnly && (item.showsTitle || isMessagingAppWindow) ? "window" : "icon"
+    }
 
     /// 短促按压(0.93)后由 spring 回弹;90ms 后复位状态,动画由 value 变化声明式触发。
     private func fireTapPulse() {
         isTapPressed = true
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.09) { isTapPressed = false }
+        ChipAnimationTrace.event(
+            chipID: item.id,
+            kind: animationTraceKind,
+            event: ChipAnimationTraceEvent.tap(true),
+            isTapPressed: true,
+            showsHover: showsHover
+        )
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.09) {
+            isTapPressed = false
+            ChipAnimationTrace.event(
+                chipID: item.id,
+                kind: animationTraceKind,
+                event: ChipAnimationTraceEvent.tap(false),
+                isTapPressed: false,
+                showsHover: showsHover
+            )
+        }
+    }
+
+    private func recordHoverEvent(_ hovering: Bool) {
+        ChipAnimationTrace.event(
+            chipID: item.id,
+            kind: animationTraceKind,
+            event: ChipAnimationTraceEvent.hover(hovering),
+            isTapPressed: isTapPressed,
+            showsHover: hoverStyle.isExpressive && (forceHover || hovering)
+        )
     }
 
     /// 乐观态优先（交互打磨 2026-06-13）：点击瞬间 chip 立刻按预测态渲染
@@ -1266,15 +1295,22 @@ struct ChipView: View {
     // MARK: - Icon-only chip
 
     private var bareIconChip: some View {
+        let capturedDisplayTitle = displayTitle
         return ChipHoverProgress(progress: showsHover ? 1 : 0) { progress in
             let hover = ChipHoverVisual.resolve(progress: progress, scale: scale, subtitleNaturalWidth: 0)
-            let _ = ChipAnimationTrace.record(chipID: item.id, kind: "icon", visual: hover)
+            let _ = ChipAnimationTrace.record(
+                chipID: item.id,
+                kind: "icon",
+                visual: hover,
+                isTapPressed: isTapPressed,
+                showsHover: showsHover
+            )
             VStack(spacing: 0) {
                 Spacer(minLength: 0)
                 ZStack(alignment: .top) {
                     appIcon(size: hover.bareIconSize)
 
-                    Text(displayTitle)
+                    Text(capturedDisplayTitle)
                         .font(.system(size: max(8, 10 * scale), weight: .medium, design: .rounded))
                         .foregroundStyle(theme.labelHover.color)
                         .lineLimit(1)
@@ -1300,13 +1336,16 @@ struct ChipView: View {
         }
         .scaleEffect(isTapPressed ? 0.93 : 1.0)
         .contentShape(Rectangle())
-        .onHover { isHovering = $0 }
+        .onHover {
+            isHovering = $0
+            recordHoverEvent($0)
+        }
         .onTapGesture {
             fireTapPulse()
             if let drawerTap { drawerTap() } else { runtime.toggle(windowID: item.actionWindowID) }
         }
         .nativeContextMenu { buildChipMenu() }
-        .help(displayTitle)
+        .help(capturedDisplayTitle)
         .animation(.spring(response: 0.22, dampingFraction: 0.5), value: isTapPressed)
     }
 
@@ -1315,17 +1354,24 @@ struct ChipView: View {
     private var multiWindowChip: some View {
         // 图标恒为原色（不按状态淡化，owner 2026-08-02）；「在不在桌面上」只由标题颜色表达。
         let titleColor: Color = effectiveIsOnDesktop ? theme.labelActive.color : theme.labelInactive.color
-
-        let subtitleNaturalWidth = ChipSubtitleMetrics.width(of: appName, scale: scale)
+        let capturedDisplayTitle = displayTitle
+        let capturedAppName = appName
+        let subtitleNaturalWidth = ChipSubtitleMetrics.width(of: capturedAppName, scale: scale)
         return ChipHoverProgress(progress: showsHover ? 1 : 0) { progress in
             let hover = ChipHoverVisual.resolve(
                 progress: progress, scale: scale, subtitleNaturalWidth: subtitleNaturalWidth
             )
-            let _ = ChipAnimationTrace.record(chipID: item.id, kind: "window", visual: hover)
+            let _ = ChipAnimationTrace.record(
+                chipID: item.id,
+                kind: "window",
+                visual: hover,
+                isTapPressed: isTapPressed,
+                showsHover: showsHover
+            )
             let pill = HStack(spacing: ChipPillMetrics.iconSpacing * scale) {
                 appIcon(size: hover.pillIconSize)
                     .frame(width: ChipPillMetrics.iconSlot * scale, height: ChipPillMetrics.iconSlot * scale)
-                Text(displayTitle)
+                Text(capturedDisplayTitle)
                     .font(.system(size: max(10, 12 * scale), weight: .medium, design: .rounded))
                     .foregroundStyle(titleColor)
                     .lineLimit(1)
@@ -1350,7 +1396,7 @@ struct ChipView: View {
                 pill
                     .frame(height: ChipPillMetrics.boxHeight * scale, alignment: .top)
                     .offset(y: hover.pillShift)
-                Text(appName)
+                Text(capturedAppName)
                     .font(.system(size: max(8, 9 * scale), weight: .medium, design: .rounded))
                     .foregroundStyle(theme.labelSubtitle.color)
                     .lineLimit(1)
@@ -1382,6 +1428,7 @@ struct ChipView: View {
         .contentShape(Rectangle())
         .onHover { hovering in
             isHovering = hovering
+            recordHoverEvent(hovering)
             updateWindowTitleTooltip(hovering: hovering)
         }
         .onTapGesture {

@@ -733,19 +733,15 @@ struct AXWindowReader: AppTrackerWindowReading, Sendable {
         for target: AXWindowTarget,
         from snapshots: [AXWindowSnapshot]
     ) -> AXWindowSnapshot? {
-        let scored = snapshots.compactMap { snapshot -> (AXWindowSnapshot, Int)? in
-            AXWindowMatchPolicy.matchScore(
-                targetTitle: target.title,
-                targetBounds: target.bounds,
-                candidateTitle: snapshot.title,
-                candidateBounds: snapshot.bounds
-            ).map { (snapshot, $0) }
+        let candidates = snapshots.map {
+            AXWindowMatchPolicy.Candidate(title: $0.title, bounds: $0.bounds)
         }
-
-        guard let bestScore = scored.map(\.1).min() else { return nil }
-        let bestMatches = scored.filter { $0.1 == bestScore }
-        guard bestMatches.count == 1 else { return nil }
-        return bestMatches[0].0
+        guard let index = AXWindowMatchPolicy.uniqueBestMatchIndex(
+            targetTitle: target.title,
+            targetBounds: target.bounds,
+            candidates: candidates
+        ) else { return nil }
+        return snapshots[index]
     }
 
 }

@@ -197,13 +197,30 @@ struct AccessibilityWindowActionExecutor {
         fileprivate let element: AXUIElement
     }
 
-    func captureHandleByCGWindowID(_ cgWindowID: CGWindowID, pid: Int32) -> WindowHandle? {
+    func captureHandleByCGWindowID(
+        _ cgWindowID: CGWindowID,
+        pid: Int32,
+        title: String?,
+        bounds: CGRect?
+    ) -> WindowHandle? {
         guard let handle = reader.captureHandle(
             forPID: pid,
             cgWindowID: cgWindowID,
             messagingTimeout: 0.1
         ) else { return nil }
-        return WindowHandle(pid: pid, title: handle.title, bounds: handle.bounds, element: handle.element)
+        return Self.fastHandle(
+            from: handle,
+            target: WindowTarget(pid: pid, title: title, bounds: bounds)
+        )
+    }
+
+    static func fastHandle(from handle: AXWindowHandle, target: WindowTarget) -> WindowHandle {
+        return WindowHandle(
+            pid: target.pid,
+            title: target.title,
+            bounds: target.bounds,
+            element: handle.element
+        )
     }
 
     func activateAppWithWindowRecovery(pid: Int32, runningApp: NSRunningApplication?) -> Bool {
@@ -759,7 +776,14 @@ struct PlatformActionExecutor {
             fastEnabled: switches.fastWindowHandleEnabled,
             cgWindowID: record.cgWindowID,
             justUnhid: justUnhid,
-            fast: { windowExecutor.captureHandleByCGWindowID($0, pid: record.pid) },
+            fast: {
+                windowExecutor.captureHandleByCGWindowID(
+                    $0,
+                    pid: record.pid,
+                    title: record.title,
+                    bounds: record.bounds
+                )
+            },
             fallback: {
                 windowExecutor.captureHandle(
                     for: target,

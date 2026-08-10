@@ -1,3 +1,4 @@
+import ApplicationServices
 import Foundation
 import XCTest
 
@@ -466,6 +467,30 @@ final class WindowInventoryAnomalyLogTests: XCTestCase {
         XCTAssertNil(payload["messagingTimeoutMs"])
         XCTAssertNil(payload["rawWindowCount"])
         XCTAssertNil(payload["eligibleWindowCount"])
+    }
+
+    func testReconcileUnreadJSONLDecodesSourceModeAndPreloadedStatus() throws {
+        let directory = makeRoot().appendingPathComponent("logs")
+        let log = makeLogger(directory: directory)
+        log.record(.reconcileUnread(.init(
+            pid: 4242,
+            bundleID: "com.example.slow-app",
+            source: .focusChanged,
+            readMode: .timed,
+            usedPreloadedAX: true,
+            errorCode: AXError.cannotComplete.rawValue
+        )))
+        log.flush()
+
+        let record = try XCTUnwrap(jsonRecords(at: log.currentFileURL).first)
+        XCTAssertEqual(record["event"] as? String, "reconcileUnread")
+        let payload = try XCTUnwrap(record["payload"] as? [String: Any])
+        XCTAssertEqual(payload["pid"] as? Int, 4242)
+        XCTAssertEqual(payload["bundleID"] as? String, "com.example.slow-app")
+        XCTAssertEqual(payload["source"] as? String, "focusChanged")
+        XCTAssertEqual(payload["readMode"] as? String, "timed")
+        XCTAssertEqual(payload["usedPreloadedAX"] as? Bool, true)
+        XCTAssertEqual(payload["errorCode"] as? Int, Int(AXError.cannotComplete.rawValue))
     }
 
     private func makeLogger(

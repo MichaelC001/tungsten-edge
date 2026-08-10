@@ -12,7 +12,7 @@
 
 | 轮询 | 频率 | 空闲期实际动作 | 旧占比 | 新占比 | 代码位置 |
 |---|---|---|---:|---:|---|
-| 前台窗口轮询 | 2 Hz | `.optionAll` **全量**窗口列表（含屏外）+ 前台 app 完整座位对账 | **16.4%** | **40.5%** | `AppTracker.swift:1000` |
+| 前台窗口轮询 | 2 Hz | 后台限时 `AXWindows` + `.optionAll` **全量**窗口列表（含屏外）+ 前台 app 完整座位对账 | **16.4%** | **40.5%** | `AppTracker.swift` |
 | 最大化避让 · 全局扫描 | 空闲 1 Hz；会话期 5 Hz | 窗口/焦点/app 事件即时触发；兜底 detached task 查整屏窗口列表 | 11.0% | 28.4%（改造前基线） | `WindowLiftAvoidanceController.swift` |
 | 最大化避让 · tracked probe | **20 Hz**（有 session 时） | 见下方「第一版错误 ①」 | 含在上行 | 含在上行 | `WindowLiftAvoidanceController.swift:511` |
 | **座位对账 + 未准入扫描** | **0.2 Hz** | `reconcile()`：死进程清扫 + `scanNonAdmittedApps()` | **漏了** | **21.8%** | `AppTracker.swift:989` |
@@ -120,6 +120,19 @@ A2 没有避让扫描栈，B 能看到 1 Hz 全局扫描；前台应用在测量
 对 Dock application、AXList 和全部 AXDockItem 注册 `AXValueChanged` 均返回 `kAXErrorNotificationUnsupported`。因此没有事件保底，**不实施 2 秒退避**；角标继续 0.5 秒轮询，零感知门控仍是唯一可接受方向。
 
 ## 二、前台窗口轮询（三项里最值得做的一项）
+
+### 2026-08-10 交互期修正：频率不降，AX 读移出主线程
+
+`DOCK_CHIP_ANIM_TRACE=1` 的精确手势事件抓到：慢响应前台应用下，动画采样空洞从
+`631114.484`、`631114.986`、`631116.491`、`631119.482`、`631120.009` 开始，约每
+0.5 秒一次；主线程上的 90ms 按压复位实际被拖到 320–405ms 才执行。相位与
+`frontmostPollTimer` 完全一致，根因是 `pollFrontmostApp()` 在主线程直接进入
+`reconcileSeats` 的未限时 `AXWindows` 读取。
+
+修正保留 owner 否决降频后的 2 Hz 节奏，也不缩减座位对账内容：每 tick 仍发起一轮，但 AX 与
+CG 快照在后台读取，AX 使用 100ms messaging timeout，同 PID 在途时沿用 leading + 恰好一次
+trailing 合并；结果经过进程身份与 mutation generation 校验后才在主线程落地。CG on-screen
+集合变化仍在结果落地时强制重建，原生标签切换的收敛规则不变。
 
 ### 注释债（可随手修，无行为影响）
 

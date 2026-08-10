@@ -149,6 +149,8 @@
 2026-08-10 的任务条根、抽屉根和 tooltip 原先共用一条 `DispatchQueue.main.async` 路径，旧任务不能取消、闭包和 rect 的捕获时刻也混在一起。结果是根布局可能丢中间 rect，tooltip 又可能抖着追每一帧；detach 后排队回调还会写回已经拆掉的视图。
 → 调度器必须可控且每个任务有取消句柄。即时模式捕获每个不同 rect、按顺序投递，执行时取最新闭包；trailing 模式每次变化重置 deadline、只交最终值。detach、dismantle 和模式切换都取消全部排队任务。测试要验证顺序、去重、闭包更新和取消，不能只测“最后大概到了”。
 
+**SwiftUI `Animatable.body` 的时间戳不是呈现帧率。** `DOCK_CHIP_ANIM_TRACE=1` 的样本只用于检查统一 hover progress 的斜率、反向和按压状态切换处是否重定基；它在内存 ring buffer 中采样，静默约 400ms 后一次性导出到 `~/Library/Logs/com.caye.macosdockcc.v2/chip-animation-trace.jsonl`，避免逐帧 Logger 反过来制造卡顿。相邻 body 样本超过 16.7ms 不能单独证明掉帧，因为 SwiftUI 求值时刻不等于 Core Animation 实际呈现时刻。掉帧结论必须来自 Release 的 Animation Hitches/Core Animation Instruments，或受控 60fps 像素采样。
+
 **后台 AX 读只有“放到后台”还不够；没有进程身份与 mutation generation，旧结果会覆盖新事实。**
 window-created/focus/title 事件可能在读取期间遇到 destroy、minimize、进程退出或 pid 复用。若回主线程只检查 pid，旧窗口清单会重新创建已销毁座位、撤销刚收到的最小化，甚至写进复用该 pid 的另一个进程。事件突发若每条都开任务，又会把慢应用放大成 AX 请求风暴。
 → 每个 pid 同时只准一个读，在途期间合并成恰好一轮 trailing；结果必须同时匹配 pid、POSIX start time + bundle ID 的进程身份和本地 mutation generation。所有即时状态改变先 bump generation。`.unread` 是未知，不是“零窗口”，整轮不得推进 absence、影子池或幽灵自愈。用可控 reader 挡住完成时刻，分别测 destroy、minimize、pid 复用和突发 1+1，不能靠真实应用碰运气。
