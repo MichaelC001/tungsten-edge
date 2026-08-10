@@ -1,6 +1,29 @@
 import Foundation
 import XCTest
 
+final class DockSnapshotEqualityTests: XCTestCase {
+    func testEquivalentSnapshotsCompareEqual() {
+        let id = WindowID(rawValue: "cgw-1")
+        let record = WindowRecord(
+            id: id,
+            appID: AppID(rawValue: "com.example.app"),
+            pid: 42,
+            bundleIdentifier: "com.example.app",
+            title: "Window",
+            bounds: CGRect(x: 1, y: 2, width: 300, height: 200),
+            status: .inactive,
+            cgWindowID: 10,
+            isOnDesktop: true,
+            groupID: "seat-1"
+        )
+        let lhs = DockSnapshot(windows: [id: record], orderedWindowIDs: [id])
+        let rhs = DockSnapshot(windows: [id: record], orderedWindowIDs: [id])
+
+        XCTAssertEqual(lhs, rhs)
+        XCTAssertNotEqual(lhs, .empty)
+    }
+}
+
 /// 反馈计时器按需运行的真值表。
 ///
 /// 背景：这个计时器原先是 `start()` 里无条件起的 0.5s 循环，空闲期每秒两次把反馈态

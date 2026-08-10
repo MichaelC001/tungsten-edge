@@ -39,6 +39,41 @@ enum StripEntry: Identifiable, Hashable {
     }
 }
 
+struct StripProjection {
+    let snapshotItems: [StripItem]
+    let snapshotBundleIDs: Set<String>
+    let hiddenBundleIDs: Set<String>
+    let messaging: [StripEntry]
+    let liveNatural: [StripEntry]
+    let liveOrderIDs: [String]
+    let appKeyByChipID: [String: String]
+    let entries: [StripEntry]
+    let layoutKeys: [StripLayoutKey]
+    let messagingIDs: [String]
+    let draggingID: String?
+
+    func hasRealWindow(bundleID: String) -> Bool {
+        snapshotItems.contains {
+            $0.bundleIdentifier == bundleID && !$0.isAppLevelFallback
+        }
+    }
+
+    func item(forID id: String) -> StripItem? {
+        guard let entry = liveNatural.first(where: { $0.id == id }),
+              case let .window(item) = entry else { return nil }
+        return item
+    }
+
+    func liveChipIDs(bundleID: String) -> [String] {
+        entries.compactMap { entry -> String? in
+            guard case let .window(item) = entry,
+                  item.bundleIdentifier == bundleID,
+                  !item.isAppLevelFallback else { return nil }
+            return item.id
+        }
+    }
+}
+
 struct DockStripView: View {
     @EnvironmentObject var runtime: AppRuntime
     @EnvironmentObject var drawerStore: DrawerStore
@@ -81,19 +116,6 @@ struct DockStripView: View {
     /// 读 isOverDropZone 在进投放区时停掉条内重排。载体面板/监视器/收尾都在它里面，本视图不碰。
     @EnvironmentObject var dragController: DragController
 
-    /// id of the live chip currently being dragged (nil = not dragging) —读自 dragController。
-    /// 只认 strip 来源的拖动（抽屉来源的载荷在任务条里不该隐藏任何卡片），且限定 live 区 chip。
-    private var draggingID: String? {
-        if let p = dragController.draggingPayload, p.source == .strip {
-            return liveOrderIDs.contains(p.id) ? p.id : nil
-        }
-        // 抽屉拖回任务条·转正后：隐藏**代表卡**成空位（与载体画的是同一张，Codex 三审 P1）。
-        if let rep = dragController.convertedRepresentative, liveOrderIDs.contains(rep.id) {
-            return rep.id
-        }
-        return nil
-    }
-
     /// Live chip frames by id in the `"strip"` space (含滚动偏移后的屏上位置), collected via
     /// preference — feeds the grab offset at drag start and the full-frame landing hit-test.
     /// `.background` GeometryReader (not overlay) so it never steals chip clicks.
@@ -133,21 +155,6 @@ struct DockStripView: View {
     /// 记录已经播放过入场动画的固定区元素 ID（避免重复播，且支持新增元素播动画）。
     @State private var animatedEntryIDs: Set<String> = []
 
-    private var allNonDrawerItems: [StripItem] {
-        StripItem.items(from: runtime.snapshot)
-            .filter { !drawerStore.contains($0.bundleIdentifier ?? "") }
-    }
-
-    private var snapshotBundleIDs: Set<String> {
-        Set(StripItem.items(from: runtime.snapshot).compactMap(\.bundleIdentifier))
-    }
-
-    private func isHiddenInSnapshot(bundleID: String) -> Bool {
-        StripItem.items(from: runtime.snapshot)
-            .first { $0.bundleIdentifier == bundleID }?
-            .status == "hidden"
-    }
-
     /// Pinned messaging zone (leftmost, in store order) + live window zone, in **natural**
     /// snapshot order. Messaging apps show only while running (quit → chip gone; the future
     /// drawer 待启动区 takes over the not-running role). Drawer membership hides a messaging
@@ -161,7 +168,14 @@ struct DockStripView: View {
     /// Split out so the live zone can be reordered by `stripOrderStore` (任务条拖动重排
     /// A 路线) while the pinned messaging zone keeps its own `MessagingAppStore` order —
     /// the two zones never cross (拖动分区内进行).
-    private func partitioned() -> (messaging: [StripEntry], liveNatural: [StripEntry]) {
+    private func makeProjection() -> StripProjection {
+        // This is the only snapshot-to-strip conversion in one body evaluation. Everything below,
+        // including drag callbacks captured by that body, consumes the same immutable projection.
+        let snapshotItems = StripItem.items(from: runtime.snapshot)
+        let snapshotBundleIDs = Set(snapshotItems.compactMap(\.bundleIdentifier))
+        let hiddenBundleIDs = Set(snapshotItems.compactMap { item in
+            item.status == "hidden" ? item.bundleIdentifier : nil
+        })
         let keptIDs = keptAppStore.bundleIDs
         let runningIDs = runningApplicationStore.runningBundleIDs
         // 统一模型：消息区可见 = (messaging − drawer) ∩ (running ∪ kept)。消息身份不再独立保活，
@@ -173,7 +187,7 @@ struct DockStripView: View {
             runningIDs: runningIDs
         )
         let msgSet = Set(msg)
-        let items = allNonDrawerItems
+        let items = snapshotItems.filter { !drawerStore.contains($0.bundleIdentifier ?? "") }
 
         var messaging: [StripEntry] = []
         var absorbedWindowIDs = Set<String>()
@@ -201,7 +215,6 @@ struct DockStripView: View {
         // b. Running but only isAppLevelFallback → replace the fallback .window with .keptApp
         // 占位插在 liveNatural **头部**（按 kept store 顺序）：正常运行时顺序由记忆层决定，
         // 数组位置只影响"无记忆的新 id"落点——即跨机器重启（boottime 丢档）后占位落 live 区头部。
-        let snapshotItems = StripItem.items(from: runtime.snapshot)
         let snapshotByBundle = Dictionary(grouping: snapshotItems, by: { $0.bundleIdentifier ?? "" })
         var keptPlaceholders: [StripEntry] = []
         for bid in keptIDs {
@@ -222,19 +235,55 @@ struct DockStripView: View {
             // Both sources inject .keptApp with id "app-\(bid)"
             keptPlaceholders.append(.keptApp(bundleID: bid))
         }
-        return (messaging, keptPlaceholders + liveNatural)
-    }
-
-    /// Live-zone chip ids in natural snapshot order — input to the order layer and the
-    /// value the sync side-effect watches (changes only when windows open/close).
-    private var liveOrderIDs: [String] {
-        partitioned().liveNatural.map(\.id)
-    }
-
-    /// chip id → 所属 app 键（bundleId 优先，缺则 appID）。喂给顺序层，让新窗口插到同 app 同伴旁
-    /// 而非任务条最右（拖标签出来成独立窗口 / Cmd+N）。keptApp 占位 id "app-\(bid)" 映射到 bid。
-    private var liveAppKeys: [String: String] {
-        Self.appKeys(of: partitioned().liveNatural)
+        let projectedLive = keptPlaceholders + liveNatural
+        let liveOrderIDs = projectedLive.map(\.id)
+        let appKeys = Self.appKeys(of: projectedLive)
+        let order = stripOrderStore.reconciled(
+            current: liveOrderIDs,
+            appKeyOf: appKeys,
+            headPreferred: Set(messagingStore.bundleIDs)
+        )
+        let byID = Dictionary(projectedLive.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
+        let orderedLive = order.compactMap { byID[$0] }
+        let folderEntries = (settingsStore.showShelf ? [StripEntry.shelf] : [])
+            + pinnedFolderStore.folderPaths.map { StripEntry.pinnedFolder(path: $0) }
+        var zones = [messaging, folderEntries, orderedLive].filter { !$0.isEmpty }
+        var entries: [StripEntry] = []
+        if !zones.isEmpty {
+            entries = zones.removeFirst()
+            for (index, zone) in zones.enumerated() {
+                entries.append(.divider(id: "zone-divider-\(index)"))
+                entries += zone
+            }
+        }
+        let messagingIDs = messaging.compactMap { entry -> String? in
+            guard case let .messagingApp(bundleID, _) = entry else { return nil }
+            return bundleID
+        }
+        let draggingID: String?
+        if let payload = dragController.draggingPayload,
+           payload.source == .strip,
+           liveOrderIDs.contains(payload.id) {
+            draggingID = payload.id
+        } else if let representative = dragController.convertedRepresentative,
+                  liveOrderIDs.contains(representative.id) {
+            draggingID = representative.id
+        } else {
+            draggingID = nil
+        }
+        return StripProjection(
+            snapshotItems: snapshotItems,
+            snapshotBundleIDs: snapshotBundleIDs,
+            hiddenBundleIDs: hiddenBundleIDs,
+            messaging: messaging,
+            liveNatural: projectedLive,
+            liveOrderIDs: liveOrderIDs,
+            appKeyByChipID: appKeys,
+            entries: entries,
+            layoutKeys: entries.map(StripLayoutKey.init),
+            messagingIDs: messagingIDs,
+            draggingID: draggingID
+        )
     }
 
     /// 渲染路径（`reconciled`）与副作用路径（`sync`）**必须喂同一份 appKeyOf**，否则落盘的记忆序
@@ -249,36 +298,8 @@ struct DockStripView: View {
         }, uniquingKeysWith: { first, _ in first })
     }
 
-    /// 单一显示顺序漏斗：pinned 区按 `MessagingAppStore` 序，live 区由 `stripOrderStore`
-    /// 重排（已有保序 / 新窗口进末尾 / 真关闭丢弃，见 `StripOrdering`）。渲染**绝不**直接读
-    /// `snapshot.orderedWindowIDs` 出 live 序。slice 2 用当前序播种 → 视觉上无变化。
-    private var stripEntries: [StripEntry] {
-        let (messaging, liveNatural) = partitioned()
-        let appKeyOf = liveAppKeys
-        let order = stripOrderStore.reconciled(current: liveNatural.map(\.id), appKeyOf: appKeyOf,
-                                               headPreferred: Set(messagingStore.bundleIDs))
-        let byID = Dictionary(liveNatural.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
-        let orderedLive = order.compactMap { byID[$0] }
-        // 三区布局：[消息区][divider][文件夹区][divider][窗口区]，空区连同相邻分隔线一起省略。
-        // 中转格显示时固定在文件夹区头位；用户关掉它、又一个文件夹都没固定时，整个文件夹区
-        // 连同分隔线一起消失（此时任务条上没有外部拖放落点，回路是菜单里把它勾回来）。
-        let folderEntries = (settingsStore.showShelf ? [StripEntry.shelf] : [])
-            + pinnedFolderStore.folderPaths.map { StripEntry.pinnedFolder(path: $0) }
-        var zones = [messaging, folderEntries, orderedLive].filter { !$0.isEmpty }
-        guard !zones.isEmpty else { return [] }
-        var out = zones.removeFirst()
-        for (index, zone) in zones.enumerated() {
-            out.append(.divider(id: "zone-divider-\(index)"))
-            out += zone
-        }
-        return out
-    }
-
-    private var stripLayoutKeys: [StripLayoutKey] {
-        stripEntries.map(StripLayoutKey.init)
-    }
-
     var body: some View {
+        let projection = makeProjection()
         ZStack {
             // 探路中：`DOCK_LIQUID_GLASS=1` 且系统 ≥ 26 时换成原生 Liquid Glass，否则原样毛玻璃。
             // 只有任务条这一个调用点接了探路装置（见 DockGlassBackdrop）。
@@ -300,14 +321,14 @@ struct DockStripView: View {
 
             ScrollView(.horizontal, showsIndicators: false) {
                 HStack(alignment: .center, spacing: Style.chipSpacing * dockScale) {
-                    ForEach(stripEntries) { entry in
-                        chipWithReorder(entry)
+                    ForEach(projection.entries) { entry in
+                        chipWithReorder(entry, projection: projection)
                             .transition(.scale(scale: 0.88).combined(with: .opacity))
                     }
                 }
                 .padding(.horizontal, Style.chipContentInset * dockScale)
                 .frame(height: metrics.panelHeight)
-                .animation(.spring(response: 0.28, dampingFraction: 0.82), value: stripLayoutKeys)
+                .animation(.spring(response: 0.28, dampingFraction: 0.82), value: projection.layoutKeys)
             }
             .clipShape(RoundedRectangle(cornerRadius: Style.cornerRadius * dockScale, style: .continuous))
             .compatLeadingScrollAnchor()
@@ -369,7 +390,7 @@ struct DockStripView: View {
             onCommit: { target, urls in handleExternalDrop(target, urls: urls) }
         ))
         // 与 "strip" 命名空间同一视图 → 屏幕 frame 即 "strip" 空间原点，供抽屉拖回任务条做坐标映射 + 进出判定。
-        .background(ScreenRectReader { rect in
+        .background(ScreenRectReader(delivery: .root) { rect in
             if rect != stripRootScreenRect { stripRootScreenRect = rect }
         })
         // 重击(触控板)/中键(鼠标) → 内容预览：本地事件监视器 → 命中反查（handleGesturePreview）。
@@ -380,16 +401,16 @@ struct DockStripView: View {
         // 消息区的重排/释放同样由全局鼠标驱动——重排会挪动被拖 chip,SwiftUI 会取消原手势,
         // 不能依赖 chip 自己的 .onChanged（同抽屉教训,owner 2026-06-22 / Codex 评审 P1-4）。
         .onChange(of: dragController.globalLocation) { _ in
-            updateDrawerToMessagingRelease()
-            updateDrawerToStripConvert()
-            updateStripBlockReorder()
-            updateMessagingReorder()
-            syncConvertedCarrier()
+            updateDrawerToMessagingRelease(projection: projection)
+            updateDrawerToStripConvert(projection: projection)
+            updateStripBlockReorder(projection: projection)
+            updateMessagingReorder(messagingIDs: projection.messagingIDs)
+            syncConvertedCarrier(projection: projection)
             updateFolderDragZone()
         }
         // 拖动中消息 chip 的 app 从消息区消失（退出/外部 unmark/快照丢）→ 取消拖动，免得空位卡死。
         // 收纳预览（messagingToDrawer）不误判：转换后载荷来源已是 .drawer（Codex 评审 P2-5）。
-        .onChange(of: messagingZoneIDs) { ids in
+        .onChange(of: projection.messagingIDs) { ids in
             if let p = dragController.draggingPayload, p.source == .messaging, !ids.contains(p.bundleID) {
                 dragController.cancelDrag()
             }
@@ -397,10 +418,10 @@ struct DockStripView: View {
         // Converge the remembered live order with the current snapshot (drop closed, append
         // new) as a side-effect — never during body eval. The `.onAppear` seed mirrors the old
         // `initial: true` so the very first render's reconcile (empty → current) is a no-op.
-        .onChange(of: liveOrderIDs) { _ in reconcileLiveOrder() }
-        .onChange(of: keptAppStore.bundleIDs) { _ in reconcileLiveOrder() }
-        .onChange(of: messagingStore.bundleIDs) { _ in reconcileLiveOrder() }
-        .onAppear { reconcileLiveOrder() }
+        .onChange(of: projection.liveOrderIDs) { _ in reconcileLiveOrder(projection) }
+        .onChange(of: keptAppStore.bundleIDs) { _ in reconcileLiveOrder(projection) }
+        .onChange(of: messagingStore.bundleIDs) { _ in reconcileLiveOrder(projection) }
+        .onAppear { reconcileLiveOrder(projection) }
         .onPreferenceChange(ChipFramePreferenceKey.self) { chipFrames = $0 }
         .onPreferenceChange(FolderChipFramePreferenceKey.self) { folderChipFrames = $0 }
         .onPreferenceChange(MessagingChipFramePreferenceKey.self) { messagingChipFrames = $0 }
@@ -543,20 +564,18 @@ struct DockStripView: View {
     /// Converge the remembered live order with the current snapshot (drop closed, append new).
     /// Called on every `liveOrderIDs` change **and** once on appear (the latter mirrors the old
     /// `onChange(of:initial:)` seed that pre-macOS-14 `onChange` doesn't provide).
-    private func reconcileLiveOrder() {
-        // `partitioned()` 不便宜（全量过滤 + 建字典），这里只算一次，`current`/`appKeyOf`/诊断都从它派生。
-        let partition = partitioned()
-        let current = partition.liveNatural.map(\.id)
-        let appKeys = Self.appKeys(of: partition.liveNatural)
+    private func reconcileLiveOrder(_ projection: StripProjection) {
+        let current = projection.liveOrderIDs
+        let appKeys = projection.appKeyByChipID
         // 诊断载荷含整份 appKey 字典，**日志关着就别构造**（同 AppTracker 的 isEnabled 门控）。
         let sample: InventoryOrderProjectionSample? = stripOrderStore.isInventoryLogEnabled
             ? InventoryOrderProjectionSample(
                 currentLiveIDs: current,
-                absorbedMessagingMainIDs: partition.messaging.compactMap { entry in
+                absorbedMessagingMainIDs: projection.messaging.compactMap { entry in
                     guard case let .messagingApp(_, mainWindow) = entry else { return nil }
                     return mainWindow?.id
                 },
-                visibleMessagingBundleIDs: partition.messaging.compactMap { entry in
+                visibleMessagingBundleIDs: projection.messaging.compactMap { entry in
                     guard case let .messagingApp(bundleID, _) = entry else { return nil }
                     return bundleID
                 },
@@ -577,50 +596,35 @@ struct DockStripView: View {
     /// (excluding the dragged chip itself), and place the dragged chip on the half the finger is
     /// in. Drives the existing `stripLayoutKeys` spring so the others slide aside as the gap moves.
     /// 全帧命中（不只看 x）：手指抬向胶囊/抽屉时 y 已离开条内行，contains 不命中 → 不误改顺序（Codex 二审）。
-    private func reorderTarget(at point: CGPoint, dragging id: String) {
+    private func reorderTarget(at point: CGPoint, dragging id: String, current: [String]) {
         guard let hit = chipFrames.first(where: { kv in
             kv.key != id && kv.value.contains(point)
         }) else { return }
         stripOrderStore.reorder(draggedID: id, relativeTo: hit.key,
-                                after: point.x > hit.value.midX, current: liveOrderIDs)
+                                after: point.x > hit.value.midX, current: current)
     }
 
     // MARK: - 抽屉图标拖回任务条·精确落点（运行中应用，全局鼠标驱动，镜像 DrawerView）
 
     /// 抽屉拖出模式（判定是纯函数 `DragConversionPlan.drawerDragOutMode`，单测覆盖；这里只喂当前事实）。
-    private func currentDrawerDragOutMode(_ bid: String) -> DrawerDragOutMode {
+    private func currentDrawerDragOutMode(_ bid: String, projection: StripProjection) -> DrawerDragOutMode {
         DragConversionPlan.drawerDragOutMode(
             bundleID: bid,
             isMessagingMember: messagingStore.contains(bid),
-            isInSnapshot: snapshotBundleIDs.contains(bid),
-            hasRealWindow: hasRealWindow(bundleID: bid),
+            isInSnapshot: projection.snapshotBundleIDs.contains(bid),
+            hasRealWindow: projection.hasRealWindow(bundleID: bid),
             isKept: keptAppStore.contains(bid)
         )
     }
 
     /// 这个 app 当前在 live 区的窗口卡 id（按显示序，排除 app-fallback）。转正后用于整块连续重排。
-    private func appLiveChipIDs(_ bid: String) -> [String] {
-        stripEntries.compactMap { entry -> String? in
-            guard case let .window(item) = entry,
-                  item.bundleIdentifier == bid, !item.isAppLevelFallback else { return nil }
-            return item.id
-        }
-    }
-
-    /// 按 chip id 取当前 `StripItem`（live 区）。
-    private func stripItem(forID id: String) -> StripItem? {
-        guard let entry = partitioned().liveNatural.first(where: { $0.id == id }) else { return nil }
-        if case let .window(item) = entry { return item }
-        return nil
-    }
-
     /// 转正后维护载体的"代表卡"：显示序里该 app **第一张已实体化**的窗口卡。实体化前保持 nil（载体仍画
     /// 抽屉小图标，不画"没有空位的卡"）。载体与空位都认这同一张（Codex 三审 P1）。非转正态由 DragController 清空。
-    private func syncConvertedCarrier() {
+    private func syncConvertedCarrier(projection: StripProjection) {
         let dc = dragController
         guard dc.isConvertedToStrip, let p = dc.draggingPayload, p.source == .drawer else { return }
-        let rep = appLiveChipIDs(p.bundleID).first
-            .flatMap { liveOrderIDs.contains($0) ? stripItem(forID: $0) : nil }
+        let rep = projection.liveChipIDs(bundleID: p.bundleID).first
+            .flatMap { projection.liveOrderIDs.contains($0) ? projection.item(forID: $0) : nil }
         dc.setConvertedRepresentative(rep)
     }
 
@@ -659,7 +663,7 @@ struct DockStripView: View {
     /// 进/出任务条区驱动转正/还原（迟滞防边界抖）。
     /// unstash 路径：进 → convertDrawerToStrip + 暂存落点；出 → cancelExternalBlock + revertDrawerToStrip。
     /// keepPlacement 路径：无真窗口时用现有 app fallback / kept placeholder 落位；全程不修改 kept。
-    private func updateDrawerToStripConvert() {
+    private func updateDrawerToStripConvert(projection: StripProjection) {
         let dc = dragController
         guard let p = dc.draggingPayload, p.source == .drawer, p.canExternalDrop,
               stripRootScreenRect != .zero else { return }
@@ -670,7 +674,7 @@ struct DockStripView: View {
         let clearlyOut = g.x < r.minX - 24  || g.x > r.maxX + 24  || g.y < r.minY - 24  || g.y > r.maxY + 40
         if !dc.isConvertedToStrip {
             guard enter else { return }
-            let mode = currentDrawerDragOutMode(bid)
+            let mode = currentDrawerDragOutMode(bid, projection: projection)
             // reject 留在抽屉；releaseToMessaging 由 updateDrawerToMessagingRelease 按消息区范围处理。
             guard mode == .unstash || mode == .keepPlacement else { return }
             // 此刻本组窗口卡还没出现在 live 区，命中目标只在**已有**卡里找（exclude 空集即可）。
@@ -693,17 +697,10 @@ struct DockStripView: View {
     }
 
     /// 当前消息区可见 chip 的 bundleID（区内显示序）。喂重排遍历 + 拖动中消失清理。
-    private var messagingZoneIDs: [String] {
-        partitioned().messaging.compactMap { entry in
-            if case let .messagingApp(bid, _) = entry { return bid }
-            return nil
-        }
-    }
-
     /// 消息区范围（"strip" 空间）：现有消息 chip 帧的并集；区空时退化为条头一小段
     /// （释放后消息区在条头物化）。抽屉消息应用的释放判定用它,不认"离开抽屉体"（Codex 评审 P1-3）。
-    private var messagingReleaseZone: CGRect? {
-        let frames = messagingZoneIDs.compactMap { messagingChipFrames[$0] }
+    private func messagingReleaseZone(messagingIDs: [String]) -> CGRect? {
+        let frames = messagingIDs.compactMap { messagingChipFrames[$0] }
         if let first = frames.first {
             return frames.dropFirst().reduce(first) { $0.union($1) }
         }
@@ -713,12 +710,12 @@ struct DockStripView: View {
 
     /// 消息区内重排：命中其他消息 chip 帧（外扩 6pt 盖住格间空隙）,按左/右半落位。
     /// 按区内显示序遍历取最左（dict 顺序不定,外扩后相邻帧会重叠——同抽屉）。悬在投放区（胶囊/抽屉）时不重排。
-    private func updateMessagingReorder() {
+    private func updateMessagingReorder(messagingIDs: [String]) {
         let dc = dragController
         guard let p = dc.draggingPayload, p.source == .messaging,
               !dc.isOverDropZone,
               let pt = stripPoint(from: dc.globalLocation) else { return }
-        for bid in messagingZoneIDs where bid != p.bundleID {
+        for bid in messagingIDs where bid != p.bundleID {
             guard let f = messagingChipFrames[bid], f.insetBy(dx: -6, dy: -6).contains(pt) else { continue }
             messagingStore.reorder(draggedID: p.bundleID, relativeTo: bid, after: pt.x > f.midX)
             return
@@ -728,11 +725,11 @@ struct DockStripView: View {
     /// 抽屉里的**运行中消息应用**拖到消息区范围 → 临时释放回消息区；离开范围（或进胶囊/抽屉投放区）→
     /// 回滚回抽屉。进 8pt / 出 24pt 迟滞防边界抖。释放后载荷来源是 .messaging,区内重排自动接管精确落位;
     /// 松手即落定（endDrag 决策见 DragConversionPlan.endAction）。桌面/文件夹区/live 区都不触发释放。
-    private func updateDrawerToMessagingRelease() {
+    private func updateDrawerToMessagingRelease(projection: StripProjection) {
         let dc = dragController
         if dc.isReleasedToMessaging {
             guard let pt = stripPoint(from: dc.globalLocation),
-                  let zone = messagingReleaseZone,
+                  let zone = messagingReleaseZone(messagingIDs: projection.messagingIDs),
                   zone.insetBy(dx: -24, dy: -24).contains(pt),
                   !dc.isOverDropZone else {
                 dc.revertDrawerToMessaging()
@@ -742,21 +739,21 @@ struct DockStripView: View {
         }
         guard let p = dc.draggingPayload, p.source == .drawer, p.canExternalDrop,
               !dc.isConvertedToStrip,
-              currentDrawerDragOutMode(p.bundleID) == .releaseToMessaging,
+              currentDrawerDragOutMode(p.bundleID, projection: projection) == .releaseToMessaging,
               let pt = stripPoint(from: dc.globalLocation),
-              let zone = messagingReleaseZone,
+              let zone = messagingReleaseZone(messagingIDs: projection.messagingIDs),
               zone.insetBy(dx: -8, dy: -8).contains(pt) else { return }
         dc.convertDrawerToMessaging()
     }
 
     /// 转正后整块连续重排：本组窗口卡都进了 live 区（已实体化）才动；初次落点由暂存在 sync 内完成。
     /// keepPlacement 路径无窗口卡，用占位 id "app-\(bid)" 做单元素块重排。
-    private func updateStripBlockReorder() {
+    private func updateStripBlockReorder(projection: StripProjection) {
         let dc = dragController
         guard dc.isConvertedToStrip, let p = dc.draggingPayload, p.source == .drawer else { return }
-        let ids = appLiveChipIDs(p.bundleID)
+        let ids = projection.liveChipIDs(bundleID: p.bundleID)
         let blockIDs = ids.isEmpty ? ["app-\(p.bundleID)"] : ids
-        guard !blockIDs.isEmpty, blockIDs.allSatisfy(liveOrderIDs.contains),
+        guard !blockIDs.isEmpty, blockIDs.allSatisfy(projection.liveOrderIDs.contains),
               let pt = stripPoint(from: dc.globalLocation),
               let target = blockTarget(at: pt, excluding: Set(blockIDs)) else { return }
         stripOrderStore.reorderBlock(ids: blockIDs, relativeTo: target.id, after: target.after)
@@ -772,11 +769,11 @@ struct DockStripView: View {
     /// through to the chip's `onTapGesture`; right-click still opens the menu; horizontal scroll
     /// is wheel/trackpad so it never fights this click-drag.
     @ViewBuilder
-    private func chipWithReorder(_ entry: StripEntry) -> some View {
+    private func chipWithReorder(_ entry: StripEntry, projection: StripProjection) -> some View {
         switch entry {
         case let .window(item):
-            stripEntryView(entry)
-                .opacity(draggingID == item.id ? 0 : 1)
+            stripEntryView(entry, projection: projection)
+                .opacity(projection.draggingID == item.id ? 0 : 1)
                 // Frame in the shared `"strip"` space via a **background** GeometryReader — doesn't
                 // affect layout and doesn't steal clicks (an overlay with a hittable Color.clear
                 // intercepts taps — the original slice-3 bug). Feeds both the floating copy's
@@ -809,7 +806,8 @@ struct DockStripView: View {
                                                          grabOffset: grab)
                             }
                             if !dragController.isOverDropZone {
-                                reorderTarget(at: value.location, dragging: item.id)
+                                reorderTarget(at: value.location, dragging: item.id,
+                                              current: projection.liveOrderIDs)
                             }
                         }
                         .onEnded { _ in dragController.endDrag() }
@@ -819,7 +817,7 @@ struct DockStripView: View {
             // MessagingChipFramePreferenceKey（绝不混 chipFrames,同文件夹 chip 的隔离理由）。
             // 手势**只负责起拖一次**：重排会挪动本 chip、SwiftUI 随即取消手势 → 区内重排由
             // updateMessagingReorder() 按全局鼠标驱动（同抽屉教训,Codex 评审 P1-4）。
-            stripEntryView(entry)
+            stripEntryView(entry, projection: projection)
                 .opacity(draggingMessagingBundleID == bid ? 0 : 1)
                 .background(
                     GeometryReader { geo in
@@ -848,8 +846,8 @@ struct DockStripView: View {
         case let .keptApp(bid):
             // 保留应用占位可拖：镜像 .window 卡的拖动重排 + 可拖进抽屉（canExternalDrop=true）。
             let chipID = "app-\(bid)"
-            stripEntryView(entry)
-                .opacity(draggingID == chipID ? 0 : 1)
+            stripEntryView(entry, projection: projection)
+                .opacity(projection.draggingID == chipID ? 0 : 1)
                 .background(
                     GeometryReader { geo in
                         Color.clear.preference(key: ChipFramePreferenceKey.self,
@@ -873,7 +871,8 @@ struct DockStripView: View {
                                                          grabOffset: grab)
                             }
                             if !dragController.isOverDropZone {
-                                reorderTarget(at: value.location, dragging: chipID)
+                                reorderTarget(at: value.location, dragging: chipID,
+                                              current: projection.liveOrderIDs)
                             }
                         }
                         .onEnded { _ in dragController.endDrag() }
@@ -884,7 +883,7 @@ struct DockStripView: View {
             // hit-test）,绝不混入 live 重排的 chipFrames（评审 P1）。手势镜像 .window 卡:起拖交
             // DragController（.folder 来源,与 strip/drawer 收纳语义隔离）,onChanged 驱动区内重排,
             // 并写入 FolderChipDropGeometry；最终移除/打开由 DragController.endDrag 的兜底收尾触发。
-            stripEntryView(entry)
+            stripEntryView(entry, projection: projection)
                 .opacity(draggingFolderPath == path ? 0 : 1)
                 .background(
                     GeometryReader { geo in
@@ -915,7 +914,7 @@ struct DockStripView: View {
                 )
         case .shelf:
             // 中转格固定头位,不可拖拽。帧走独立的 ShelfFramePreferenceKey（评审：不混 sentinel）。
-            stripEntryView(entry)
+            stripEntryView(entry, projection: projection)
                 .background(
                     GeometryReader { geo in
                         Color.clear.preference(key: ShelfFramePreferenceKey.self,
@@ -923,14 +922,18 @@ struct DockStripView: View {
                     }
                 )
         case .divider:
-            stripEntryView(entry)
+            stripEntryView(entry, projection: projection)
         }
     }
 
     /// `dragging: true` 强制 chip 的悬停视觉。注：现在浮动载体已移到 `DragCarrierView`（且用
     /// `forceHover: false`），条内不再用 `dragging: true` 渲染载体；此参数保留默认 false，渲染行为不变。
     @ViewBuilder
-    private func stripEntryView(_ entry: StripEntry, dragging: Bool = false) -> some View {
+    private func stripEntryView(
+        _ entry: StripEntry,
+        projection: StripProjection,
+        dragging: Bool = false
+    ) -> some View {
         switch entry {
         case let .window(item):
             ChipView(item: item,
@@ -989,7 +992,7 @@ struct DockStripView: View {
                     let running = runningApplicationStore.isRunning(bid)
                     LauncherChip(bundleID: bid,
                                  isRunning: running,
-                                 isHidden: running && isHiddenInSnapshot(bundleID: bid),
+                                 isHidden: running && projection.hiddenBundleIDs.contains(bid),
                                  isLaunching: runtime.launchingBundleIDs.contains(bid),
                                  scale: dockScale,
                                  hoverStyle: hoverStyle,
@@ -1010,7 +1013,7 @@ struct DockStripView: View {
             }
         case let .keptApp(bid):
             let isRunning = runningApplicationStore.isRunning(bid)
-            let hasRealWindow = hasRealWindow(bundleID: bid)
+            let hasRealWindow = projection.hasRealWindow(bundleID: bid)
             let reopen: (() -> Void)? = isRunning && !hasRealWindow
                 ? { Self.reopenMainWindow(bundleID: bid) }
                 : nil
@@ -1025,12 +1028,6 @@ struct DockStripView: View {
                 onTap: reopen,
                 onLaunch: { runtime.beginLaunch(bid) }
             )
-        }
-    }
-
-    private func hasRealWindow(bundleID: String) -> Bool {
-        StripItem.items(from: runtime.snapshot).contains {
-            $0.bundleIdentifier == bundleID && !$0.isAppLevelFallback
         }
     }
 
@@ -1269,21 +1266,30 @@ struct ChipView: View {
     // MARK: - Icon-only chip
 
     private var bareIconChip: some View {
-        let iconSize: CGFloat = showsHover ? 24 * scale : 36 * scale
-        return VStack(spacing: 2) {
-            Spacer(minLength: 0)
-            appIcon(size: iconSize)
-            if showsHover {
-                Text(displayTitle)
-                    .font(.system(size: max(8, 10 * scale), weight: .medium, design: .rounded))
-                    .foregroundStyle(theme.labelHover.color)
-                    .lineLimit(1)
-                    .frame(maxWidth: 64 * scale)
-                    .transition(.opacity)
+        return ChipHoverProgress(progress: showsHover ? 1 : 0) { progress in
+            let hover = ChipHoverVisual.resolve(progress: progress, scale: scale, subtitleNaturalWidth: 0)
+            let _ = ChipAnimationTrace.record(chipID: item.id, kind: "icon", visual: hover)
+            VStack(spacing: 0) {
+                Spacer(minLength: 0)
+                ZStack(alignment: .top) {
+                    appIcon(size: hover.bareIconSize)
+
+                    Text(displayTitle)
+                        .font(.system(size: max(8, 10 * scale), weight: .medium, design: .rounded))
+                        .foregroundStyle(theme.labelHover.color)
+                        .lineLimit(1)
+                        .frame(maxWidth: 64 * scale)
+                        .offset(y: 26 * scale)
+                        .opacity(hover.subtitleOpacity)
+                        .allowsHitTesting(false)
+                        .accessibilityHidden(!showsHover)
+                }
+                .frame(width: 44 * scale, height: 36 * scale, alignment: .top)
+                Spacer(minLength: 0)
             }
-            Spacer(minLength: 0)
+            .frame(width: 44 * scale, height: 52 * scale)
         }
-        .frame(width: 44 * scale, height: 52 * scale)
+        .animation(.easeInOut(duration: 0.18), value: showsHover)
         .overlay(alignment: .bottom) {
             if showRunningDot {
                 Circle()
@@ -1301,9 +1307,6 @@ struct ChipView: View {
         }
         .nativeContextMenu { buildChipMenu() }
         .help(displayTitle)
-        // 跟 showsHover 而不是裸 isHovering：安静档下它恒 false，连事务都不产生
-        //（一个只是"没有可见效果"的动画事务仍会下沉覆盖子树，是启动弹跳被顶掉的旧病根）。
-        .animation(.easeInOut(duration: 0.18), value: showsHover)
         .animation(.spring(response: 0.22, dampingFraction: 0.5), value: isTapPressed)
     }
 
@@ -1313,50 +1316,69 @@ struct ChipView: View {
         // 图标恒为原色（不按状态淡化，owner 2026-08-02）；「在不在桌面上」只由标题颜色表达。
         let titleColor: Color = effectiveIsOnDesktop ? theme.labelActive.color : theme.labelInactive.color
 
-        let pillHeight: CGFloat = showsHover ? 28 * scale : 34 * scale
-        let pillIconSize: CGFloat = showsHover ? 18 * scale : 22 * scale
-        let pill = HStack(spacing: 6 * scale) {
-            // Fixed layout frame (22pt) so HStack width never changes on hover;
-            // only the visual icon content shrinks.
-            appIcon(size: pillIconSize)
-                .frame(width: 22 * scale, height: 22 * scale)
-            Text(displayTitle)
-                .font(.system(size: max(10, 12 * scale), weight: .medium, design: .rounded))
-                .foregroundStyle(titleColor)
-                .lineLimit(1)
-                .frame(maxWidth: WindowTitleTextMetrics.maximumWidth(for: scale), alignment: .leading)
-        }
-        .padding(.horizontal, 10 * scale)
-        .frame(height: pillHeight)
-        .background(
-            RoundedRectangle(cornerRadius: 10 * scale, style: .continuous)
-                .fill(theme.chipPillFill.color(emphasized: showsHover))
-                .overlay(
-                    RoundedRectangle(cornerRadius: 10 * scale, style: .continuous)
-                        .strokeBorder(theme.chipPillRimStyle(emphasized: showsHover), lineWidth: 0.5)
-                )
-        )
-        .background(ScreenRectReader { rect in
-            guard rect != titlePillScreenRect else { return }
-            titlePillScreenRect = rect
-            if isHovering { updateWindowTitleTooltip(hovering: true, anchor: rect) }
-        })
+        let subtitleNaturalWidth = ChipSubtitleMetrics.width(of: appName, scale: scale)
+        return ChipHoverProgress(progress: showsHover ? 1 : 0) { progress in
+            let hover = ChipHoverVisual.resolve(
+                progress: progress, scale: scale, subtitleNaturalWidth: subtitleNaturalWidth
+            )
+            let _ = ChipAnimationTrace.record(chipID: item.id, kind: "window", visual: hover)
+            let pill = HStack(spacing: ChipPillMetrics.iconSpacing * scale) {
+                appIcon(size: hover.pillIconSize)
+                    .frame(width: ChipPillMetrics.iconSlot * scale, height: ChipPillMetrics.iconSlot * scale)
+                Text(displayTitle)
+                    .font(.system(size: max(10, 12 * scale), weight: .medium, design: .rounded))
+                    .foregroundStyle(titleColor)
+                    .lineLimit(1)
+                    .frame(maxWidth: WindowTitleTextMetrics.maximumWidth(for: scale), alignment: .leading)
+            }
+            .padding(.horizontal, ChipPillMetrics.horizontalPadding * scale)
+            .frame(height: hover.pillHeight)
+            .background(
+                RoundedRectangle(cornerRadius: 10 * scale, style: .continuous)
+                    .fill(theme.chipPillFill.color(emphasisProgress: hover.emphasisProgress))
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 10 * scale, style: .continuous)
+                            .strokeBorder(
+                                theme.chipPillRimStyle(emphasisProgress: hover.emphasisProgress),
+                                lineWidth: 0.5
+                            )
+                    )
+            )
 
-        return VStack(spacing: 2) {
-            Spacer(minLength: 0)
-            pill
-            if showsHover {
+            VStack(spacing: 0) {
+                Spacer(minLength: 0)
+                pill
+                    .frame(height: ChipPillMetrics.boxHeight * scale, alignment: .top)
+                    .offset(y: hover.pillShift)
                 Text(appName)
                     .font(.system(size: max(8, 9 * scale), weight: .medium, design: .rounded))
                     .foregroundStyle(theme.labelSubtitle.color)
                     .lineLimit(1)
-                    .frame(maxWidth: 160 * scale)
-                    .transition(.opacity)
+                    .frame(width: subtitleNaturalWidth)
+                    .frame(width: hover.subtitleSlotWidth, height: 0)
+                    .offset(y: ChipSubtitleMetrics.subtitleShift(for: scale))
+                    .opacity(hover.subtitleOpacity)
+                    .allowsHitTesting(false)
+                    .accessibilityHidden(!showsHover)
+                Spacer(minLength: 0)
             }
-            Spacer(minLength: 0)
+            .frame(height: ChipPillMetrics.chipHeight * scale)
         }
-        .frame(height: 52 * scale)
+        .animation(.easeInOut(duration: 0.18), value: showsHover)
         .scaleEffect(isTapPressed ? 0.93 : 1.0)
+        // 探针挂在 scaleEffect **之外**：按下去那 7% 缩放不该被当成几何变化上报。
+        // 量的是稳定的卡片矩形，pill rect 由 ChipPillMetrics 推出来，tooltip 的锚点契约不变。
+        // 唯一用去抖的调用点：悬停时卡片矩形每帧都在变（那是刻意保留的横向 reflow），
+        // 逐帧回写 @State 会在动画中途把 ChipView 重算一遍。tooltip 本来就有 0.7s 延迟，
+        // 等得起；根 rect 那两个调用点**不能**用它（拖动几何要实时）。
+        .background(ScreenRectReader(delivery: .tooltip) { rect in
+            let pillRect = ChipPillMetrics.pillRect(
+                inCard: rect, title: displayTitle, hovered: showsHover, scale: scale
+            )
+            guard pillRect != titlePillScreenRect else { return }
+            titlePillScreenRect = pillRect
+            if isHovering { updateWindowTitleTooltip(hovering: true, anchor: pillRect) }
+        })
         .contentShape(Rectangle())
         .onHover { hovering in
             isHovering = hovering
@@ -1374,7 +1396,6 @@ struct ChipView: View {
             if isHovering { updateWindowTitleTooltip(hovering: true) }
         }
         .onDisappear { onWindowTitleTooltipEvent(.exit(chipID: item.id)) }
-        .animation(.easeInOut(duration: 0.18), value: showsHover)
         .animation(.spring(response: 0.22, dampingFraction: 0.5), value: isTapPressed)
     }
 
@@ -1622,7 +1643,7 @@ struct ChipBadgeView: View {
 
 // MARK: - Layout Animation Key
 
-private struct StripLayoutKey: Equatable {
+struct StripLayoutKey: Equatable {
     let id: String
     let form: Form
 

@@ -122,7 +122,7 @@ struct DrawerView: View {
         }
         // 抽屉根视图的屏幕 frame（AppKit 换算,绕开 .global/y 翻转/shadowPadding 的坑,Codex 二审 P1-3）。
         // 与 `"drawer"` 命名空间挂在同一视图上 → 既能判"光标在不在抽屉里",又能把屏幕坐标映回 drawer 空间命中格子。
-        .background(ScreenRectReader { rect in
+        .background(ScreenRectReader(delivery: .root) { rect in
             if rect != drawerRootScreenRect { drawerRootScreenRect = rect }
         })
         .coordinateSpace(name: "drawer")
@@ -320,28 +320,6 @@ struct DrawerView: View {
             } else if dc.isConvertedFromMessaging {
                 dc.revertMessagingFromDrawer()      // 消息 chip 拖出 → 还原回消息区原位
             }
-        }
-    }
-}
-
-/// 读取宿主视图在屏幕坐标系里的 frame（AppKit 换算,bottom-left）。绕开 SwiftUI `.global`/y 翻转/
-/// shadowPadding 的坑（Codex 二审 P1-3）。去重由调用方负责。
-/// 模块内可见：DrawerView 与 DockStripView（抽屉拖回任务条·精确落点）共用，不复制坐标读取逻辑。
-struct ScreenRectReader: NSViewRepresentable {
-    let onChange: (CGRect) -> Void
-    func makeNSView(context: Context) -> NSView { TrackingView(onChange: onChange) }
-    func updateNSView(_ nsView: NSView, context: Context) { (nsView as? TrackingView)?.report() }
-
-    final class TrackingView: NSView {
-        let onChange: (CGRect) -> Void
-        init(onChange: @escaping (CGRect) -> Void) { self.onChange = onChange; super.init(frame: .zero) }
-        required init?(coder: NSCoder) { fatalError() }
-        override func viewDidMoveToWindow() { report() }
-        override func layout() { super.layout(); report() }
-        func report() {
-            guard let window else { return }
-            let onScreen = window.convertToScreen(convert(bounds, to: nil))
-            DispatchQueue.main.async { [onChange] in onChange(onScreen) }
         }
     }
 }

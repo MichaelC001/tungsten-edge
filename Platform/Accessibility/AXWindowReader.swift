@@ -107,7 +107,13 @@ enum AXWindowReadResult {
     }
 }
 
-struct AXWindowReader {
+protocol AppTrackerWindowReading: Sendable {
+    func windows(forPID pid: pid_t) -> [AXWindowSnapshot]
+    func windowReadResult(forPID pid: pid_t) -> AXWindowReadResult
+    func inventoryWindows(forPID pid: pid_t, messagingTimeout: TimeInterval) -> AXWindowReadResult
+}
+
+struct AXWindowReader: AppTrackerWindowReading, Sendable {
     func windows(for app: NSRunningApplication) -> [AXWindowSnapshot] {
         windows(forPID: app.processIdentifier)
     }

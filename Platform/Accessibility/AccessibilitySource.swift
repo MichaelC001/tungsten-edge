@@ -169,8 +169,14 @@ final class AccessibilitySource {
 }
 
 struct AccessibilityWindowActionExecutor {
-    private let reader = AXWindowReader()
+    private let reader: AXWindowReader
+    private let chipProbeEnabled: Bool
     private static let chipProbeLogger = Logger(subsystem: "com.caye.macosdockcc.v2", category: "ChipProbe")
+
+    init(reader: AXWindowReader = AXWindowReader(), chipProbeEnabled: Bool = false) {
+        self.reader = reader
+        self.chipProbeEnabled = chipProbeEnabled
+    }
 
     struct ActionExecution {
         let success: Bool
@@ -192,9 +198,12 @@ struct AccessibilityWindowActionExecutor {
     }
 
     func captureHandleByCGWindowID(_ cgWindowID: CGWindowID, pid: Int32) -> WindowHandle? {
-        guard case .success(let snapshots) = reader.inventoryWindows(forPID: pid, messagingTimeout: 0.5) else { return nil }
-        guard let snap = snapshots.first(where: { $0.cgWindowID == cgWindowID }) else { return nil }
-        return WindowHandle(pid: pid, title: snap.title, bounds: snap.bounds, element: snap.element)
+        guard let handle = reader.captureHandle(
+            forPID: pid,
+            cgWindowID: cgWindowID,
+            messagingTimeout: 0.1
+        ) else { return nil }
+        return WindowHandle(pid: pid, title: handle.title, bounds: handle.bounds, element: handle.element)
     }
 
     func activateAppWithWindowRecovery(pid: Int32, runningApp: NSRunningApplication?) -> Bool {
@@ -235,22 +244,24 @@ struct AccessibilityWindowActionExecutor {
     }
 
     func minimize(_ handle: WindowHandle) -> ActionExecution {
-        // ChipProbe: read-only AX survey (background thread, element already has 0.5s messaging timeout)
-        let role = reader.stringAttribute(kAXRoleAttribute as CFString, from: handle.element, maxAttempts: 1)
-        let subrole = reader.stringAttribute(kAXSubroleAttribute as CFString, from: handle.element, maxAttempts: 1)
-        let hasMinimizeButton = axElementAttribute(kAXMinimizeButtonAttribute as CFString, from: handle.element) != nil
-        let currentMinimized = reader.boolAttribute(kAXMinimizedAttribute as CFString, from: handle.element, maxAttempts: 1)
-        var minimizedSettable: DarwinBoolean = false
-        _ = AXUIElementIsAttributeSettable(handle.element, kAXMinimizedAttribute as CFString, &minimizedSettable)
-        let probeApp = NSRunningApplication(processIdentifier: handle.pid)
-        let probePolicyStr: String
-        switch probeApp?.activationPolicy {
-        case .regular: probePolicyStr = "regular"
-        case .accessory: probePolicyStr = "accessory"
-        case .prohibited: probePolicyStr = "prohibited"
-        default: probePolicyStr = "nil"
+        if chipProbeEnabled {
+            // Read-only survey, intentionally absent from the default click path.
+            let role = reader.stringAttribute(kAXRoleAttribute as CFString, from: handle.element, maxAttempts: 1)
+            let subrole = reader.stringAttribute(kAXSubroleAttribute as CFString, from: handle.element, maxAttempts: 1)
+            let hasMinimizeButton = axElementAttribute(kAXMinimizeButtonAttribute as CFString, from: handle.element) != nil
+            let currentMinimized = reader.boolAttribute(kAXMinimizedAttribute as CFString, from: handle.element, maxAttempts: 1)
+            var minimizedSettable: DarwinBoolean = false
+            _ = AXUIElementIsAttributeSettable(handle.element, kAXMinimizedAttribute as CFString, &minimizedSettable)
+            let probeApp = NSRunningApplication(processIdentifier: handle.pid)
+            let probePolicyStr: String
+            switch probeApp?.activationPolicy {
+            case .regular: probePolicyStr = "regular"
+            case .accessory: probePolicyStr = "accessory"
+            case .prohibited: probePolicyStr = "prohibited"
+            default: probePolicyStr = "nil"
+            }
+            Self.chipProbeLogger.info("minimize-ax-probe app=\(probeApp?.localizedName ?? "(unknown)", privacy: .public) bundleID=\(probeApp?.bundleIdentifier ?? "(none)", privacy: .public) activationPolicy=\(probePolicyStr, privacy: .public) role=\(role ?? "nil", privacy: .public) subrole=\(subrole ?? "nil", privacy: .public) hasMinimizeButton=\(hasMinimizeButton, privacy: .public) currentMinimized=\(String(describing: currentMinimized), privacy: .public) minimizedSettable=\(minimizedSettable.boolValue, privacy: .public)")
         }
-        Self.chipProbeLogger.info("minimize-ax-probe app=\(probeApp?.localizedName ?? "(unknown)", privacy: .public) bundleID=\(probeApp?.bundleIdentifier ?? "(none)", privacy: .public) activationPolicy=\(probePolicyStr, privacy: .public) role=\(role ?? "nil", privacy: .public) subrole=\(subrole ?? "nil", privacy: .public) hasMinimizeButton=\(hasMinimizeButton, privacy: .public) currentMinimized=\(String(describing: currentMinimized), privacy: .public) minimizedSettable=\(minimizedSettable.boolValue, privacy: .public)")
 
         if setMinimized(true, for: handle) {
             let verified = reader.boolAttribute(kAXMinimizedAttribute as CFString, from: handle.element)
@@ -637,10 +648,53 @@ struct AccessibilityWindowActionExecutor {
     }
 }
 
+struct ActionExecutionSwitches: Equatable {
+    let fastWindowHandleEnabled: Bool
+    let chipProbeEnabled: Bool
+    let minimizeAppFallbackEnabled: Bool
+
+    init(environment: [String: String] = ProcessInfo.processInfo.environment) {
+        fastWindowHandleEnabled = environment["DOCK_FAST_WINDOW_HANDLE"] != "0"
+        chipProbeEnabled = environment["DOCK_CHIP_PROBE"] == "1"
+        minimizeAppFallbackEnabled = environment["DOCK_MINIMIZE_APP_FALLBACK"] == "1"
+    }
+}
+
+enum WindowHandleCapturePlan {
+    static func capture<Handle>(
+        fastEnabled: Bool,
+        cgWindowID: CGWindowID?,
+        justUnhid: Bool,
+        fast: (CGWindowID) -> Handle?,
+        fallback: () -> Handle?
+    ) -> Handle? {
+        if fastEnabled, !justUnhid, let cgWindowID, let handle = fast(cgWindowID) {
+            return handle
+        }
+        return fallback()
+    }
+
+    static func usesAppFallbackAfterCaptureFailure(
+        requestKind: PlatformActionRequest.ActionKind,
+        isFinderWindow: Bool,
+        minimizeAppFallbackEnabled: Bool
+    ) -> Bool {
+        guard !isFinderWindow else { return false }
+        if requestKind == .minimizeWindow { return minimizeAppFallbackEnabled }
+        return true
+    }
+}
+
 struct PlatformActionExecutor {
-    private let windowExecutor = AccessibilityWindowActionExecutor()
+    private let windowExecutor: AccessibilityWindowActionExecutor
+    private let switches: ActionExecutionSwitches
     private static let chipProbeLogger = Logger(subsystem: "com.caye.macosdockcc.v2", category: "ChipProbe")
     private static let postMinimizeActivateDelayMicroseconds: useconds_t = 50_000
+
+    init(switches: ActionExecutionSwitches = ActionExecutionSwitches()) {
+        self.switches = switches
+        windowExecutor = AccessibilityWindowActionExecutor(chipProbeEnabled: switches.chipProbeEnabled)
+    }
 
     @discardableResult
     func execute(_ request: PlatformActionRequest, snapshot: DockSnapshot) -> Bool {
@@ -701,24 +755,28 @@ struct PlatformActionExecutor {
             pid: record.pid, title: record.title, bounds: record.bounds)
         // After unhide, skip the fast cgWindowID path — it may return a handle whose AX
         // element is still transitioning. Use the retry-capable captureHandle instead.
-        let handle: AccessibilityWindowActionExecutor.WindowHandle?
-        if let cgWindowID = record.cgWindowID, !justUnhid {
-            handle = windowExecutor.captureHandleByCGWindowID(cgWindowID, pid: record.pid)
-                ?? windowExecutor.captureHandle(
+        let handle = WindowHandleCapturePlan.capture(
+            fastEnabled: switches.fastWindowHandleEnabled,
+            cgWindowID: record.cgWindowID,
+            justUnhid: justUnhid,
+            fast: { windowExecutor.captureHandleByCGWindowID($0, pid: record.pid) },
+            fallback: {
+                windowExecutor.captureHandle(
                     for: target,
                     attempts: isFinderWindow ? 3 : 1,
                     retryIntervalMicroseconds: isFinderWindow ? 150_000 : 0
                 )
-        } else {
-            handle = windowExecutor.captureHandle(
-                for: target,
-                attempts: isFinderWindow ? 3 : 1,
-                retryIntervalMicroseconds: isFinderWindow ? 150_000 : 0
-            )
-        }
+            }
+        )
 
         guard let handle else {
-            if isFinderWindow { return false }
+            guard WindowHandleCapturePlan.usesAppFallbackAfterCaptureFailure(
+                requestKind: request.kind,
+                isFinderWindow: isFinderWindow,
+                minimizeAppFallbackEnabled: switches.minimizeAppFallbackEnabled
+            ) else {
+                return false
+            }
             return executeAppFallback(request: request, record: record)
         }
 
@@ -742,20 +800,28 @@ struct PlatformActionExecutor {
                     usleep(Self.postMinimizeActivateDelayMicroseconds)
                     let activated = NSRunningApplication(processIdentifier: targetPID)?
                         .activate(options: [.activateIgnoringOtherApps]) ?? false
-                    Self.chipProbeLogger.info("postactivate-background-fallback pid=\(targetPID, privacy: .public) activated=\(activated, privacy: .public)")
+                    if switches.chipProbeEnabled {
+                        Self.chipProbeLogger.info("postactivate-background-fallback pid=\(targetPID, privacy: .public) activated=\(activated, privacy: .public)")
+                    }
                 }
-                Self.chipProbeLogger.info("minimize-exec-result windowID=\(request.windowID?.rawValue ?? "nil", privacy: .public) success=\(minExec.success, privacy: .public) preSwitched=\(preSwitched, privacy: .public) mechanism=\(minExec.mechanism, privacy: .public) verifiedMinimized=\(String(describing: minExec.verifiedMinimized), privacy: .public)")
+                if switches.chipProbeEnabled {
+                    Self.chipProbeLogger.info("minimize-exec-result windowID=\(request.windowID?.rawValue ?? "nil", privacy: .public) success=\(minExec.success, privacy: .public) preSwitched=\(preSwitched, privacy: .public) mechanism=\(minExec.mechanism, privacy: .public) verifiedMinimized=\(String(describing: minExec.verifiedMinimized), privacy: .public)")
+                }
                 return true
             }
             if justUnhid {
                 usleep(100_000)
                 if let h = windowExecutor.captureHandle(for: target, attempts: 2, retryIntervalMicroseconds: 100_000) {
                     let retryExec = windowExecutor.minimize(h)
-                    Self.chipProbeLogger.info("minimize-exec-result windowID=\(request.windowID?.rawValue ?? "nil", privacy: .public) success=\(retryExec.success, privacy: .public) preSwitched=\(preSwitched, privacy: .public) mechanism=\(retryExec.mechanism, privacy: .public) verifiedMinimized=\(String(describing: retryExec.verifiedMinimized), privacy: .public)")
+                    if switches.chipProbeEnabled {
+                        Self.chipProbeLogger.info("minimize-exec-result windowID=\(request.windowID?.rawValue ?? "nil", privacy: .public) success=\(retryExec.success, privacy: .public) preSwitched=\(preSwitched, privacy: .public) mechanism=\(retryExec.mechanism, privacy: .public) verifiedMinimized=\(String(describing: retryExec.verifiedMinimized), privacy: .public)")
+                    }
                     return retryExec.success
                 }
             }
-            Self.chipProbeLogger.info("minimize-exec-result windowID=\(request.windowID?.rawValue ?? "nil", privacy: .public) success=\(minExec.success, privacy: .public) preSwitched=\(preSwitched, privacy: .public) mechanism=\(minExec.mechanism, privacy: .public) verifiedMinimized=\(String(describing: minExec.verifiedMinimized), privacy: .public)")
+            if switches.chipProbeEnabled {
+                Self.chipProbeLogger.info("minimize-exec-result windowID=\(request.windowID?.rawValue ?? "nil", privacy: .public) success=\(minExec.success, privacy: .public) preSwitched=\(preSwitched, privacy: .public) mechanism=\(minExec.mechanism, privacy: .public) verifiedMinimized=\(String(describing: minExec.verifiedMinimized), privacy: .public)")
+            }
             return false
         case .closeWindow:
             if windowExecutor.close(handle) { return true }

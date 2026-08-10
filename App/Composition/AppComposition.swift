@@ -5,14 +5,29 @@ import Foundation
 import os
 
 @MainActor
+final class DebugRuntimeState: ObservableObject {
+    @Published private(set) var feedbackEntriesByWindowID: [String: IntentFeedbackState.Entry] = [:]
+    @Published private(set) var observationStatusText: String = "正在启动"
+
+    func setFeedbackEntries(_ entries: [String: IntentFeedbackState.Entry]) {
+        guard entries != feedbackEntriesByWindowID else { return }
+        feedbackEntriesByWindowID = entries
+    }
+
+    func setObservationStatusText(_ text: String) {
+        guard text != observationStatusText else { return }
+        observationStatusText = text
+    }
+}
+
+@MainActor
 final class AppRuntime: ObservableObject {
     @Published private(set) var snapshot: DockSnapshot = .empty
     @Published private(set) var hasRequiredPermissions: Bool = false
-    @Published private(set) var feedbackEntriesByWindowID: [String: IntentFeedbackState.Entry] = [:]
+    let debugState: DebugRuntimeState
     /// 乐观状态 overlay（见 OptimisticWindowState 注释）。UI 渲染与 toggle 规划
     /// 优先读这里；快照兑现预测或超时（静默回弹）后清除。
     @Published private(set) var optimisticStatesByWindowID: [String: OptimisticWindowState] = [:]
-    @Published private(set) var observationStatusText: String = "正在启动"
     /// 「窗口出现门控」（2026-06-18）：用户从抽屉点击启动的 app，在它拿到真窗口
     /// 之前先记在这里。抽屉据此把它**留在启动区继续弹跳**，不在「进程一出现」就提前
     /// 停跳 / 提前跳进运行区（GUI app 进程就绪 ≠ UI 就绪）。.regular 应用等真窗口；
@@ -52,7 +67,7 @@ final class AppRuntime: ObservableObject {
     private let tracker: AppTracker
     private let intentPipeline = IntentPipeline(actionPlanning: LifecycleActionPlanner())
     private let actionExecutor = PlatformActionExecutor()
-    private let permissionService = PermissionService()
+    private let isAccessibilityTrusted: () -> Bool
     private var snapshotSubscription: AnyCancellable?
     private var feedbackTimer: Timer?
     private var startedAt: Date?
@@ -62,16 +77,23 @@ final class AppRuntime: ObservableObject {
     private let chipProbeLogger = Logger(subsystem: "com.caye.macosdockcc.v2", category: "ChipProbe")
     private let launchLogger = Logger(subsystem: "com.caye.macosdockcc.v2", category: "Launch")
     private static let launchTraceEnabled = ProcessInfo.processInfo.environment["DOCK_LAUNCH_TRACE"] == "1"
+    private static let chipProbeEnabled = ProcessInfo.processInfo.environment["DOCK_CHIP_PROBE"] == "1"
     private static let launchPolicyRecheckDeadlines: [TimeInterval] = [1.5, 3.0, 5.0]
 
-    init(inventoryLog: WindowInventoryAnomalyLog = WindowInventoryAnomalyLog()) {
+    init(
+        inventoryLog: WindowInventoryAnomalyLog = WindowInventoryAnomalyLog(),
+        debugState: DebugRuntimeState? = nil,
+        isAccessibilityTrusted: @escaping () -> Bool = { PermissionService().hasRequiredPermissions() }
+    ) {
         tracker = AppTracker(inventoryLog: inventoryLog)
+        self.debugState = debugState ?? DebugRuntimeState()
+        self.isAccessibilityTrusted = isAccessibilityTrusted
     }
 
     func start() {
         guard snapshotSubscription == nil else { return }
         startedAt = Date()
-        hasRequiredPermissions = permissionService.hasRequiredPermissions()
+        hasRequiredPermissions = isAccessibilityTrusted()
         tracker.start()
 
         snapshotSubscription = tracker.$snapshot
@@ -146,7 +168,9 @@ final class AppRuntime: ObservableObject {
 
         // ChipProbe: log the planner's actual decision inputs at tap time (main thread, no AX).
         // freshActive = 新建实例即时读（规划用的就是它）；不打滞后的 frontmostApplication，会误导诊断。
-        if case .toggle(let wid) = intent, let record = snapshot.windows[wid] {
+        if Self.chipProbeEnabled,
+           case .toggle(let wid) = intent,
+           let record = snapshot.windows[wid] {
             let runningApp = NSRunningApplication(processIdentifier: record.pid)
             let freshActive = runningApp?.isActive == true
             let optimisticStatus = optimisticStatesByWindowID[wid.rawValue]?.status.rawValue ?? "none"
@@ -560,16 +584,17 @@ final class AppRuntime: ObservableObject {
     }
 
     private func handleSnapshotUpdate(_ newSnapshot: DockSnapshot) {
-        snapshot = newSnapshot
+        if snapshot != newSnapshot { snapshot = newSnapshot }
         reconcileLaunchingStates(with: newSnapshot)
-        hasRequiredPermissions = permissionService.hasRequiredPermissions()
+        let trusted = isAccessibilityTrusted()
+        if hasRequiredPermissions != trusted { hasRequiredPermissions = trusted }
         intentPipeline.reconcile(with: newSnapshot)
         publishFeedbackEntries()
         reconcileOptimisticStates()
         updateFeedbackTimer()
         if startedAt != nil {
             let ms = Int(Date().timeIntervalSince(startedAt!) * 1000)
-            observationStatusText = hasRequiredPermissions ? "实时 \(ms)ms" : "仅窗口列表"
+            debugState.setObservationStatusText(hasRequiredPermissions ? "实时 \(ms)ms" : "仅窗口列表")
             startedAt = nil
         }
     }
@@ -581,18 +606,15 @@ final class AppRuntime: ObservableObject {
         updateFeedbackTimer()
     }
 
-    /// 把 pipeline 的反馈态投影到 `@Published`——**先比较再写**。
+    /// 把 pipeline 的反馈态投影到独立调试状态——**先比较再写**。
     ///
-    /// `@Published` 不做相等性判断，`willSet` 一律通知。原先这里是无条件赋值，于是
-    /// 空闲期每 0.5s 就通知一次 `AppRuntime` 变了，所有把它当 `@EnvironmentObject` 的
-    /// 视图（整条任务条 + 抽屉）跟着重算一遍，哪怕字典自始至终是空的。
+    /// `@Published` 不做相等性判断，`willSet` 一律通知。调试消费者现在只观察
+    /// `DebugRuntimeState`，反馈变化不会再使任务条与抽屉失效。
     /// 同文件的 `reconcileOptimisticStates` 和 `BadgeStore.readOnce` 早就是「先比较再写」，
     /// 只有这条漏了。
     private func publishFeedbackEntries() {
         let next = intentPipeline.feedbackState.entriesByWindowID
-        if next != feedbackEntriesByWindowID {
-            feedbackEntriesByWindowID = next
-        }
+        debugState.setFeedbackEntries(next)
     }
 
     /// 反馈计时器按需运行：只有反馈态或乐观态非空时才需要周期性对账（pending 超时转

@@ -112,6 +112,13 @@
 		A00000000000000000009D01 /* WindowTitleTooltip.swift in Sources */ = {isa = PBXBuildFile; fileRef = A00000000000000000009D00 /* WindowTitleTooltip.swift */; };
 		A00000000000000000009D02 /* WindowTitleTooltip.swift in Sources */ = {isa = PBXBuildFile; fileRef = A00000000000000000009D00 /* WindowTitleTooltip.swift */; };
 		A00000000000000000009D03 /* WindowTitleTooltipTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A00000000000000000009D10 /* WindowTitleTooltipTests.swift */; };
+		B71000000000000000000001 /* ScreenRectReader.swift in Sources */ = {isa = PBXBuildFile; fileRef = B71000000000000000000003 /* ScreenRectReader.swift */; };
+		B71000000000000000000002 /* ScreenRectReader.swift in Sources */ = {isa = PBXBuildFile; fileRef = B71000000000000000000003 /* ScreenRectReader.swift */; };
+		B72000000000000000000001 /* AppDisplayNameCache.swift in Sources */ = {isa = PBXBuildFile; fileRef = B72000000000000000000003 /* AppDisplayNameCache.swift */; };
+		B72000000000000000000002 /* AppDisplayNameCache.swift in Sources */ = {isa = PBXBuildFile; fileRef = B72000000000000000000003 /* AppDisplayNameCache.swift */; };
+		B73000000000000000000001 /* AppTracker.swift in Sources */ = {isa = PBXBuildFile; fileRef = A00000000000000000000069 /* AppTracker.swift */; };
+		B73000000000000000000002 /* AppWindowObserver.swift in Sources */ = {isa = PBXBuildFile; fileRef = A00000000000000000000068 /* AppWindowObserver.swift */; };
+		B73000000000000000000003 /* AccessibilitySource.swift in Sources */ = {isa = PBXBuildFile; fileRef = A0000000000000000000000F /* AccessibilitySource.swift */; };
 		A000000000000000000019A1 /* LauncherChip.swift in Sources */ = {isa = PBXBuildFile; fileRef = A000000000000000000019B1 /* LauncherChip.swift */; };
 		A000000000000000000019D1 /* AppMenuFragments.swift in Sources */ = {isa = PBXBuildFile; fileRef = A000000000000000000019C1 /* AppMenuFragments.swift */; };
 		A000000000000000000019D2 /* RecentDocumentsReader.swift in Sources */ = {isa = PBXBuildFile; fileRef = A000000000000000000019C2 /* RecentDocumentsReader.swift */; };
@@ -373,6 +380,8 @@
 		A000000000000000000090A0 /* PanelGeometryTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PanelGeometryTests.swift; sourceTree = "<group>"; };
 		A00000000000000000009D00 /* WindowTitleTooltip.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WindowTitleTooltip.swift; sourceTree = "<group>"; };
 		A00000000000000000009D10 /* WindowTitleTooltipTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WindowTitleTooltipTests.swift; sourceTree = "<group>"; };
+		B71000000000000000000003 /* ScreenRectReader.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ScreenRectReader.swift; sourceTree = "<group>"; };
+		B72000000000000000000003 /* AppDisplayNameCache.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppDisplayNameCache.swift; sourceTree = "<group>"; };
 		A00000000000000000009200 /* PinnedFolderStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PinnedFolderStore.swift; sourceTree = "<group>"; };
 		A00000000000000000009210 /* DirectoryWatcher.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DirectoryWatcher.swift; sourceTree = "<group>"; };
 		A00000000000000000009220 /* FolderContentsLoader.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FolderContentsLoader.swift; sourceTree = "<group>"; };
@@ -551,6 +560,7 @@
 				D10000000000000000000002 /* SettingsWindowView.swift */,
 				A00000000000000000000067 /* DockStripView.swift */,
 				A00000000000000000009D00 /* WindowTitleTooltip.swift */,
+				B71000000000000000000003 /* ScreenRectReader.swift */,
 				A0000000000000000000006A /* DrawerView.swift */,
 				A000000000000000000019B1 /* LauncherChip.swift */,
 				A000000000000000000019D3 /* LauncherMembershipItem.swift */,
@@ -594,6 +604,7 @@
 				A0000000000000000000FA00 /* LauncherChipVisualPlan.swift */,
 				A0000000000000000000FF00 /* LaunchGateDecision.swift */,
 				A0000000000000000000FF20 /* AppLaunchTargetDecision.swift */,
+				B72000000000000000000003 /* AppDisplayNameCache.swift */,
 				A0000000000000000000FB00 /* DockThemeTokens.swift */,
 				A00000000000000000009580 /* AppMembershipMenuPlan.swift */,
 				A00000000000000000009700 /* DragConversionPlan.swift */,
@@ -997,6 +1008,7 @@
 					A00000000000000000001046 /* PanelCoordinator.swift in Sources */,
 					A00000000000000000001041 /* DockStripView.swift in Sources */,
 					A00000000000000000009D01 /* WindowTitleTooltip.swift in Sources */,
+					B71000000000000000000001 /* ScreenRectReader.swift in Sources */,
 					A00000000000000000001044 /* DrawerView.swift in Sources */,
 					A00000000000000000001002 /* ContentView.swift in Sources */,
 					A000000000000000000010F1 /* PermissionOnboardingView.swift in Sources */,
@@ -1040,6 +1052,7 @@
 					A0000000000000000000FA01 /* LauncherChipVisualPlan.swift in Sources */,
 					A0000000000000000000FF01 /* LaunchGateDecision.swift in Sources */,
 					A0000000000000000000FF21 /* AppLaunchTargetDecision.swift in Sources */,
+					B72000000000000000000001 /* AppDisplayNameCache.swift in Sources */,
 					A0000000000000000000FB01 /* DockThemeTokens.swift in Sources */,
 					A0000000000000000000FC01 /* DockTheme.swift in Sources */,
 					A0000000000000000000FE01 /* DockGlassBackdrop.swift in Sources */,
@@ -1164,6 +1177,7 @@
 				A00000000000000000009091 /* PanelGeometry.swift in Sources */,
 				A000000000000000000090A1 /* PanelGeometryTests.swift in Sources */,
 				A00000000000000000009D02 /* WindowTitleTooltip.swift in Sources */,
+				B71000000000000000000002 /* ScreenRectReader.swift in Sources */,
 				A00000000000000000009D03 /* WindowTitleTooltipTests.swift in Sources */,
 				A00000000000000000009222 /* FolderContentsLoader.swift in Sources */,
 				A00000000000000000009281 /* FolderContentsLoaderTests.swift in Sources */,
@@ -1175,6 +1189,7 @@
 				A0000000000000000000FA02 /* LauncherChipVisualPlan.swift in Sources */,
 				A0000000000000000000FF02 /* LaunchGateDecision.swift in Sources */,
 				A0000000000000000000FF22 /* AppLaunchTargetDecision.swift in Sources */,
+				B72000000000000000000002 /* AppDisplayNameCache.swift in Sources */,
 				A0000000000000000000FB02 /* DockThemeTokens.swift in Sources */,
 				A0000000000000000000FC02 /* DockTheme.swift in Sources */,
 				A00000000000000000009582 /* AppMembershipMenuPlan.swift in Sources */,
@@ -1224,6 +1239,9 @@
 					A00000000000000000009E11 /* WindowInventoryAnomalyLog.swift in Sources */,
 					A00000000000000000009E12 /* WindowInventoryAnomalyLogTests.swift in Sources */,
 					A00000000000000000009E13 /* AXWindowReader.swift in Sources */,
+					B73000000000000000000003 /* AccessibilitySource.swift in Sources */,
+					B73000000000000000000002 /* AppWindowObserver.swift in Sources */,
+					B73000000000000000000001 /* AppTracker.swift in Sources */,
 					A00000000000000000009E14 /* AXWindowReaderResultTests.swift in Sources */,
 					A00000000000000000009E15 /* AXWindowMatchPolicy.swift in Sources */,
 					A00000000000000000009E17 /* ProcessLiveness.swift in Sources */,

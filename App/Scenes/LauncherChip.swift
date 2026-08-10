@@ -51,38 +51,38 @@ struct LauncherChip: View {
     private var showsHover: Bool { hoverStyle.isExpressive && isHovering }
 
     var body: some View {
-        let iconSize: CGFloat = showsHover ? 24 * scale : 36 * scale
         let visual = LauncherChipVisualPlan.visual(isRunning: isRunning)
-        return VStack(spacing: 0) {
-            Spacer(minLength: 0)
-            // Keep hover layout stable and animate only the icon size and label alpha;
-            // neither transaction wraps the outer bounce offset.
-            ZStack(alignment: .top) {
-                Image(nsImage: AppIconResolver.icon(for: bundleID))
-                    .resizable()
-                    .aspectRatio(contentMode: .fit)
-                    .frame(width: iconSize, height: iconSize)
-                    .clipShape(RoundedRectangle(cornerRadius: iconSize / 4, style: .continuous))
-                    .dockShadow(theme.iconShadow)
-                    .animation(.easeInOut(duration: 0.18), value: iconSize)
-                    .offset(y: bounceUp ? -6 : 0)
-                    .animation(.easeInOut(duration: 0.25), value: bounceUp)
+        return ChipHoverProgress(progress: showsHover ? 1 : 0) { progress in
+            let hover = ChipHoverVisual.resolve(progress: progress, scale: scale, subtitleNaturalWidth: 0)
+            let _ = ChipAnimationTrace.record(chipID: bundleID, kind: "launcher", visual: hover)
+            VStack(spacing: 0) {
+                Spacer(minLength: 0)
+                ZStack(alignment: .top) {
+                    Image(nsImage: AppIconResolver.icon(for: bundleID))
+                        .resizable()
+                        .aspectRatio(contentMode: .fit)
+                        .frame(width: hover.bareIconSize, height: hover.bareIconSize)
+                        .clipShape(RoundedRectangle(cornerRadius: hover.bareIconSize / 4, style: .continuous))
+                        .dockShadow(theme.iconShadow)
+                        .offset(y: bounceUp ? -6 : 0)
+                        .animation(.easeInOut(duration: 0.25), value: bounceUp)
 
-                Text(displayName)
-                    .font(.system(size: max(8, 10 * scale), weight: .medium, design: .rounded))
-                    .foregroundStyle(theme.labelHover.color)
-                    .lineLimit(1)
-                    .frame(maxWidth: 64 * scale)
-                    .offset(y: 26 * scale)
-                    .opacity(showsHover ? 1 : 0)
-                    .animation(.easeInOut(duration: 0.18), value: showsHover)
-                    .allowsHitTesting(false)
-                    .accessibilityHidden(!showsHover)
+                    Text(displayName)
+                        .font(.system(size: max(8, 10 * scale), weight: .medium, design: .rounded))
+                        .foregroundStyle(theme.labelHover.color)
+                        .lineLimit(1)
+                        .frame(maxWidth: 64 * scale)
+                        .offset(y: 26 * scale)
+                        .opacity(hover.subtitleOpacity)
+                        .allowsHitTesting(false)
+                        .accessibilityHidden(!showsHover)
+                }
+                .frame(width: 44 * scale, height: 36 * scale, alignment: .top)
+                Spacer(minLength: 0)
             }
-            .frame(width: 44 * scale, height: 36 * scale, alignment: .top)
-            Spacer(minLength: 0)
+            .frame(width: 44 * scale, height: 52 * scale)
         }
-        .frame(width: 44 * scale, height: 52 * scale)
+        .animation(.easeInOut(duration: 0.18), value: showsHover)
         .overlay(alignment: .bottom) {
             if visual.showsRunningDot {
                 Circle()
@@ -274,18 +274,41 @@ struct LauncherChip: View {
 /// itself (微信 / WeChat / Telegram…), verified to hold for WeChat/QQ/Telegram.
 enum AppDisplayNameResolver {
     private static var bundleNameCache: [String: Set<String>] = [:]
+    private static let displayNameCache = AppDisplayNameCache()
+    private static let workspaceObservers: [NSObjectProtocol] = {
+        let center = NSWorkspace.shared.notificationCenter
+        let names: [Notification.Name] = [
+            NSWorkspace.didLaunchApplicationNotification,
+            NSWorkspace.didTerminateApplicationNotification
+        ]
+        return names.map { name in
+            center.addObserver(forName: name, object: nil, queue: .main) { notification in
+                guard let app = notification.userInfo?[NSWorkspace.applicationUserInfoKey]
+                    as? NSRunningApplication,
+                      let bundleID = app.bundleIdentifier else { return }
+                invalidateDisplayName(for: bundleID)
+            }
+        }
+    }()
 
     static func displayName(for bundleID: String) -> String {
-        if let running = NSRunningApplication.runningApplications(withBundleIdentifier: bundleID).first,
-           let name = running.localizedName, !name.isEmpty {
-            return name
+        _ = workspaceObservers
+        return displayNameCache.value(for: bundleID) {
+            if let running = NSRunningApplication.runningApplications(withBundleIdentifier: bundleID).first,
+               let name = running.localizedName, !name.isEmpty {
+                return name
+            }
+            guard let url = NSWorkspace.shared.urlForApplication(withBundleIdentifier: bundleID) else {
+                return nil
+            }
+            return Bundle(url: url)?.localizedInfoDictionary?["CFBundleDisplayName"] as? String
+                ?? Bundle(url: url)?.infoDictionary?["CFBundleName"] as? String
+                ?? url.deletingPathExtension().lastPathComponent
         }
-        guard let url = NSWorkspace.shared.urlForApplication(withBundleIdentifier: bundleID) else {
-            return bundleID
-        }
-        return Bundle(url: url)?.localizedInfoDictionary?["CFBundleDisplayName"] as? String
-            ?? Bundle(url: url)?.infoDictionary?["CFBundleName"] as? String
-            ?? url.deletingPathExtension().lastPathComponent
+    }
+
+    static func invalidateDisplayName(for bundleID: String) {
+        displayNameCache.invalidate(bundleID: bundleID)
     }
 
     static func titleMatchesAppName(_ title: String, bundleID: String) -> Bool {

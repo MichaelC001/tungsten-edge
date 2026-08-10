@@ -52,6 +52,27 @@ struct WindowEntry {
     var formerCgIDs: Set<CGWindowID> = []
 }
 
+protocol AppTrackerProcessProviding: Sendable {
+    func isAlive(pid: pid_t) -> Bool
+    func identity(pid: pid_t, bundleID: String?) -> ScanAdmissionDecision.ProcessIdentity
+}
+
+struct LiveAppTrackerProcessProvider: AppTrackerProcessProviding {
+    func isAlive(pid: pid_t) -> Bool {
+        ProcessLiveness.isAlive(pid: pid)
+    }
+
+    func identity(pid: pid_t, bundleID: String?) -> ScanAdmissionDecision.ProcessIdentity {
+        let start = ProcessLiveness.startTime(pid: pid)
+        return ScanAdmissionDecision.ProcessIdentity(
+            pid: pid,
+            startTimeSec: start.map { Int64($0.tv_sec) },
+            startTimeUsec: start.map { $0.tv_usec },
+            bundleID: bundleID
+        )
+    }
+}
+
 @MainActor
 final class AppTracker: ObservableObject {
     @Published private(set) var snapshot: DockSnapshot = .empty
@@ -91,13 +112,45 @@ final class AppTracker: ObservableObject {
     private var shadowPoolDiagnosticsByPID: [pid_t: ShadowPoolDiagnosticState] = [:]
     private var heldLogDeduplicator = InventoryPhantomHeldDeduplicator()
 
-    private let reader = AXWindowReader()
+    private struct PendingEventRead {
+        let token: UInt64
+        let mutationGeneration: UInt64
+        let identity: ScanAdmissionDecision.ProcessIdentity
+        let source: InventoryReconcileSource
+    }
+
+    private var nextEventReadToken: UInt64 = 0
+    private var pendingEventReads: [pid_t: PendingEventRead] = [:]
+    private var trailingEventSources: [pid_t: InventoryReconcileSource] = [:]
+    private var mutationGenerations: [pid_t: UInt64] = [:]
+
+    private let reader: any AppTrackerWindowReading
+    private let processProvider: any AppTrackerProcessProviding
+    private let cgSnapshotProvider: @Sendable () -> AppTrackerCGWindowSnapshot
+    private let onScreenWindowIDsProvider: @Sendable () -> Set<CGWindowID>
+    private let eventAXAsyncEnabled: Bool
     private let windowEligibility = AppTrackerWindowEligibility()
     private let logger = Logger(subsystem: "com.caye.macosdockcc.v2", category: "app-tracker")
     private let inventoryLog: WindowInventoryAnomalyLog
 
-    init(inventoryLog: WindowInventoryAnomalyLog = WindowInventoryAnomalyLog()) {
+    init(
+        inventoryLog: WindowInventoryAnomalyLog = WindowInventoryAnomalyLog(),
+        reader: any AppTrackerWindowReading = AXWindowReader(),
+        processProvider: any AppTrackerProcessProviding = LiveAppTrackerProcessProvider(),
+        cgSnapshotProvider: @escaping @Sendable () -> AppTrackerCGWindowSnapshot = {
+            AppTrackerCGWindowSnapshot.capture()
+        },
+        onScreenWindowIDsProvider: @escaping @Sendable () -> Set<CGWindowID> = {
+            AppTrackerCGWindowSnapshot.captureOnScreenWindowIDs()
+        },
+        eventAXAsyncEnabled: Bool = ProcessInfo.processInfo.environment["DOCK_EVENT_AX_ASYNC"] != "0"
+    ) {
         self.inventoryLog = inventoryLog
+        self.reader = reader
+        self.processProvider = processProvider
+        self.cgSnapshotProvider = cgSnapshotProvider
+        self.onScreenWindowIDsProvider = onScreenWindowIDsProvider
+        self.eventAXAsyncEnabled = eventAXAsyncEnabled
     }
 
     func start() {
@@ -141,6 +194,9 @@ final class AppTracker: ObservableObject {
         lastReconcileAtByPID.removeAll()
         shadowPoolDiagnosticsByPID.removeAll()
         heldLogDeduplicator.removeAll()
+        pendingEventReads.removeAll()
+        trailingEventSources.removeAll()
+        mutationGenerations.removeAll()
         snapshot = .empty
         inventoryLog.flush()
     }
@@ -224,6 +280,11 @@ final class AppTracker: ObservableObject {
                 axReadOutcome = .unread(errorCode: error.rawValue)
                 eligible = []
             }
+        }
+        if axReadOutcome.kind == .unread {
+            // An unread AX round is unknown, never evidence of absence. In particular it must not
+            // start grace periods, update the shadow-tab pool, or advance phantom healing.
+            return false
         }
         let reconcileContext = inventoryLog.isEnabled
             ? inventoryReconcileContext(
@@ -710,7 +771,7 @@ final class AppTracker: ObservableObject {
 
         var admittedCount = 0
         var unreadList: [String] = []
-        let cgSnapshot = AppTrackerCGWindowSnapshot.capture()
+        let cgSnapshot = cgSnapshotProvider()
 
         for app in NSWorkspace.shared.runningApplications {
             guard isRegularNonSelf(app) else { continue }
@@ -864,6 +925,7 @@ final class AppTracker: ObservableObject {
                 apps.removeValue(forKey: stalePID)
                 appOrder.removeAll { $0 == stalePID }
                 clearInventoryDiagnostics(pid: stalePID)
+                invalidateEventReads(pid: stalePID)
             }
             addApp(app, enumerateImmediately: true)
             rebuildSnapshot()
@@ -883,6 +945,7 @@ final class AppTracker: ObservableObject {
     }
 
     private func handleAppTerminated(pid: pid_t) {
+        invalidateEventReads(pid: pid)
         observers[pid]?.stop()
         observers.removeValue(forKey: pid)
         if let app = apps[pid] { recordProcessGoneSeats(app: app) }
@@ -934,6 +997,7 @@ final class AppTracker: ObservableObject {
             isHidden: app.isHidden
         )
         appOrder.append(pid)
+        mutationGenerations[pid, default: 0] &+= 1
 
         if AXIsProcessTrusted() {
             let obs = AppWindowObserver(pid: pid)
@@ -964,7 +1028,7 @@ final class AppTracker: ObservableObject {
                 }
                 guard NSRunningApplication(processIdentifier: pid)?.isTerminated == false else { return }
                 let windows = self.reader.windows(forPID: pid)
-                let cgSnapshot = AppTrackerCGWindowSnapshot.capture()
+                let cgSnapshot = self.cgSnapshotProvider()
                 let eligibilityApplication = self.eligibilityApplication(for: app)
                 let hasEligible = windows.contains {
                     self.isEligible($0, application: eligibilityApplication, cgSnapshot: cgSnapshot)
@@ -981,7 +1045,7 @@ final class AppTracker: ObservableObject {
 
     private func enumerateWindows(for pid: pid_t, source: InventoryReconcileSource) {
         guard apps[pid] != nil else { return }
-        let cgSnapshot = AppTrackerCGWindowSnapshot.capture()
+        let cgSnapshot = cgSnapshotProvider()
         if reconcileSeats(pid: pid, cgSnapshot: cgSnapshot, now: Date(), source: source) {
             rebuildSnapshot(onScreenCGIDs: cgSnapshot.onScreenWindowIDs)
         }
@@ -1024,38 +1088,131 @@ final class AppTracker: ObservableObject {
     // MARK: - AX Event Handlers
 
     private func handleWindowCreated(pid: pid_t) {
-        enumerateWindows(for: pid, source: .windowCreated)
+        scheduleEventRead(pid: pid, source: .windowCreated)
     }
 
     private func handleWindowDestroyed(pid: pid_t, cgWindowID: CGWindowID) {
         guard apps[pid] != nil else { return }
+        invalidateEventReads(pid: pid)
         destroyedCGIDs[cgWindowID] = Date()
         purgeFromSeatHistories(cgWindowID)
         // 不直接删座位：若这是某标签窗口的当前标签被关、而同一物理窗口还有别的标签顶上，
         // reconcileSeats 会让座位原地换 activeCgID、保住 token（卡不闪不换身份）。整窗关掉则真删。
-        let cgSnapshot = AppTrackerCGWindowSnapshot.capture()
+        let cgSnapshot = cgSnapshotProvider()
         if reconcileSeats(pid: pid, cgSnapshot: cgSnapshot, now: Date(), source: .windowDestroyed) {
             rebuildSnapshot(onScreenCGIDs: cgSnapshot.onScreenWindowIDs)
         }
     }
 
     private func handleWindowMinimized(pid: pid_t, cgWindowID: CGWindowID) {
+        invalidateEventReads(pid: pid)
         apps[pid]?.windowsByID[cgWindowID]?.isMinimized = true
         apps[pid]?.windowsByID[cgWindowID]?.isFocused = false
         rebuildSnapshot()
     }
 
     private func handleWindowDeminiaturized(pid: pid_t, cgWindowID: CGWindowID) {
+        invalidateEventReads(pid: pid)
         apps[pid]?.windowsByID[cgWindowID]?.isMinimized = false
         rebuildSnapshot()
     }
 
     private func handleFocusedWindowChanged(pid: pid_t) {
-        enumerateWindows(for: pid, source: .focusChanged)
+        scheduleEventRead(pid: pid, source: .focusChanged)
     }
 
     private func handleTitleChanged(pid: pid_t, cgWindowID: CGWindowID) {
-        enumerateWindows(for: pid, source: .titleChanged)
+        scheduleEventRead(pid: pid, source: .titleChanged)
+    }
+
+    private func invalidateEventReads(pid: pid_t) {
+        mutationGenerations[pid, default: 0] &+= 1
+        trailingEventSources.removeValue(forKey: pid)
+    }
+
+    private func scheduleEventRead(pid: pid_t, source: InventoryReconcileSource) {
+        guard apps[pid] != nil else { return }
+        guard eventAXAsyncEnabled else {
+            enumerateWindows(for: pid, source: source)
+            return
+        }
+        if pendingEventReads[pid] != nil {
+            // Coalesce any burst while a read is in flight into exactly one read using the latest
+            // event source. Completion consumes and clears this slot before starting it.
+            trailingEventSources[pid] = source
+            return
+        }
+
+        nextEventReadToken &+= 1
+        let request = PendingEventRead(
+            token: nextEventReadToken,
+            mutationGeneration: mutationGenerations[pid, default: 0],
+            identity: processIdentity(pid: pid, bundleID: apps[pid]?.bundleIdentifier),
+            source: source
+        )
+        pendingEventReads[pid] = request
+        let reader = self.reader
+        let cgSnapshotProvider = self.cgSnapshotProvider
+
+        Task.detached { [weak self] in
+            let result = reader.inventoryWindows(forPID: pid, messagingTimeout: 0.1)
+            let cgSnapshot = cgSnapshotProvider()
+            await MainActor.run { [weak self] in
+                self?.completeEventRead(
+                    pid: pid,
+                    request: request,
+                    result: result,
+                    cgSnapshot: cgSnapshot
+                )
+            }
+        }
+    }
+
+    private func completeEventRead(
+        pid: pid_t,
+        request: PendingEventRead,
+        result: AXWindowReadResult,
+        cgSnapshot: AppTrackerCGWindowSnapshot
+    ) {
+        guard pendingEventReads[pid]?.token == request.token else { return }
+        pendingEventReads.removeValue(forKey: pid)
+
+        let currentIdentity = apps[pid].map {
+            processIdentity(pid: pid, bundleID: $0.bundleIdentifier)
+        }
+        if mutationGenerations[pid, default: 0] == request.mutationGeneration,
+           currentIdentity.map({
+               ScanAdmissionDecision.ProcessIdentity.matches(probed: request.identity, current: $0)
+           }) == true,
+           let app = apps[pid] {
+            let readOutcome: InventoryAXReadOutcome
+            let eligible: [AXWindowSnapshot]
+            switch result {
+            case .success(let windows):
+                readOutcome = .success(count: windows.count)
+                let application = eligibilityApplication(for: app)
+                eligible = windows.filter {
+                    isEligible($0, application: application, cgSnapshot: cgSnapshot)
+                }
+            case .unread(let error):
+                readOutcome = .unread(errorCode: error.rawValue)
+                eligible = []
+            }
+            if reconcileSeats(
+                pid: pid,
+                cgSnapshot: cgSnapshot,
+                now: Date(),
+                source: request.source,
+                preloadedEligible: eligible,
+                preloadedReadOutcome: readOutcome
+            ) {
+                rebuildSnapshot(onScreenCGIDs: cgSnapshot.onScreenWindowIDs)
+            }
+        }
+
+        if let trailingSource = trailingEventSources.removeValue(forKey: pid), apps[pid] != nil {
+            scheduleEventRead(pid: pid, source: trailingSource)
+        }
     }
 
     // MARK: - Reconcile
@@ -1085,7 +1242,7 @@ final class AppTracker: ObservableObject {
 
         // 单座位模型下：标签窗口切标签 = 座位 activeCgID 被顶替，reconcileSeats 即时收敛。
         // 前台 app 每 0.5s 跑一次,切标签/最小化/拽出都能秒级反映(不再依赖 AX 事件可靠性)。
-        let cgSnapshot = AppTrackerCGWindowSnapshot.capture()
+        let cgSnapshot = cgSnapshotProvider()
         var changed = reconcileSeats(pid: pid, cgSnapshot: cgSnapshot, now: Date(), source: .frontmostPoll)
         // on-screen 变了(切了标签)也强制刷新一次,兜住座位指纹没变但可见标签换了的边角。
         let onScreen = cgSnapshot.onScreenWindowIDs
@@ -1105,7 +1262,7 @@ final class AppTracker: ObservableObject {
         // tracked pid's app entry stays indefinitely.
         var deadPIDs: [pid_t] = []
         for pid in appOrder {
-            if !ProcessLiveness.isAlive(pid: pid) {
+            if !processProvider.isAlive(pid: pid) {
                 // Finder's entry is intentionally kept alive across quit/relaunch cycles
                 // (handleAppTerminated clears windows but preserves the slot).
                 if FinderWindowRules.isFinder(bundleIdentifier: apps[pid]?.bundleIdentifier) { continue }
@@ -1123,11 +1280,12 @@ final class AppTracker: ObservableObject {
             apps.removeValue(forKey: pid)
             appOrder.removeAll { $0 == pid }
             clearInventoryDiagnostics(pid: pid)
+            invalidateEventReads(pid: pid)
             changed = true
         }
 
         // Snapshot CG window state once for the entire reconcile pass.
-        let cgSnapshot = AppTrackerCGWindowSnapshot.capture()
+        let cgSnapshot = cgSnapshotProvider()
 
         for pid in appOrder {
             if reconcileSeats(pid: pid, cgSnapshot: cgSnapshot, now: now, source: .periodicReconcile) { changed = true }
@@ -1180,7 +1338,7 @@ final class AppTracker: ObservableObject {
         _ probed: [(pid: pid_t, identity: ScanAdmissionDecision.ProcessIdentity, result: AXWindowReadResult)]
     ) {
         guard !probed.isEmpty else { return }
-        let cgSnapshot = AppTrackerCGWindowSnapshot.capture()
+        let cgSnapshot = cgSnapshotProvider()
         var admitted = false
 
         for entry in probed {
@@ -1263,13 +1421,7 @@ final class AppTracker: ObservableObject {
     }
 
     private func processIdentity(pid: pid_t, bundleID: String?) -> ScanAdmissionDecision.ProcessIdentity {
-        let start = ProcessLiveness.startTime(pid: pid)
-        return ScanAdmissionDecision.ProcessIdentity(
-            pid: pid,
-            startTimeSec: start.map { Int64($0.tv_sec) },
-            startTimeUsec: start.map { $0.tv_usec },
-            bundleID: bundleID
-        )
+        processProvider.identity(pid: pid, bundleID: bundleID)
     }
 
     private func recordAdmissionProbe(
@@ -1332,7 +1484,7 @@ final class AppTracker: ObservableObject {
     private func rebuildSnapshot(onScreenCGIDs: Set<CGWindowID>? = nil) {
         // Read frontmost PID once; passed to windowStatus to determine active highlight
         let frontmostPID = NSWorkspace.shared.frontmostApplication?.processIdentifier
-        lastOnScreenCGIDs = onScreenCGIDs ?? AppTrackerCGWindowSnapshot.captureOnScreenWindowIDs()
+        lastOnScreenCGIDs = onScreenCGIDs ?? onScreenWindowIDsProvider()
 
         var windows: [WindowID: WindowRecord] = [:]
         var orderedWindowIDs: [WindowID] = []
@@ -1392,7 +1544,9 @@ final class AppTracker: ObservableObject {
             }
         }
 
-        snapshot = DockSnapshot(windows: windows, orderedWindowIDs: orderedWindowIDs)
+        let next = DockSnapshot(windows: windows, orderedWindowIDs: orderedWindowIDs)
+        guard next != snapshot else { return }
+        snapshot = next
     }
 
     private func windowStatus(isHidden: Bool, isMinimized: Bool, isFocused: Bool, pid: pid_t, frontmostPID: pid_t?) -> WindowStatus {
@@ -1405,5 +1559,55 @@ final class AppTracker: ObservableObject {
     private func isRegularNonSelf(_ app: NSRunningApplication) -> Bool {
         app.activationPolicy == .regular &&
         app.bundleIdentifier != DockWindowEligibilityPolicy.selfBundleIdentifier
+    }
+
+    // MARK: - Deterministic inventory fixtures
+
+    func installFixtureForTesting(_ app: AppEntry) {
+        apps[app.pid] = app
+        if !appOrder.contains(app.pid) { appOrder.append(app.pid) }
+        mutationGenerations[app.pid, default: 0] &+= 1
+    }
+
+    func fixtureAppForTesting(pid: pid_t) -> AppEntry? {
+        apps[pid]
+    }
+
+    @discardableResult
+    func reconcileFixtureForTesting(
+        pid: pid_t,
+        cgSnapshot: AppTrackerCGWindowSnapshot,
+        now: Date,
+        eligible: [AXWindowSnapshot],
+        readOutcome: InventoryAXReadOutcome
+    ) -> Bool {
+        reconcileSeats(
+            pid: pid,
+            cgSnapshot: cgSnapshot,
+            now: now,
+            source: .periodicReconcile,
+            preloadedEligible: eligible,
+            preloadedReadOutcome: readOutcome
+        )
+    }
+
+    func scheduleEventReadForTesting(pid: pid_t, source: InventoryReconcileSource) {
+        scheduleEventRead(pid: pid, source: source)
+    }
+
+    func minimizeForTesting(pid: pid_t, cgWindowID: CGWindowID) {
+        handleWindowMinimized(pid: pid, cgWindowID: cgWindowID)
+    }
+
+    func destroyForTesting(pid: pid_t, cgWindowID: CGWindowID) {
+        handleWindowDestroyed(pid: pid, cgWindowID: cgWindowID)
+    }
+
+    func rebuildSnapshotForTesting() {
+        rebuildSnapshot(onScreenCGIDs: [])
+    }
+
+    func hasPendingEventReadForTesting(pid: pid_t) -> Bool {
+        pendingEventReads[pid] != nil || trailingEventSources[pid] != nil
     }
 }

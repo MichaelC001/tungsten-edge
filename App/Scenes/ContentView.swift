@@ -417,13 +417,14 @@ struct ContentView: View {
 
 struct DebugConsoleView: View {
     @EnvironmentObject var runtime: AppRuntime
+    @EnvironmentObject var debugState: DebugRuntimeState
 
     var body: some View {
         ContentView(
             snapshot: runtime.snapshot,
             hasRequiredPermissions: runtime.hasRequiredPermissions,
-            observationStatusText: runtime.observationStatusText,
-            feedbackEntriesByWindowID: runtime.feedbackEntriesByWindowID,
+            observationStatusText: debugState.observationStatusText,
+            feedbackEntriesByWindowID: debugState.feedbackEntriesByWindowID,
             onToggle: runtime.toggle(windowID:),
             onActivate: runtime.activate(windowID:),
             onMinimize: runtime.minimize(windowID:),

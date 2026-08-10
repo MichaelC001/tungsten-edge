@@ -67,6 +67,12 @@ extension DockTintPair {
     func color(emphasized: Bool) -> Color {
         (emphasized ? self.emphasized : normal).color
     }
+
+    func color(emphasisProgress rawProgress: Double) -> Color {
+        let progress = min(max(rawProgress, 0), 1)
+        let opacity = normal.opacity + (emphasized.opacity - normal.opacity) * progress
+        return DockTint(base: normal.base, opacity: opacity).color
+    }
 }
 
 extension DockPanelMaterial {
@@ -211,6 +217,14 @@ extension DockThemeTokens {
         LinearGradient(colors: [chipPillRimTop.color(emphasized: emphasized), chipPillRimBottom.color],
                        startPoint: .top,
                        endPoint: .bottom)
+    }
+
+    func chipPillRimStyle(emphasisProgress: Double) -> LinearGradient {
+        LinearGradient(
+            colors: [chipPillRimTop.color(emphasisProgress: emphasisProgress), chipPillRimBottom.color],
+            startPoint: .top,
+            endPoint: .bottom
+        )
     }
 }
 

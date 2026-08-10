@@ -1,6 +1,6 @@
 import Foundation
 
-struct DockSnapshot: Sendable {
+struct DockSnapshot: Equatable, Sendable {
     var windows: [WindowID: WindowRecord]
     var orderedWindowIDs: [WindowID]
 
@@ -19,6 +19,7 @@ final class DockState {
             next.windows.removeValue(forKey: update.windowID)
         }
         next.orderedWindowIDs = update.orderedWindowIDs
+        guard next != snapshot else { return }
         snapshot = next
     }
 }

@@ -6,7 +6,10 @@ import os
 @MainActor
 final class AppDelegate: NSObject, NSApplicationDelegate {
     private let inventoryLog = WindowInventoryAnomalyLog()
-    private(set) lazy var runtime = AppRuntime(inventoryLog: inventoryLog)
+    private(set) lazy var runtime = AppRuntime(
+        inventoryLog: inventoryLog,
+        isAccessibilityTrusted: { [weak self] in self?.cachedAccessibilityTrusted ?? false }
+    )
     let drawerStore = DrawerStore()
     let messagingStore = MessagingAppStore()
     let badgeStore = BadgeStore()
@@ -402,7 +405,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             defer: false
         )
         window.title = "任务条调试台"
-        window.contentView = NSHostingView(rootView: DebugConsoleView().environmentObject(runtime))
+        window.contentView = NSHostingView(
+            rootView: DebugConsoleView()
+                .environmentObject(runtime)
+                .environmentObject(runtime.debugState)
+        )
         window.center()
         window.makeKeyAndOrderFront(nil)
         NSApp.activate(ignoringOtherApps: true)
