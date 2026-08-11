@@ -217,6 +217,7 @@
 		A00000000000000000000A101 /* MessagingZoneAdmission.swift in Sources */ = {isa = PBXBuildFile; fileRef = A00000000000000000000A100 /* MessagingZoneAdmission.swift */; };
 		A00000000000000000000A102 /* MessagingZoneAdmission.swift in Sources */ = {isa = PBXBuildFile; fileRef = A00000000000000000000A100 /* MessagingZoneAdmission.swift */; };
 		A00000000000000000000A111 /* MessagingZoneAdmissionTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A00000000000000000000A110 /* MessagingZoneAdmissionTests.swift */; };
+		A00000000000000000000B201 /* AppNameRegistryTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A00000000000000000000B200 /* AppNameRegistryTests.swift */; };
 		A00000000000000000006012 /* DragController.swift in Sources */ = {isa = PBXBuildFile; fileRef = A00000000000000000006010 /* DragController.swift */; };
 		A00000000000000000009741 /* DragCarrierView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A00000000000000000009740 /* DragCarrierView.swift */; };
 		A00000000000000000009751 /* NonConstrainingPanel.swift in Sources */ = {isa = PBXBuildFile; fileRef = A00000000000000000009750 /* NonConstrainingPanel.swift */; };
@@ -311,6 +312,7 @@
 		A00000000000000000009710 /* DragConversionPlanTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DragConversionPlanTests.swift; sourceTree = "<group>"; };
 		A00000000000000000000A100 /* MessagingZoneAdmission.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MessagingZoneAdmission.swift; sourceTree = "<group>"; };
 		A00000000000000000000A110 /* MessagingZoneAdmissionTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MessagingZoneAdmissionTests.swift; sourceTree = "<group>"; };
+		A00000000000000000000B200 /* AppNameRegistryTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppNameRegistryTests.swift; sourceTree = "<group>"; };
 		A00000000000000000009720 /* MessagingAppStoreTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MessagingAppStoreTests.swift; sourceTree = "<group>"; };
 		A00000000000000000009730 /* DragControllerConversionTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DragControllerConversionTests.swift; sourceTree = "<group>"; };
 		A00000000000000000000066 /* AppDelegate.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppDelegate.swift; sourceTree = "<group>"; };
@@ -866,6 +868,7 @@
 				A00000000000000000009801 /* CGWindowSnapshotTests.swift */,
 				A00000000000000000009710 /* DragConversionPlanTests.swift */,
 				A00000000000000000000A110 /* MessagingZoneAdmissionTests.swift */,
+				A00000000000000000000B200 /* AppNameRegistryTests.swift */,
 				A00000000000000000009720 /* MessagingAppStoreTests.swift */,
 				A00000000000000000009730 /* DragControllerConversionTests.swift */,
 				A00000000000000000000C00 /* ManualPanelHostTests.swift */,
@@ -1261,6 +1264,7 @@
 					A00000000000000000009752 /* NonConstrainingPanel.swift in Sources */,
 					A00000000000000000009711 /* DragConversionPlanTests.swift in Sources */,
 					A00000000000000000000A111 /* MessagingZoneAdmissionTests.swift in Sources */,
+					A00000000000000000000B201 /* AppNameRegistryTests.swift in Sources */,
 					A00000000000000000009721 /* MessagingAppStoreTests.swift in Sources */,
 					A00000000000000000009731 /* DragControllerConversionTests.swift in Sources */,
 					A00000000000000000000C01 /* ManualPanelHostTests.swift in Sources */,

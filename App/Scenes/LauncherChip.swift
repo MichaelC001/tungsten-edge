@@ -288,8 +288,16 @@ struct LauncherChip: View {
 /// 方案 B heuristic: a messaging app's main window is the one titled like the app
 /// itself (微信 / WeChat / Telegram…), verified to hold for WeChat/QQ/Telegram.
 enum AppDisplayNameResolver {
-    private static var bundleNameCache: [String: Set<String>] = [:]
     private static let displayNameCache = AppDisplayNameCache()
+    /// 应用名匹配走单调注册表，**不再每帧现查 LaunchServices**（成因与代价见
+    /// `AppNameRegistry` 的注释：一次瞬时查空就让飞书/微信同时掉出消息区吸收）。
+    private static let nameRegistry = AppNameRegistry(
+        bundleNamesLoader: bundleDerivedNames(for:),
+        runningNameLoader: { bundleID in
+            NSRunningApplication.runningApplications(withBundleIdentifier: bundleID)
+                .first?.localizedName
+        }
+    )
     private static let workspaceObservers: [NSObjectProtocol] = {
         let center = NSWorkspace.shared.notificationCenter
         let names: [Notification.Name] = [
@@ -302,6 +310,12 @@ enum AppDisplayNameResolver {
                     as? NSRunningApplication,
                       let bundleID = app.bundleIdentifier else { return }
                 invalidateDisplayName(for: bundleID)
+                // 启动通知自带 `NSRunningApplication`，名字白拿——省掉一次查询，
+                // 也让刚启动的 app 第一帧就有权威名字可比。
+                if name == NSWorkspace.didLaunchApplicationNotification,
+                   let localized = app.localizedName {
+                    nameRegistry.observe(name: localized, for: bundleID)
+                }
             }
         }
     }()
@@ -311,6 +325,7 @@ enum AppDisplayNameResolver {
         return displayNameCache.value(for: bundleID) {
             if let running = NSRunningApplication.runningApplications(withBundleIdentifier: bundleID).first,
                let name = running.localizedName, !name.isEmpty {
+                nameRegistry.observe(name: name, for: bundleID)   // 顺手记进注册表，白拿
                 return name
             }
             guard let url = NSWorkspace.shared.urlForApplication(withBundleIdentifier: bundleID) else {
@@ -324,35 +339,30 @@ enum AppDisplayNameResolver {
 
     static func invalidateDisplayName(for bundleID: String) {
         displayNameCache.invalidate(bundleID: bundleID)
+        nameRegistry.invalidate(bundleID: bundleID)
     }
 
     static func titleMatchesAppName(_ title: String, bundleID: String) -> Bool {
-        let normalized = title.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
-        guard !normalized.isEmpty else { return false }
-        if let running = NSRunningApplication.runningApplications(withBundleIdentifier: bundleID).first,
-           let name = running.localizedName,
-           normalized == name.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() {
-            return true
-        }
-        return bundleDerivedNames(for: bundleID).contains(normalized)
+        _ = workspaceObservers
+        return nameRegistry.matches(title: title, bundleID: bundleID)
     }
 
-    /// Localized + unlocalized bundle names (covers e.g. 微信 vs WeChat), cached.
+    /// Localized + unlocalized bundle names (covers e.g. 微信 vs WeChat). 归一化后交给注册表缓存。
+    /// 注意本机实测：飞书/微信在这里只解析得出英文名（`{feishu, lark}` / `{wechat}`），
+    /// 中文标题得靠注册表里记住的 `localizedName` 才匹配得上。
     private static func bundleDerivedNames(for bundleID: String) -> Set<String> {
-        if let cached = bundleNameCache[bundleID] { return cached }
         var names: Set<String> = []
         if let url = NSWorkspace.shared.urlForApplication(withBundleIdentifier: bundleID) {
             let bundle = Bundle(url: url)
             for dict in [bundle?.localizedInfoDictionary, bundle?.infoDictionary] {
                 for key in ["CFBundleDisplayName", "CFBundleName"] {
                     if let name = dict?[key] as? String, !name.isEmpty {
-                        names.insert(name.trimmingCharacters(in: .whitespacesAndNewlines).lowercased())
+                        names.insert(AppNameRegistry.normalize(name))
                     }
                 }
             }
-            names.insert(url.deletingPathExtension().lastPathComponent.lowercased())
+            names.insert(AppNameRegistry.normalize(url.deletingPathExtension().lastPathComponent))
         }
-        bundleNameCache[bundleID] = names
         return names
     }
 }
