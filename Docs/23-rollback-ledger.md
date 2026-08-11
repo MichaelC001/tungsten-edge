@@ -181,6 +181,10 @@ git merge-tree --write-tree --merge-base=<提交> HEAD <提交>^
 
 **浅色这一轮（`f1efa7c` … `385f228` 共 11 个提交）互相层叠得很厚**，逐个单独回退基本都不成立；要整轮撤销就按提交倒序连着 revert，别挑单个。其中**「图标淡化」那一支已经被 `0482a77` 整个撤销了**（owner 2026-08-02 决定不做这个区分），别再去回退 `121aebf` / `385f228` 想恢复它——先 revert `0482a77`。
 
+| `54cca30` 按压改由鼠标按下驱动 + 最小化恢复提速 | ✅ 单点成立（2026-08-11 登记当场 `git merge-tree --merge-base=54cca30 HEAD 54cca30^` 退出码 0） | 回退命令：`git revert 54cca30`。**无数据迁移、无新 UserDefaults 键**，两处新状态（`AXElementCache` 旁路缓存、按压状态机）都是纯进程内。回退后一起回来的有三样：① 按压重新挂回 `.onTapGesture`，即鼠标**抬起**才播那一下 0.93 缩放——owner 报的「按下去有粘滞感」原样恢复；② `LauncherChip`（消息区无主窗 / kept / 抽屉图标）重新**完全没有**按压反馈，与窗口卡不一致；③ 句柄捕获退回两档，最小化恢复重新要等 100ms 快路径 + 500ms 全量枚举。同时消失：`DOCK_CLICK_TRACE` 计时探针、动作执行的专用 `userInitiated` 队列（退回 `Task.detached`，与 `AppTracker` 盘点读抢协作线程池）、`app-*` 回退路径的 0.3s 限时（退回**无超时** AX 读）。**要单独撤按压这一半**：只 revert `App/Scenes/ChipPressFeedback.swift` + 三处调用点，缓存与队列那半独立。**碰面**：`AGENTS.md`（高频）/ `DockStripView.swift` / `LauncherChip.swift` / `AppTracker.swift` / `AccessibilitySource.swift` / `AXWindowReader.swift` / `AppComposition.swift` / `project.pbxproj` + 三个测试文件。**验证状态：832 单测全过（净 +21）；Release 固定证书装机 `0.7.7 (19)`；owner 实机验收通过（2026-08-11，原话「手感不错」），拖拽重排与右键菜单与新手势共存已确认。⚠️ 延迟侧只有代码路径推理，未起测量轮——探针已就位但没跑过，别把「更快」当已实测数据引用** |
+
+> `54cca30` 碰了 `AGENTS.md`，所以下表里带 `AGENTS.md` 的条目（`48be6fb` / `aad9ce3` / `f3b43a1`）在它之后进一步衰减。
+
 **任务条交互性能与消息区吸收批次（2026-08-11 登记，5 个提交，`ebe88cd`…`48be6fb`）**：这五条是**同一条线上层叠推进**的，`d25a6aa` 打底、后面四条逐个纠正它没修对或新暴露的问题。要整批撤就按提交倒序连着 revert，别挑单个（尤其别单独撤 `d25a6aa`——它下面压着四条）。本次登记提交**只碰 `Docs/23`**，所以不会自伤本表任何一条；但 `48be6fb` 自己带着 `AGENTS.md` + `Docs/28`，下一个碰这两个文件的提交就会让它衰减。下表退出码均为 **2026-08-11 登记后当场跑出**（`git merge-tree --merge-base=<c> HEAD <c>^`）。
 
 | 条目 | 是否仍可干净回退 | 说明 |
