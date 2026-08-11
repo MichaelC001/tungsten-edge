@@ -177,6 +177,16 @@ final class AppRuntime: ObservableObject {
             chipProbeLogger.info("toggle-planned app=\(runningApp?.localizedName ?? "(unknown)", privacy: .public) bundleID=\(record.bundleIdentifier ?? "(none)", privacy: .public) recordStatus=\(record.status.rawValue, privacy: .public) optimisticStatus=\(optimisticStatus, privacy: .public) freshActive=\(freshActive, privacy: .public) plannedAction=\(request.kind.rawValue, privacy: .public)")
         }
 
+        if ClickLatencyTrace.isEnabled, let wid = request.windowID?.rawValue {
+            let record = snapshot.windows[WindowID(rawValue: wid)]
+            ClickLatencyTrace.begin(
+                windowID: wid,
+                kind: request.kind.rawValue,
+                status: record?.status.rawValue ?? "unknown",
+                bundleID: record?.bundleIdentifier
+            )
+        }
+
         applyOptimisticState(for: request)
         intentPipeline.registerPending(intent: intent, request: request)
         publishFeedbackEntries()
@@ -184,9 +194,17 @@ final class AppRuntime: ObservableObject {
 
         let executor = actionExecutor
         let capturedSnapshot = snapshot
-        Task.detached { [weak self] in
+        // **不用 `Task.detached`**（2026-08-11）：那会把用户点击丢进 Swift 协作线程池，而
+        // `AppTracker` 的两处后台 AX 读也在同一个池里——事件读每 pid 一发，5 秒补扫更是个
+        // **串行 for 循环**（最多 N × 100ms 占住一个池线程）。AX 调用是阻塞式的，本来就不该
+        // 占协作线程；点击排在盘点读后面更是白等。改用自己的 `.userInitiated` 并发队列。
+        Self.actionQueue.async { [weak self] in
+            // 第一个里程碑就量「派发到真正开始跑」这一段——线程池被后台 AX 读占满时，
+            // 用户点击就卡在这里，而这段延迟从末端状态是完全看不出来的。
+            ClickLatencyTrace.mark(windowID: request.windowID?.rawValue, "execStart")
             let success = executor.execute(request, snapshot: capturedSnapshot)
-            await MainActor.run { [weak self] in
+            ClickLatencyTrace.end(windowID: request.windowID?.rawValue, success: success)
+            Task { @MainActor [weak self] in
                 guard let self else { return }
                 self.intentPipeline.registerExecutionResult(intent: intent, request: request, success: success)
                 self.publishFeedbackEntries()
@@ -196,6 +214,14 @@ final class AppRuntime: ObservableObject {
             }
         }
     }
+
+    /// 用户动作的执行队列。并发（保持与旧 `Task.detached` 相同的并行度：连点两下不互相排队），
+    /// `.userInitiated`（这是人在等的路径，优先于任何后台盘点）。
+    private static let actionQueue = DispatchQueue(
+        label: "com.caye.macosdockcc.v2.window-action",
+        qos: .userInitiated,
+        attributes: .concurrent
+    )
 
     /// 登记并发起一次用户启动。返回 false 表示已有同 bundle 会话，或无法解析 app URL。
     @discardableResult

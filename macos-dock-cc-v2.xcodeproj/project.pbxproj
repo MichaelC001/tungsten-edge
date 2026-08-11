@@ -115,11 +115,15 @@
 		B71000000000000000000001 /* ScreenRectReader.swift in Sources */ = {isa = PBXBuildFile; fileRef = B71000000000000000000003 /* ScreenRectReader.swift */; };
 		B71000000000000000000002 /* ScreenRectReader.swift in Sources */ = {isa = PBXBuildFile; fileRef = B71000000000000000000003 /* ScreenRectReader.swift */; };
 		B72000000000000000000001 /* AppDisplayNameCache.swift in Sources */ = {isa = PBXBuildFile; fileRef = B72000000000000000000003 /* AppDisplayNameCache.swift */; };
+		C90000000000000000000006 /* ClickLatencyTrace.swift in Sources */ = {isa = PBXBuildFile; fileRef = C90000000000000000000005 /* ClickLatencyTrace.swift */; };
+		C9000000000000000000000C /* ClickLatencyTrace.swift in Sources */ = {isa = PBXBuildFile; fileRef = C90000000000000000000005 /* ClickLatencyTrace.swift */; };
 		B72000000000000000000002 /* AppDisplayNameCache.swift in Sources */ = {isa = PBXBuildFile; fileRef = B72000000000000000000003 /* AppDisplayNameCache.swift */; };
 		B73000000000000000000001 /* AppTracker.swift in Sources */ = {isa = PBXBuildFile; fileRef = A00000000000000000000069 /* AppTracker.swift */; };
 		B73000000000000000000002 /* AppWindowObserver.swift in Sources */ = {isa = PBXBuildFile; fileRef = A00000000000000000000068 /* AppWindowObserver.swift */; };
 		B73000000000000000000003 /* AccessibilitySource.swift in Sources */ = {isa = PBXBuildFile; fileRef = A0000000000000000000000F /* AccessibilitySource.swift */; };
 		A000000000000000000019A1 /* LauncherChip.swift in Sources */ = {isa = PBXBuildFile; fileRef = A000000000000000000019B1 /* LauncherChip.swift */; };
+		C90000000000000000000002 /* ChipPressFeedback.swift in Sources */ = {isa = PBXBuildFile; fileRef = C90000000000000000000001 /* ChipPressFeedback.swift */; };
+		C9000000000000000000000D /* ChipPressFeedback.swift in Sources */ = {isa = PBXBuildFile; fileRef = C90000000000000000000001 /* ChipPressFeedback.swift */; };
 		A000000000000000000019D1 /* AppMenuFragments.swift in Sources */ = {isa = PBXBuildFile; fileRef = A000000000000000000019C1 /* AppMenuFragments.swift */; };
 		A000000000000000000019D2 /* RecentDocumentsReader.swift in Sources */ = {isa = PBXBuildFile; fileRef = A000000000000000000019C2 /* RecentDocumentsReader.swift */; };
 		A000000000000000000019D4 /* LauncherMembershipItem.swift in Sources */ = {isa = PBXBuildFile; fileRef = A000000000000000000019D3 /* LauncherMembershipItem.swift */; };
@@ -158,6 +162,8 @@
 		A0000000000000000000100D /* LifecycleTransitionEngine.swift in Sources */ = {isa = PBXBuildFile; fileRef = A0000000000000000000000D /* LifecycleTransitionEngine.swift */; };
 		A0000000000000000000100E /* LifecycleActionPlanner.swift in Sources */ = {isa = PBXBuildFile; fileRef = A0000000000000000000000E /* LifecycleActionPlanner.swift */; };
 		A0000000000000000000101A /* AXWindowReader.swift in Sources */ = {isa = PBXBuildFile; fileRef = A00000000000000000000054 /* AXWindowReader.swift */; };
+		C90000000000000000000004 /* AXElementCache.swift in Sources */ = {isa = PBXBuildFile; fileRef = C90000000000000000000003 /* AXElementCache.swift */; };
+		C9000000000000000000000B /* AXElementCache.swift in Sources */ = {isa = PBXBuildFile; fileRef = C90000000000000000000003 /* AXElementCache.swift */; };
 		A0000000000000000000100F /* AccessibilitySource.swift in Sources */ = {isa = PBXBuildFile; fileRef = A0000000000000000000000F /* AccessibilitySource.swift */; };
 		A00000000000000000001010 /* CoreGraphicsSource.swift in Sources */ = {isa = PBXBuildFile; fileRef = A00000000000000000000010 /* CoreGraphicsSource.swift */; };
 		A00000000000000000001030 /* DockWindowEligibilityPolicy.swift in Sources */ = {isa = PBXBuildFile; fileRef = A00000000000000000000061 /* DockWindowEligibilityPolicy.swift */; };
@@ -235,6 +241,8 @@
 		A00000000000000000009F02 /* GlobalHotKeyMonitor.swift in Sources */ = {isa = PBXBuildFile; fileRef = A00000000000000000009F00 /* GlobalHotKeyMonitor.swift */; };
 		A00000000000000000009F11 /* GlobalHotKeyMonitorTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A00000000000000000009F10 /* GlobalHotKeyMonitorTests.swift */; };
 		A00000000000000000009E14 /* AXWindowReaderResultTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A00000000000000000009E02 /* AXWindowReaderResultTests.swift */; };
+		C9000000000000000000000A /* AXElementCacheTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = C90000000000000000000009 /* AXElementCacheTests.swift */; };
+		C90000000000000000000008 /* ChipPressFeedbackTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = C90000000000000000000007 /* ChipPressFeedbackTests.swift */; };
 		A00000000000000000009E15 /* AXWindowMatchPolicy.swift in Sources */ = {isa = PBXBuildFile; fileRef = A00000000000000000000064 /* AXWindowMatchPolicy.swift */; };
 		A00000000000000000009E16 /* ProcessLiveness.swift in Sources */ = {isa = PBXBuildFile; fileRef = A00000000000000000009E03 /* ProcessLiveness.swift */; };
 		A00000000000000000009E17 /* ProcessLiveness.swift in Sources */ = {isa = PBXBuildFile; fileRef = A00000000000000000009E03 /* ProcessLiveness.swift */; };
@@ -290,6 +298,8 @@
 		A00000000000000000009E00 /* WindowInventoryAnomalyLog.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WindowInventoryAnomalyLog.swift; sourceTree = "<group>"; };
 		A00000000000000000009E01 /* WindowInventoryAnomalyLogTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WindowInventoryAnomalyLogTests.swift; sourceTree = "<group>"; };
 		A00000000000000000009E02 /* AXWindowReaderResultTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AXWindowReaderResultTests.swift; sourceTree = "<group>"; };
+		C90000000000000000000009 /* AXElementCacheTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AXElementCacheTests.swift; sourceTree = "<group>"; };
+		C90000000000000000000007 /* ChipPressFeedbackTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChipPressFeedbackTests.swift; sourceTree = "<group>"; };
 		A00000000000000000009E03 /* ProcessLiveness.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProcessLiveness.swift; sourceTree = "<group>"; };
 		A00000000000000000009E04 /* ProcessLivenessTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProcessLivenessTests.swift; sourceTree = "<group>"; };
 		A00000000000000000000B90 /* FeedbackTickPolicyTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FeedbackTickPolicyTests.swift; sourceTree = "<group>"; };
@@ -331,6 +341,7 @@
 		A00000000000000000009030 /* PanelVisibilityState.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PanelVisibilityState.swift; sourceTree = "<group>"; };
 		A00000000000000000009080 /* PanelGeometry.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PanelGeometry.swift; sourceTree = "<group>"; };
 		A000000000000000000019B1 /* LauncherChip.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LauncherChip.swift; sourceTree = "<group>"; };
+		C90000000000000000000001 /* ChipPressFeedback.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChipPressFeedback.swift; sourceTree = "<group>"; };
 		A000000000000000000019C1 /* AppMenuFragments.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppMenuFragments.swift; sourceTree = "<group>"; };
 		A000000000000000000019C2 /* RecentDocumentsReader.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RecentDocumentsReader.swift; sourceTree = "<group>"; };
 		A000000000000000000019D3 /* LauncherMembershipItem.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LauncherMembershipItem.swift; sourceTree = "<group>"; };
@@ -355,6 +366,7 @@
 		A0000000000000000000000D /* LifecycleTransitionEngine.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LifecycleTransitionEngine.swift; sourceTree = "<group>"; };
 		A0000000000000000000000E /* LifecycleActionPlanner.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LifecycleActionPlanner.swift; sourceTree = "<group>"; };
 		A00000000000000000000054 /* AXWindowReader.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AXWindowReader.swift; sourceTree = "<group>"; };
+		C90000000000000000000003 /* AXElementCache.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AXElementCache.swift; sourceTree = "<group>"; };
 		A0000000000000000000000F /* AccessibilitySource.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AccessibilitySource.swift; sourceTree = "<group>"; };
 		A00000000000000000000010 /* CoreGraphicsSource.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CoreGraphicsSource.swift; sourceTree = "<group>"; };
 		A00000000000000000000061 /* DockWindowEligibilityPolicy.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DockWindowEligibilityPolicy.swift; sourceTree = "<group>"; };
@@ -384,6 +396,7 @@
 		A00000000000000000009D10 /* WindowTitleTooltipTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WindowTitleTooltipTests.swift; sourceTree = "<group>"; };
 		B71000000000000000000003 /* ScreenRectReader.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ScreenRectReader.swift; sourceTree = "<group>"; };
 		B72000000000000000000003 /* AppDisplayNameCache.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppDisplayNameCache.swift; sourceTree = "<group>"; };
+		C90000000000000000000005 /* ClickLatencyTrace.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ClickLatencyTrace.swift; sourceTree = "<group>"; };
 		A00000000000000000009200 /* PinnedFolderStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PinnedFolderStore.swift; sourceTree = "<group>"; };
 		A00000000000000000009210 /* DirectoryWatcher.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DirectoryWatcher.swift; sourceTree = "<group>"; };
 		A00000000000000000009220 /* FolderContentsLoader.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FolderContentsLoader.swift; sourceTree = "<group>"; };
@@ -565,6 +578,7 @@
 				B71000000000000000000003 /* ScreenRectReader.swift */,
 				A0000000000000000000006A /* DrawerView.swift */,
 				A000000000000000000019B1 /* LauncherChip.swift */,
+				C90000000000000000000001 /* ChipPressFeedback.swift */,
 				A000000000000000000019D3 /* LauncherMembershipItem.swift */,
 				A000000000000000000019C1 /* AppMenuFragments.swift */,
 				A00000000000000000009240 /* FolderGridPopupView.swift */,
@@ -607,6 +621,7 @@
 				A0000000000000000000FF00 /* LaunchGateDecision.swift */,
 				A0000000000000000000FF20 /* AppLaunchTargetDecision.swift */,
 				B72000000000000000000003 /* AppDisplayNameCache.swift */,
+				C90000000000000000000005 /* ClickLatencyTrace.swift */,
 				A0000000000000000000FB00 /* DockThemeTokens.swift */,
 				A00000000000000000009580 /* AppMembershipMenuPlan.swift */,
 				A00000000000000000009700 /* DragConversionPlan.swift */,
@@ -722,6 +737,7 @@
 			isa = PBXGroup;
 				children = (
 					A00000000000000000000054 /* AXWindowReader.swift */,
+				C90000000000000000000003 /* AXElementCache.swift */,
 					A00000000000000000000064 /* AXWindowMatchPolicy.swift */,
 					A0000000000000000000000F /* AccessibilitySource.swift */,
 					A000000000000000000019B3 /* DockBadgeReader.swift */,
@@ -860,6 +876,8 @@
 				A00000000000000000009601 /* TabFoldDecisionTests.swift */,
 				A00000000000000000009E01 /* WindowInventoryAnomalyLogTests.swift */,
 				A00000000000000000009E02 /* AXWindowReaderResultTests.swift */,
+				C90000000000000000000009 /* AXElementCacheTests.swift */,
+				C90000000000000000000007 /* ChipPressFeedbackTests.swift */,
 				A00000000000000000009E04 /* ProcessLivenessTests.swift */,
 				A00000000000000000000B90 /* FeedbackTickPolicyTests.swift */,
 				A00000000000000000009E06 /* ScanAdmissionDecisionTests.swift */,
@@ -1040,6 +1058,7 @@
 					A00000000000000000008021 /* StatusMenuController.swift in Sources */,
 					A00000000000000000009C01 /* UpdateChecker.swift in Sources */,
 					A000000000000000000019A1 /* LauncherChip.swift in Sources */,
+					C90000000000000000000002 /* ChipPressFeedback.swift in Sources */,
 					A000000000000000000019D4 /* LauncherMembershipItem.swift in Sources */,
 					A000000000000000000019D1 /* AppMenuFragments.swift in Sources */,
 					A000000000000000000019D2 /* RecentDocumentsReader.swift in Sources */,
@@ -1056,6 +1075,7 @@
 					A0000000000000000000FF01 /* LaunchGateDecision.swift in Sources */,
 					A0000000000000000000FF21 /* AppLaunchTargetDecision.swift in Sources */,
 					B72000000000000000000001 /* AppDisplayNameCache.swift in Sources */,
+					C90000000000000000000006 /* ClickLatencyTrace.swift in Sources */,
 					A0000000000000000000FB01 /* DockThemeTokens.swift in Sources */,
 					A0000000000000000000FC01 /* DockTheme.swift in Sources */,
 					A0000000000000000000FE01 /* DockGlassBackdrop.swift in Sources */,
@@ -1091,6 +1111,7 @@
 					A00000000000000000001039 /* AppFallbackRetentionPolicy.swift in Sources */,
 					A0000000000000000000100E /* LifecycleActionPlanner.swift in Sources */,
 					A0000000000000000000101A /* AXWindowReader.swift in Sources */,
+					C90000000000000000000004 /* AXElementCache.swift in Sources */,
 					A00000000000000000001037 /* AXWindowMatchPolicy.swift in Sources */,
 					A0000000000000000000100F /* AccessibilitySource.swift in Sources */,
 				A00000000000000000001010 /* CoreGraphicsSource.swift in Sources */,
@@ -1195,6 +1216,9 @@
 				B72000000000000000000002 /* AppDisplayNameCache.swift in Sources */,
 				A0000000000000000000FB02 /* DockThemeTokens.swift in Sources */,
 				A0000000000000000000FC02 /* DockTheme.swift in Sources */,
+				C9000000000000000000000D /* ChipPressFeedback.swift in Sources */,
+				C9000000000000000000000C /* ClickLatencyTrace.swift in Sources */,
+				C9000000000000000000000B /* AXElementCache.swift in Sources */,
 				A00000000000000000009582 /* AppMembershipMenuPlan.swift in Sources */,
 				A00000000000000000009362 /* FolderChipDropZone.swift in Sources */,
 				A00000000000000000009312 /* ShelfStore.swift in Sources */,
@@ -1246,6 +1270,8 @@
 					B73000000000000000000002 /* AppWindowObserver.swift in Sources */,
 					B73000000000000000000001 /* AppTracker.swift in Sources */,
 					A00000000000000000009E14 /* AXWindowReaderResultTests.swift in Sources */,
+					C9000000000000000000000A /* AXElementCacheTests.swift in Sources */,
+					C90000000000000000000008 /* ChipPressFeedbackTests.swift in Sources */,
 					A00000000000000000009E15 /* AXWindowMatchPolicy.swift in Sources */,
 					A00000000000000000009E17 /* ProcessLiveness.swift in Sources */,
 					A00000000000000000009E18 /* ProcessLivenessTests.swift in Sources */,

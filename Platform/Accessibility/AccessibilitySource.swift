@@ -197,6 +197,36 @@ struct AccessibilityWindowActionExecutor {
         fileprivate let element: AXUIElement
     }
 
+    /// 最快的一档：直接用 `AppTracker` 盘点时存下的 AX 元素（`AXElementCache`），只花一次
+    /// `_AXUIElementGetWindow` 校验它仍指向期望的窗口，预算 50ms。
+    ///
+    /// 为什么值得单独一档：既有的快路径要依次问 `AXFocusedWindow` → `AXMainWindow` → 全量
+    /// `AXWindows`，而**最小化的窗口既不是 focused 也不是 main**，必然走到最后那步；偏偏最小化的
+    /// App 常在打盹，这一整套能把 100ms 预算吃光，再转 500ms 的慢路径。缓存这一档把它压到 ≤50ms。
+    func captureHandleFromCache(
+        _ cgWindowID: CGWindowID,
+        pid: Int32,
+        title: String?,
+        bounds: CGRect?
+    ) -> WindowHandle? {
+        guard let element = AXElementCache.shared.element(pid: pid, cgWindowID: cgWindowID) else {
+            return nil
+        }
+        switch reader.matchesCGWindowID(cgWindowID, element: element, messagingTimeout: 0.05) {
+        case .some(true):
+            // title / bounds 用快照值补齐——同 `fastHandle`，绝不透传 nil（透传 nil 会让后面
+            // recapture 的 bestMatch 对任何 ≥2 窗口的应用必然返回 nil，静默废掉救援路径）。
+            return WindowHandle(pid: pid, title: title, bounds: bounds, element: element)
+        case .some(false):
+            // 读到了、但已经换了窗口（cgWindowID 复用）——这条缓存必须作废。
+            AXElementCache.shared.remove(pid: pid, cgWindowID: cgWindowID)
+            return nil
+        case .none:
+            // 读不到 ≠ 陈旧。留着缓存，本次回落既有捕获链。
+            return nil
+        }
+    }
+
     func captureHandleByCGWindowID(
         _ cgWindowID: CGWindowID,
         pid: Int32,
@@ -224,7 +254,14 @@ struct AccessibilityWindowActionExecutor {
     }
 
     func activateAppWithWindowRecovery(pid: Int32, runningApp: NSRunningApplication?) -> Bool {
-        let liveWindows = reader.windows(forPID: pid)
+        // 限时 0.3s（2026-08-11）。这里原来走的是**无超时**的 `windows(forPID:)`，用的是系统默认
+        // AX 超时，打盹的 App 上是秒级——而这是 `app-*` 卡片点击的唯一路径，人正在等。读不出来
+        // 就当没有可见窗口，直接走下面的 openApplication 唤出（行为与 `.unread → 空` 一致）。
+        let liveWindows: [AXWindowSnapshot]
+        switch reader.inventoryWindows(forPID: pid, messagingTimeout: 0.3) {
+        case .success(let windows): liveWindows = windows
+        case .unread: liveWindows = []
+        }
         let visibleWindows = liveWindows.filter { !$0.isMinimized }
 
         if !visibleWindows.isEmpty {
@@ -358,10 +395,15 @@ struct AccessibilityWindowActionExecutor {
         requiresFocusedConfirmation: Bool,
         confirmationTimeout: TimeInterval = 0.6,
         pollIntervalMicroseconds: useconds_t = 100_000,
-        knownCGWindowID: CGWindowID? = nil
+        knownCGWindowID: CGWindowID? = nil,
+        knownMinimized: Bool = false
     ) -> Bool {
         let runningApp = NSRunningApplication(processIdentifier: handle.pid)
-        if reader.boolAttribute(kAXMinimizedAttribute as CFString, from: handle.element) == true {
+        // `knownMinimized` 来自快照，只作**肯定**的快路径用（2026-08-11）：快照说它最小化，就直接
+        // 还原，省掉一次对打盹 App 的 AX 往返——那正是「点最小化的窗口最慢」里最后一段等待。
+        // 反过来**不能**用：快照说「没最小化」时仍必须现读，否则一次陈旧快照就会让窗口回不来。
+        // 误判方向也无害：对一个其实没最小化的窗口写 `minimized = false` 是空操作。
+        if knownMinimized || reader.boolAttribute(kAXMinimizedAttribute as CFString, from: handle.element) == true {
             _ = setMinimized(false, for: handle)
             // 恢复→切换必须紧贴、中间零 AX 问询（2026-07-05 探针 v3）：最小化恢复不做提前
             // 聚焦——B1 还在 order-out 时任何切前台（含 kCPSNoWindows、不发 make-key 的裸
@@ -667,26 +709,36 @@ struct AccessibilityWindowActionExecutor {
 
 struct ActionExecutionSwitches: Equatable {
     let fastWindowHandleEnabled: Bool
+    /// `DOCK_AX_ELEMENT_CACHE=0` 关掉「缓存元素」那一档，回到 fast / fallback 两档。
+    let axElementCacheEnabled: Bool
     let chipProbeEnabled: Bool
     let minimizeAppFallbackEnabled: Bool
 
     init(environment: [String: String] = ProcessInfo.processInfo.environment) {
         fastWindowHandleEnabled = environment["DOCK_FAST_WINDOW_HANDLE"] != "0"
+        axElementCacheEnabled = environment["DOCK_AX_ELEMENT_CACHE"] != "0"
         chipProbeEnabled = environment["DOCK_CHIP_PROBE"] == "1"
         minimizeAppFallbackEnabled = environment["DOCK_MINIMIZE_APP_FALLBACK"] == "1"
     }
 }
 
 enum WindowHandleCapturePlan {
+    /// 三档，从快到慢：**缓存元素（零枚举）→ 按 cgWindowID 现问（100ms）→ 全量标题/几何链（500ms）**。
+    ///
+    /// `justUnhid` 对**前两档**一律禁用：刚 unhide 出来的 App，其 AX 元素可能仍在过渡态，
+    /// 缓存里那个更是最小化/隐藏之前存的，两者都不可信，必须走带重试的慢路径（既有规则，不变）。
     static func capture<Handle>(
+        cachedEnabled: Bool,
         fastEnabled: Bool,
         cgWindowID: CGWindowID?,
         justUnhid: Bool,
+        cached: (CGWindowID) -> Handle?,
         fast: (CGWindowID) -> Handle?,
         fallback: () -> Handle?
     ) -> Handle? {
-        if fastEnabled, !justUnhid, let cgWindowID, let handle = fast(cgWindowID) {
-            return handle
+        if let cgWindowID, !justUnhid {
+            if cachedEnabled, let handle = cached(cgWindowID) { return handle }
+            if fastEnabled, let handle = fast(cgWindowID) { return handle }
         }
         return fallback()
     }
@@ -748,6 +800,7 @@ struct PlatformActionExecutor {
            record.status == .active || record.status == .inactive,
            NSRunningApplication(processIdentifier: record.pid)?.isActive != true {
             windowExecutor.focusWindowEarly(pid: record.pid, cgWindowID: cgWindowID)
+            ClickLatencyTrace.mark(windowID: request.windowID?.rawValue, "earlyFocus")
         }
 
         // If Finder is hidden, unhide it first so its AX windows become accessible.
@@ -772,26 +825,44 @@ struct PlatformActionExecutor {
             pid: record.pid, title: record.title, bounds: record.bounds)
         // After unhide, skip the fast cgWindowID path — it may return a handle whose AX
         // element is still transitioning. Use the retry-capable captureHandle instead.
+        // 命中的是哪一档，是这轮改动能不能证明有效的关键分类信息（缓存 / 快路径 / 全量链）。
+        var captureTier = "none"
         let handle = WindowHandleCapturePlan.capture(
+            cachedEnabled: switches.axElementCacheEnabled,
             fastEnabled: switches.fastWindowHandleEnabled,
             cgWindowID: record.cgWindowID,
             justUnhid: justUnhid,
-            fast: {
-                windowExecutor.captureHandleByCGWindowID(
+            cached: {
+                let h = windowExecutor.captureHandleFromCache(
                     $0,
                     pid: record.pid,
                     title: record.title,
                     bounds: record.bounds
                 )
+                if h != nil { captureTier = "cached" }
+                return h
+            },
+            fast: {
+                let h = windowExecutor.captureHandleByCGWindowID(
+                    $0,
+                    pid: record.pid,
+                    title: record.title,
+                    bounds: record.bounds
+                )
+                if h != nil { captureTier = "fast" }
+                return h
             },
             fallback: {
-                windowExecutor.captureHandle(
+                let h = windowExecutor.captureHandle(
                     for: target,
                     attempts: isFinderWindow ? 3 : 1,
                     retryIntervalMicroseconds: isFinderWindow ? 150_000 : 0
                 )
+                if h != nil { captureTier = "fallback" }
+                return h
             }
         )
+        ClickLatencyTrace.mark(windowID: request.windowID?.rawValue, "handle", detail: captureTier)
 
         guard let handle else {
             guard WindowHandleCapturePlan.usesAppFallbackAfterCaptureFailure(
@@ -809,7 +880,8 @@ struct PlatformActionExecutor {
             return windowExecutor.activate(
                 handle,
                 requiresFocusedConfirmation: isFinderWindow,
-                knownCGWindowID: record.cgWindowID
+                knownCGWindowID: record.cgWindowID,
+                knownMinimized: record.status == .minimized
             )
         case .minimizeWindow:
             let targetPID = windowExecutor.findBackgroundActivationTarget(for: handle)

@@ -1213,26 +1213,15 @@ struct ChipView: View {
         !iconOnly && (item.showsTitle || isMessagingAppWindow) ? "window" : "icon"
     }
 
-    /// 短促按压(0.93)后由 spring 回弹;90ms 后复位状态,动画由 value 变化声明式触发。
-    private func fireTapPulse() {
-        isTapPressed = true
+    /// 按压状态的诊断出口。状态机本身在 `ChipPressFeedback` 里，这里只补 trace。
+    private func recordPressEvent(_ pressed: Bool) {
         ChipAnimationTrace.event(
             chipID: item.id,
             kind: animationTraceKind,
-            event: ChipAnimationTraceEvent.tap(true),
-            isTapPressed: true,
+            event: ChipAnimationTraceEvent.tap(pressed),
+            isTapPressed: pressed,
             showsHover: showsHover
         )
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.09) {
-            isTapPressed = false
-            ChipAnimationTrace.event(
-                chipID: item.id,
-                kind: animationTraceKind,
-                event: ChipAnimationTraceEvent.tap(false),
-                isTapPressed: false,
-                showsHover: showsHover
-            )
-        }
     }
 
     private func recordHoverEvent(_ hovering: Bool) {
@@ -1289,7 +1278,6 @@ struct ChipView: View {
             }
         }
         .animation(.easeInOut(duration: 0.2), value: item.showsTitle)
-        .onChange(of: pulseNonce) { _ in fireTapPulse() }
     }
 
     // MARK: - Icon-only chip
@@ -1334,19 +1322,24 @@ struct ChipView: View {
                     .padding(.bottom, 2)
             }
         }
-        .scaleEffect(isTapPressed ? 0.93 : 1.0)
+        .chipPressScale(isTapPressed)
         .contentShape(Rectangle())
         .onHover {
             isHovering = $0
             recordHoverEvent($0)
         }
         .onTapGesture {
-            fireTapPulse()
             if let drawerTap { drawerTap() } else { runtime.toggle(windowID: item.actionWindowID) }
         }
+        // 按压跟着**按下**走，不再等 onTapGesture（那是鼠标抬起才触发的）。挂在 contentShape
+        // 之后，命中区域与点击完全一致。
+        .chipPressGesture(
+            isPressed: $isTapPressed,
+            pulseNonce: pulseNonce,
+            onEvent: recordPressEvent
+        )
         .nativeContextMenu { buildChipMenu() }
         .help(capturedDisplayTitle)
-        .animation(.spring(response: 0.22, dampingFraction: 0.5), value: isTapPressed)
     }
 
     // MARK: - Labeled chip
@@ -1411,7 +1404,7 @@ struct ChipView: View {
             .frame(height: ChipPillMetrics.chipHeight * scale)
         }
         .animation(.easeInOut(duration: 0.18), value: showsHover)
-        .scaleEffect(isTapPressed ? 0.93 : 1.0)
+        .chipPressScale(isTapPressed)
         // 探针挂在 scaleEffect **之外**：按下去那 7% 缩放不该被当成几何变化上报。
         // 量的是稳定的卡片矩形，pill rect 由 ChipPillMetrics 推出来，tooltip 的锚点契约不变。
         // 唯一用去抖的调用点：悬停时卡片矩形每帧都在变（那是刻意保留的横向 reflow），
@@ -1432,9 +1425,13 @@ struct ChipView: View {
             updateWindowTitleTooltip(hovering: hovering)
         }
         .onTapGesture {
-            fireTapPulse()
             if let drawerTap { drawerTap() } else { runtime.toggle(windowID: item.actionWindowID) }
         }
+        .chipPressGesture(
+            isPressed: $isTapPressed,
+            pulseNonce: pulseNonce,
+            onEvent: recordPressEvent
+        )
         .nativeContextMenu { buildChipMenu() }
         .onChange(of: displayTitle) { _ in
             if isHovering { updateWindowTitleTooltip(hovering: true) }
@@ -1443,7 +1440,6 @@ struct ChipView: View {
             if isHovering { updateWindowTitleTooltip(hovering: true) }
         }
         .onDisappear { onWindowTitleTooltipEvent(.exit(chipID: item.id)) }
-        .animation(.spring(response: 0.22, dampingFraction: 0.5), value: isTapPressed)
     }
 
     // MARK: - Shared Icon
@@ -1592,12 +1588,6 @@ struct DrawerCapsuleButton: View {
     /// 否则换档时任务条变了、胶囊里的九宫格还停在旧尺寸。
     private var dockScale: CGFloat { settingsStore.dockSize.scale }
 
-    /// 短促按压(0.93)后由 spring 回弹;90ms 后复位状态,动画由 value 变化声明式触发（ChipView 同款）。
-    private func fireTapPulse() {
-        isTapPressed = true
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.09) { isTapPressed = false }
-    }
-
     var body: some View {
         // 拖动时 hover 让位给拖入反馈：draggingPayload 非空则不弹（drag 优先）。
         let showsHover = isHovering && dragController.draggingPayload == nil
@@ -1633,8 +1623,9 @@ struct DrawerCapsuleButton: View {
             }
             .scaleEffect(showsHover ? 1.07 : 1.0)
             .animation(.easeOut(duration: 0.12), value: showsHover)
-            .scaleEffect(isTapPressed ? 0.93 : 1.0)
-            .animation(.spring(response: 0.22, dampingFraction: 0.5), value: isTapPressed)
+            // 按压只作用在里面的九宫格上、外框保持静止（owner 2026-06-21）——所以缩放挂在这里，
+            // 手势挂在最外层（见下方 chipPressGesture）。
+            .chipPressScale(isTapPressed)
         }
         .overlay {
             RoundedRectangle(cornerRadius: Style.cornerRadius * dockScale, style: .continuous)
@@ -1651,7 +1642,8 @@ struct DrawerCapsuleButton: View {
         .dockShadow(theme.stripShadow)
         .padding(PanelCoordinator.shadowPadding)
         .contentShape(Rectangle())
-        .onTapGesture { fireTapPulse(); action() }
+        .onTapGesture { action() }
+        .chipPressGesture(isPressed: $isTapPressed)
         // MenuHostNSView 只认右键 / Control-click，左键一律返回 nil 穿透下去，
         // 所以上面那条「点胶囊开抽屉」不受影响。
         .overlay(NativeMenuHost(popUpHandler: onRequestTaskbarMenu))

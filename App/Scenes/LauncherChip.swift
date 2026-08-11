@@ -43,6 +43,10 @@ struct LauncherChip: View {
     @State private var isHovering = false
     @State private var bounceUp = false
     @State private var bounceTimer: Timer?
+    /// 按压确认脉冲。2026-08-11 之前这个组件**完全没有按压反馈**——消息区（主窗关着 / 未运行）、
+    /// kept 图标、抽屉图标点下去一动不动，而窗口卡和抽屉胶囊都有。纯视图层信号，永不喂
+    /// planner / frontmost 轴（AGENTS）。
+    @State private var isTapPressed = false
 
     private static let launchTraceEnabled =
         ProcessInfo.processInfo.environment["DOCK_LAUNCH_TRACE"] == "1"
@@ -58,7 +62,7 @@ struct LauncherChip: View {
                 chipID: bundleID,
                 kind: "launcher",
                 visual: hover,
-                isTapPressed: false,
+                isTapPressed: isTapPressed,
                 showsHover: showsHover
             )
             VStack(spacing: 0) {
@@ -97,6 +101,7 @@ struct LauncherChip: View {
                     .padding(.bottom, 2)
             }
         }
+        .chipPressScale(isTapPressed)
         .contentShape(Rectangle())
         .onHover { hovering in
             isHovering = hovering
@@ -104,11 +109,26 @@ struct LauncherChip: View {
                 chipID: bundleID,
                 kind: "launcher",
                 event: ChipAnimationTraceEvent.hover(hovering),
-                isTapPressed: false,
+                isTapPressed: isTapPressed,
                 showsHover: hoverStyle.isExpressive && hovering
             )
         }
         .onTapGesture { handlePrimaryTap() }
+        // 启动会话期间点击本来就是 no-op（AGENTS），给按压反馈等于骗人；顺带避开和
+        // 有限弹跳（bounceUp offset）叠在同一个图标上的动画事务。
+        .chipPressGesture(
+            isPressed: $isTapPressed,
+            isEnabled: !isLaunching,
+            onEvent: { pressed in
+                ChipAnimationTrace.event(
+                    chipID: bundleID,
+                    kind: "launcher",
+                    event: ChipAnimationTraceEvent.tap(pressed),
+                    isTapPressed: pressed,
+                    showsHover: showsHover
+                )
+            }
+        )
         .nativeContextMenu { buildLauncherMenu() }
         .help(displayName)
         .onAppear {

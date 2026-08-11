@@ -80,6 +80,9 @@ final class AppTracker: ObservableObject {
     private var reconcileTimer: Timer?
     private var frontmostPollTimer: Timer?
     private var isScanningCandidates = false
+    /// 动作路径用的 AX 元素旁路缓存。写在这里（盘点读本来就拿着元素），读在
+    /// `PlatformActionExecutor`。刻意不进 `DockSnapshot`，理由见 `AXElementCache`。
+    private let elementCache = AXElementCache.shared
     private var destroyedCGIDs: [CGWindowID: Date] = [:]
     private static let tombstoneTTL: TimeInterval = 3.0
     /// 幽灵座位自愈门槛：min 保留的座位 AX 连续缺席多久后才允许进入 PhantomSeatDecision 判定
@@ -301,6 +304,15 @@ final class AppTracker: ObservableObject {
 
         var eligibleByCgID: [CGWindowID: AXWindowSnapshot] = [:]
         for s in eligible { if let c = s.cgWindowID { eligibleByCgID[c] = s } }
+
+        // 顺手把 AX 元素喂给动作路径的旁路缓存（见 `AXElementCache` 的注释）。这里是唯一的写入点：
+        // 这一轮已经过了 `.unread` 早退闸，元素是真读到的。**不因为某个 cgID 这轮没出现在 AX 里就删**
+        // ——Safari 系窗口最小化后会整个离开 AXWindows，那正是缓存最该发挥作用的时刻。出列只认
+        // CG 全列表（下面那行 retain）、destroy 通知和进程消失。
+        if AXElementCache.isEnabled {
+            for (c, s) in eligibleByCgID { elementCache.store(pid: pid, cgWindowID: c, element: s.element) }
+            elementCache.retain(pid: pid, liveCGWindowIDs: cgIDs)
+        }
 
         let before = seatSignature(app)
         var usedEligible: Set<CGWindowID> = []
@@ -939,6 +951,7 @@ final class AppTracker: ObservableObject {
                 appOrder.removeAll { $0 == stalePID }
                 clearInventoryDiagnostics(pid: stalePID)
                 invalidateEventReads(pid: stalePID)
+                elementCache.removeAll(pid: stalePID)
             }
             addApp(app, enumerateImmediately: true)
             rebuildSnapshot()
@@ -976,6 +989,7 @@ final class AppTracker: ObservableObject {
 
         apps.removeValue(forKey: pid)
         appOrder.removeAll { $0 == pid }
+        elementCache.removeAll(pid: pid)
         rebuildSnapshot()
     }
 
@@ -1109,6 +1123,9 @@ final class AppTracker: ObservableObject {
         invalidateEventReads(pid: pid)
         destroyedCGIDs[cgWindowID] = Date()
         purgeFromSeatHistories(cgWindowID)
+        // 真关掉了才删元素缓存。destroy 通知可能早于 CG 全列表更新，所以这里显式删一次，
+        // 不等下面 reconcileSeats 里的 CG 求交。
+        elementCache.remove(pid: pid, cgWindowID: cgWindowID)
         // 不直接删座位：若这是某标签窗口的当前标签被关、而同一物理窗口还有别的标签顶上，
         // reconcileSeats 会让座位原地换 activeCgID、保住 token（卡不闪不换身份）。整窗关掉则真删。
         let cgSnapshot = cgSnapshotProvider()
@@ -1311,6 +1328,7 @@ final class AppTracker: ObservableObject {
             appOrder.removeAll { $0 == pid }
             clearInventoryDiagnostics(pid: pid)
             invalidateEventReads(pid: pid)
+            elementCache.removeAll(pid: pid)
             changed = true
         }
 

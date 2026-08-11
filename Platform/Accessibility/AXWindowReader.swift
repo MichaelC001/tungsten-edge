@@ -363,6 +363,22 @@ struct AXWindowReader: AppTrackerWindowReading, Sendable {
         return nil
     }
 
+    /// 校验一个**缓存下来的** AX 元素是否仍指向期望的窗口。三态，不折叠：
+    /// - `true`：确认是同一个窗口，可以直接用。
+    /// - `false`：读到了、但换了窗口（cgWindowID 复用）——缓存条目必须作废。
+    /// - `nil`：**没读到**（App 打盹 / 超时）。这不是陈旧的证据，调用方只该回落到既有捕获链，
+    ///   **不要因此删缓存**——把一次瞬时超时固化成永久失效，比原来的 bug 更糟
+    ///   （同 `AppNameRegistry` 那条教训）。
+    func matchesCGWindowID(
+        _ expected: CGWindowID,
+        element: AXUIElement,
+        messagingTimeout: TimeInterval
+    ) -> Bool? {
+        applyMessagingTimeout(messagingTimeout, to: element)
+        guard let actual = AXWindowIDBridge.cgWindowID(for: element) else { return nil }
+        return actual == expected
+    }
+
     func elementAttribute(
         _ attribute: CFString,
         from element: AXUIElement,

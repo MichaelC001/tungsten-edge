@@ -125,9 +125,11 @@ final class ActionExecutionSwitchesTests: XCTestCase {
         var fastCalls = 0
         var fallbackCalls = 0
         let result: String? = WindowHandleCapturePlan.capture(
+            cachedEnabled: false,
             fastEnabled: true,
             cgWindowID: 7,
             justUnhid: false,
+            cached: { _ in nil },
             fast: { _ in fastCalls += 1; return "fast" },
             fallback: { fallbackCalls += 1; return "fallback" }
         )
@@ -141,9 +143,11 @@ final class ActionExecutionSwitchesTests: XCTestCase {
         var fastCalls = 0
         var fallbackCalls = 0
         let result: String? = WindowHandleCapturePlan.capture(
+            cachedEnabled: false,
             fastEnabled: true,
             cgWindowID: 7,
             justUnhid: false,
+            cached: { _ in nil },
             fast: { _ in fastCalls += 1; return nil },
             fallback: { fallbackCalls += 1; return "fallback" }
         )
@@ -151,6 +155,107 @@ final class ActionExecutionSwitchesTests: XCTestCase {
         XCTAssertEqual(result, "fallback")
         XCTAssertEqual(fastCalls, 1)
         XCTAssertEqual(fallbackCalls, 1)
+    }
+
+    // MARK: - 缓存元素档（最小化恢复提速，2026-08-11）
+
+    func testCachedHandleHitSkipsBothSlowerTiers() {
+        var cachedCalls = 0
+        var fastCalls = 0
+        var fallbackCalls = 0
+        let result: String? = WindowHandleCapturePlan.capture(
+            cachedEnabled: true,
+            fastEnabled: true,
+            cgWindowID: 7,
+            justUnhid: false,
+            cached: { _ in cachedCalls += 1; return "cached" },
+            fast: { _ in fastCalls += 1; return "fast" },
+            fallback: { fallbackCalls += 1; return "fallback" }
+        )
+
+        XCTAssertEqual(result, "cached")
+        XCTAssertEqual(cachedCalls, 1)
+        XCTAssertEqual(fastCalls, 0)
+        XCTAssertEqual(fallbackCalls, 0)
+    }
+
+    func testCachedHandleMissFallsThroughToFastThenFallback() {
+        var cachedCalls = 0
+        var fastCalls = 0
+        var fallbackCalls = 0
+        let result: String? = WindowHandleCapturePlan.capture(
+            cachedEnabled: true,
+            fastEnabled: true,
+            cgWindowID: 7,
+            justUnhid: false,
+            cached: { _ in cachedCalls += 1; return nil },
+            fast: { _ in fastCalls += 1; return nil },
+            fallback: { fallbackCalls += 1; return "fallback" }
+        )
+
+        XCTAssertEqual(result, "fallback")
+        XCTAssertEqual(cachedCalls, 1)
+        XCTAssertEqual(fastCalls, 1)
+        XCTAssertEqual(fallbackCalls, 1)
+    }
+
+    /// 刚 unhide 出来的 App，**前两档一律禁用**：AX 元素可能仍在过渡态，缓存里那个更是
+    /// 隐藏之前存下的。既有规则（原来只管 fast 一档），扩到缓存档后必须继续成立。
+    func testJustUnhidSkipsCachedAndFastTiers() {
+        var cachedCalls = 0
+        var fastCalls = 0
+        var fallbackCalls = 0
+        let result: String? = WindowHandleCapturePlan.capture(
+            cachedEnabled: true,
+            fastEnabled: true,
+            cgWindowID: 7,
+            justUnhid: true,
+            cached: { _ in cachedCalls += 1; return "cached" },
+            fast: { _ in fastCalls += 1; return "fast" },
+            fallback: { fallbackCalls += 1; return "fallback" }
+        )
+
+        XCTAssertEqual(result, "fallback")
+        XCTAssertEqual(cachedCalls, 0)
+        XCTAssertEqual(fastCalls, 0)
+        XCTAssertEqual(fallbackCalls, 1)
+    }
+
+    /// `DOCK_AX_ELEMENT_CACHE=0` 必须完整退回改动前的两档行为。
+    func testCacheDisabledRestoresPreviousTwoTierBehaviour() {
+        var cachedCalls = 0
+        var fastCalls = 0
+        let result: String? = WindowHandleCapturePlan.capture(
+            cachedEnabled: false,
+            fastEnabled: true,
+            cgWindowID: 7,
+            justUnhid: false,
+            cached: { _ in cachedCalls += 1; return "cached" },
+            fast: { _ in fastCalls += 1; return "fast" },
+            fallback: { "fallback" }
+        )
+
+        XCTAssertEqual(result, "fast")
+        XCTAssertEqual(cachedCalls, 0)
+        XCTAssertEqual(fastCalls, 1)
+    }
+
+    func testNoCGWindowIDGoesStraightToFallback() {
+        var cachedCalls = 0
+        var fastCalls = 0
+        let result: String? = WindowHandleCapturePlan.capture(
+            cachedEnabled: true,
+            fastEnabled: true,
+            cgWindowID: nil,
+            justUnhid: false,
+            cached: { _ in cachedCalls += 1; return "cached" },
+            fast: { _ in fastCalls += 1; return "fast" },
+            fallback: { "fallback" }
+        )
+
+        XCTAssertEqual(result, "fallback")
+        XCTAssertEqual(cachedCalls, 0)
+        XCTAssertEqual(fastCalls, 0)
     }
 
     func testMinimizeCaptureFailureDoesNotUseAppFallbackByDefault() {
