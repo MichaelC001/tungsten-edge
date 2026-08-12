@@ -51,7 +51,6 @@ typealias UpdateRequestLoader = (URLRequest) async throws -> (Data, URLResponse)
 
 final class GitHubUpdateChecker: UpdateChecking {
     static let latestReleaseAPIURL = URL(string: "https://api.github.com/repos/moonbai-studio/tungsten-edge/releases/latest")!
-    static let releasesURL = URL(string: "https://github.com/moonbai-studio/tungsten-edge/releases")!
     static let requestTimeout: TimeInterval = 10
 
     private let loader: UpdateRequestLoader
@@ -181,28 +180,34 @@ struct UpdateCheckAlertContent: Equatable {
         self.isWarning = isWarning
     }
 
+    /// 官方下载页。**每一个用户可见的「去下载」都必须指向这里，不能指向 GitHub release 页**
+    /// ——2026-08-13 起 GitHub 只发源码，release 页面上不再有安装包，指过去就是一个空页面。
+    /// 版本检测仍然走 GitHub API（tag 还在，可靠且免费），变的只是下载去向。
+    static let downloadPageURL = URL(string: "https://tungstenedge.app")!
+
     init(outcome: UpdateCheckOutcome) {
         switch outcome {
-        case let .updateAvailable(currentVersion, latestVersion, releaseURL):
+        case let .updateAvailable(currentVersion, latestVersion, _):
+            // 这里**故意不用** outcome 里的 releaseURL：那是 GitHub release 页，已经没有安装包了。
             self.init(
                 title: "发现新版本 \(latestVersion)",
                 message: "当前版本 \(currentVersion)。钨极目前仍需手动下载安装。",
                 openButtonTitle: "前往下载",
-                openURL: releaseURL
+                openURL: Self.downloadPageURL
             )
         case let .upToDate(currentVersion, latestVersion):
             self.init(
                 title: "当前已是最新版本",
-                message: "当前版本 \(currentVersion)，GitHub 最新正式版为 \(latestVersion)。"
+                message: "当前版本 \(currentVersion)，最新正式版为 \(latestVersion)。"
             )
         }
     }
 
     static let failure = UpdateCheckAlertContent(
         title: "暂时无法检查更新",
-        message: "请检查网络连接后重试，也可以直接打开 GitHub 发布页。",
-        openButtonTitle: "打开发布页",
-        openURL: GitHubUpdateChecker.releasesURL,
+        message: "请检查网络连接后重试，也可以直接打开官网下载页。",
+        openButtonTitle: "打开官网",
+        openURL: UpdateCheckAlertContent.downloadPageURL,
         isWarning: true
     )
 }

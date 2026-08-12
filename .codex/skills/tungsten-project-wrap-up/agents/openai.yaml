@@ -1,7 +1,0 @@
-interface:
-  display_name: "钨极项目收尾"
-  short_description: "根据本轮上下文精简同步钨极的 Obsidian 与仓库文档"
-  default_prompt: "使用 $tungsten-project-wrap-up 收尾并同步钨极的项目状态。"
-
-policy:
-  allow_implicit_invocation: true

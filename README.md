@@ -8,6 +8,10 @@
 
 English · [中文](README.zh-CN.md)
 
+### [⬇ Download for macOS](https://tungstenedge.app)
+
+Ready-to-run builds live on the [official website](https://tungstenedge.app). This repository holds the source.
+
 </div>
 
 ---
@@ -75,7 +79,7 @@ macOS suppresses key events from global event taps while Secure Input is active,
 
 ### Option 1 — download the installer (recommended)
 
-1. Download the latest `.dmg` from [Releases](../../releases).
+1. Download the latest `.dmg` from the [official website](https://tungstenedge.app).
 2. Open it and drag **Tungsten Edge** into your **Applications** folder.
 3. **First launch needs to be allowed once** (this is an early, unsigned build, so macOS blocks it by default — it's not malware) — follow [First launch](#first-launch) below, then grant Accessibility permission.
 
@@ -127,7 +131,7 @@ Tungsten Edge lives in the macOS menu bar. Its menu currently includes:
 - **Hide/Show Tungsten Edge 钨极** — switches between always visible and your last auto-hide wake delay. The compact slider immediately below it controls the wake delay: `常驻`, `0.1s`–`3.0s`, or `不唤醒`. When the status menu is closed, the global `⌥⇧⌘D` shortcut performs the same switch; if registration fails, the menu hides its key hint but the command remains clickable. Adding Shift mirrors the system Dock's `⌥⌘D` while releasing the old `⌥⌘E` shortcut back to Safari and Finder.
 - **显示中转站** — a checkbox that shows or hides the shelf chip. Unchecking it only hides the chip; stashed file references are kept and come back when you check it again. Note that with the shelf hidden *and* no pinned folders, the whole folder zone disappears, so the strip has no external-file drop target and no 「添加文件夹…」 entry — check it back on to get them.
 - **任务条大小 ▸** — four tiers (小 / 中 / 大 / 特大) that scale the taskbar and its capsule together: icons, labels, spacing, corner radius and bar height all follow. 中 is the default and is pixel-identical to previous versions. Switching applies instantly with no transition animation; an open drawer closes so it can be re-measured at the new size. The drawer's own contents and the folder / shelf popups keep their current size.
-- **检查更新…** — manually checks the latest stable GitHub release. When an update is available, Tungsten Edge opens that release page for you to download and install it.
+- **检查更新…** — manually checks for the latest stable version. When an update is available, Tungsten Edge opens the official website for you to download and install it.
 
 Changing native Dock visibility from this menu requires a non-sandboxed build because sandboxed apps cannot write Dock preferences or restart Dock. Opening the settings pane works in either environment.
 
@@ -171,7 +175,7 @@ The license covers the source code; it does not require official signed/notarize
 
 ## Developers
 
-Engineering guardrails live in [`AGENTS.md`](AGENTS.md); product state, roadmap, and decisions live in the author's Obsidian vault. `Docs/` keeps only active platform/focus references at the root, with historical notes under `Docs/Archive/`.
+Release notes for every version are archived under [`Docs/Archive/Releases/`](Docs/Archive/Releases).
 
 Build & run:
 

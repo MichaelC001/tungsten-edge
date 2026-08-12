@@ -101,9 +101,24 @@ final class UpdateCheckerTests: XCTestCase {
             XCTAssertEqual((error as? URLError)?.code, .timedOut)
         }
         XCTAssertEqual(
-            GitHubUpdateChecker.releasesURL,
-            URL(string: "https://github.com/moonbai-studio/tungsten-edge/releases")
+            UpdateCheckAlertContent.downloadPageURL,
+            URL(string: "https://tungstenedge.app")
         )
+        XCTAssertEqual(UpdateCheckAlertContent.failure.openURL, UpdateCheckAlertContent.downloadPageURL)
+    }
+
+    /// 2026-08-13 分发切换的回归锁：GitHub 只发源码，release 页面上没有安装包了。
+    /// 版本检测照旧读 GitHub API（所以 outcome 里仍然带着 releaseURL），但**用户点的那个按钮
+    /// 必须落到官网**——把它改回 releaseURL 就是把所有老用户的更新路径送进一个空页面。
+    func testUpdateAvailableAlertSendsUserToWebsiteNotGitHubReleasePage() {
+        let releaseURL = URL(string: "https://github.com/moonbai-studio/tungsten-edge/releases/tag/v0.9.0")!
+        let content = UpdateCheckAlertContent(
+            outcome: .updateAvailable(currentVersion: "0.8.0", latestVersion: "v0.9.0", releaseURL: releaseURL)
+        )
+
+        XCTAssertEqual(content.openURL, UpdateCheckAlertContent.downloadPageURL)
+        XCTAssertNotEqual(content.openURL, releaseURL)
+        XCTAssertEqual(content.openButtonTitle, "前往下载")
     }
 
     func testMenuStateRejectsDuplicateChecksAndRestoresAfterFinish() {
