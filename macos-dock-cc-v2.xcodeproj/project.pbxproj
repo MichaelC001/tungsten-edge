@@ -115,9 +115,11 @@
 		B71000000000000000000001 /* ScreenRectReader.swift in Sources */ = {isa = PBXBuildFile; fileRef = B71000000000000000000003 /* ScreenRectReader.swift */; };
 		B71000000000000000000002 /* ScreenRectReader.swift in Sources */ = {isa = PBXBuildFile; fileRef = B71000000000000000000003 /* ScreenRectReader.swift */; };
 		B72000000000000000000001 /* AppDisplayNameCache.swift in Sources */ = {isa = PBXBuildFile; fileRef = B72000000000000000000003 /* AppDisplayNameCache.swift */; };
+		B72000000000000000000011 /* InstallationRecord.swift in Sources */ = {isa = PBXBuildFile; fileRef = B72000000000000000000013 /* InstallationRecord.swift */; };
 		C90000000000000000000006 /* ClickLatencyTrace.swift in Sources */ = {isa = PBXBuildFile; fileRef = C90000000000000000000005 /* ClickLatencyTrace.swift */; };
 		C9000000000000000000000C /* ClickLatencyTrace.swift in Sources */ = {isa = PBXBuildFile; fileRef = C90000000000000000000005 /* ClickLatencyTrace.swift */; };
 		B72000000000000000000002 /* AppDisplayNameCache.swift in Sources */ = {isa = PBXBuildFile; fileRef = B72000000000000000000003 /* AppDisplayNameCache.swift */; };
+		B72000000000000000000012 /* InstallationRecord.swift in Sources */ = {isa = PBXBuildFile; fileRef = B72000000000000000000013 /* InstallationRecord.swift */; };
 		B73000000000000000000001 /* AppTracker.swift in Sources */ = {isa = PBXBuildFile; fileRef = A00000000000000000000069 /* AppTracker.swift */; };
 		B73000000000000000000002 /* AppWindowObserver.swift in Sources */ = {isa = PBXBuildFile; fileRef = A00000000000000000000068 /* AppWindowObserver.swift */; };
 		B73000000000000000000003 /* AccessibilitySource.swift in Sources */ = {isa = PBXBuildFile; fileRef = A0000000000000000000000F /* AccessibilitySource.swift */; };
@@ -224,6 +226,7 @@
 		A00000000000000000000A102 /* MessagingZoneAdmission.swift in Sources */ = {isa = PBXBuildFile; fileRef = A00000000000000000000A100 /* MessagingZoneAdmission.swift */; };
 		A00000000000000000000A111 /* MessagingZoneAdmissionTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A00000000000000000000A110 /* MessagingZoneAdmissionTests.swift */; };
 		A00000000000000000000B201 /* AppNameRegistryTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A00000000000000000000B200 /* AppNameRegistryTests.swift */; };
+		A00000000000000000000B211 /* InstallationRecordTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A00000000000000000000B210 /* InstallationRecordTests.swift */; };
 		A00000000000000000006012 /* DragController.swift in Sources */ = {isa = PBXBuildFile; fileRef = A00000000000000000006010 /* DragController.swift */; };
 		A00000000000000000009741 /* DragCarrierView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A00000000000000000009740 /* DragCarrierView.swift */; };
 		A00000000000000000009751 /* NonConstrainingPanel.swift in Sources */ = {isa = PBXBuildFile; fileRef = A00000000000000000009750 /* NonConstrainingPanel.swift */; };
@@ -323,6 +326,7 @@
 		A00000000000000000000A100 /* MessagingZoneAdmission.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MessagingZoneAdmission.swift; sourceTree = "<group>"; };
 		A00000000000000000000A110 /* MessagingZoneAdmissionTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MessagingZoneAdmissionTests.swift; sourceTree = "<group>"; };
 		A00000000000000000000B200 /* AppNameRegistryTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppNameRegistryTests.swift; sourceTree = "<group>"; };
+		A00000000000000000000B210 /* InstallationRecordTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = InstallationRecordTests.swift; sourceTree = "<group>"; };
 		A00000000000000000009720 /* MessagingAppStoreTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MessagingAppStoreTests.swift; sourceTree = "<group>"; };
 		A00000000000000000009730 /* DragControllerConversionTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DragControllerConversionTests.swift; sourceTree = "<group>"; };
 		A00000000000000000000066 /* AppDelegate.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppDelegate.swift; sourceTree = "<group>"; };
@@ -396,6 +400,7 @@
 		A00000000000000000009D10 /* WindowTitleTooltipTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WindowTitleTooltipTests.swift; sourceTree = "<group>"; };
 		B71000000000000000000003 /* ScreenRectReader.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ScreenRectReader.swift; sourceTree = "<group>"; };
 		B72000000000000000000003 /* AppDisplayNameCache.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppDisplayNameCache.swift; sourceTree = "<group>"; };
+		B72000000000000000000013 /* InstallationRecord.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = InstallationRecord.swift; sourceTree = "<group>"; };
 		C90000000000000000000005 /* ClickLatencyTrace.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ClickLatencyTrace.swift; sourceTree = "<group>"; };
 		A00000000000000000009200 /* PinnedFolderStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PinnedFolderStore.swift; sourceTree = "<group>"; };
 		A00000000000000000009210 /* DirectoryWatcher.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DirectoryWatcher.swift; sourceTree = "<group>"; };
@@ -621,6 +626,7 @@
 				A0000000000000000000FF00 /* LaunchGateDecision.swift */,
 				A0000000000000000000FF20 /* AppLaunchTargetDecision.swift */,
 				B72000000000000000000003 /* AppDisplayNameCache.swift */,
+				B72000000000000000000013 /* InstallationRecord.swift */,
 				C90000000000000000000005 /* ClickLatencyTrace.swift */,
 				A0000000000000000000FB00 /* DockThemeTokens.swift */,
 				A00000000000000000009580 /* AppMembershipMenuPlan.swift */,
@@ -887,6 +893,7 @@
 				A00000000000000000009710 /* DragConversionPlanTests.swift */,
 				A00000000000000000000A110 /* MessagingZoneAdmissionTests.swift */,
 				A00000000000000000000B200 /* AppNameRegistryTests.swift */,
+				A00000000000000000000B210 /* InstallationRecordTests.swift */,
 				A00000000000000000009720 /* MessagingAppStoreTests.swift */,
 				A00000000000000000009730 /* DragControllerConversionTests.swift */,
 				A00000000000000000000C00 /* ManualPanelHostTests.swift */,
@@ -1075,6 +1082,7 @@
 					A0000000000000000000FF01 /* LaunchGateDecision.swift in Sources */,
 					A0000000000000000000FF21 /* AppLaunchTargetDecision.swift in Sources */,
 					B72000000000000000000001 /* AppDisplayNameCache.swift in Sources */,
+					B72000000000000000000011 /* InstallationRecord.swift in Sources */,
 					C90000000000000000000006 /* ClickLatencyTrace.swift in Sources */,
 					A0000000000000000000FB01 /* DockThemeTokens.swift in Sources */,
 					A0000000000000000000FC01 /* DockTheme.swift in Sources */,
@@ -1214,6 +1222,7 @@
 				A0000000000000000000FF02 /* LaunchGateDecision.swift in Sources */,
 				A0000000000000000000FF22 /* AppLaunchTargetDecision.swift in Sources */,
 				B72000000000000000000002 /* AppDisplayNameCache.swift in Sources */,
+				B72000000000000000000012 /* InstallationRecord.swift in Sources */,
 				A0000000000000000000FB02 /* DockThemeTokens.swift in Sources */,
 				A0000000000000000000FC02 /* DockTheme.swift in Sources */,
 				C9000000000000000000000D /* ChipPressFeedback.swift in Sources */,
@@ -1291,6 +1300,7 @@
 					A00000000000000000009711 /* DragConversionPlanTests.swift in Sources */,
 					A00000000000000000000A111 /* MessagingZoneAdmissionTests.swift in Sources */,
 					A00000000000000000000B201 /* AppNameRegistryTests.swift in Sources */,
+					A00000000000000000000B211 /* InstallationRecordTests.swift in Sources */,
 					A00000000000000000009721 /* MessagingAppStoreTests.swift in Sources */,
 					A00000000000000000009731 /* DragControllerConversionTests.swift in Sources */,
 					A00000000000000000000C01 /* ManualPanelHostTests.swift in Sources */,

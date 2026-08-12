@@ -89,6 +89,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // 日志要攒满缓冲区才落盘。改成行缓冲后每条 print 立即写出，便于实时读日志。
         setvbuf(stdout, nil, _IOLBF, 0)
 
+        // 首装时间戳：**故意放在所有分支判断之前**，搬家引导、权限引导、正常启动都要记。
+        // 这三条分支的用户都是真的运行过钨极的人，将来转收费判定老用户时不该把谁漏掉。
+        // 只写一次、之后永不覆盖，理由见 `InstallationRecord`。
+        InstallationRecord.recordFirstLaunchIfNeeded()
+
         // 外观档位排在最前面：搬家引导、权限引导、正常启动三条分支的第一个窗口就得是对的外观。
         // `@Published` 订阅时先发一次当前值，所以这一句同时完成「启动时应用」和「之后跟随」。
         appearanceSubscription = settingsStore.$appearanceMode
