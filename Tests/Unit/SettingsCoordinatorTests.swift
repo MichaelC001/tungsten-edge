@@ -123,7 +123,8 @@ final class SettingsCoordinatorTests: XCTestCase {
             store: makeStore(),
             launchAtLoginService: launch,
             nativeDockPreferencesService: NativeDockServiceStub(),
-            updateChecker: UpdateCheckerStub()
+            updateChecker: UpdateCheckerStub(),
+            subscriptionSubmitter: SubscriptionSubmitterStub()
         )
 
         let older = Task { await coordinator.refreshLaunchAtLoginState() }
@@ -148,7 +149,8 @@ final class SettingsCoordinatorTests: XCTestCase {
             store: store,
             launchAtLoginService: LaunchServiceStub(state: .off),
             nativeDockPreferencesService: native,
-            updateChecker: UpdateCheckerStub()
+            updateChecker: UpdateCheckerStub(),
+            subscriptionSubmitter: SubscriptionSubmitterStub()
         )
 
         let prewarm = Task { await coordinator.reconcileNativeDockMirror() }
@@ -197,13 +199,15 @@ final class SettingsCoordinatorTests: XCTestCase {
         store: AppSettingsStore? = nil,
         launch: LaunchServiceStub? = nil,
         native: NativeDockServiceStub? = nil,
-        updates: UpdateCheckerStub? = nil
+        updates: UpdateCheckerStub? = nil,
+        subscriptions: SubscriptionSubmitterStub? = nil
     ) -> SettingsCoordinator {
         SettingsCoordinator(
             store: store ?? makeStore(),
             launchAtLoginService: launch ?? LaunchServiceStub(state: .off),
             nativeDockPreferencesService: native ?? NativeDockServiceStub(),
-            updateChecker: updates ?? UpdateCheckerStub()
+            updateChecker: updates ?? UpdateCheckerStub(),
+            subscriptionSubmitter: subscriptions ?? SubscriptionSubmitterStub()
         )
     }
 
@@ -328,6 +332,22 @@ private final class ControlledNativeDockService: NativeDockPreferencesServicing 
     func apply(delay: Double) throws { appliedDelays.append(delay) }
     func currentAutohideState() async -> NativeDockAutohideState? { await reader.read() }
     func openSystemSettings() -> Bool { true }
+}
+
+private final class SubscriptionSubmitterStub: SubscriptionSubmitting, @unchecked Sendable {
+    var outcome: SubscriptionOutcome = .created
+    var error: Error?
+    private(set) var submitCount = 0
+    private(set) var lastEmail: String?
+    private(set) var lastFirstLaunchDate: Date?
+
+    func submit(email: String, firstLaunchDate: Date?) async throws -> SubscriptionOutcome {
+        submitCount += 1
+        lastEmail = email
+        lastFirstLaunchDate = firstLaunchDate
+        if let error { throw error }
+        return outcome
+    }
 }
 
 private final class UpdateCheckerStub: UpdateChecking, @unchecked Sendable {

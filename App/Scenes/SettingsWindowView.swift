@@ -26,6 +26,7 @@ struct SettingsWindowContent: View {
     @ObservedObject var coordinator: SettingsCoordinator
 
     @State private var presentedAlert: SettingsAlert?
+    @State private var subscriptionEmail = ""
 
     var body: some View {
         VStack(alignment: .leading, spacing: 22) {
@@ -96,6 +97,7 @@ struct SettingsWindowContent: View {
 
             settingsSection("关于") {
                 aboutRow
+                subscriptionRow
             }
         }
         .padding(28)
@@ -173,6 +175,68 @@ struct SettingsWindowContent: View {
         }
     }
 
+    /// 「原始用户，永久免费」的留邮箱入口。
+    ///
+    /// ⚠️ 标题和正文与官网 tungstenedge.app 的订阅区**逐字同源**（owner 逐句敲定的公开承诺），
+    /// 不要在这里"改得更适合 App"——两处说法一旦分叉，将来兑现承诺时就会有人拿着不同的
+    /// 版本来对质。
+    ///
+    /// ⚠️ 结果一律走 `SettingsAlert`，**不要**改成在区块里就地长出成功/失败文案：
+    /// `SettingsWindowController.resizeToFitKeepingTopEdge()` 只在 `present()` 和
+    /// `launchAtLoginState` 变化时重新量高度，就地加一行不会让窗口跟着变高，只会变成可滚动。
+    @ViewBuilder
+    private var subscriptionRow: some View {
+        Divider()
+            .padding(.vertical, 2)
+
+        if store.hasSubscribed {
+            // 已经留过的人不该被同一段话反复看见。这只是本机的显示状态，
+            // 不是「是否原始用户」的凭据。
+            Text("已订阅。将来的授权会直接发送到你的邮箱。")
+                .font(.callout)
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+        } else {
+            VStack(alignment: .leading, spacing: 8) {
+                Text("原始用户，永久免费")
+                    .font(.callout.weight(.medium))
+                Text("请留下邮箱地址，届时授权将直接发送给你，更换设备或重装系统均不会丢失。")
+                    .font(.callout)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+
+                let presentation = coordinator.subscriptionState.presentation
+                HStack(spacing: 10) {
+                    TextField("you@example.com", text: $subscriptionEmail)
+                        .textFieldStyle(.roundedBorder)
+                        .disabled(!presentation.isEnabled)
+                        .onSubmit { submitSubscription() }
+                    Button(presentation.title) { submitSubscription() }
+                        .disabled(!presentation.isEnabled || subscriptionEmail.isEmpty)
+                }
+
+                // ⚠️ 上报首装日期这件事必须写在界面上。一个常驻工具偷偷上报安装日期
+                // 被人发现，损失远大于这份名单的价值。
+                Text("只发送邮箱地址与首次安装日期，用于确认你的原始用户身份。不发送营销邮件。")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+        }
+    }
+
+    private func submitSubscription() {
+        // 在飞守卫在共享层，和检查更新同一套路。
+        guard coordinator.beginSubscription() else { return }
+        let email = subscriptionEmail
+        Task {
+            let content = await coordinator.performSubscription(email: email)
+            coordinator.finishSubscription()
+            if content.didSubscribe { subscriptionEmail = "" }
+            presentedAlert = SettingsAlert(content)
+        }
+    }
+
     private func settingsSection<Content: View>(
         _ title: String,
         @ViewBuilder content: () -> Content
@@ -230,5 +294,9 @@ private struct SettingsAlert: Identifiable {
             openButtonTitle: content.openButtonTitle,
             openURL: content.openURL
         )
+    }
+
+    init(_ content: SubscriptionAlertContent) {
+        self.init(title: content.title, message: content.message)
     }
 }

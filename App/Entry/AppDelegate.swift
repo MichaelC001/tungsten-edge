@@ -43,7 +43,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         store: settingsStore,
         launchAtLoginService: launchAtLoginService,
         nativeDockPreferencesService: nativeDockPreferencesService,
-        updateChecker: GitHubUpdateChecker()
+        updateChecker: GitHubUpdateChecker(),
+        subscriptionSubmitter: WebsiteSubscriptionSubmitter()
     )
     private lazy var settingsWindowController = SettingsWindowController(
         store: settingsStore,

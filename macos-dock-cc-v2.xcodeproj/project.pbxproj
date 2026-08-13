@@ -109,6 +109,9 @@
 		A00000000000000000009C01 /* UpdateChecker.swift in Sources */ = {isa = PBXBuildFile; fileRef = A00000000000000000009C00 /* UpdateChecker.swift */; };
 		A00000000000000000009C02 /* UpdateChecker.swift in Sources */ = {isa = PBXBuildFile; fileRef = A00000000000000000009C00 /* UpdateChecker.swift */; };
 		A00000000000000000009C03 /* UpdateCheckerTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A00000000000000000009C10 /* UpdateCheckerTests.swift */; };
+		B74000000000000000000001 /* SubscriptionSubmitter.swift in Sources */ = {isa = PBXBuildFile; fileRef = B74000000000000000000003 /* SubscriptionSubmitter.swift */; };
+		B74000000000000000000002 /* SubscriptionSubmitter.swift in Sources */ = {isa = PBXBuildFile; fileRef = B74000000000000000000003 /* SubscriptionSubmitter.swift */; };
+		B74000000000000000000011 /* SubscriptionSubmitterTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = B74000000000000000000013 /* SubscriptionSubmitterTests.swift */; };
 		A00000000000000000009D01 /* WindowTitleTooltip.swift in Sources */ = {isa = PBXBuildFile; fileRef = A00000000000000000009D00 /* WindowTitleTooltip.swift */; };
 		A00000000000000000009D02 /* WindowTitleTooltip.swift in Sources */ = {isa = PBXBuildFile; fileRef = A00000000000000000009D00 /* WindowTitleTooltip.swift */; };
 		A00000000000000000009D03 /* WindowTitleTooltipTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A00000000000000000009D10 /* WindowTitleTooltipTests.swift */; };
@@ -453,6 +456,8 @@
 		A000000000000000000090B0 /* FullscreenClassificationTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FullscreenClassificationTests.swift; sourceTree = "<group>"; };
 		A00000000000000000009C00 /* UpdateChecker.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UpdateChecker.swift; sourceTree = "<group>"; };
 		A00000000000000000009C10 /* UpdateCheckerTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UpdateCheckerTests.swift; sourceTree = "<group>"; };
+		B74000000000000000000003 /* SubscriptionSubmitter.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SubscriptionSubmitter.swift; sourceTree = "<group>"; };
+		B74000000000000000000013 /* SubscriptionSubmitterTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SubscriptionSubmitterTests.swift; sourceTree = "<group>"; };
 		A00000000000000000000059 /* macos-dock-cc-v2Tests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = "macos-dock-cc-v2Tests.xctest"; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
 
@@ -535,6 +540,7 @@
 				A00000000000000000009010 /* LaunchAtLoginService.swift */,
 				A00000000000000000009020 /* NativeDockPreferencesService.swift */,
 				A00000000000000000009C00 /* UpdateChecker.swift */,
+				B74000000000000000000003 /* SubscriptionSubmitter.swift */,
 				A00000000000000000009030 /* PanelVisibilityState.swift */,
 				A00000000000000000009080 /* PanelGeometry.swift */,
 				A00000000000000000009A10 /* WindowLiftAvoidanceController.swift */,
@@ -859,6 +865,7 @@
 				A00000000000000000009D10 /* WindowTitleTooltipTests.swift */,
 				A000000000000000000090B0 /* FullscreenClassificationTests.swift */,
 				A00000000000000000009C10 /* UpdateCheckerTests.swift */,
+				B74000000000000000000013 /* SubscriptionSubmitterTests.swift */,
 				A00000000000000000009280 /* FolderContentsLoaderTests.swift */,
 				A00000000000000000009290 /* FolderSortTests.swift */,
 				A00000000000000000009340 /* StripDropRoutingTests.swift */,
@@ -1064,6 +1071,7 @@
 				A00000000000000000009E1C /* BuildProvenance.swift in Sources */,
 					A00000000000000000008021 /* StatusMenuController.swift in Sources */,
 					A00000000000000000009C01 /* UpdateChecker.swift in Sources */,
+					B74000000000000000000001 /* SubscriptionSubmitter.swift in Sources */,
 					A000000000000000000019A1 /* LauncherChip.swift in Sources */,
 					C90000000000000000000002 /* ChipPressFeedback.swift in Sources */,
 					A000000000000000000019D4 /* LauncherMembershipItem.swift in Sources */,
@@ -1203,6 +1211,8 @@
 				A00000000000000000009071 /* StatusMenuController.swift in Sources */,
 				A00000000000000000009C02 /* UpdateChecker.swift in Sources */,
 				A00000000000000000009C03 /* UpdateCheckerTests.swift in Sources */,
+				B74000000000000000000002 /* SubscriptionSubmitter.swift in Sources */,
+				B74000000000000000000011 /* SubscriptionSubmitterTests.swift in Sources */,
 				A00000000000000000009061 /* LaunchAtLoginService.swift in Sources */,
 				A00000000000000000009041 /* NativeDockPreferencesService.swift in Sources */,
 				A00000000000000000009051 /* PanelVisibilityState.swift in Sources */,

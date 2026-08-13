@@ -19,11 +19,14 @@ final class SettingsCoordinator: ObservableObject {
     /// 在飞守卫放在共享层：两套界面各有一个「检查更新」入口，
     /// 各自守卫的话同时点两下会发两次请求。
     @Published private(set) var updateCheckState = UpdateCheckMenuState()
+    /// 同理：订阅按钮连点两下不能发两次请求。
+    @Published private(set) var subscriptionState = SubscriptionSubmitState()
 
     private let store: AppSettingsStore
     private let launchAtLoginService: LaunchAtLoginServicing
     private let nativeDockPreferencesService: NativeDockPreferencesServicing
     private let updateChecker: UpdateChecking
+    private let subscriptionSubmitter: SubscriptionSubmitting
     private var launchRefreshGeneration: UInt64 = 0
     private var nativeDockRefreshGeneration: UInt64 = 0
     private var nativeDockWriteInFlight = false
@@ -32,12 +35,14 @@ final class SettingsCoordinator: ObservableObject {
         store: AppSettingsStore,
         launchAtLoginService: LaunchAtLoginServicing,
         nativeDockPreferencesService: NativeDockPreferencesServicing,
-        updateChecker: UpdateChecking
+        updateChecker: UpdateChecking,
+        subscriptionSubmitter: SubscriptionSubmitting
     ) {
         self.store = store
         self.launchAtLoginService = launchAtLoginService
         self.nativeDockPreferencesService = nativeDockPreferencesService
         self.updateChecker = updateChecker
+        self.subscriptionSubmitter = subscriptionSubmitter
         // **镜像只作首帧种子，不是真值来源。** `SMAppService.mainApp.status` 是 XPC，
         // 放在 init 里同步读会把开销带进每一次界面构造；而每个展示入口（菜单 `menuWillOpen`、
         // 设置窗口 `present()`、`applicationDidBecomeActive`）都会立刻异步刷新，
@@ -205,6 +210,40 @@ final class SettingsCoordinator: ObservableObject {
         do {
             let outcome = try await updateChecker.check(currentVersion: currentVersion)
             return UpdateCheckAlertContent(outcome: outcome)
+        } catch {
+            return .failure
+        }
+    }
+
+    // MARK: 邮箱订阅
+
+    /// 返回 false = 已经有一次提交在飞，本次忽略。
+    func beginSubscription() -> Bool {
+        subscriptionState.begin()
+    }
+
+    func finishSubscription() {
+        subscriptionState.finish()
+    }
+
+    /// 把 throws 吞成「一定有文案」，界面层不处理 error——和 `performUpdateCheck` 同一约定。
+    ///
+    /// 首装日期从 `InstallationRecord` 现取：它是「原始用户」的主凭据，随邮箱一起送上去，
+    /// 将来兑现承诺时才能按安装时间筛人，而不是只能看订阅时间。
+    /// ⚠️ 上报这个日期的事**必须**写在设置界面上，不能悄悄发。
+    func performSubscription(email: String) async -> SubscriptionAlertContent {
+        do {
+            let outcome = try await subscriptionSubmitter.submit(
+                email: email,
+                firstLaunchDate: InstallationRecord.firstLaunchDate()
+            )
+            let content = SubscriptionAlertContent(outcome: outcome)
+            if content.didSubscribe {
+                store.setHasSubscribed(true)
+            }
+            return content
+        } catch SubscriptionError.invalidEmail {
+            return .invalidEmail
         } catch {
             return .failure
         }
