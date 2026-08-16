@@ -1,29 +1,38 @@
 import AppKit
 import SwiftUI
 
-/// Main-taskbar backdrop. The accepted NSVisualEffectView path remains the fallback; the Liquid
-/// Glass path is enabled only after PanelCoordinator has created and verified its background panel.
+/// 悬浮面板底板：`macOS 26 + 开关打开 + 背景窗口建好` 时走原生 Liquid Glass，否则走
+/// 既有的毛玻璃材质。
+///
+/// **`usesLiquidGlass` 是显式传进来的，没有默认值** —— 同 `scale` / `hoverStyle` 的既有规矩
+/// （`AGENTS.md`《Taskbar Size Tiers》）：漏传是编译错误，而不是静默按某一条路径渲染。
+/// 曾经它是个可变静态量，SwiftUI 观察不到，面板拆除后视图仍会读到旧值。
 struct DockGlassBackdrop: View {
+    /// 回退路径用的材质（`DockThemeTokens.panelMaterial`）。玻璃不可用时就是它。
     let material: DockPanelMaterial
+    let usesLiquidGlass: Bool
     var cornerRadius: CGFloat = DockShape.panelCornerRadius
     var saturation: Double = 1.0
     var thicknessEnabled: Bool = false
 
     var body: some View {
         Group {
-            if #available(macOS 26.0, *), DockGlassPresentation.taskbarCompositeActive {
-                DockTaskbarLiquidGlass(
+            if #available(macOS 26.0, *), usesLiquidGlass {
+                DockLiquidGlassPlate(
                     cornerRadius: cornerRadius,
                     configuration: DockGlassPresentation.configuration
                 )
+                // 玻璃自己就是一块视图，要显式退出命中测试；
+                // **不能挂在 Group 外面** —— 那样回退路径也会跟着变，而回退路径必须逐像素、
+                // 逐行为等于改造前。
+                .allowsHitTesting(false)
             } else {
                 DockVisualEffectView(material: material)
                     .dockBackdropSaturation(saturation)
             }
         }
-        .allowsHitTesting(false)
         .onAppear {
-            DockGlassPresentation.logResolvedPath()
+            DockGlassPresentation.logResolvedPath(compositeActive: usesLiquidGlass)
             DockEffectSwitches.logActiveOverrides(
                 material: material,
                 saturation: saturation,
@@ -34,110 +43,46 @@ struct DockGlassBackdrop: View {
 }
 
 extension View {
-    func dockBackdropBounds(cornerRadius: CGFloat) -> some View {
-        modifier(DockBackdropBoundsModifier(cornerRadius: cornerRadius))
-    }
-
+    /// 面板描边。玻璃自带边缘高光，玻璃态下我们自己那圈常驻描边要关掉；
+    /// 但拖放命中的整框高亮（`keepsVisible`）两条路径都要画。
     func dockPanelRim<S: ShapeStyle>(
         cornerRadius: CGFloat,
         style: S,
         lineWidth: CGFloat,
+        usesLiquidGlass: Bool,
         keepsVisible: Bool = false
     ) -> some View {
-        modifier(DockPanelRimModifier(
-            cornerRadius: cornerRadius,
-            style: style,
-            lineWidth: lineWidth,
-            keepsVisible: keepsVisible
-        ))
-    }
-
-    func dockTaskbarShadow(_ shadow: DockShadow) -> some View {
-        modifier(DockTaskbarShadowModifier(shadow: shadow))
-    }
-
-    func dockTaskbarWindowPadding(_ padding: CGFloat) -> some View {
-        modifier(DockTaskbarWindowPaddingModifier(padding: padding))
-    }
-}
-
-private struct DockBackdropBoundsModifier: ViewModifier {
-    let cornerRadius: CGFloat
-
-    @ViewBuilder
-    func body(content: Content) -> some View {
-        if DockGlassPresentation.taskbarCompositeActive {
-            content.ignoresSafeArea()
-        } else {
-            content
-                .padding(-2)
-                .clipShape(RoundedRectangle(cornerRadius: cornerRadius, style: .continuous))
-                .ignoresSafeArea()
-        }
-    }
-}
-
-private struct DockPanelRimModifier<S: ShapeStyle>: ViewModifier {
-    let cornerRadius: CGFloat
-    let style: S
-    let lineWidth: CGFloat
-    let keepsVisible: Bool
-
-    func body(content: Content) -> some View {
-        let effectiveWidth = DockGlassPresentation.taskbarCompositeActive && !keepsVisible
-            ? 0
-            : lineWidth
-        content.overlay {
+        let effectiveWidth = usesLiquidGlass && !keepsVisible ? 0 : lineWidth
+        return overlay {
             RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
                 .strokeBorder(style, lineWidth: effectiveWidth)
         }
     }
 }
 
-private struct DockTaskbarShadowModifier: ViewModifier {
-    let shadow: DockShadow
-
-    @ViewBuilder
-    func body(content: Content) -> some View {
-        if DockGlassPresentation.taskbarCompositeActive {
-            content
-        } else {
-            content.dockShadow(shadow)
-        }
-    }
-}
-
-private struct DockTaskbarWindowPaddingModifier: ViewModifier {
-    let padding: CGFloat
-
-    @ViewBuilder
-    func body(content: Content) -> some View {
-        if DockGlassPresentation.taskbarCompositeActive {
-            content
-        } else {
-            content.padding(padding)
-        }
-    }
-}
-
 enum DockGlassPresentation {
     static let configuration = DockLiquidGlassConfiguration.resolve()
-    private(set) static var taskbarCompositeActive = false
 
+    /// 能不能给任务条建玻璃合成。三道门：系统 ≥ 26、开关打开、SkyLight 的两个符号都取到。
     static var shouldAttemptTaskbarComposite: Bool {
-        guard #available(macOS 26.0, *), configuration.isEnabled else { return false }
-        return TEDockGlassCanSetWindowBackgroundBlur()
+        let glassAvailable: Bool
+        if #available(macOS 26.0, *) { glassAvailable = true } else { glassAvailable = false }
+        // 短路：低版本不去 dlopen SkyLight。
+        let compositeAvailable = glassAvailable && TEDockGlassCanSetWindowBackgroundBlur()
+        return configuration.renderPath(
+            isGlassAPIAvailable: glassAvailable,
+            isCompositeAvailable: compositeAvailable
+        ) == .layeredTaskbar
     }
 
-    static func setTaskbarCompositeActive(_ active: Bool) {
-        taskbarCompositeActive = active
-    }
-
-    static func logResolvedPath() {
+    /// 启动时打一行说明这次跑的是哪条路径。用 `print` 而不是 `Logger` —— 有些环境读不回
+    /// 统一日志（同 `[edgehover]` 的理由）。
+    static func logResolvedPath(compositeActive: Bool) {
         guard configuration.isEnabled else { return }
-        if taskbarCompositeActive {
+        if compositeActive {
             print(
                 "[glass] taskbar composite active, clearTint=\(configuration.clearTintOpacity), "
+                    + "border=\(configuration.borderOpacity)/\(configuration.borderLineWidth), "
                     + "background=\(configuration.backgroundMaterialOpacity), "
                     + "windowBlur=\(configuration.windowBlurRadius)"
             )
@@ -149,13 +94,15 @@ enum DockGlassPresentation {
     }
 }
 
+/// 玻璃底板本体。五个悬浮面板共用（探路期只有任务条接了）。
 @available(macOS 26.0, *)
-private struct DockTaskbarLiquidGlass: View {
+private struct DockLiquidGlassPlate: View {
     let cornerRadius: CGFloat
     let configuration: DockLiquidGlassConfiguration
 
     var body: some View {
         let inset = CGFloat(configuration.contentInset)
+        // 先外扩再内缩：给玻璃自己的边缘渲染留余量，最后用负 padding 把布局尺寸还原。
         let shape = RoundedRectangle(
             cornerRadius: cornerRadius + inset,
             style: .continuous
@@ -169,17 +116,15 @@ private struct DockTaskbarLiquidGlass: View {
             .background {
                 shape.fill(Color.white.opacity(configuration.whiteOverlayOpacity))
             }
-            .overlay {
-                if configuration.dimmingOpacity > 0 {
-                    shape.fill(Color.black.opacity(configuration.dimmingOpacity))
-                }
-            }
             .overlay { directionalBorder(for: shape) }
+            // 面板永远不会成为 key 窗口，不强制的话材质会按「非活动」渲染、整块发灰。
             .materialActiveAppearance(.active)
             .environment(\.appearsActive, true)
             .padding(-inset)
     }
 
+    /// 方向性描边：整圈底色 + 左上到右下的亮边 + 右下的暗收，模拟光从上方进入介质。
+    /// 原生 Dock 的立体感主要来自这一圈。
     private func directionalBorder<S: InsettableShape>(for shape: S) -> some View {
         let opacity = configuration.borderOpacity
         let width = CGFloat(configuration.borderLineWidth)
@@ -220,12 +165,15 @@ private struct DockTaskbarLiquidGlass: View {
     }
 }
 
-/// WindowServer-facing half of the taskbar composite. It lives in a dedicated mouse-transparent
-/// panel so the 6pt window blur does not reprocess the SwiftUI glass in the content window.
+/// 玻璃合成的 WindowServer 侧。它独占一个鼠标穿透的面板，这样窗口模糊不会把内容窗口里的
+/// SwiftUI 玻璃再合成一遍。
+///
+/// **这里不画阴影。** 本视图所在窗口的 frame 正好等于底板本身，图层阴影画在窗口外会被整个
+/// 裁掉；落地阴影归内容窗口的 `.dockShadow`，它有 20pt 透明边可用。
 final class DockTaskbarLiquidGlassBackgroundView: NSView {
     private let liveBackdropSubscriptionView = NSVisualEffectView()
     private let materialView = NSVisualEffectView()
-    private let blurStrengthOverlayView = NSView()
+    private let dimmingOverlayView = NSView()
     private var configuration: DockLiquidGlassConfiguration
     private var plateCornerRadius: CGFloat
 
@@ -239,14 +187,9 @@ final class DockTaskbarLiquidGlassBackgroundView: NSView {
         super.init(frame: frameRect)
 
         wantsLayer = true
-        // Each effect subview owns the rounded clip. Keep the root unclipped so its dedicated
-        // shadow is not cut off at the plate edge.
-        layer?.masksToBounds = false
-        layer?.shadowColor = NSColor.black.cgColor
-        layer?.shadowOpacity = Float(configuration.shadowOpacity)
-        layer?.shadowRadius = configuration.shadowRadius
-        layer?.shadowOffset = CGSize(width: 0, height: configuration.shadowOffsetY)
         configureVisualEffectView(liveBackdropSubscriptionView)
+        // 极低 alpha 的订阅层：让 WindowServer 持续把背后内容喂给这个窗口，
+        // 否则背景模糊会停在某一帧。
         liveBackdropSubscriptionView.material = .underWindowBackground
         liveBackdropSubscriptionView.alphaValue = 3.0 / 255.0
 
@@ -254,8 +197,8 @@ final class DockTaskbarLiquidGlassBackgroundView: NSView {
         materialView.material = .menu
         materialView.alphaValue = configuration.backgroundMaterialOpacity
 
-        blurStrengthOverlayView.wantsLayer = true
-        for view in [liveBackdropSubscriptionView, materialView, blurStrengthOverlayView] {
+        dimmingOverlayView.wantsLayer = true
+        for view in [liveBackdropSubscriptionView, materialView, dimmingOverlayView] {
             view.frame = bounds
             view.autoresizingMask = [.width, .height]
             addSubview(view)
@@ -264,7 +207,7 @@ final class DockTaskbarLiquidGlassBackgroundView: NSView {
     }
 
     required init?(coder: NSCoder) {
-        nil
+        fatalError("init(coder:) has not been implemented")
     }
 
     override func hitTest(_ point: NSPoint) -> NSView? {
@@ -280,42 +223,25 @@ final class DockTaskbarLiquidGlassBackgroundView: NSView {
         cornerRadius: CGFloat,
         configuration: DockLiquidGlassConfiguration
     ) {
+        guard cornerRadius != plateCornerRadius || configuration != self.configuration else { return }
         self.configuration = configuration
         plateCornerRadius = cornerRadius
         materialView.alphaValue = configuration.backgroundMaterialOpacity
         materialView.isHidden = configuration.backgroundMaterialOpacity <= 0
-        blurStrengthOverlayView.isHidden = configuration.dimmingOpacity <= 0
+        dimmingOverlayView.isHidden = configuration.dimmingOpacity <= 0
         layer?.cornerRadius = cornerRadius
         layer?.cornerCurve = .continuous
+        // 不是观感层：WindowServer 需要一块非零 alpha 的形状才肯做背景模糊。
         layer?.backgroundColor = NSColor.black
             .withAlphaComponent(configuration.backgroundPlateOpacity)
             .cgColor
-        layer?.shadowOpacity = Float(configuration.shadowOpacity)
-        layer?.shadowRadius = configuration.shadowRadius
-        layer?.shadowOffset = CGSize(width: 0, height: configuration.shadowOffsetY)
-        layer?.shadowPath = CGPath(
-            roundedRect: bounds,
-            cornerWidth: cornerRadius,
-            cornerHeight: cornerRadius,
-            transform: nil
-        )
-        for view in [liveBackdropSubscriptionView, materialView, blurStrengthOverlayView] {
+        for view in [liveBackdropSubscriptionView, materialView, dimmingOverlayView] {
             view.wantsLayer = true
             view.layer?.cornerRadius = cornerRadius
             view.layer?.cornerCurve = .continuous
             view.layer?.masksToBounds = true
         }
         updateOverlayColor()
-    }
-
-    override func layout() {
-        super.layout()
-        layer?.shadowPath = CGPath(
-            roundedRect: bounds,
-            cornerWidth: plateCornerRadius,
-            cornerHeight: plateCornerRadius,
-            transform: nil
-        )
     }
 
     private func configureVisualEffectView(_ view: NSVisualEffectView) {
@@ -327,7 +253,7 @@ final class DockTaskbarLiquidGlassBackgroundView: NSView {
     private func updateOverlayColor() {
         let isDark = effectiveAppearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua
         let color = isDark ? NSColor.black : NSColor.white
-        blurStrengthOverlayView.layer?.backgroundColor = color
+        dimmingOverlayView.layer?.backgroundColor = color
             .withAlphaComponent(configuration.dimmingOpacity)
             .cgColor
     }

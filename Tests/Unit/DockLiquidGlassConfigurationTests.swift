@@ -9,17 +9,12 @@ final class DockLiquidGlassConfigurationTests: XCTestCase {
         XCTAssertEqual(configuration.clearTintOpacity, 0.4)
         XCTAssertEqual(configuration.whiteOverlayOpacity, 0)
         XCTAssertEqual(configuration.dimmingOpacity, 0)
-        XCTAssertEqual(configuration.borderOpacity, 0)
-        XCTAssertEqual(configuration.borderLineWidth, 0)
+        XCTAssertEqual(configuration.borderOpacity, 0.55, "边缘高光是「像不像原生」最便宜的一档，不能是 0")
+        XCTAssertEqual(configuration.borderLineWidth, 1)
         XCTAssertEqual(configuration.backgroundMaterialOpacity, 0)
         XCTAssertEqual(configuration.windowBlurRadius, 6)
         XCTAssertEqual(configuration.contentInset, 4)
-        XCTAssertEqual(configuration.taskbarHeight, 55)
-        XCTAssertEqual(configuration.taskbarCornerRadius, 19.5)
         XCTAssertEqual(configuration.backgroundPlateOpacity, 0.001)
-        XCTAssertEqual(configuration.shadowOpacity, 0.18)
-        XCTAssertEqual(configuration.shadowRadius, 18)
-        XCTAssertEqual(configuration.shadowOffsetY, -8)
         XCTAssertEqual(
             configuration.renderPath(isGlassAPIAvailable: true, isCompositeAvailable: true),
             .visualEffectFallback
@@ -62,8 +57,6 @@ final class DockLiquidGlassConfigurationTests: XCTestCase {
             "DOCK_LIQUID_GLASS_BACKGROUND_OPACITY": "0",
             "DOCK_LIQUID_GLASS_WINDOW_BLUR": "64",
             "DOCK_LIQUID_GLASS_CONTENT_INSET": "12",
-            "DOCK_LIQUID_GLASS_TASKBAR_HEIGHT": "100",
-            "DOCK_LIQUID_GLASS_CORNER_RADIUS": "50",
         ])
 
         XCTAssertEqual(configuration.clearTintOpacity, 0)
@@ -74,8 +67,6 @@ final class DockLiquidGlassConfigurationTests: XCTestCase {
         XCTAssertEqual(configuration.backgroundMaterialOpacity, 0)
         XCTAssertEqual(configuration.windowBlurRadius, 64)
         XCTAssertEqual(configuration.contentInset, 12)
-        XCTAssertEqual(configuration.taskbarHeight, 100)
-        XCTAssertEqual(configuration.taskbarCornerRadius, 50)
     }
 
     func testInvalidNumericOverridesUseCandidateDefaults() {
@@ -90,50 +81,40 @@ final class DockLiquidGlassConfigurationTests: XCTestCase {
                 "DOCK_LIQUID_GLASS_BACKGROUND_OPACITY": value,
                 "DOCK_LIQUID_GLASS_WINDOW_BLUR": value,
                 "DOCK_LIQUID_GLASS_CONTENT_INSET": value,
-                "DOCK_LIQUID_GLASS_TASKBAR_HEIGHT": value,
-                "DOCK_LIQUID_GLASS_CORNER_RADIUS": value,
             ])
             XCTAssertEqual(configuration.clearTintOpacity, 0.4, "clear tint: \(value)")
             XCTAssertEqual(configuration.whiteOverlayOpacity, 0, "white overlay: \(value)")
             XCTAssertEqual(configuration.dimmingOpacity, 0, "dimming: \(value)")
-            XCTAssertEqual(configuration.borderOpacity, 0, "border: \(value)")
-            XCTAssertEqual(configuration.borderLineWidth, 0, "border width: \(value)")
+            XCTAssertEqual(configuration.borderOpacity, 0.55, "border: \(value)")
+            XCTAssertEqual(configuration.borderLineWidth, 1, "border width: \(value)")
             XCTAssertEqual(configuration.backgroundMaterialOpacity, 0, "background: \(value)")
             XCTAssertEqual(configuration.windowBlurRadius, 6, "window blur: \(value)")
             XCTAssertEqual(configuration.contentInset, 4, "content inset: \(value)")
-            XCTAssertEqual(configuration.taskbarHeight, 55, "taskbar height: \(value)")
-            XCTAssertEqual(configuration.taskbarCornerRadius, 19.5, "corner radius: \(value)")
         }
     }
 
-    func testBackgroundFrameRemovesShadowPaddingAndKeepsLegacyTopEdge() {
+    /// 背景窗口 = 内容窗口减掉 20pt 阴影透明边后的可视底板，高度由 `DockSize.metrics` 决定
+    /// （92 − 2×20 = 52 = 中档面板高），**不再有玻璃自带的第二套高度**。
+    func testBackgroundFrameIsTheVisiblePlateInsideTheShadowPadding() {
         XCTAssertEqual(
             DockLiquidGlassPanelGeometry.backgroundFrame(
                 for: CGRect(x: 80, y: 10, width: 440, height: 92),
-                shadowPadding: 20,
-                targetHeight: 55
+                shadowPadding: 20
             ),
-            CGRect(x: 100, y: 27, width: 400, height: 55)
+            CGRect(x: 100, y: 30, width: 400, height: 52)
         )
     }
 
-    func testBackgroundFrameUsesTargetHeightWithoutShadowPadding() {
+    func testBackgroundFrameIsIdentityWithoutShadowPadding() {
         let frame = CGRect(x: 10, y: 20, width: 100, height: 40)
         XCTAssertEqual(
-            DockLiquidGlassPanelGeometry.backgroundFrame(
-                for: frame,
-                shadowPadding: 0,
-                targetHeight: 55
-            ),
-            CGRect(x: 10, y: 5, width: 100, height: 55)
+            DockLiquidGlassPanelGeometry.backgroundFrame(for: frame, shadowPadding: 0),
+            frame
         )
         XCTAssertEqual(
-            DockLiquidGlassPanelGeometry.backgroundFrame(
-                for: frame,
-                shadowPadding: -2,
-                targetHeight: 0
-            ),
-            frame
+            DockLiquidGlassPanelGeometry.backgroundFrame(for: frame, shadowPadding: -2),
+            frame,
+            "负值不该把窗口撑大"
         )
     }
 

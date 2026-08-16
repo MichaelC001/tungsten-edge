@@ -85,20 +85,19 @@ struct DockStripView: View {
     @EnvironmentObject var shelfStore: ShelfStore
     @EnvironmentObject var settingsStore: AppSettingsStore
 
+    /// 这条任务条的底板是不是原生 Liquid Glass。由 `PanelCoordinator` 在建面板时一次定死
+    /// （背景窗口建成功才为 true），**显式传入、没有默认值**：同 `scale` / `hoverStyle`，
+    /// 漏传是编译错误。不要退回读全局静态量 —— SwiftUI 观察不到它，面板拆除后会读到旧值。
+    let usesLiquidGlass: Bool
+
     /// 当前尺寸档位派生的面板几何与缩放系数。**条内不写裸尺寸数字**——凡是随任务条一起
     /// 放大缩小的值都乘 `dockScale`；发丝线（分隔线宽、描边）保持 1pt 不缩。
     private var metrics: PanelLayoutMetrics { settingsStore.dockSize.metrics }
     private var dockScale: CGFloat { settingsStore.dockSize.scale }
-    private var taskbarPanelHeight: CGFloat {
-        DockGlassPresentation.taskbarCompositeActive
-            ? CGFloat(DockGlassPresentation.configuration.taskbarHeight) * dockScale
-            : metrics.panelHeight
-    }
-    private var taskbarCornerRadius: CGFloat {
-        DockGlassPresentation.taskbarCompositeActive
-            ? CGFloat(DockGlassPresentation.configuration.taskbarCornerRadius) * dockScale
-            : Style.cornerRadius * dockScale
-    }
+    /// 任务条圆角。**玻璃态与毛玻璃态同一个值** —— 几何只有 `DockSize.metrics` /
+    /// `DockShape` 一个来源，换底板材质不改尺寸（否则四档缩放失效，`scale` 的定义
+    /// 就是 `panelHeight / 52`）。
+    private var taskbarCornerRadius: CGFloat { Style.cornerRadius * dockScale }
     /// 悬停效果档位。条内每个 chip 都显式接收它（同 `dockScale`，漏传是编译错误）；
     /// 抽屉面板与抽屉入口胶囊有意不受它影响（owner 2026-08-02）。
     private var hoverStyle: HoverStyle { settingsStore.hoverStyle }
@@ -311,17 +310,21 @@ struct DockStripView: View {
     var body: some View {
         let projection = makeProjection()
         ZStack {
-            // macOS 26 的 Liquid Glass 实验由统一底板接管；默认关闭，旧系统与未开关时仍是原毛玻璃。
+            // macOS 26 的 Liquid Glass 由统一底板接管；默认关闭，旧系统与未开关时仍是原毛玻璃。
             DockGlassBackdrop(material: theme.effectivePanelMaterial,
+                              usesLiquidGlass: usesLiquidGlass,
                               cornerRadius: taskbarCornerRadius,
                               saturation: theme.effectiveBackdropSaturation,
                               thicknessEnabled: theme.drawsEffectiveThickness)
-                .dockBackdropBounds(cornerRadius: taskbarCornerRadius)
+                .padding(-2)
+                .clipShape(RoundedRectangle(cornerRadius: taskbarCornerRadius, style: .continuous))
+                .ignoresSafeArea()
 
             // 玻璃厚度感：材质之上、内容之下。**默认关**，`DOCK_PANEL_THICKNESS=1` 才开
             //（未验收的效果一律 opt-in，见 DockEffectSwitches）。深色则两层保险都不画，
             // 整层不进视图树，保证深色逐像素冻结。
-            if theme.drawsEffectiveThickness {
+            // 原生玻璃有真的边缘处理，这层「假厚度」叠上去没有意义，玻璃态一律不画。
+            if theme.drawsEffectiveThickness && !usesLiquidGlass {
                 theme.panelThicknessLayer(cornerRadius: taskbarCornerRadius)
             }
 
@@ -333,7 +336,7 @@ struct DockStripView: View {
                     }
                 }
                 .padding(.horizontal, Style.chipContentInset * dockScale)
-                .frame(height: taskbarPanelHeight)
+                .frame(height: metrics.panelHeight)
                 .animation(.spring(response: 0.28, dampingFraction: 0.82), value: projection.layoutKeys)
             }
             .clipShape(RoundedRectangle(cornerRadius: taskbarCornerRadius, style: .continuous))
@@ -373,6 +376,7 @@ struct DockStripView: View {
             cornerRadius: taskbarCornerRadius,
             style: theme.panelRimStyle(highlighted: stripHighlighted),
             lineWidth: theme.panelRimLineWidth(highlighted: stripHighlighted),
+            usesLiquidGlass: usesLiquidGlass,
             keepsVisible: stripHighlighted
         )
         .animation(.easeOut(duration: 0.15), value: stripHighlighted)
@@ -402,8 +406,10 @@ struct DockStripView: View {
         })
         // 重击(触控板)/中键(鼠标) → 内容预览：本地事件监视器 → 命中反查（handleGesturePreview）。
         .background(GestureMonitorInstaller(onGesture: { handleGesturePreview(atScreen: $0) }))
-        .dockTaskbarShadow(theme.stripShadow)
-        .dockTaskbarWindowPadding(PanelCoordinator.shadowPadding)
+        // 落地阴影住在窗口的 20pt 透明边里，玻璃态同样走这条 —— 曾经试过改画到背景窗口的
+        // 图层上，但那个窗口的 frame 正好等于底板，阴影画在窗口外会被整个裁掉。
+        .dockShadow(theme.stripShadow)
+        .padding(PanelCoordinator.shadowPadding)
         // 抽屉图标拖到任务条上：进任务条区即转正成窗口卡、跟光标整块实时让位（镜像 DrawerView 的全局鼠标驱动）。
         // 消息区的重排/释放同样由全局鼠标驱动——重排会挪动被拖 chip,SwiftUI 会取消原手势,
         // 不能依赖 chip 自己的 .onChanged（同抽屉教训,owner 2026-06-22 / Codex 评审 P1-4）。

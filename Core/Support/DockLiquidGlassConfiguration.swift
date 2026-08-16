@@ -6,22 +6,46 @@ enum DockLiquidGlassRenderPath: Equatable {
     case layeredTaskbar
 }
 
+/// 液态玻璃底板的可调参数。
+///
+/// **这里只放「玻璃这块底板怎么画」，不放几何。** 面板高度、圆角、离屏底距一律来自
+/// `DockSize.metrics` 与 `DockShape.panelCornerRadius`（`AGENTS.md`：几何的唯一来源）——
+/// 玻璃自带第二套尺寸会让四档缩放失效，因为 `scale` 的定义本身就是 `panelHeight / 52`。
+///
+/// **也不放阴影。** 落地阴影由 SwiftUI 侧的 `.dockShadow(theme.stripShadow)` 画在内容窗口的
+/// 20pt 透明边里；曾经试过改画到背景窗口的图层上，但那个窗口的 frame 正好等于底板本身，
+/// 图层阴影画在窗口外会被整个裁掉 —— 净效果是玻璃态没有阴影。别再往回改。
 struct DockLiquidGlassConfiguration: Equatable {
     let isEnabled: Bool
+    /// `Glass.clear` 的灰色染色强度。玻璃本身太透，图标会认不出来（owner 2026-07-30 否掉
+    /// 纯原生玻璃的原因），这一层是把通透度压回可用范围的主要手柄。
     let clearTintOpacity: Double
+    /// 玻璃**之下**的一层加白。默认 0。
     let whiteOverlayOpacity: Double
+    /// 背景窗口里那层压暗/提亮（按深浅色取黑或白）。默认 0。
+    ///
+    /// **只在背景窗口画一次。** 曾经内容窗口也叠了一层写死的黑，两处颜色还不一致
+    /// （SwiftUI 侧恒为黑、背景窗口侧按外观切换），默认值 0 时看不出来，一调就露馅。
     let dimmingOpacity: Double
+    /// 边缘高光强度。三层方向性描边共用它：整圈底色取 `×0.24`、左上到右下的亮边取全值、
+    /// 右下的暗收取 `×0.22`。
+    ///
+    /// **这是「像不像原生」最便宜的一档。** 原生 Dock 有一整圈明亮描边把圆角勾出来，
+    /// 缺了它条的轮廓会糊进背景、看着像直接刷在屏幕上，圆角也显得比实际方。
     let borderOpacity: Double
     let borderLineWidth: Double
+    /// 背景窗口里那层 `.menu` 材质的不透明度，用来在玻璃之外再补一点实心感。默认 0。
     let backgroundMaterialOpacity: Double
+    /// 背景窗口的 WindowServer 模糊半径（SkyLight）。
+    ///
+    /// **必须画在与玻璃宿主分离的窗口上。** 直接给承载 SwiftUI glass 的同一个窗口设这个值，
+    /// 会二次合成纵向光照（受控彩条实测：顶部/底部平均亮度从约 131/127 放大成 101/163）。
     let windowBlurRadius: Double
+    /// 玻璃形状先外扩再内缩的量，给玻璃自己的边缘渲染留余量。
     let contentInset: Double
-    let taskbarHeight: Double
-    let taskbarCornerRadius: Double
+    /// 背景窗口根图层的黑底不透明度。**不是观感参数**：WindowServer 需要一块非零 alpha 的
+    /// 形状才肯对这个窗口做背景模糊，这是给它的最小锚点。
     let backgroundPlateOpacity: Double
-    let shadowOpacity: Double
-    let shadowRadius: Double
-    let shadowOffsetY: Double
 
     func renderPath(
         isGlassAPIAvailable: Bool,
@@ -54,12 +78,12 @@ struct DockLiquidGlassConfiguration: Equatable {
             borderOpacity: boundedDouble(
                 environment["DOCK_LIQUID_GLASS_BORDER"],
                 range: 0 ... 1,
-                fallback: 0
+                fallback: 0.55
             ),
             borderLineWidth: boundedDouble(
                 environment["DOCK_LIQUID_GLASS_BORDER_WIDTH"],
                 range: 0 ... 4,
-                fallback: 0
+                fallback: 1
             ),
             backgroundMaterialOpacity: boundedDouble(
                 environment["DOCK_LIQUID_GLASS_BACKGROUND_OPACITY"],
@@ -76,20 +100,7 @@ struct DockLiquidGlassConfiguration: Equatable {
                 range: 0 ... 12,
                 fallback: 4
             ),
-            taskbarHeight: boundedDouble(
-                environment["DOCK_LIQUID_GLASS_TASKBAR_HEIGHT"],
-                range: 40 ... 100,
-                fallback: 55
-            ),
-            taskbarCornerRadius: boundedDouble(
-                environment["DOCK_LIQUID_GLASS_CORNER_RADIUS"],
-                range: 0 ... 50,
-                fallback: 19.5
-            ),
-            backgroundPlateOpacity: 0.001,
-            shadowOpacity: 0.18,
-            shadowRadius: 18,
-            shadowOffsetY: -8
+            backgroundPlateOpacity: 0.001
         )
     }
 
@@ -113,21 +124,17 @@ struct DockLiquidGlassConfiguration: Equatable {
 }
 
 enum DockLiquidGlassPanelGeometry {
+    /// 背景窗口的 frame = 内容窗口去掉 20pt 阴影透明边后的**可视底板矩形**。
+    ///
+    /// 内容窗口保留透明边（阴影住在那里，且一批投放区/命中判定都按「窗口 frame 减
+    /// shadowPadding」换算），背景窗口则要严丝合缝贴着底板，否则 WindowServer 的模糊会
+    /// 从玻璃边缘漏出来。
     static func backgroundFrame(
         for contentPanelFrame: CGRect,
-        shadowPadding: CGFloat,
-        targetHeight: CGFloat
+        shadowPadding: CGFloat
     ) -> CGRect {
-        let legacySurface = shadowPadding > 0
-            ? contentPanelFrame.insetBy(dx: shadowPadding, dy: shadowPadding)
-            : contentPanelFrame
-        guard targetHeight > 0 else { return legacySurface }
-        return CGRect(
-            x: legacySurface.minX,
-            y: legacySurface.maxY - targetHeight,
-            width: legacySurface.width,
-            height: targetHeight
-        )
+        guard shadowPadding > 0 else { return contentPanelFrame }
+        return contentPanelFrame.insetBy(dx: shadowPadding, dy: shadowPadding)
     }
 }
 
