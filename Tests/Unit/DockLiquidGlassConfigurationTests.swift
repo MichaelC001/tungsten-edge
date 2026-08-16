@@ -16,7 +16,7 @@ final class DockLiquidGlassConfigurationTests: XCTestCase {
         XCTAssertEqual(configuration.borderLineWidth, 0.5, "原生实测最外那道 1px @2x = 0.5pt")
         XCTAssertEqual(configuration.borderInnerOpacity, 0.21, "内圈半档：底板 84 打到原生的 120")
         XCTAssertEqual(configuration.backgroundMaterialOpacity, 0)
-        XCTAssertEqual(configuration.windowBlurRadius, 6)
+        XCTAssertEqual(configuration.windowBlurRadius, 0, "窗口级模糊不跟圆角走，会在四角糊出方块；通透度不靠它")
         XCTAssertEqual(configuration.contentInset, 4)
         XCTAssertEqual(configuration.backgroundPlateOpacity, 0.001)
         XCTAssertEqual(
@@ -108,7 +108,7 @@ final class DockLiquidGlassConfigurationTests: XCTestCase {
             XCTAssertEqual(configuration.borderLineWidth, 0.5, "border width: \(value)")
             XCTAssertEqual(configuration.borderInnerOpacity, 0.21, "border inner: \(value)")
             XCTAssertEqual(configuration.backgroundMaterialOpacity, 0, "background: \(value)")
-            XCTAssertEqual(configuration.windowBlurRadius, 6, "window blur: \(value)")
+            XCTAssertEqual(configuration.windowBlurRadius, 0, "window blur: \(value)")
             XCTAssertEqual(configuration.contentInset, 4, "content inset: \(value)")
         }
     }

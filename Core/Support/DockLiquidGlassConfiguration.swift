@@ -57,10 +57,21 @@ struct DockLiquidGlassConfiguration: Equatable {
     let borderInnerOpacity: Double
     /// 背景窗口里那层 `.menu` 材质的不透明度，用来在玻璃之外再补一点实心感。默认 0。
     let backgroundMaterialOpacity: Double
-    /// 背景窗口的 WindowServer 模糊半径（SkyLight）。
+    /// 背景窗口的 WindowServer 模糊半径（SkyLight）。**默认 0 = 不用。**
     ///
-    /// **必须画在与玻璃宿主分离的窗口上。** 直接给承载 SwiftUI glass 的同一个窗口设这个值，
-    /// 会二次合成纵向光照（受控彩条实测：顶部/底部平均亮度从约 131/127 放大成 101/163）。
+    /// 这个值是照抄 BestDock 的实机层级带进来的（它那边是 6pt）。在钨极这套合成里它
+    /// **只带来坏处**：WindowServer 的窗口背景模糊按**窗口矩形**生效，不跟着我们画的圆角走，
+    /// 于是四个角上「圆角外、包围矩形内」那块被糊成方的，模糊本身的扩散再往外溢一圈 ——
+    /// owner 2026-08-16 报「圆角外面这里会有一些问题」，A/B 到 0 之后当场消失。
+    ///
+    /// 而通透度**不靠它**：底板亮度由 `.glassEffect(.clear)` 加 `clearTintOpacity` 决定，
+    /// 实测 blur 6 → 0 底板只从 138.4 变到 138.5。
+    ///
+    /// 若将来要重新启用：**必须先解决圆角** —— 要么让背景窗口本身带上圆角形状
+    /// （现在只是内容图层圆角，窗口形状仍是矩形），要么别用窗口级模糊。
+    /// 另外它**必须画在与玻璃宿主分离的窗口上**：直接给承载 SwiftUI glass 的同一个窗口
+    /// 设这个值，会二次合成纵向光照（受控彩条实测：顶部/底部平均亮度从约 131/127
+    /// 放大成 101/163）。
     let windowBlurRadius: Double
     /// 玻璃形状先外扩再内缩的量，给玻璃自己的边缘渲染留余量。
     let contentInset: Double
@@ -134,7 +145,7 @@ struct DockLiquidGlassConfiguration: Equatable {
             windowBlurRadius: boundedDouble(
                 environment["DOCK_LIQUID_GLASS_WINDOW_BLUR"],
                 range: 0 ... 64,
-                fallback: 6
+                fallback: 0
             ),
             contentInset: boundedDouble(
                 environment["DOCK_LIQUID_GLASS_CONTENT_INSET"],
