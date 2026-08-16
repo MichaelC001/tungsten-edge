@@ -86,6 +86,10 @@
 		A0000000000000000000FC01 /* DockTheme.swift in Sources */ = {isa = PBXBuildFile; fileRef = A0000000000000000000FC00 /* DockTheme.swift */; };
 		A0000000000000000000FC02 /* DockTheme.swift in Sources */ = {isa = PBXBuildFile; fileRef = A0000000000000000000FC00 /* DockTheme.swift */; };
 		A0000000000000000000FE01 /* DockGlassBackdrop.swift in Sources */ = {isa = PBXBuildFile; fileRef = A0000000000000000000FE00 /* DockGlassBackdrop.swift */; };
+		E20000000000000000000001 /* DockLiquidGlassConfiguration.swift in Sources */ = {isa = PBXBuildFile; fileRef = E10000000000000000000001 /* DockLiquidGlassConfiguration.swift */; };
+		E20000000000000000000002 /* DockLiquidGlassConfiguration.swift in Sources */ = {isa = PBXBuildFile; fileRef = E10000000000000000000001 /* DockLiquidGlassConfiguration.swift */; };
+		E20000000000000000000003 /* DockGlassRuntimeBridge.m in Sources */ = {isa = PBXBuildFile; fileRef = E10000000000000000000003 /* DockGlassRuntimeBridge.m */; };
+		E20000000000000000000004 /* DockLiquidGlassConfigurationTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = E10000000000000000000005 /* DockLiquidGlassConfigurationTests.swift */; };
 		A0000000000000000000FD01 /* DockThemeTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A0000000000000000000FD00 /* DockThemeTests.swift */; };
 		A00000000000000000009591 /* AppMembershipMenuPlanTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A00000000000000000009590 /* AppMembershipMenuPlanTests.swift */; };
 		A00000000000000000009581 /* AppMembershipMenuPlan.swift in Sources */ = {isa = PBXBuildFile; fileRef = A00000000000000000009580 /* AppMembershipMenuPlan.swift */; };
@@ -432,6 +436,11 @@
 		A0000000000000000000FB00 /* DockThemeTokens.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DockThemeTokens.swift; sourceTree = "<group>"; };
 		A0000000000000000000FC00 /* DockTheme.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DockTheme.swift; sourceTree = "<group>"; };
 		A0000000000000000000FE00 /* DockGlassBackdrop.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DockGlassBackdrop.swift; sourceTree = "<group>"; };
+		E10000000000000000000001 /* DockLiquidGlassConfiguration.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DockLiquidGlassConfiguration.swift; sourceTree = "<group>"; };
+		E10000000000000000000002 /* DockGlassRuntimeBridge.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = DockGlassRuntimeBridge.h; sourceTree = "<group>"; };
+		E10000000000000000000003 /* DockGlassRuntimeBridge.m */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.objc; path = DockGlassRuntimeBridge.m; sourceTree = "<group>"; };
+		E10000000000000000000004 /* TungstenEdge-Bridging-Header.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = "TungstenEdge-Bridging-Header.h"; sourceTree = "<group>"; };
+		E10000000000000000000005 /* DockLiquidGlassConfigurationTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DockLiquidGlassConfigurationTests.swift; sourceTree = "<group>"; };
 		A0000000000000000000FD00 /* DockThemeTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DockThemeTests.swift; sourceTree = "<group>"; };
 		A00000000000000000009590 /* AppMembershipMenuPlanTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppMembershipMenuPlanTests.swift; sourceTree = "<group>"; };
 		A00000000000000000009310 /* ShelfStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ShelfStore.swift; sourceTree = "<group>"; };
@@ -503,6 +512,7 @@
 		A0000000000000000000001D /* App */ = {
 			isa = PBXGroup;
 			children = (
+				E10000000000000000000004 /* TungstenEdge-Bridging-Header.h */,
 				A00000000000000000000024 /* Entry */,
 				A00000000000000000000025 /* Composition */,
 				A00000000000000000000026 /* Scenes */,
@@ -598,6 +608,8 @@
 				A00000000000000000009330 /* ShelfGridPopupView.swift */,
 				A0000000000000000000FC00 /* DockTheme.swift */,
 				A0000000000000000000FE00 /* DockGlassBackdrop.swift */,
+				E10000000000000000000002 /* DockGlassRuntimeBridge.h */,
+				E10000000000000000000003 /* DockGlassRuntimeBridge.m */,
 			);
 			path = Scenes;
 			sourceTree = "<group>";
@@ -635,6 +647,7 @@
 				B72000000000000000000013 /* InstallationRecord.swift */,
 				C90000000000000000000005 /* ClickLatencyTrace.swift */,
 				A0000000000000000000FB00 /* DockThemeTokens.swift */,
+				E10000000000000000000001 /* DockLiquidGlassConfiguration.swift */,
 				A00000000000000000009580 /* AppMembershipMenuPlan.swift */,
 				A00000000000000000009700 /* DragConversionPlan.swift */,
 				A00000000000000000000A100 /* MessagingZoneAdmission.swift */,
@@ -877,6 +890,7 @@
 				A0000000000000000000FF30 /* AppLaunchTargetDecisionTests.swift */,
 				A0000000000000000000FF40 /* WindowDisplayTitleTests.swift */,
 				A0000000000000000000FD00 /* DockThemeTests.swift */,
+				E10000000000000000000005 /* DockLiquidGlassConfigurationTests.swift */,
 				A00000000000000000009590 /* AppMembershipMenuPlanTests.swift */,
 				A00000000000000000009350 /* ShelfLogicTests.swift */,
 				A00000000000000000009370 /* FolderChipDropZoneTests.swift */,
@@ -1093,8 +1107,10 @@
 					B72000000000000000000011 /* InstallationRecord.swift in Sources */,
 					C90000000000000000000006 /* ClickLatencyTrace.swift in Sources */,
 					A0000000000000000000FB01 /* DockThemeTokens.swift in Sources */,
+					E20000000000000000000001 /* DockLiquidGlassConfiguration.swift in Sources */,
 					A0000000000000000000FC01 /* DockTheme.swift in Sources */,
 					A0000000000000000000FE01 /* DockGlassBackdrop.swift in Sources */,
+					E20000000000000000000003 /* DockGlassRuntimeBridge.m in Sources */,
 					A00000000000000000009581 /* AppMembershipMenuPlan.swift in Sources */,
 					A00000000000000000009701 /* DragConversionPlan.swift in Sources */,
 					A00000000000000000000A101 /* MessagingZoneAdmission.swift in Sources */,
@@ -1234,6 +1250,7 @@
 				B72000000000000000000002 /* AppDisplayNameCache.swift in Sources */,
 				B72000000000000000000012 /* InstallationRecord.swift in Sources */,
 				A0000000000000000000FB02 /* DockThemeTokens.swift in Sources */,
+				E20000000000000000000002 /* DockLiquidGlassConfiguration.swift in Sources */,
 				A0000000000000000000FC02 /* DockTheme.swift in Sources */,
 				C9000000000000000000000D /* ChipPressFeedback.swift in Sources */,
 				C9000000000000000000000C /* ClickLatencyTrace.swift in Sources */,
@@ -1250,6 +1267,7 @@
 				A0000000000000000000FF31 /* AppLaunchTargetDecisionTests.swift in Sources */,
 				A0000000000000000000FF41 /* WindowDisplayTitleTests.swift in Sources */,
 				A0000000000000000000FD01 /* DockThemeTests.swift in Sources */,
+				E20000000000000000000004 /* DockLiquidGlassConfigurationTests.swift in Sources */,
 				A00000000000000000009591 /* AppMembershipMenuPlanTests.swift in Sources */,
 				A00000000000000000009351 /* ShelfLogicTests.swift in Sources */,
 				A00000000000000000009371 /* FolderChipDropZoneTests.swift in Sources */,
@@ -1405,6 +1423,7 @@
 				CURRENT_PROJECT_VERSION = 20;
 				GENERATE_INFOPLIST_FILE = NO;
 				INFOPLIST_FILE = Resources/Info.plist;
+				SWIFT_OBJC_BRIDGING_HEADER = "App/TungstenEdge-Bridging-Header.h";
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
 					"@executable_path/../Frameworks",
@@ -1426,6 +1445,7 @@
 				CURRENT_PROJECT_VERSION = 20;
 				GENERATE_INFOPLIST_FILE = NO;
 				INFOPLIST_FILE = Resources/Info.plist;
+				SWIFT_OBJC_BRIDGING_HEADER = "App/TungstenEdge-Bridging-Header.h";
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
 					"@executable_path/../Frameworks",

@@ -1,101 +1,334 @@
 import AppKit
 import SwiftUI
 
-// MARK: - 原生 Liquid Glass 底板（探路用，默认关）
-//
-// 为什么存在：owner 2026-07-30 反馈「浅色适配后整体好很多，但还是没有像原生的有玻璃折射的效果」。
-// 我们自己**做不出**折射——`.behindWindow` 混合发生在系统进程里，我们的进程拿不到背后的像素，
-// 所以位移贴图那条路是死的。但苹果自己的 API 在合成器里，不受这个限制：
-//
-//   AppKit   NSGlassEffectView / NSGlassEffectContainerView   macOS 26.0+
-//   SwiftUI  View.glassEffect(_:in:) / GlassEffectContainer    macOS 26.0+
-//
-// **本文件目前是探路装置，不是已验收的功能。** 它要回答一个问题：玻璃在我们这种
-// `.borderless + .nonactivatingPanel + level=.floating + isOpaque=false + hasShadow=false`
-// 的面板上，会不会折射**窗口背后**的桌面内容。`NSVisualEffectView` 需要显式
-// `blendingMode = .behindWindow` 才有那个能力，而玻璃 API 没有这个开关；系统的菜单和 popover
-// 在 26 上都是独立窗口且确实透出背后内容，所以大概率可以，但我们这套组合非常规，只能实测。
-//
-// 判据：**模糊不会让一条直线弯，折射会。** 把高对比硬边摆到穿过任务条圆角的位置，
-// 开关开/关各截一张，量这条边在条内条外的位移。
-//
-// 设计约束（owner 拍定）：
-// - 默认关，`DOCK_LIQUID_GLASS=1` 才开 —— 所以提交进去不改变任何既有行为。
-// - macOS 26+ 才有玻璃；12–25 走 `else` 分支，也就是原样的 `DockVisualEffectView`。
-//   **接受两套观感**，不抬最低系统版本。
-// - 玻璃**不进** `DockThemeTokens`：给那张冻结的数值表加 `@available(macOS 26)` 的关联类型
-//   会污染它、还会牵动 `DockThemeTests` 的深色冻结。玻璃是"底板换一种画法"，与 token 表正交。
-
-/// 任务条底板：按环境开关 + 系统版本在「原生玻璃」和「毛玻璃材质」之间二选一。
-///
-/// 探路阶段**只有任务条自己**用它；抽屉胶囊、抽屉、两个弹窗仍直接用 `DockVisualEffectView`。
+/// Main-taskbar backdrop. The accepted NSVisualEffectView path remains the fallback; the Liquid
+/// Glass path is enabled only after PanelCoordinator has created and verified its background panel.
 struct DockGlassBackdrop: View {
-    /// 回退路径用的材质（`DockThemeTokens.panelMaterial`）。玻璃不可用时就是它。
     let material: DockPanelMaterial
     var cornerRadius: CGFloat = DockShape.panelCornerRadius
-    /// 只为启动那一行诊断日志携带——底板自己不用这两个值，它们作用在外层修饰符与兄弟图层上。
     var saturation: Double = 1.0
     var thicknessEnabled: Bool = false
 
     var body: some View {
-        resolved
-            // 诊断挂在 onAppear 而不是 body 里，免得每次求值都打一行。
-            .onAppear {
-                DockGlassSwitch.logResolvedPath()
-                DockEffectSwitches.logActiveOverrides(material: material,
-                                                      saturation: saturation,
-                                                      thickness: thicknessEnabled)
+        Group {
+            if #available(macOS 26.0, *), DockGlassPresentation.taskbarCompositeActive {
+                DockTaskbarLiquidGlass(
+                    cornerRadius: cornerRadius,
+                    configuration: DockGlassPresentation.configuration
+                )
+            } else {
+                DockVisualEffectView(material: material)
+                    .dockBackdropSaturation(saturation)
             }
+        }
+        .allowsHitTesting(false)
+        .onAppear {
+            DockGlassPresentation.logResolvedPath()
+            DockEffectSwitches.logActiveOverrides(
+                material: material,
+                saturation: saturation,
+                thickness: thicknessEnabled
+            )
+        }
     }
+}
+
+extension View {
+    func dockBackdropBounds(cornerRadius: CGFloat) -> some View {
+        modifier(DockBackdropBoundsModifier(cornerRadius: cornerRadius))
+    }
+
+    func dockPanelRim<S: ShapeStyle>(
+        cornerRadius: CGFloat,
+        style: S,
+        lineWidth: CGFloat,
+        keepsVisible: Bool = false
+    ) -> some View {
+        modifier(DockPanelRimModifier(
+            cornerRadius: cornerRadius,
+            style: style,
+            lineWidth: lineWidth,
+            keepsVisible: keepsVisible
+        ))
+    }
+
+    func dockTaskbarShadow(_ shadow: DockShadow) -> some View {
+        modifier(DockTaskbarShadowModifier(shadow: shadow))
+    }
+
+    func dockTaskbarWindowPadding(_ padding: CGFloat) -> some View {
+        modifier(DockTaskbarWindowPaddingModifier(padding: padding))
+    }
+}
+
+private struct DockBackdropBoundsModifier: ViewModifier {
+    let cornerRadius: CGFloat
 
     @ViewBuilder
-    private var resolved: some View {
-        if #available(macOS 26.0, *), DockGlassSwitch.isEnabled {
-            // `Color.clear` 只是给玻璃一个铺满的形状；玻璃自己负责采样与折射。
-            Color.clear
-                .glassEffect(.regular, in: RoundedRectangle(cornerRadius: cornerRadius, style: .continuous))
+    func body(content: Content) -> some View {
+        if DockGlassPresentation.taskbarCompositeActive {
+            content.ignoresSafeArea()
         } else {
-            DockVisualEffectView(material: material)
+            content
+                .padding(-2)
+                .clipShape(RoundedRectangle(cornerRadius: cornerRadius, style: .continuous))
+                .ignoresSafeArea()
         }
     }
 }
 
-/// 探路开关。读一次就固定（跟 `DOCK_EDGEHOVER_TRACE` 同款写法）——探路期间不需要热切换，
-/// 每次改开关重启一次应用即可，这样也避免开关值在一次会话里前后不一致。
-enum DockGlassSwitch {
-    static let isEnabled: Bool =
-        ProcessInfo.processInfo.environment["DOCK_LIQUID_GLASS"] == "1"
+private struct DockPanelRimModifier<S: ShapeStyle>: ViewModifier {
+    let cornerRadius: CGFloat
+    let style: S
+    let lineWidth: CGFloat
+    let keepsVisible: Bool
 
-    /// 探路诊断：启动时打一行，说明这次跑的到底是哪条路径。
-    /// 用 `print` 而不是 `Logger`——有些环境读不回统一日志（同 `[edgehover]` 的理由）。
+    func body(content: Content) -> some View {
+        let effectiveWidth = DockGlassPresentation.taskbarCompositeActive && !keepsVisible
+            ? 0
+            : lineWidth
+        content.overlay {
+            RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
+                .strokeBorder(style, lineWidth: effectiveWidth)
+        }
+    }
+}
+
+private struct DockTaskbarShadowModifier: ViewModifier {
+    let shadow: DockShadow
+
+    @ViewBuilder
+    func body(content: Content) -> some View {
+        if DockGlassPresentation.taskbarCompositeActive {
+            content
+        } else {
+            content.dockShadow(shadow)
+        }
+    }
+}
+
+private struct DockTaskbarWindowPaddingModifier: ViewModifier {
+    let padding: CGFloat
+
+    @ViewBuilder
+    func body(content: Content) -> some View {
+        if DockGlassPresentation.taskbarCompositeActive {
+            content
+        } else {
+            content.padding(padding)
+        }
+    }
+}
+
+enum DockGlassPresentation {
+    static let configuration = DockLiquidGlassConfiguration.resolve()
+    private(set) static var taskbarCompositeActive = false
+
+    static var shouldAttemptTaskbarComposite: Bool {
+        guard #available(macOS 26.0, *), configuration.isEnabled else { return false }
+        return TEDockGlassCanSetWindowBackgroundBlur()
+    }
+
+    static func setTaskbarCompositeActive(_ active: Bool) {
+        taskbarCompositeActive = active
+    }
+
     static func logResolvedPath() {
-        guard isEnabled else { return }
-        if #available(macOS 26.0, *) {
-            print("[glass] DOCK_LIQUID_GLASS=1 且系统 ≥ 26 → 任务条底板走原生 Liquid Glass")
+        guard configuration.isEnabled else { return }
+        if taskbarCompositeActive {
+            print(
+                "[glass] taskbar composite active, clearTint=\(configuration.clearTintOpacity), "
+                    + "background=\(configuration.backgroundMaterialOpacity), "
+                    + "windowBlur=\(configuration.windowBlurRadius)"
+            )
+        } else if #available(macOS 26.0, *) {
+            print("[glass] composite unavailable; using NSVisualEffectView")
         } else {
-            print("[glass] DOCK_LIQUID_GLASS=1 但系统 < 26 → 仍走 NSVisualEffectView")
+            print("[glass] enabled but macOS < 26; using NSVisualEffectView")
         }
     }
 }
-
-// MARK: - AppKit 备用路径
-//
-// 如果 SwiftUI 的 `.glassEffect` 在这种面板里渲染成扁平/空白，就换这个：`NSGlassEffectView`
-// 有显式的 `cornerRadius` 和 `tintColor`，作为一块纯底板可能更听话。
-// 探路时**只换 `DockGlassBackdrop` 里那一行**，别两条一起上。
 
 @available(macOS 26.0, *)
-struct DockNativeGlassView: NSViewRepresentable {
-    var cornerRadius: CGFloat = DockShape.panelCornerRadius
+private struct DockTaskbarLiquidGlass: View {
+    let cornerRadius: CGFloat
+    let configuration: DockLiquidGlassConfiguration
 
-    func makeNSView(context: Context) -> NSGlassEffectView {
-        let view = NSGlassEffectView()
-        view.style = .regular
-        view.cornerRadius = cornerRadius
-        return view
+    var body: some View {
+        let inset = CGFloat(configuration.contentInset)
+        let shape = RoundedRectangle(
+            cornerRadius: cornerRadius + inset,
+            style: .continuous
+        ).inset(by: inset)
+        let tint = Color(nsColor: NSColor(deviceWhite: 127.0 / 255.0, alpha: 1))
+            .opacity(configuration.clearTintOpacity)
+
+        shape
+            .fill(Color.clear)
+            .glassEffect(.clear.tint(tint).interactive(false), in: shape)
+            .background {
+                shape.fill(Color.white.opacity(configuration.whiteOverlayOpacity))
+            }
+            .overlay {
+                if configuration.dimmingOpacity > 0 {
+                    shape.fill(Color.black.opacity(configuration.dimmingOpacity))
+                }
+            }
+            .overlay { directionalBorder(for: shape) }
+            .materialActiveAppearance(.active)
+            .environment(\.appearsActive, true)
+            .padding(-inset)
     }
 
-    func updateNSView(_ nsView: NSGlassEffectView, context: Context) {
-        if nsView.cornerRadius != cornerRadius { nsView.cornerRadius = cornerRadius }
+    private func directionalBorder<S: InsettableShape>(for shape: S) -> some View {
+        let opacity = configuration.borderOpacity
+        let width = CGFloat(configuration.borderLineWidth)
+        return ZStack {
+            shape.strokeBorder(Color.white.opacity(opacity * 0.24), lineWidth: width)
+
+            shape
+                .strokeBorder(Color.white.opacity(opacity), lineWidth: width)
+                .mask {
+                    LinearGradient(
+                        stops: [
+                            .init(color: .white, location: 0),
+                            .init(color: .white.opacity(0.9), location: 0.18),
+                            .init(color: .clear, location: 0.62),
+                            .init(color: .clear, location: 1),
+                        ],
+                        startPoint: .topLeading,
+                        endPoint: .bottomTrailing
+                    )
+                }
+
+            shape
+                .strokeBorder(Color.black.opacity(opacity * 0.22), lineWidth: max(0.5, width * 0.7))
+                .mask {
+                    LinearGradient(
+                        stops: [
+                            .init(color: .clear, location: 0),
+                            .init(color: .clear, location: 0.58),
+                            .init(color: .white.opacity(0.75), location: 0.82),
+                            .init(color: .white, location: 1),
+                        ],
+                        startPoint: .topLeading,
+                        endPoint: .bottomTrailing
+                    )
+                }
+        }
+        .compositingGroup()
+    }
+}
+
+/// WindowServer-facing half of the taskbar composite. It lives in a dedicated mouse-transparent
+/// panel so the 6pt window blur does not reprocess the SwiftUI glass in the content window.
+final class DockTaskbarLiquidGlassBackgroundView: NSView {
+    private let liveBackdropSubscriptionView = NSVisualEffectView()
+    private let materialView = NSVisualEffectView()
+    private let blurStrengthOverlayView = NSView()
+    private var configuration: DockLiquidGlassConfiguration
+    private var plateCornerRadius: CGFloat
+
+    init(
+        frame frameRect: NSRect,
+        cornerRadius: CGFloat,
+        configuration: DockLiquidGlassConfiguration
+    ) {
+        self.configuration = configuration
+        self.plateCornerRadius = cornerRadius
+        super.init(frame: frameRect)
+
+        wantsLayer = true
+        // Each effect subview owns the rounded clip. Keep the root unclipped so its dedicated
+        // shadow is not cut off at the plate edge.
+        layer?.masksToBounds = false
+        layer?.shadowColor = NSColor.black.cgColor
+        layer?.shadowOpacity = Float(configuration.shadowOpacity)
+        layer?.shadowRadius = configuration.shadowRadius
+        layer?.shadowOffset = CGSize(width: 0, height: configuration.shadowOffsetY)
+        configureVisualEffectView(liveBackdropSubscriptionView)
+        liveBackdropSubscriptionView.material = .underWindowBackground
+        liveBackdropSubscriptionView.alphaValue = 3.0 / 255.0
+
+        configureVisualEffectView(materialView)
+        materialView.material = .menu
+        materialView.alphaValue = configuration.backgroundMaterialOpacity
+
+        blurStrengthOverlayView.wantsLayer = true
+        for view in [liveBackdropSubscriptionView, materialView, blurStrengthOverlayView] {
+            view.frame = bounds
+            view.autoresizingMask = [.width, .height]
+            addSubview(view)
+        }
+        apply(cornerRadius: cornerRadius, configuration: configuration)
+    }
+
+    required init?(coder: NSCoder) {
+        nil
+    }
+
+    override func hitTest(_ point: NSPoint) -> NSView? {
+        nil
+    }
+
+    override func viewDidChangeEffectiveAppearance() {
+        super.viewDidChangeEffectiveAppearance()
+        updateOverlayColor()
+    }
+
+    func apply(
+        cornerRadius: CGFloat,
+        configuration: DockLiquidGlassConfiguration
+    ) {
+        self.configuration = configuration
+        plateCornerRadius = cornerRadius
+        materialView.alphaValue = configuration.backgroundMaterialOpacity
+        materialView.isHidden = configuration.backgroundMaterialOpacity <= 0
+        blurStrengthOverlayView.isHidden = configuration.dimmingOpacity <= 0
+        layer?.cornerRadius = cornerRadius
+        layer?.cornerCurve = .continuous
+        layer?.backgroundColor = NSColor.black
+            .withAlphaComponent(configuration.backgroundPlateOpacity)
+            .cgColor
+        layer?.shadowOpacity = Float(configuration.shadowOpacity)
+        layer?.shadowRadius = configuration.shadowRadius
+        layer?.shadowOffset = CGSize(width: 0, height: configuration.shadowOffsetY)
+        layer?.shadowPath = CGPath(
+            roundedRect: bounds,
+            cornerWidth: cornerRadius,
+            cornerHeight: cornerRadius,
+            transform: nil
+        )
+        for view in [liveBackdropSubscriptionView, materialView, blurStrengthOverlayView] {
+            view.wantsLayer = true
+            view.layer?.cornerRadius = cornerRadius
+            view.layer?.cornerCurve = .continuous
+            view.layer?.masksToBounds = true
+        }
+        updateOverlayColor()
+    }
+
+    override func layout() {
+        super.layout()
+        layer?.shadowPath = CGPath(
+            roundedRect: bounds,
+            cornerWidth: plateCornerRadius,
+            cornerHeight: plateCornerRadius,
+            transform: nil
+        )
+    }
+
+    private func configureVisualEffectView(_ view: NSVisualEffectView) {
+        view.blendingMode = .behindWindow
+        view.state = .active
+        view.isEmphasized = false
+    }
+
+    private func updateOverlayColor() {
+        let isDark = effectiveAppearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua
+        let color = isDark ? NSColor.black : NSColor.white
+        blurStrengthOverlayView.layer?.backgroundColor = color
+            .withAlphaComponent(configuration.dimmingOpacity)
+            .cgColor
     }
 }

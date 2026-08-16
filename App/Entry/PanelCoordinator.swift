@@ -113,6 +113,8 @@ final class PanelCoordinator: NSObject {
     /// 这就是打开设置的唯一后路。
     var onRequestTaskbarMenu: ((NSEvent, NSView) -> Void)?
     private var dockPanel: NSPanel?
+    private var dockGlassBackgroundPanel: NonConstrainingPanel?
+    private var dockGlassBackgroundView: DockTaskbarLiquidGlassBackgroundView?
     /// 主任务条的 SwiftUI 承载器。窗口 frame 归 PanelCoordinator，内容尺寸只从这里读取。
     private var dockContentHost: ManualPanelHost?
     private var drawerPanel: NSPanel?
@@ -314,6 +316,7 @@ final class PanelCoordinator: NSObject {
             fullscreenIntentMonitor?.stop()
             removeHoverMouseMonitors()
             dismissWindowTitleTooltip()
+            tearDownTaskbarGlassBackground()
         }
         edgeIdleHideTimer?.invalidate()
         edgeWakeTimer?.invalidate()
@@ -361,6 +364,7 @@ final class PanelCoordinator: NSObject {
         capsuleContentHost = nil
         drawerContentHost = nil
         folderPopupContentHost = nil
+        tearDownTaskbarGlassBackground()
         for panel in [dockPanel, capsulePanel, drawerPanel, folderPopupPanel, windowTitleTooltipPanel] {
             guard let panel else { continue }
             panel.contentView = NSView()
@@ -1241,13 +1245,33 @@ final class PanelCoordinator: NSObject {
     private func setupDockPanel() {
         let screen = NSScreen.main ?? NSScreen.screens[0]
         let s = screen.frame
-
-        let panel = NonConstrainingPanel(
-            contentRect: NSRect(x: s.minX, y: s.minY + layoutMetrics.bottomGap - Self.shadowPadding, width: s.width, height: windowHeight),
-            styleMask: [.borderless, .nonactivatingPanel],
-            backing: .buffered,
-            defer: false
+        let legacyInitialFrame = NSRect(
+            x: s.minX,
+            y: s.minY + layoutMetrics.bottomGap - Self.shadowPadding,
+            width: s.width,
+            height: windowHeight
         )
+
+        let glassBackground = makeTaskbarGlassBackground(contentPanelFrame: legacyInitialFrame)
+        DockGlassPresentation.setTaskbarCompositeActive(glassBackground != nil)
+        let contentInitialFrame = glassBackground?.0.frame ?? legacyInitialFrame
+
+        let panel: NonConstrainingPanel
+        if glassBackground != nil {
+            panel = DockLiquidGlassPanel(
+                contentRect: contentInitialFrame,
+                styleMask: [.borderless, .nonactivatingPanel],
+                backing: .buffered,
+                defer: false
+            )
+        } else {
+            panel = NonConstrainingPanel(
+                contentRect: contentInitialFrame,
+                styleMask: [.borderless, .nonactivatingPanel],
+                backing: .buffered,
+                defer: false
+            )
+        }
         panel.level = .floating
         panel.collectionBehavior = [.canJoinAllSpaces, .stationary, .ignoresCycle, .fullScreenAuxiliary]
         panel.isFloatingPanel = true
@@ -1281,6 +1305,104 @@ final class PanelCoordinator: NSObject {
         hosting.layer?.backgroundColor = NSColor(white: 1.0, alpha: 0.0).cgColor
         dockContentHost = ManualPanelHost(contentView: hosting, in: panel)
         dockPanel = panel
+
+        if let (backgroundPanel, backgroundView) = glassBackground {
+            dockGlassBackgroundPanel = backgroundPanel
+            dockGlassBackgroundView = backgroundView
+        }
+    }
+
+    private func makeTaskbarGlassBackground(
+        contentPanelFrame: NSRect
+    ) -> (NonConstrainingPanel, DockTaskbarLiquidGlassBackgroundView)? {
+        guard DockGlassPresentation.shouldAttemptTaskbarComposite else { return nil }
+
+        let configuration = DockGlassPresentation.configuration
+        let backgroundFrame = DockLiquidGlassPanelGeometry.backgroundFrame(
+            for: contentPanelFrame,
+            shadowPadding: Self.shadowPadding,
+            targetHeight: CGFloat(configuration.taskbarHeight) * settingsStore.dockSize.scale
+        )
+        guard backgroundFrame.width > 0, backgroundFrame.height > 0 else { return nil }
+
+        let panel = NonConstrainingPanel(
+            contentRect: backgroundFrame,
+            styleMask: [.borderless, .nonactivatingPanel],
+            backing: .buffered,
+            defer: false
+        )
+        panel.level = .floating
+        panel.collectionBehavior = [.canJoinAllSpaces, .stationary, .ignoresCycle, .fullScreenAuxiliary]
+        panel.isFloatingPanel = true
+        panel.isMovable = false
+        panel.isOpaque = false
+        panel.backgroundColor = .clear
+        panel.hasShadow = false
+        panel.hidesOnDeactivate = false
+        panel.ignoresMouseEvents = true
+
+        let backgroundView = DockTaskbarLiquidGlassBackgroundView(
+            frame: NSRect(origin: .zero, size: backgroundFrame.size),
+            cornerRadius: CGFloat(configuration.taskbarCornerRadius) * settingsStore.dockSize.scale,
+            configuration: configuration
+        )
+        backgroundView.autoresizingMask = [.width, .height]
+        panel.contentView = backgroundView
+
+        let blurRadius = UInt32(configuration.windowBlurRadius.rounded())
+        guard TEDockGlassSetWindowBackgroundBlurRadius(panel.windowNumber, blurRadius) else {
+            panel.contentView = nil
+            panel.close()
+            return nil
+        }
+        return (panel, backgroundView)
+    }
+
+    private func tearDownTaskbarGlassBackground() {
+        guard let background = dockGlassBackgroundPanel else {
+            DockGlassPresentation.setTaskbarCompositeActive(false)
+            return
+        }
+        _ = TEDockGlassSetWindowBackgroundBlurRadius(background.windowNumber, 0)
+        background.contentView = nil
+        background.orderOut(nil)
+        background.close()
+        dockGlassBackgroundView = nil
+        dockGlassBackgroundPanel = nil
+        DockGlassPresentation.setTaskbarCompositeActive(false)
+    }
+
+    private func orderDockSurfaceFront() {
+        let ordering = DockLiquidGlassPanelLifecyclePlan.ordering(
+            isCompositeActive: dockGlassBackgroundPanel != nil,
+            shouldShow: true
+        )
+        for role in ordering {
+            switch role {
+            case .background:
+                dockGlassBackgroundPanel?.orderFrontRegardless()
+            case .content:
+                dockPanel?.orderFrontRegardless()
+            }
+        }
+        if let background = dockGlassBackgroundPanel, let dock = dockPanel {
+            background.order(.below, relativeTo: dock.windowNumber)
+        }
+    }
+
+    private func orderDockSurfaceOut() {
+        let ordering = DockLiquidGlassPanelLifecyclePlan.ordering(
+            isCompositeActive: dockGlassBackgroundPanel != nil,
+            shouldShow: false
+        )
+        for role in ordering {
+            switch role {
+            case .background:
+                dockGlassBackgroundPanel?.orderOut(nil)
+            case .content:
+                dockPanel?.orderOut(nil)
+            }
+        }
     }
 
     private func moveExternalFiles(_ urls: [URL], into path: String) {
@@ -1338,7 +1460,7 @@ final class PanelCoordinator: NSObject {
         dock.layoutIfNeeded()
         capsule.layoutIfNeeded()
         relayout(animated: false)
-        dock.orderFrontRegardless()
+        orderDockSurfaceFront()
         capsule.orderFrontRegardless()
     }
 
@@ -1529,6 +1651,14 @@ final class PanelCoordinator: NSObject {
 
         let dockT = dockTargetFrame(contentWidth: contentWidth, on: screen)
         let capsuleT = capsuleTargetFrame(forDock: dockT, on: screen)
+        let dockSurfaceT = dockGlassBackgroundPanel == nil
+            ? dockT
+            : DockLiquidGlassPanelGeometry.backgroundFrame(
+                for: dockT,
+                shadowPadding: Self.shadowPadding,
+                targetHeight: CGFloat(DockGlassPresentation.configuration.taskbarHeight)
+                    * settingsStore.dockSize.scale
+            )
         // 任务条目标帧一变（宽度/切屏）就关弹窗——不追动画中的锚点（与原生 Dock 行为一致,保 target-frame 纯度）。
         if dockT != lastDockTargetFrame {
             if folderPopupWantsOpen { closeFolderPopup() }
@@ -1537,7 +1667,17 @@ final class PanelCoordinator: NSObject {
         lastDockTargetFrame = dockT
         lastCapsuleTargetFrame = capsuleT
 
-        var pairs: [(NSPanel, NSRect)] = [(dock, dockT), (capsule, capsuleT)]
+        var pairs: [(NSPanel, NSRect)] = []
+        if let background = dockGlassBackgroundPanel {
+            dockGlassBackgroundView?.apply(
+                cornerRadius: CGFloat(DockGlassPresentation.configuration.taskbarCornerRadius)
+                    * settingsStore.dockSize.scale,
+                configuration: DockGlassPresentation.configuration
+            )
+            pairs.append((background, dockSurfaceT))
+        }
+        pairs.append((dock, dockSurfaceT))
+        pairs.append((capsule, capsuleT))
         if let drawer = drawerPanel, drawer.isVisible, let hosting = drawerContentHost {
             let fitting = hosting.fittingSize
             let drawerSize = CGSize(width: max(fitting.width, 60), height: max(fitting.height, 60))
@@ -1552,7 +1692,8 @@ final class PanelCoordinator: NSObject {
     /// 量当前内容宽度后布局（内容变化的统一入口）。
     private func relayout(animated: Bool) {
         guard let panel = dockPanel, let hosting = dockContentHost else { return }
-        let measured = hosting.fittingSize.width - 2 * Self.shadowPadding
+        let windowPadding = dockGlassBackgroundPanel == nil ? 2 * Self.shadowPadding : 0
+        let measured = hosting.fittingSize.width - windowPadding
         lastDesiredWidth = measured
         // 跨面板转正进行中 → 任务条宽度钳在拖动前的值（窗口卡溢出/留空而非改变面板宽度，owner 2026-06-22）；
         // 松手/还原解钳后，下一次 relayout 用真实测量值把任务条变到最终长度。
@@ -1888,7 +2029,7 @@ final class PanelCoordinator: NSObject {
         dismissWindowTitleTooltip(suppressCurrentUntilExit: true)
 
         panelsAreVisible = false
-        dockPanel?.orderOut(nil)
+        orderDockSurfaceOut()
         capsulePanel?.orderOut(nil)
         drawerPanel?.orderOut(nil)
         folderPopupPanel?.orderOut(nil)
@@ -2120,10 +2261,12 @@ final class PanelCoordinator: NSObject {
         // Use the center of the visible content area (inset by shadowPadding) so the 12pt shadow
         // bleed below screen.frame.minY doesn't cause first(where:intersects) to return the wrong
         // adjacent screen in multi-monitor setups (e.g. vertically stacked 3-screen layouts).
-        let visualCenter = CGPoint(
-            x: panel.frame.midX,
-            y: panel.frame.minY + Self.shadowPadding + panelHeight / 2
-        )
+        let visualCenter = dockGlassBackgroundPanel == nil
+            ? CGPoint(
+                x: panel.frame.midX,
+                y: panel.frame.minY + Self.shadowPadding + panelHeight / 2
+            )
+            : CGPoint(x: panel.frame.midX, y: panel.frame.midY)
         return NSScreen.screens.first(where: { $0.frame.contains(visualCenter) })
             ?? NSScreen.screens.first(where: { $0.frame.intersects(panel.frame) })
             ?? NSScreen.main ?? NSScreen.screens[0]
@@ -2525,14 +2668,14 @@ final class PanelCoordinator: NSObject {
         panelsAreVisible = shouldShow
         if Self.edgeHoverTraceEnabled { logEdgeHoverTrace(shouldShow: shouldShow) }
         if shouldShow {
-            dockPanel?.orderFrontRegardless()
+            orderDockSurfaceFront()
             capsulePanel?.orderFrontRegardless()
             if drawerWantsOpen { drawerPanel?.orderFrontRegardless() }
         } else {
             if visibilityState.hideReasons.contains(.fullscreen) { closeDrawer() }
             closeFolderPopup()
             dismissWindowTitleTooltip(suppressCurrentUntilExit: true)
-            dockPanel?.orderOut(nil)
+            orderDockSurfaceOut()
             capsulePanel?.orderOut(nil)
         }
     }

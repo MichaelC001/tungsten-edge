@@ -89,6 +89,16 @@ struct DockStripView: View {
     /// 放大缩小的值都乘 `dockScale`；发丝线（分隔线宽、描边）保持 1pt 不缩。
     private var metrics: PanelLayoutMetrics { settingsStore.dockSize.metrics }
     private var dockScale: CGFloat { settingsStore.dockSize.scale }
+    private var taskbarPanelHeight: CGFloat {
+        DockGlassPresentation.taskbarCompositeActive
+            ? CGFloat(DockGlassPresentation.configuration.taskbarHeight) * dockScale
+            : metrics.panelHeight
+    }
+    private var taskbarCornerRadius: CGFloat {
+        DockGlassPresentation.taskbarCompositeActive
+            ? CGFloat(DockGlassPresentation.configuration.taskbarCornerRadius) * dockScale
+            : Style.cornerRadius * dockScale
+    }
     /// 悬停效果档位。条内每个 chip 都显式接收它（同 `dockScale`，漏传是编译错误）；
     /// 抽屉面板与抽屉入口胶囊有意不受它影响（owner 2026-08-02）。
     private var hoverStyle: HoverStyle { settingsStore.hoverStyle }
@@ -301,22 +311,18 @@ struct DockStripView: View {
     var body: some View {
         let projection = makeProjection()
         ZStack {
-            // 探路中：`DOCK_LIQUID_GLASS=1` 且系统 ≥ 26 时换成原生 Liquid Glass，否则原样毛玻璃。
-            // 只有任务条这一个调用点接了探路装置（见 DockGlassBackdrop）。
+            // macOS 26 的 Liquid Glass 实验由统一底板接管；默认关闭，旧系统与未开关时仍是原毛玻璃。
             DockGlassBackdrop(material: theme.effectivePanelMaterial,
-                              cornerRadius: Style.cornerRadius * dockScale,
+                              cornerRadius: taskbarCornerRadius,
                               saturation: theme.effectiveBackdropSaturation,
                               thicknessEnabled: theme.drawsEffectiveThickness)
-                .dockBackdropSaturation(theme.effectiveBackdropSaturation)
-                .padding(-2)
-                .clipShape(RoundedRectangle(cornerRadius: Style.cornerRadius * dockScale, style: .continuous))
-                .ignoresSafeArea()
+                .dockBackdropBounds(cornerRadius: taskbarCornerRadius)
 
             // 玻璃厚度感：材质之上、内容之下。**默认关**，`DOCK_PANEL_THICKNESS=1` 才开
             //（未验收的效果一律 opt-in，见 DockEffectSwitches）。深色则两层保险都不画，
             // 整层不进视图树，保证深色逐像素冻结。
             if theme.drawsEffectiveThickness {
-                theme.panelThicknessLayer(cornerRadius: Style.cornerRadius * dockScale)
+                theme.panelThicknessLayer(cornerRadius: taskbarCornerRadius)
             }
 
             ScrollView(.horizontal, showsIndicators: false) {
@@ -327,10 +333,10 @@ struct DockStripView: View {
                     }
                 }
                 .padding(.horizontal, Style.chipContentInset * dockScale)
-                .frame(height: metrics.panelHeight)
+                .frame(height: taskbarPanelHeight)
                 .animation(.spring(response: 0.28, dampingFraction: 0.82), value: projection.layoutKeys)
             }
-            .clipShape(RoundedRectangle(cornerRadius: Style.cornerRadius * dockScale, style: .continuous))
+            .clipShape(RoundedRectangle(cornerRadius: taskbarCornerRadius, style: .continuous))
             .compatLeadingScrollAnchor()
             .mask(alignment: .center) {
                 HStack(spacing: 0) {
@@ -363,11 +369,12 @@ struct DockStripView: View {
         }
         // 抽屉图标拖到任务条上方 = 移出抽屉的投放反馈：整条任务条高亮描边（对称于胶囊的收纳高亮）。
         // 外部拖目录悬停文件夹区（pin 落点）复用同一条高亮。
-        .overlay {
-            RoundedRectangle(cornerRadius: Style.cornerRadius * dockScale, style: .continuous)
-                .strokeBorder(theme.panelRimStyle(highlighted: stripHighlighted),
-                              lineWidth: theme.panelRimLineWidth(highlighted: stripHighlighted))
-        }
+        .dockPanelRim(
+            cornerRadius: taskbarCornerRadius,
+            style: theme.panelRimStyle(highlighted: stripHighlighted),
+            lineWidth: theme.panelRimLineWidth(highlighted: stripHighlighted),
+            keepsVisible: stripHighlighted
+        )
         .animation(.easeOut(duration: 0.15), value: stripHighlighted)
         // 跨面板后，被拖的卡片改由 DragController 的全屏载体面板绘制（不再画在任务条 overlay 上 —
         // 任务条窗口只有 92pt 高，自绘 overlay 会被裁掉，飘不出去）。这里只保留"让出空位"的原位隐藏。
@@ -395,8 +402,8 @@ struct DockStripView: View {
         })
         // 重击(触控板)/中键(鼠标) → 内容预览：本地事件监视器 → 命中反查（handleGesturePreview）。
         .background(GestureMonitorInstaller(onGesture: { handleGesturePreview(atScreen: $0) }))
-        .dockShadow(theme.stripShadow)
-        .padding(PanelCoordinator.shadowPadding)
+        .dockTaskbarShadow(theme.stripShadow)
+        .dockTaskbarWindowPadding(PanelCoordinator.shadowPadding)
         // 抽屉图标拖到任务条上：进任务条区即转正成窗口卡、跟光标整块实时让位（镜像 DrawerView 的全局鼠标驱动）。
         // 消息区的重排/释放同样由全局鼠标驱动——重排会挪动被拖 chip,SwiftUI 会取消原手势,
         // 不能依赖 chip 自己的 .onChanged（同抽屉教训,owner 2026-06-22 / Codex 评审 P1-4）。
