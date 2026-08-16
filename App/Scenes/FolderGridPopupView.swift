@@ -113,6 +113,10 @@ struct FolderGridPopupView: View {
     let rootURL: URL
     /// 网格可用高度上限（锚点上方 → 屏幕上沿，PanelCoordinator 算好传入），超出内部滚动。
     let maxContentHeight: CGFloat
+    /// 底板走不走原生 Liquid Glass。**显式传入、无默认值**（同 `scale` / `hoverStyle`）——
+    /// 每个面板都是独立的 hosting 根视图，漏传就会出现「这个面板是玻璃、旁边那个还是
+    /// 毛玻璃」这种一眼可见的不一致。
+    let usesLiquidGlass: Bool
     /// 打开文件后回调（协调器关弹窗）。右键菜单的「打开类」动作也走它（关闭语义评审拍板）。
     var onFileOpened: () -> Void = {}
     /// 下钻/刷新导致内容尺寸（宽或高）变化 → 协调器动画重定位面板。
@@ -138,12 +142,14 @@ struct FolderGridPopupView: View {
          initialEntries: [FolderContentsLoader.Entry]?,
          sortOrder: FolderSortOrder = .default,
          maxContentHeight: CGFloat,
+         usesLiquidGlass: Bool,
          onFileOpened: @escaping () -> Void = {},
          onContentResize: @escaping () -> Void = {},
          onPinFolder: ((URL) -> Void)? = nil,
          isFolderPinned: ((URL) -> Bool)? = nil) {
         self.rootURL = rootURL
         self.maxContentHeight = maxContentHeight
+        self.usesLiquidGlass = usesLiquidGlass
         self.onFileOpened = onFileOpened
         self.onContentResize = onContentResize
         self.onPinFolder = onPinFolder
@@ -175,11 +181,9 @@ struct FolderGridPopupView: View {
 
     var body: some View {
         ZStack(alignment: .bottomLeading) {
-            DockVisualEffectView(material: theme.effectivePanelMaterial)
-                .dockBackdropSaturation(theme.effectiveBackdropSaturation)
-                .padding(-2)
-                .clipShape(RoundedRectangle(cornerRadius: DockShape.panelCornerRadius, style: .continuous))
-                .ignoresSafeArea()
+            DockPanelBackdrop(theme: theme,
+                              cornerRadius: DockShape.panelCornerRadius,
+                              usesLiquidGlass: usesLiquidGlass)
 
             Group {
                 if gridHeight > availableGridHeight + 0.5 {
@@ -191,10 +195,10 @@ struct FolderGridPopupView: View {
             }
             .clipShape(RoundedRectangle(cornerRadius: DockShape.panelCornerRadius, style: .continuous))
         }
-        .overlay {
-            RoundedRectangle(cornerRadius: DockShape.panelCornerRadius, style: .continuous)
-                .strokeBorder(theme.panelRimStyle, lineWidth: theme.panelRimLineWidth)
-        }
+        .dockPanelRim(cornerRadius: DockShape.panelCornerRadius,
+                      style: theme.panelRimStyle,
+                      lineWidth: theme.panelRimLineWidth,
+                      usesLiquidGlass: usesLiquidGlass)
         // 原生同款：下钻后左上角浮返回箭头（无表头,不占布局）。
         .overlay(alignment: .topLeading) { backChip }
         // 面板整体的淡入淡出由协调器在 AppKit 层做（panel.alphaValue，含背景/阴影一起淡）,

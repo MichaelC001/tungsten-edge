@@ -18,6 +18,10 @@ struct DrawerView: View {
     /// 抽屉内容区最大高度（胶囊上方锚点 → 屏幕上沿可用高度，PanelCoordinator 开抽屉时算好传入）。
     /// 内容超过它就内部滚动,绝不靠下压底边塞下（防与下方胶囊/任务条重叠）。
     let maxContentHeight: CGFloat
+    /// 底板走不走原生 Liquid Glass。**显式传入、无默认值**（同 `scale` / `hoverStyle`）——
+    /// 每个面板都是独立的 hosting 根视图，漏传就会出现「这个面板是玻璃、旁边那个还是
+    /// 毛玻璃」这种一眼可见的不一致。
+    let usesLiquidGlass: Bool
     /// 点击 app 图标执行「唤出」或「启动」后回调。由 PanelCoordinator 注入，用于关闭抽屉。
     /// 「最小化（前台 → 收起）」不触发——抽屉保持打开。右键菜单、拖动操作同样不触发。
     var onPrimaryAction: () -> Void = {}
@@ -99,11 +103,9 @@ struct DrawerView: View {
         // 底部对齐：抽屉面板向上长时,内容底边钉死在锚点(胶囊上方)、只向上揭开,
         // 不会像顶部对齐那样底边先垂到锚点下方(向下压胶囊)再升回来（owner 2026-06-21：避让该直接向上扩展）。
         ZStack(alignment: .bottomLeading) {
-            DockVisualEffectView(material: theme.effectivePanelMaterial)
-                .dockBackdropSaturation(theme.effectiveBackdropSaturation)
-                .padding(-2)
-                .clipShape(RoundedRectangle(cornerRadius: DockShape.panelCornerRadius, style: .continuous))
-                .ignoresSafeArea()
+            DockPanelBackdrop(theme: theme,
+                              cornerRadius: DockShape.panelCornerRadius,
+                              usesLiquidGlass: usesLiquidGlass)
 
             // 内容超过可用高度就内部滚动（封顶,不下压底边）；否则正常贴合内容。
             Group {
@@ -116,10 +118,10 @@ struct DrawerView: View {
             }
             .clipShape(RoundedRectangle(cornerRadius: DockShape.panelCornerRadius, style: .continuous))
         }
-        .overlay {
-            RoundedRectangle(cornerRadius: DockShape.panelCornerRadius, style: .continuous)
-                .strokeBorder(theme.panelRimStyle, lineWidth: theme.panelRimLineWidth)
-        }
+        .dockPanelRim(cornerRadius: DockShape.panelCornerRadius,
+                      style: theme.panelRimStyle,
+                      lineWidth: theme.panelRimLineWidth,
+                      usesLiquidGlass: usesLiquidGlass)
         // 抽屉根视图的屏幕 frame（AppKit 换算,绕开 .global/y 翻转/shadowPadding 的坑,Codex 二审 P1-3）。
         // 与 `"drawer"` 命名空间挂在同一视图上 → 既能判"光标在不在抽屉里",又能把屏幕坐标映回 drawer 空间命中格子。
         .background(ScreenRectReader(delivery: .root) { rect in

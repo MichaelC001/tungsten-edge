@@ -42,6 +42,32 @@ struct DockGlassBackdrop: View {
     }
 }
 
+/// 五个悬浮面板（任务条 / 抽屉胶囊 / 抽屉 / 文件夹弹窗 / 中转站弹窗）共用的底板。
+///
+/// 把「底板 + 外扩 2pt + 圆角裁剪」打包成一处：五个调用点原先各抄了一份，
+/// 玻璃转正时漏改任何一处，那个面板就会和别的面板材质不一样（owner 的截图里
+/// 抽屉胶囊比任务条明显更亮更实，就是这么来的）。
+///
+/// `.padding(-2)` 是毛玻璃时代的历史遗留（避免材质边缘出现缝隙）。它对玻璃无害，
+/// 但**会把画在底板内部的描边裁掉** —— 所以边缘高光走 `View.dockPanelRim`，
+/// 挂在面板 body 的最外层，不在这里画。
+struct DockPanelBackdrop: View {
+    let theme: DockThemeTokens
+    let cornerRadius: CGFloat
+    let usesLiquidGlass: Bool
+
+    var body: some View {
+        DockGlassBackdrop(material: theme.effectivePanelMaterial,
+                          usesLiquidGlass: usesLiquidGlass,
+                          cornerRadius: cornerRadius,
+                          saturation: theme.effectiveBackdropSaturation,
+                          thicknessEnabled: theme.drawsEffectiveThickness)
+            .padding(-2)
+            .clipShape(RoundedRectangle(cornerRadius: cornerRadius, style: .continuous))
+            .ignoresSafeArea()
+    }
+}
+
 extension View {
     /// 面板描边。两条路径各画各的：毛玻璃走 `DockThemeTokens` 的那圈，玻璃走实测对齐
     /// 原生 Dock 的均匀白色高光。拖放命中的整框高亮（`keepsVisible`）两条路径共用主题那圈。

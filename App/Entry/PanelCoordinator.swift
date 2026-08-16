@@ -91,6 +91,13 @@ final class PanelCoordinator: NSObject {
     private var capsuleWidth: CGFloat { layoutMetrics.capsuleWidth }
     /// 玻璃背景窗口的圆角。必须与 SwiftUI 侧任务条底板用同一个值，否则窗口模糊会在
     /// 玻璃的圆角外露出方角。两边共同的来源是 `DockShape.panelCornerRadius`。
+    /// 五个悬浮面板走不走原生 Liquid Glass —— **单一来源**。
+    ///
+    /// 判据就是「任务条的玻璃合成建成功了没有」：背景窗口在 `setupDockPanel` 里建，
+    /// 抽屉 / 两个弹窗都是按需懒建的，创建时这个值早已确定。五个面板共用同一个判断，
+    /// 才不会出现「条是玻璃、紧挨着的胶囊还是毛玻璃」。
+    private var usesLiquidGlass: Bool { dockGlassBackgroundPanel != nil }
+
     private var taskbarPlateCornerRadius: CGFloat {
         DockShape.panelCornerRadius * settingsStore.dockSize.scale
     }
@@ -449,6 +456,7 @@ final class PanelCoordinator: NSObject {
 
         // 每次打开都换一份新内容视图 → DrawerView 的 onAppear 重新触发淡入缩放,并拿到当前 maxContentHeight。
         let hosting = NSHostingView(rootView: DrawerView(maxContentHeight: maxContentHeight,
+                                                         usesLiquidGlass: usesLiquidGlass,
                                                          onPrimaryAction: { [weak self] in self?.closeDrawerAfterAction() })
             .environmentObject(runtime).environmentObject(drawerStore).environmentObject(messagingStore)
             .environmentObject(drawerOrderStore).environmentObject(dragController)
@@ -605,6 +613,7 @@ final class PanelCoordinator: NSObject {
                 initialEntries: preloadedEntries,
                 sortOrder: sortOrder,
                 maxContentHeight: maxContentHeight,
+                usesLiquidGlass: usesLiquidGlass,
                 onFileOpened: { [weak self] in self?.closeFolderPopup() },
                 onContentResize: { [weak self] in self?.repositionFolderPopup(animated: true) },
                 onPinFolder: { [weak self] url in self?.pinnedFolderStore.add(url.path) },
@@ -622,6 +631,7 @@ final class PanelCoordinator: NSObject {
             NSHostingView(rootView: ShelfGridPopupView(
                 shelfStore: shelfStore,
                 maxContentHeight: maxContentHeight,
+                usesLiquidGlass: usesLiquidGlass,
                 onClosePopup: { [weak self] in self?.closeFolderPopup() },
                 onContentResize: { [weak self] in self?.repositionFolderPopup(animated: true) },
                 onPinFolder: { [weak self] url in self?.pinnedFolderStore.add(url.path) },
@@ -1440,6 +1450,7 @@ final class PanelCoordinator: NSObject {
                 onRequestTaskbarMenu: { [weak self] event, view in
                     self?.onRequestTaskbarMenu?(event, view)
                 },
+                usesLiquidGlass: usesLiquidGlass,
                 action: { [weak self] in self?.toggleDrawer() }
             )
                 .environmentObject(runtime)
