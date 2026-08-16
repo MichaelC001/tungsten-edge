@@ -27,15 +27,25 @@ struct DockLiquidGlassConfiguration: Equatable {
     /// **只在背景窗口画一次。** 曾经内容窗口也叠了一层写死的黑，两处颜色还不一致
     /// （SwiftUI 侧恒为黑、背景窗口侧按外观切换），默认值 0 时看不出来，一调就露馅。
     let dimmingOpacity: Double
-    /// 边缘高光：**均匀一圈**白色描边的 alpha。
+    /// 边缘高光的**峰值** alpha，出现在左上 / 右下两个角。整圈按它画，再由蒙版压下来。
     ///
-    /// 默认值由实测反推（2026-08-16，深色壁纸）：原生底板亮度 81、边缘 148，钨极底板 84，
-    /// 要打到同样的 148 需要 `α = (148 − 84) / (255 − 84) ≈ 0.375`。
+    /// **不能按 `α = 78/171 ≈ 0.45` 直接算**：直边上 0.5pt 的描边正好压在一整行像素上，
+    /// 圆角上它是斜的、被抗锯齿摊薄，同样的 alpha 在角上只出到约 2/3。0.75 是实测调出来的
+    /// （0.45 → 角上只有 +52，0.62 → +64，0.75 → +73，配合左侧壁纸把底板基准抬高约 8，
+    /// 实际已经落在原生的 +76 / +81 上）。
     ///
     /// **这是「像不像原生」最贵重的一档。** 原生 Dock 靠这一圈把轮廓从背景里勾出来；
     /// 缺了它条会糊进背景、像直接刷在屏幕上，连圆角都显得比实际方
     /// （实测钨极圆角 16pt 其实比原生的 14pt 还大，但看着更方）。
-    let borderOpacity: Double
+    let borderPeakOpacity: Double
+    /// 四条长边相对峰值的比例。长边要的绝对 alpha 是 0.375（比底板高 +67），
+    /// 除以峰值 0.75 得 0.5。**改峰值必须同步改它**，否则长边会跟着一起变亮。
+    let borderEdgeLevel: Double
+    /// 右上 / 左下两个角的挖除量（作用在 `borderEdgeLevel` 上）。
+    /// 原生这两个角的亮线比底板只高 +5 / +7，几乎等于没有。
+    let borderCornerCut: Double
+    /// 角落调制的作用半径，单位是**圆角半径的倍数**（所以随档位一起缩放）。
+    let borderCornerSpread: Double
     /// 描边宽度。原生实测最外那道是 1px @2x = **0.5pt**，比直觉细得多。
     let borderLineWidth: Double
     /// 紧贴外圈**内侧**再画一道更暗的，凑出原生那条两像素的亮边。
@@ -86,10 +96,25 @@ struct DockLiquidGlassConfiguration: Equatable {
                 range: 0 ... 1,
                 fallback: 0
             ),
-            borderOpacity: boundedDouble(
+            borderPeakOpacity: boundedDouble(
                 environment["DOCK_LIQUID_GLASS_BORDER"],
                 range: 0 ... 1,
-                fallback: 0.375
+                fallback: 0.75
+            ),
+            borderEdgeLevel: boundedDouble(
+                environment["DOCK_LIQUID_GLASS_BORDER_EDGE"],
+                range: 0 ... 1,
+                fallback: 0.5
+            ),
+            borderCornerCut: boundedDouble(
+                environment["DOCK_LIQUID_GLASS_BORDER_CUT"],
+                range: 0 ... 1,
+                fallback: 0.92
+            ),
+            borderCornerSpread: boundedDouble(
+                environment["DOCK_LIQUID_GLASS_BORDER_SPREAD"],
+                range: 0.5 ... 6,
+                fallback: 2.2
             ),
             borderLineWidth: boundedDouble(
                 environment["DOCK_LIQUID_GLASS_BORDER_WIDTH"],

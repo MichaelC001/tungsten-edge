@@ -66,21 +66,80 @@ extension View {
         }
         .overlay {
             if glassRim {
-                let width = CGFloat(configuration.borderLineWidth)
-                ZStack {
-                    // 外圈：原生实测的那个满像素（底板 84 → 148）。
-                    RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
-                        .strokeBorder(Color.white.opacity(configuration.borderOpacity),
-                                      lineWidth: width)
-                    // 内圈：紧贴外圈再来半档（→ 120），凑出原生那条两像素的亮边。
-                    // 只画外圈时峰值一样，但视觉分量只有一半，肉眼就是「没原生亮」。
-                    RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
-                        .inset(by: width)
-                        .strokeBorder(Color.white.opacity(configuration.borderInnerOpacity),
-                                      lineWidth: width)
-                }
+                DockGlassRim(cornerRadius: cornerRadius, configuration: configuration)
             }
         }
+    }
+}
+
+/// 玻璃底板的边缘高光。
+///
+/// **两像素宽 + 按角落调制**，两条都是对着原生 Dock 逐像素量出来的：
+///
+/// | 位置 | 亮线 − 底板 |
+/// |---|---|
+/// | 四条长边 | +67（剖面 148 / 120 / 底板，一个满像素 + 一个半档） |
+/// | 左上 / 右下 角 | +76 / +81（比长边还亮） |
+/// | 右上 / 左下 角 | +7 / +5（亮线几乎消失） |
+///
+/// 已排除背景干扰：四个角内侧的底板 79.8–82.5、角外壁纸 30.6–36.6，四处基本一致，
+/// 所以明暗差是**亮线自身**的属性。
+///
+/// **这个形状线性渐变做不出来** —— 亮的是 ↖↘ 一条对角线、暗的是 ↗↙ 另一条，而线性渐变
+/// 沿轴单调，没法同时让两个对角变亮。Codex 最初那套 `topLeading → bottomTrailing` 对角
+/// 渐变方向对了一半但形状是反的（它让 ↘ 变暗），而且对 800pt 宽的条来说渐变走到水平中段
+/// 就衰减完了：实测把参数拉满时左边缘 254 已经爆掉、中段却只有 158。**别再退回那条路。**
+///
+/// 用到的全是 macOS 12 就有的 SwiftUI（`RadialGradient` / `mask` / `blendMode`），
+/// 所以不加可用性标注 —— 它只是**事实上**只在玻璃路径下被挂上去。
+private struct DockGlassRim: View {
+    let cornerRadius: CGFloat
+    let configuration: DockLiquidGlassConfiguration
+
+    var body: some View {
+        let width = CGFloat(configuration.borderLineWidth)
+        ZStack {
+            // 外圈：那个满像素。
+            RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
+                .strokeBorder(Color.white.opacity(configuration.borderPeakOpacity),
+                              lineWidth: width)
+            // 内圈：紧贴外圈的半档。只画外圈时峰值一样，但视觉分量只有一半，
+            // 肉眼就是「没原生亮」（owner 2026-08-16 反馈）。
+            RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
+                .inset(by: width)
+                .strokeBorder(Color.white.opacity(configuration.borderInnerOpacity),
+                              lineWidth: width)
+        }
+        // 整圈按峰值档画，再用蒙版把长边压到 edgeLevel、把 ↗↙ 两角挖到几乎没有。
+        .mask { cornerModulation }
+    }
+
+    /// 角落调制蒙版。SwiftUI 的 `.mask` 取的是 **alpha**，不是亮度 —— 想压暗只能挖 alpha，
+    /// 所以 ↗↙ 那两个角用 `.destinationOut`。
+    private var cornerModulation: some View {
+        let radius = cornerRadius * CGFloat(configuration.borderCornerSpread)
+        return ZStack {
+            Color.white.opacity(configuration.borderEdgeLevel)
+            // ↖↘：加亮到满档。
+            cornerGradient(.topLeading, radius: radius, color: .white)
+            cornerGradient(.bottomTrailing, radius: radius, color: .white)
+            // ↗↙：挖掉，只剩一点点。
+            cornerGradient(.topTrailing, radius: radius,
+                           color: .white.opacity(configuration.borderCornerCut))
+                .blendMode(.destinationOut)
+            cornerGradient(.bottomLeading, radius: radius,
+                           color: .white.opacity(configuration.borderCornerCut))
+                .blendMode(.destinationOut)
+        }
+        // 没有它，destinationOut 会穿透到底板去挖，而不是只作用在这张蒙版内部。
+        .compositingGroup()
+    }
+
+    private func cornerGradient(_ center: UnitPoint, radius: CGFloat, color: Color) -> some View {
+        RadialGradient(colors: [color, color.opacity(0)],
+                       center: center,
+                       startRadius: 0,
+                       endRadius: radius)
     }
 }
 
@@ -104,12 +163,11 @@ enum DockGlassPresentation {
     static func logResolvedPath(compositeActive: Bool) {
         guard configuration.isEnabled else { return }
         if compositeActive {
-            print(
-                "[glass] taskbar composite active, clearTint=\(configuration.clearTintOpacity), "
-                    + "border=\(configuration.borderOpacity)/\(configuration.borderLineWidth), "
-                    + "background=\(configuration.backgroundMaterialOpacity), "
-                    + "windowBlur=\(configuration.windowBlurRadius)"
-            )
+            let c = configuration
+            let rim = "peak=\(c.borderPeakOpacity) edge=\(c.borderEdgeLevel) "
+                + "cut=\(c.borderCornerCut) spread=\(c.borderCornerSpread) w=\(c.borderLineWidth)"
+            print("[glass] taskbar composite active, clearTint=\(c.clearTintOpacity), rim(\(rim)), "
+                + "background=\(c.backgroundMaterialOpacity), windowBlur=\(c.windowBlurRadius)")
         } else if #available(macOS 26.0, *) {
             print("[glass] composite unavailable; using NSVisualEffectView")
         } else {

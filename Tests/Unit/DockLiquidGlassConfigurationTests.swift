@@ -9,7 +9,10 @@ final class DockLiquidGlassConfigurationTests: XCTestCase {
         XCTAssertEqual(configuration.clearTintOpacity, 0.4)
         XCTAssertEqual(configuration.whiteOverlayOpacity, 0)
         XCTAssertEqual(configuration.dimmingOpacity, 0)
-        XCTAssertEqual(configuration.borderOpacity, 0.375, "边缘高光实测反推值：底板 84 打到原生的 148")
+        XCTAssertEqual(configuration.borderPeakOpacity, 0.75, "峰值档（↖↘ 两角）：实测调出来的，不是 78/171 算出来的")
+        XCTAssertEqual(configuration.borderEdgeLevel, 0.5, "长边要的是 0.375，除以峰值 0.75")
+        XCTAssertEqual(configuration.borderCornerCut, 0.92, "↗↙ 两角挖掉，原生那里亮线几乎没有")
+        XCTAssertEqual(configuration.borderCornerSpread, 2.2, "角落调制半径 = 圆角半径的倍数")
         XCTAssertEqual(configuration.borderLineWidth, 0.5, "原生实测最外那道 1px @2x = 0.5pt")
         XCTAssertEqual(configuration.borderInnerOpacity, 0.21, "内圈半档：底板 84 打到原生的 120")
         XCTAssertEqual(configuration.backgroundMaterialOpacity, 0)
@@ -54,6 +57,9 @@ final class DockLiquidGlassConfigurationTests: XCTestCase {
             "DOCK_LIQUID_GLASS_WHITE_OVERLAY": "1",
             "DOCK_LIQUID_GLASS_DIMMING": "1",
             "DOCK_LIQUID_GLASS_BORDER": "1",
+            "DOCK_LIQUID_GLASS_BORDER_EDGE": "1",
+            "DOCK_LIQUID_GLASS_BORDER_CUT": "0",
+            "DOCK_LIQUID_GLASS_BORDER_SPREAD": "6",
             "DOCK_LIQUID_GLASS_BORDER_WIDTH": "4",
             "DOCK_LIQUID_GLASS_BORDER_INNER": "1",
             "DOCK_LIQUID_GLASS_BACKGROUND_OPACITY": "0",
@@ -64,7 +70,10 @@ final class DockLiquidGlassConfigurationTests: XCTestCase {
         XCTAssertEqual(configuration.clearTintOpacity, 0)
         XCTAssertEqual(configuration.whiteOverlayOpacity, 1)
         XCTAssertEqual(configuration.dimmingOpacity, 1)
-        XCTAssertEqual(configuration.borderOpacity, 1)
+        XCTAssertEqual(configuration.borderPeakOpacity, 1)
+        XCTAssertEqual(configuration.borderEdgeLevel, 1)
+        XCTAssertEqual(configuration.borderCornerCut, 0)
+        XCTAssertEqual(configuration.borderCornerSpread, 6)
         XCTAssertEqual(configuration.borderLineWidth, 4)
         XCTAssertEqual(configuration.borderInnerOpacity, 1)
         XCTAssertEqual(configuration.backgroundMaterialOpacity, 0)
@@ -80,6 +89,9 @@ final class DockLiquidGlassConfigurationTests: XCTestCase {
                 "DOCK_LIQUID_GLASS_WHITE_OVERLAY": value,
                 "DOCK_LIQUID_GLASS_DIMMING": value,
                 "DOCK_LIQUID_GLASS_BORDER": value,
+                "DOCK_LIQUID_GLASS_BORDER_EDGE": value,
+                "DOCK_LIQUID_GLASS_BORDER_CUT": value,
+                "DOCK_LIQUID_GLASS_BORDER_SPREAD": value,
                 "DOCK_LIQUID_GLASS_BORDER_WIDTH": value,
                 "DOCK_LIQUID_GLASS_BORDER_INNER": value,
                 "DOCK_LIQUID_GLASS_BACKGROUND_OPACITY": value,
@@ -89,7 +101,10 @@ final class DockLiquidGlassConfigurationTests: XCTestCase {
             XCTAssertEqual(configuration.clearTintOpacity, 0.4, "clear tint: \(value)")
             XCTAssertEqual(configuration.whiteOverlayOpacity, 0, "white overlay: \(value)")
             XCTAssertEqual(configuration.dimmingOpacity, 0, "dimming: \(value)")
-            XCTAssertEqual(configuration.borderOpacity, 0.375, "border: \(value)")
+            XCTAssertEqual(configuration.borderPeakOpacity, 0.75, "border peak: \(value)")
+            XCTAssertEqual(configuration.borderEdgeLevel, 0.5, "border edge: \(value)")
+            XCTAssertEqual(configuration.borderCornerCut, 0.92, "border cut: \(value)")
+            XCTAssertEqual(configuration.borderCornerSpread, 2.2, "border spread: \(value)")
             XCTAssertEqual(configuration.borderLineWidth, 0.5, "border width: \(value)")
             XCTAssertEqual(configuration.borderInnerOpacity, 0.21, "border inner: \(value)")
             XCTAssertEqual(configuration.backgroundMaterialOpacity, 0, "background: \(value)")
