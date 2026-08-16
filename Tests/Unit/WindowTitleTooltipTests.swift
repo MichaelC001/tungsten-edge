@@ -58,15 +58,21 @@ final class WindowTitleTooltipTests: XCTestCase {
 ///   静息 `[Spacer, 2, pill(34s), 2, Spacer]`，总高 `52s`
 ///   悬停 `[Spacer, 2, pill(28s), 2, sub(Hs), 2, Spacer]`
 final class ChipSubtitleMetricsTests: XCTestCase {
-    private let tiers: [CGFloat] = [44.0 / 52, 1, 60.0 / 52, 68.0 / 52]   // 小 / 中 / 大 / 特大
+    /// 从档位表推导，别写死——2026-08-16 中档由 52 改成 54（对齐原生 Dock）时，
+    /// 写死的 `[44/52, 1, 60/52, 68/52]` 就是要手工追的第一处。
+    private let tiers: [CGFloat] = DockSize.allCases.map(\.scale)
 
-    /// 旧布局里静息态药丸的顶边（两个不缩放的 2 正好抵消，恰好是 9s）。
-    private func legacyRestPillTop(_ s: CGFloat) -> CGFloat { 9 * s }
+    /// 旧布局里静息态药丸的顶边：`VStack` 的两个 Spacer 平分卡片剩余高度。
+    /// **不要写死 9s** —— 那只是卡高 52 时代的取值，54 之后是 10s。
+    private func legacyRestPillTop(_ s: CGFloat) -> CGFloat {
+        (ChipPillMetrics.chipHeight - ChipPillMetrics.boxHeight) / 2 * s
+    }
 
-    /// 旧布局里悬停态药丸的顶边。
+    /// 旧布局里悬停态药丸的顶边。那三个不缩放的 2 来自旧 `VStack(spacing: 2)`。
     private func legacyHoverPillTop(_ s: CGFloat) -> CGFloat {
-        let spacer = (52 * s - 2 - 28 * s - 2 - ChipSubtitleMetrics.rowHeight(for: s) - 2) / 2
-        return spacer + 2
+        let leftover = ChipPillMetrics.chipHeight * s - 2 - ChipPillMetrics.hoveredHeight * s
+            - 2 - ChipSubtitleMetrics.rowHeight(for: s) - 2
+        return leftover / 2 + 2
     }
 
     /// 旧布局里悬停态副标题的**竖向中心**。
@@ -76,16 +82,17 @@ final class ChipSubtitleMetricsTests: XCTestCase {
 
     func testRestPillTopIsUnchangedByTheNewFixedHeightBox() {
         for s in tiers {
-            // 新结构：spacing 0，两个 Spacer 平分 52s - 34s，药丸盒顶边恒为 9s，静息不再位移。
-            let newTop = (ChipPillMetrics.chipHeight - ChipPillMetrics.boxHeight) / 2 * s
+            // 新结构：spacing 0，两个 Spacer 平分 chipHeight - boxHeight，静息不再位移。
+            let newTop = ChipPillMetrics.boxTopInset * s
             XCTAssertEqual(newTop, legacyRestPillTop(s), accuracy: 0.001,
-                           "静息态药丸顶边必须逐像素不变（scale=\(s)）")
+                           "静息态药丸顶边必须与旧 VStack 布局一致（scale=\(s)）")
         }
+        XCTAssertEqual(ChipPillMetrics.boxTopInset, 10, "卡高 54 − 药丸盒 34，各半（52 时代是 9）")
     }
 
     func testHoverPillShiftReproducesLegacyLayout() {
         for s in tiers {
-            let newTop = 9 * s + ChipSubtitleMetrics.pillHoverShift(for: s)
+            let newTop = ChipPillMetrics.boxTopInset * s + ChipSubtitleMetrics.pillHoverShift(for: s)
             XCTAssertEqual(newTop, legacyHoverPillTop(s), accuracy: 0.001,
                            "悬停态药丸顶边必须与旧布局一致（scale=\(s)）")
         }
@@ -93,8 +100,11 @@ final class ChipSubtitleMetricsTests: XCTestCase {
 
     func testSubtitleShiftReproducesLegacyLayoutAndIsIndependentOfRowHeight() {
         for s in tiers {
-            // 新结构：零高基线在 43s，文字以基线为中心。
-            let newCenter = 43 * s + ChipSubtitleMetrics.subtitleShift(for: s)
+            // 新结构：零高基线在药丸盒底边（boxTopInset + boxHeight，卡高 52 时代是 43），
+            // 文字以基线为中心。基线与旧布局的目标位置同时随卡高平移，所以 subtitleShift
+            // 本身与卡高无关，仍是 1 - 3s。
+            let baseline = ChipPillMetrics.boxTopInset + ChipPillMetrics.boxHeight
+            let newCenter = baseline * s + ChipSubtitleMetrics.subtitleShift(for: s)
             XCTAssertEqual(newCenter, legacyHoverSubtitleCenter(s), accuracy: 0.001,
                            "悬停态副标题中心必须与旧布局一致（scale=\(s)）")
         }
@@ -163,24 +173,28 @@ final class ChipPillMetricsTests: XCTestCase {
         XCTAssertEqual(rect.midX, card.midX, accuracy: 0.001)
     }
 
-    /// 屏幕坐标 y 向上：静息态药丸顶边 = 卡片顶边下方 9pt。
-    func testRestPillRectSitsNinePointsBelowTheCardTop() {
-        let card = CGRect(x: 0, y: 0, width: 180, height: 52)
+    /// 屏幕坐标 y 向上：静息态药丸顶边 = 卡片顶边下方 `boxTopInset`。
+    func testRestPillRectSitsBoxTopInsetBelowTheCardTop() {
+        let card = CGRect(x: 0, y: 0, width: 180, height: ChipPillMetrics.chipHeight)
         let rect = ChipPillMetrics.pillRect(inCard: card, title: "psd-文件", hovered: false, scale: 1)
-        XCTAssertEqual(rect.maxY, card.maxY - 9, accuracy: 0.001)
+        XCTAssertEqual(rect.maxY, card.maxY - ChipPillMetrics.boxTopInset, accuracy: 0.001)
         XCTAssertEqual(rect.height, 34, accuracy: 0.001)
     }
 
     func testHoverPillRectUsesTheHoverShift() {
-        let card = CGRect(x: 0, y: 0, width: 180, height: 52)
+        let card = CGRect(x: 0, y: 0, width: 180, height: ChipPillMetrics.chipHeight)
         let rect = ChipPillMetrics.pillRect(inCard: card, title: "psd-文件", hovered: true, scale: 1)
-        XCTAssertEqual(rect.maxY, card.maxY - 9 - ChipSubtitleMetrics.pillHoverShift(for: 1), accuracy: 0.001)
+        XCTAssertEqual(
+            rect.maxY,
+            card.maxY - ChipPillMetrics.boxTopInset - ChipSubtitleMetrics.pillHoverShift(for: 1),
+            accuracy: 0.001
+        )
         XCTAssertEqual(rect.height, 28, accuracy: 0.001)
     }
 }
 
 final class ChipHoverVisualTests: XCTestCase {
-    private let tiers: [CGFloat] = [44.0 / 52, 1, 60.0 / 52, 68.0 / 52]
+    private let tiers: [CGFloat] = DockSize.allCases.map(\.scale)
 
     func testEndpointsMatchTheExistingRestAndHoverMetricsAtEveryTier() {
         for scale in tiers {
@@ -188,8 +202,8 @@ final class ChipHoverVisualTests: XCTestCase {
             let rest = ChipHoverVisual.resolve(progress: 0, scale: scale, subtitleNaturalWidth: subtitleWidth)
             let hover = ChipHoverVisual.resolve(progress: 1, scale: scale, subtitleNaturalWidth: subtitleWidth)
 
-            XCTAssertEqual(rest.bareIconSize, 36 * scale, accuracy: 0.001)
-            XCTAssertEqual(hover.bareIconSize, 24 * scale, accuracy: 0.001)
+            XCTAssertEqual(rest.bareIconSize, 40 * scale, accuracy: 0.001)
+            XCTAssertEqual(hover.bareIconSize, 26 * scale, accuracy: 0.001)
             XCTAssertEqual(rest.pillHeight, ChipPillMetrics.height(hovered: false, scale: scale), accuracy: 0.001)
             XCTAssertEqual(hover.pillHeight, ChipPillMetrics.height(hovered: true, scale: scale), accuracy: 0.001)
             XCTAssertEqual(rest.pillIconSize, 22 * scale, accuracy: 0.001)

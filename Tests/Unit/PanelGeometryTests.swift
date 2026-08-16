@@ -52,8 +52,8 @@ final class PanelGeometryTests: XCTestCase {
 
         let dock = PanelGeometry.dockTargetFrame(contentWidth: 620, on: screen, metrics: metrics)
 
-        XCTAssertEqual(dock.minY, -12)
-        XCTAssertEqual(dock.height, 92)
+        XCTAssertEqual(dock.minY, -12, "bottomGap 8 − shadowPadding 20，与档位高度无关")
+        XCTAssertEqual(dock.height, 94, "中档 54 + 2×20")
     }
 
     func testDrawerTopCapUsesVisibleFrameWhenMenuBarIsLowerThanSafeAreaCap() {
@@ -192,7 +192,7 @@ final class PanelGeometryTests: XCTestCase {
     // MARK: - 尺寸档位
 
     func testDockSizeTiersKeepIntegerHeightsAndDerivedWindowHeight() {
-        let expected: [DockSize: CGFloat] = [.small: 44, .medium: 52, .large: 60, .extraLarge: 68]
+        let expected: [DockSize: CGFloat] = [.small: 46, .medium: 54, .large: 62, .extraLarge: 70]
         for size in DockSize.allCases {
             let m = size.metrics
             XCTAssertEqual(m.panelHeight, expected[size], "\(size) 面板高度")
@@ -204,14 +204,25 @@ final class PanelGeometryTests: XCTestCase {
         }
     }
 
-    func testMediumTierIsPixelIdenticalToHistoricalBaseline() {
-        // 中档必须逐字段等于历史字面值，否则「不改档位的老用户」观感会被本轮改动带偏。
+    /// 中档是四档的基准（`scale == 1`），逐字段锁死。
+    ///
+    /// **2026-08-16 由 52 改成 54，对齐原生 macOS 26 Dock**（owner 拍板；@2x 截图实测
+    /// 原生条高 108px = 54pt）。此前这里锁的是「逐字节等于 2026-07-30 之前的历史字面值」，
+    /// 那条冻结契约已被这次改判推翻 —— 不要按旧值把它改回去。
+    /// 与之配套的是图标 36→40（`ChipHoverVisual.bareIconSize`）与卡高 52→54
+    /// （`ChipPillMetrics.chipHeight`），三者必须同进同退。
+    func testMediumTierMatchesTheNativeDockBaseline() {
         XCTAssertEqual(DockSize.medium.scale, 1.0)
         XCTAssertEqual(DockSize.medium.metrics, PanelLayoutMetrics(
-            panelHeight: 52, shadowPadding: 20, windowHeight: 92,
-            bottomGap: 8, outerMargin: 12, capsuleWidth: 52, capsuleGap: 8,
+            panelHeight: 54, shadowPadding: 20, windowHeight: 94,
+            bottomGap: 8, outerMargin: 12, capsuleWidth: 54, capsuleGap: 8,
             minimumDockWidth: 120, minimumDrawerExtent: 120
         ))
+    }
+
+    /// 卡片必须撑满条高、上下不留空隙——任务条空白区右键的判定就建立在「没有垂直空隙」上。
+    func testChipHeightFillsTheMediumPanelExactly() {
+        XCTAssertEqual(ChipPillMetrics.chipHeight, DockSize.medium.panelHeight)
     }
 
     func testCapsuleGridContentFitsEveryTier() {
@@ -248,7 +259,7 @@ final class PanelGeometryTests: XCTestCase {
             let m = size.metrics
             tops.append(screenMinY + m.bottomGap + m.panelHeight)
         }
-        XCTAssertEqual(tops, [-348, -340, -332, -324])
+        XCTAssertEqual(tops, [-346, -338, -330, -322], "中档 54 起、四档相差 8pt")
         XCTAssertEqual(Set(tops).count, DockSize.allCases.count, "四档的抬升目标必须两两不同")
     }
 

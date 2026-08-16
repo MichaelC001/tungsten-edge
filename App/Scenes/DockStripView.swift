@@ -1316,15 +1316,20 @@ struct ChipView: View {
                         .foregroundStyle(theme.labelHover.color)
                         .lineLimit(1)
                         .frame(maxWidth: 64 * scale)
-                        .offset(y: 26 * scale)
+                        .offset(y: ChipPillMetrics.bareSubtitleOffset * scale)
                         .opacity(hover.subtitleOpacity)
                         .allowsHitTesting(false)
                         .accessibilityHidden(!showsHover)
                 }
-                .frame(width: 44 * scale, height: 36 * scale, alignment: .top)
+                // 槽位高度必须等于**静息**图标尺寸：这个 ZStack 是 .top 对齐的，
+                // 槽位小于图标就会整块往下溢出（写死 36 而图标改成 40 时实测下移 4pt）。
+                .frame(width: ChipPillMetrics.cardWidth * scale,
+                       height: ChipPillMetrics.bareIconSlot * scale,
+                       alignment: .top)
                 Spacer(minLength: 0)
             }
-            .frame(width: 44 * scale, height: 52 * scale)
+            .frame(width: ChipPillMetrics.cardWidth * scale,
+                   height: ChipPillMetrics.chipHeight * scale)
         }
         .animation(.easeInOut(duration: 0.18), value: showsHover)
         .overlay(alignment: .bottom) {

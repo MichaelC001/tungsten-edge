@@ -47,7 +47,9 @@ enum WindowTitleTextMetrics {
 /// 整张卡的矩形，pill rect 只能由这些常量推出来。两处各写一份迟早对不上，理由同 `WindowTitleTextMetrics`。
 enum ChipPillMetrics {
     /// 卡片总高（= 面板内容高，`DockSize` 中档基线）。
-    static let chipHeight: CGFloat = 52
+    /// **必须等于 `DockSize.medium.panelHeight`**：卡撑满条高、上下不留空隙，
+    /// 任务条空白区右键的判定就建立在「没有垂直空隙」上。2026-08-16 随中档 52→54 一起改。
+    static let chipHeight: CGFloat = 54
     /// 药丸的布局盒高度：**恒定**，悬停时药丸自身缩到 `hoveredHeight`，盒子不变
     /// —— 这正是"悬停不再重排纵向布局"的支点。
     static let boxHeight: CGFloat = 34
@@ -56,6 +58,18 @@ enum ChipPillMetrics {
     /// 图标的**布局**槽位（视觉尺寸 22→18 只在槽位内缩，槽位不变，宽度因此不随悬停变化）。
     static let iconSlot: CGFloat = 22
     static let iconSpacing: CGFloat = 6
+
+    /// 无标题（纯图标）卡的图标尺寸：静息 = 原生 Dock 的 tilesize，悬停收缩给应用名让位。
+    ///
+    /// **`bareIconSlot` 同时是布局槽位的高度**——`ChipView` 里那个 `ZStack` 是 `.top` 对齐的，
+    /// 槽位比静息图标小就会让图标整块往下溢出（2026-08-16：图标从 36 改成 40 而槽位仍写死 36，
+    /// 实测图标在卡里下移 4pt，上下留白变成 12.5 / 8.0）。两者必须同一个常量。
+    static let bareIconSlot: CGFloat = 40
+    static let bareIconHovered: CGFloat = 26
+    /// 卡宽。纯图标卡的中心间距 = `cardWidth + Style.chipSpacing`。
+    static let cardWidth: CGFloat = 44
+    /// 悬停时应用名相对槽位顶边的位移：收缩后的图标底边再往下 2pt。
+    static var bareSubtitleOffset: CGFloat { bareIconHovered + 2 }
 
     /// 药丸盒顶边到卡片顶边的距离：两个 `Spacer` 平分 `chipHeight - boxHeight`。
     static let boxTopInset: CGFloat = (chipHeight - boxHeight) / 2
@@ -107,10 +121,15 @@ enum ChipPillMetrics {
 /// 旧悬停 `[Spacer, 2, pill(28s), 2, sub(Hs), 2, Spacer]`
 ///   → Spacer 各 `(24s - 6 - Hs)/2`，药丸顶边 `= 12s - 1 - Hs/2`，副标题顶边 = 药丸顶边 `+ 28s + 2`
 ///
-/// 新结构：药丸盒顶边恒为 `9s`（`spacing: 0`，两个 Spacer 平分 `52s - 34s`），
-/// 副标题零高基线在 `43s`、文字以基线为中心。于是：
+/// 新结构：药丸盒顶边恒为 `boxTopInset * s`（`spacing: 0`，两个 Spacer 平分
+/// `chipHeight*s - 34s`），副标题零高基线在药丸盒底边、文字以基线为中心。
+/// 下面用卡高 52 的历史取值（`boxTopInset = 9`、基线 `43s`）推导：
 /// - `pillHoverShift = (12s - 1 - Hs/2) - 9s = 3s - 1 - Hs/2`
 /// - `subtitleShift  = (40s + 1) - 43s = 1 - 3s` —— **与 Hs 无关**
+///
+/// 卡高在 2026-08-16 由 52 改成 54（对齐原生 Dock），两个位移量**都不用改**：
+/// 基线和旧布局的目标位置一起平移了 `1s`，差值不变。`ChipSubtitleMetricsTests`
+/// 里的公式已改成从 `chipHeight` / `boxTopInset` 推导，不再写死 52 / 9 / 43。
 ///
 /// 两条都由 `ChipSubtitleMetricsTests` 直接对着上面这组旧布局公式锁住。
 enum ChipSubtitleMetrics {
@@ -168,7 +187,13 @@ struct ChipHoverVisual: Equatable {
         }
         return ChipHoverVisual(
             progress: progress,
-            bareIconSize: interpolate(36 * scale, 24 * scale),
+            // 静止 40 = 原生 Dock 的 tilesize（2026-08-16 owner 拍板对齐原生，同时条高 52→54）。
+            // 悬停 26 保持原来约 2/3 的收缩比（原 36→24）：副标题是零高 overlay，不占布局，
+            // 收缩纯粹是给下方冒出的应用名腾视觉空间。
+            bareIconSize: interpolate(
+                ChipPillMetrics.bareIconSlot * scale,
+                ChipPillMetrics.bareIconHovered * scale
+            ),
             pillHeight: interpolate(ChipPillMetrics.boxHeight * scale, ChipPillMetrics.hoveredHeight * scale),
             pillIconSize: interpolate(ChipPillMetrics.iconSlot * scale, 18 * scale),
             pillShift: ChipSubtitleMetrics.pillHoverShift(for: scale) * progress,
