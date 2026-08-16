@@ -99,13 +99,15 @@ struct DrawerDragIconView: View {
     private var theme: DockThemeTokens { .resolve(colorScheme) }
 
     var body: some View {
-        let iconSize: CGFloat = 36 * scale
+        // 拖动浮动副本必须与条上原卡逐像素同尺寸，否则松手前后会跳一下。
+        let iconSize = ChipPillMetrics.bareIconSlot * scale
         return Image(nsImage: AppIconResolver.icon(for: bundleID))
             .resizable()
             .aspectRatio(contentMode: .fit)
             .frame(width: iconSize, height: iconSize)
             .clipShape(RoundedRectangle(cornerRadius: iconSize / 4, style: .continuous))
             .dockShadow(theme.iconShadow)
-            .frame(width: 44 * scale, height: 52 * scale)
+            .frame(width: ChipPillMetrics.cardWidth * scale,
+                   height: ChipPillMetrics.chipHeight * scale)
     }
 }

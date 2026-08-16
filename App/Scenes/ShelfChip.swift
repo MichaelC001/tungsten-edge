@@ -47,7 +47,8 @@ struct ShelfChip: View {
             }
             Spacer(minLength: 0)
         }
-        .frame(width: 44 * scale, height: 52 * scale)
+        .frame(width: ChipPillMetrics.cardWidth * scale,
+               height: ChipPillMetrics.chipHeight * scale)
         .contentShape(Rectangle())
         .onHover { isHovering = $0 }
         .onTapGesture { onTap() }

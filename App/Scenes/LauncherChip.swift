@@ -82,15 +82,21 @@ struct LauncherChip: View {
                         .foregroundStyle(theme.labelHover.color)
                         .lineLimit(1)
                         .frame(maxWidth: 64 * scale)
-                        .offset(y: 26 * scale)
+                        .offset(y: ChipPillMetrics.bareSubtitleOffset * scale)
                         .opacity(hover.subtitleOpacity)
                         .allowsHitTesting(false)
                         .accessibilityHidden(!showsHover)
                 }
-                .frame(width: 44 * scale, height: 36 * scale, alignment: .top)
+                // 槽位高度 = **静息**图标尺寸。槽位小于图标就会整块往下溢出（.top 对齐），
+                // 结果就是「打开的应用图标和没打开的高度不一样」——本视图画的正是没打开的那种。
+                // 与 `ChipView` 的 iconOnly 分支必须逐字相同。
+                .frame(width: ChipPillMetrics.cardWidth * scale,
+                       height: ChipPillMetrics.bareIconSlot * scale,
+                       alignment: .top)
                 Spacer(minLength: 0)
             }
-            .frame(width: 44 * scale, height: 52 * scale)
+            .frame(width: ChipPillMetrics.cardWidth * scale,
+                   height: ChipPillMetrics.chipHeight * scale)
         }
         .animation(.easeInOut(duration: 0.18), value: showsHover)
         .overlay(alignment: .bottom) {

@@ -1842,7 +1842,10 @@ private enum Style {
     // Content layout
     static let chipContentInset: CGFloat = 20  // horizontal padding inside blur; > cornerRadius avoids corner-clip
     static let edgeFadeWidth: CGFloat    = 16  // scroll edge fade-out width (pt)
-    static let chipSpacing: CGFloat      = 8   // gap between chips (pt)
+    // 2pt：对齐原生 Dock 的图标中心间距 42pt（= ChipPillMetrics.cardWidth 40 + 2）。
+    // **改它必须同步改 `StripContextMenuZone.defaultMinimumGapWidth`** —— 那个阈值要严格
+    // 落在「普通缝」和「分割线缝（间距+5+间距）」之间，否则任务条空白区右键会整个失效。
+    static let chipSpacing: CGFloat      = 2   // gap between chips (pt)
     static let dividerHeight: CGFloat    = 20  // zone divider height (pt)
 
     // 描边的「顶强底弱」高光已由 DockThemeTokens.panelRimTop / panelRimBottom 正式接管

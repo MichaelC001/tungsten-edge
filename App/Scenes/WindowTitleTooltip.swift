@@ -66,8 +66,12 @@ enum ChipPillMetrics {
     /// 实测图标在卡里下移 4pt，上下留白变成 12.5 / 8.0）。两者必须同一个常量。
     static let bareIconSlot: CGFloat = 40
     static let bareIconHovered: CGFloat = 26
-    /// 卡宽。纯图标卡的中心间距 = `cardWidth + Style.chipSpacing`。
-    static let cardWidth: CGFloat = 44
+    /// 纯图标卡的卡宽。**中心间距 = `cardWidth + Style.chipSpacing`，两者要一起看。**
+    /// 2026-08-16 实测原生 Dock 的图标中心间距是 42pt（40 的 tile + 2pt 缝），
+    /// 钨极原来是 52pt（44 + 8），稀疏了一倍；改成 40 + 2 对齐。
+    /// 卡宽等于图标尺寸，所以图标横向没有额外余量——原生也是这样，
+    /// 可见的缝来自图标资源自带的透明边距。
+    static let cardWidth: CGFloat = 40
     /// 悬停时应用名相对槽位顶边的位移：收缩后的图标底边再往下 2pt。
     static var bareSubtitleOffset: CGFloat { bareIconHovered + 2 }
 
