@@ -1420,6 +1420,7 @@ struct ChipView: View {
                 Spacer(minLength: 0)
             }
             .frame(height: ChipPillMetrics.chipHeight * scale)
+            .padding(.horizontal, ChipPillMetrics.titledCardInset * scale)
         }
         .animation(.easeInOut(duration: 0.18), value: showsHover)
         .chipPressScale(isTapPressed)

@@ -55,6 +55,17 @@ enum ChipPillMetrics {
     static let boxHeight: CGFloat = 34
     static let hoveredHeight: CGFloat = 28
     static let horizontalPadding: CGFloat = 10
+    /// 带标题的窗口卡在药丸两侧再留的空当。
+    ///
+    /// 图标卡靠图标资源自带的透明边距撑出可见的缝，药丸是实心背景、自己撑不出来，
+    /// 所以 `Style.chipSpacing` 从 8 缩到 2（对齐原生图标间距）之后，两张标题卡就贴到
+    /// 一起了（owner 2026-08-16「多窗口的标签间隙做大一些」）。
+    /// 两张标题卡之间的可见缝 = `2 * titledCardInset + Style.chipSpacing` = 10pt，
+    /// 与图标之间的可见缝（实测 10pt）一致。
+    ///
+    /// 加在**整张卡**上而不是药丸里：药丸尺寸是签收过的观感，而且 `pillRect(inCard:)`
+    /// 按「药丸在卡内水平居中」反推 tooltip 锚点，对称内边距不影响那条契约。
+    static let titledCardInset: CGFloat = 4
     /// 图标的**布局**槽位（视觉尺寸 22→18 只在槽位内缩，槽位不变，宽度因此不随悬停变化）。
     static let iconSlot: CGFloat = 22
     static let iconSpacing: CGFloat = 6

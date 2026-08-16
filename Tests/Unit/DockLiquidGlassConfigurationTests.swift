@@ -10,7 +10,8 @@ final class DockLiquidGlassConfigurationTests: XCTestCase {
         XCTAssertEqual(configuration.whiteOverlayOpacity, 0)
         XCTAssertEqual(configuration.dimmingOpacity, 0)
         XCTAssertEqual(configuration.borderOpacity, 0.375, "边缘高光实测反推值：底板 84 打到原生的 148")
-        XCTAssertEqual(configuration.borderLineWidth, 0.5, "原生实测 1px @2x = 0.5pt")
+        XCTAssertEqual(configuration.borderLineWidth, 0.5, "原生实测最外那道 1px @2x = 0.5pt")
+        XCTAssertEqual(configuration.borderInnerOpacity, 0.21, "内圈半档：底板 84 打到原生的 120")
         XCTAssertEqual(configuration.backgroundMaterialOpacity, 0)
         XCTAssertEqual(configuration.windowBlurRadius, 6)
         XCTAssertEqual(configuration.contentInset, 4)
@@ -54,6 +55,7 @@ final class DockLiquidGlassConfigurationTests: XCTestCase {
             "DOCK_LIQUID_GLASS_DIMMING": "1",
             "DOCK_LIQUID_GLASS_BORDER": "1",
             "DOCK_LIQUID_GLASS_BORDER_WIDTH": "4",
+            "DOCK_LIQUID_GLASS_BORDER_INNER": "1",
             "DOCK_LIQUID_GLASS_BACKGROUND_OPACITY": "0",
             "DOCK_LIQUID_GLASS_WINDOW_BLUR": "64",
             "DOCK_LIQUID_GLASS_CONTENT_INSET": "12",
@@ -64,6 +66,7 @@ final class DockLiquidGlassConfigurationTests: XCTestCase {
         XCTAssertEqual(configuration.dimmingOpacity, 1)
         XCTAssertEqual(configuration.borderOpacity, 1)
         XCTAssertEqual(configuration.borderLineWidth, 4)
+        XCTAssertEqual(configuration.borderInnerOpacity, 1)
         XCTAssertEqual(configuration.backgroundMaterialOpacity, 0)
         XCTAssertEqual(configuration.windowBlurRadius, 64)
         XCTAssertEqual(configuration.contentInset, 12)
@@ -78,6 +81,7 @@ final class DockLiquidGlassConfigurationTests: XCTestCase {
                 "DOCK_LIQUID_GLASS_DIMMING": value,
                 "DOCK_LIQUID_GLASS_BORDER": value,
                 "DOCK_LIQUID_GLASS_BORDER_WIDTH": value,
+                "DOCK_LIQUID_GLASS_BORDER_INNER": value,
                 "DOCK_LIQUID_GLASS_BACKGROUND_OPACITY": value,
                 "DOCK_LIQUID_GLASS_WINDOW_BLUR": value,
                 "DOCK_LIQUID_GLASS_CONTENT_INSET": value,
@@ -87,6 +91,7 @@ final class DockLiquidGlassConfigurationTests: XCTestCase {
             XCTAssertEqual(configuration.dimmingOpacity, 0, "dimming: \(value)")
             XCTAssertEqual(configuration.borderOpacity, 0.375, "border: \(value)")
             XCTAssertEqual(configuration.borderLineWidth, 0.5, "border width: \(value)")
+            XCTAssertEqual(configuration.borderInnerOpacity, 0.21, "border inner: \(value)")
             XCTAssertEqual(configuration.backgroundMaterialOpacity, 0, "background: \(value)")
             XCTAssertEqual(configuration.windowBlurRadius, 6, "window blur: \(value)")
             XCTAssertEqual(configuration.contentInset, 4, "content inset: \(value)")

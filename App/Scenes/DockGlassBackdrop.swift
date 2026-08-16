@@ -66,11 +66,19 @@ extension View {
         }
         .overlay {
             if glassRim {
-                RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
-                    .strokeBorder(
-                        Color.white.opacity(configuration.borderOpacity),
-                        lineWidth: CGFloat(configuration.borderLineWidth)
-                    )
+                let width = CGFloat(configuration.borderLineWidth)
+                ZStack {
+                    // 外圈：原生实测的那个满像素（底板 84 → 148）。
+                    RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
+                        .strokeBorder(Color.white.opacity(configuration.borderOpacity),
+                                      lineWidth: width)
+                    // 内圈：紧贴外圈再来半档（→ 120），凑出原生那条两像素的亮边。
+                    // 只画外圈时峰值一样，但视觉分量只有一半，肉眼就是「没原生亮」。
+                    RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
+                        .inset(by: width)
+                        .strokeBorder(Color.white.opacity(configuration.borderInnerOpacity),
+                                      lineWidth: width)
+                }
             }
         }
     }

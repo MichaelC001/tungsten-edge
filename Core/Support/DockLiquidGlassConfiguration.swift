@@ -36,8 +36,15 @@ struct DockLiquidGlassConfiguration: Equatable {
     /// 缺了它条会糊进背景、像直接刷在屏幕上，连圆角都显得比实际方
     /// （实测钨极圆角 16pt 其实比原生的 14pt 还大，但看着更方）。
     let borderOpacity: Double
-    /// 描边宽度。原生实测是 1px @2x = **0.5pt**，比直觉细得多。
+    /// 描边宽度。原生实测最外那道是 1px @2x = **0.5pt**，比直觉细得多。
     let borderLineWidth: Double
+    /// 紧贴外圈**内侧**再画一道更暗的，凑出原生那条两像素的亮边。
+    ///
+    /// 原生实测顶边剖面是 `148 → 120 → 81(底板)`：一个满像素 + 一个半档，共两像素。
+    /// 只画一道时峰值一样是 148，但**视觉分量只有一半，肉眼就是「没原生亮」**
+    /// （owner 2026-08-16 反馈，量出来才发现峰值其实早就对上了，差的是宽度）。
+    /// 反推：底板 84 打到 120 需要 `α = (120 − 84) / (255 − 84) ≈ 0.21`。
+    let borderInnerOpacity: Double
     /// 背景窗口里那层 `.menu` 材质的不透明度，用来在玻璃之外再补一点实心感。默认 0。
     let backgroundMaterialOpacity: Double
     /// 背景窗口的 WindowServer 模糊半径（SkyLight）。
@@ -88,6 +95,11 @@ struct DockLiquidGlassConfiguration: Equatable {
                 environment["DOCK_LIQUID_GLASS_BORDER_WIDTH"],
                 range: 0 ... 4,
                 fallback: 0.5
+            ),
+            borderInnerOpacity: boundedDouble(
+                environment["DOCK_LIQUID_GLASS_BORDER_INNER"],
+                range: 0 ... 1,
+                fallback: 0.21
             ),
             backgroundMaterialOpacity: boundedDouble(
                 environment["DOCK_LIQUID_GLASS_BACKGROUND_OPACITY"],
