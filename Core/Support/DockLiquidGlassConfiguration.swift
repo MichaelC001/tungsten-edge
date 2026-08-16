@@ -27,12 +27,16 @@ struct DockLiquidGlassConfiguration: Equatable {
     /// **只在背景窗口画一次。** 曾经内容窗口也叠了一层写死的黑，两处颜色还不一致
     /// （SwiftUI 侧恒为黑、背景窗口侧按外观切换），默认值 0 时看不出来，一调就露馅。
     let dimmingOpacity: Double
-    /// 边缘高光强度。三层方向性描边共用它：整圈底色取 `×0.24`、左上到右下的亮边取全值、
-    /// 右下的暗收取 `×0.22`。
+    /// 边缘高光：**均匀一圈**白色描边的 alpha。
     ///
-    /// **这是「像不像原生」最便宜的一档。** 原生 Dock 有一整圈明亮描边把圆角勾出来，
-    /// 缺了它条的轮廓会糊进背景、看着像直接刷在屏幕上，圆角也显得比实际方。
+    /// 默认值由实测反推（2026-08-16，深色壁纸）：原生底板亮度 81、边缘 148，钨极底板 84，
+    /// 要打到同样的 148 需要 `α = (148 − 84) / (255 − 84) ≈ 0.375`。
+    ///
+    /// **这是「像不像原生」最贵重的一档。** 原生 Dock 靠这一圈把轮廓从背景里勾出来；
+    /// 缺了它条会糊进背景、像直接刷在屏幕上，连圆角都显得比实际方
+    /// （实测钨极圆角 16pt 其实比原生的 14pt 还大，但看着更方）。
     let borderOpacity: Double
+    /// 描边宽度。原生实测是 1px @2x = **0.5pt**，比直觉细得多。
     let borderLineWidth: Double
     /// 背景窗口里那层 `.menu` 材质的不透明度，用来在玻璃之外再补一点实心感。默认 0。
     let backgroundMaterialOpacity: Double
@@ -78,12 +82,12 @@ struct DockLiquidGlassConfiguration: Equatable {
             borderOpacity: boundedDouble(
                 environment["DOCK_LIQUID_GLASS_BORDER"],
                 range: 0 ... 1,
-                fallback: 0.55
+                fallback: 0.375
             ),
             borderLineWidth: boundedDouble(
                 environment["DOCK_LIQUID_GLASS_BORDER_WIDTH"],
                 range: 0 ... 4,
-                fallback: 1
+                fallback: 0.5
             ),
             backgroundMaterialOpacity: boundedDouble(
                 environment["DOCK_LIQUID_GLASS_BACKGROUND_OPACITY"],

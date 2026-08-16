@@ -43,8 +43,14 @@ struct DockGlassBackdrop: View {
 }
 
 extension View {
-    /// 面板描边。玻璃自带边缘高光，玻璃态下我们自己那圈常驻描边要关掉；
-    /// 但拖放命中的整框高亮（`keepsVisible`）两条路径都要画。
+    /// 面板描边。两条路径各画各的：毛玻璃走 `DockThemeTokens` 的那圈，玻璃走实测对齐
+    /// 原生 Dock 的均匀白色高光。拖放命中的整框高亮（`keepsVisible`）两条路径共用主题那圈。
+    ///
+    /// **玻璃的高光必须画在这里，不能画进 `DockLiquidGlassPlate` 内部。** 底板视图外面套着
+    /// 历史遗留的 `.padding(-2)`（毛玻璃需要外扩 2pt 避免边缘缝隙），玻璃视图的 frame 因此
+    /// 比条大 2pt，`strokeBorder` 向内画的那一圈正好落在被裁掉的 2pt 里 —— 实测把宽度拉到
+    /// 4pt 时只露出一半（8px 只见 4px），0.5pt 则完全消失。这里的 overlay 挂在整条 body 上，
+    /// 位置就是条的真实边缘。
     func dockPanelRim<S: ShapeStyle>(
         cornerRadius: CGFloat,
         style: S,
@@ -52,10 +58,20 @@ extension View {
         usesLiquidGlass: Bool,
         keepsVisible: Bool = false
     ) -> some View {
-        let effectiveWidth = usesLiquidGlass && !keepsVisible ? 0 : lineWidth
+        let glassRim = usesLiquidGlass && !keepsVisible
+        let configuration = DockGlassPresentation.configuration
         return overlay {
             RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
-                .strokeBorder(style, lineWidth: effectiveWidth)
+                .strokeBorder(style, lineWidth: glassRim ? 0 : lineWidth)
+        }
+        .overlay {
+            if glassRim {
+                RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
+                    .strokeBorder(
+                        Color.white.opacity(configuration.borderOpacity),
+                        lineWidth: CGFloat(configuration.borderLineWidth)
+                    )
+            }
         }
     }
 }
@@ -116,53 +132,14 @@ private struct DockLiquidGlassPlate: View {
             .background {
                 shape.fill(Color.white.opacity(configuration.whiteOverlayOpacity))
             }
-            .overlay { directionalBorder(for: shape) }
+            // 边缘高光**不在这里画** —— 见 `View.dockPanelRim`：底板外面套着 `.padding(-2)`，
+            // 画在这一层会被裁掉。
             // 面板永远不会成为 key 窗口，不强制的话材质会按「非活动」渲染、整块发灰。
             .materialActiveAppearance(.active)
             .environment(\.appearsActive, true)
             .padding(-inset)
     }
 
-    /// 方向性描边：整圈底色 + 左上到右下的亮边 + 右下的暗收，模拟光从上方进入介质。
-    /// 原生 Dock 的立体感主要来自这一圈。
-    private func directionalBorder<S: InsettableShape>(for shape: S) -> some View {
-        let opacity = configuration.borderOpacity
-        let width = CGFloat(configuration.borderLineWidth)
-        return ZStack {
-            shape.strokeBorder(Color.white.opacity(opacity * 0.24), lineWidth: width)
-
-            shape
-                .strokeBorder(Color.white.opacity(opacity), lineWidth: width)
-                .mask {
-                    LinearGradient(
-                        stops: [
-                            .init(color: .white, location: 0),
-                            .init(color: .white.opacity(0.9), location: 0.18),
-                            .init(color: .clear, location: 0.62),
-                            .init(color: .clear, location: 1),
-                        ],
-                        startPoint: .topLeading,
-                        endPoint: .bottomTrailing
-                    )
-                }
-
-            shape
-                .strokeBorder(Color.black.opacity(opacity * 0.22), lineWidth: max(0.5, width * 0.7))
-                .mask {
-                    LinearGradient(
-                        stops: [
-                            .init(color: .clear, location: 0),
-                            .init(color: .clear, location: 0.58),
-                            .init(color: .white.opacity(0.75), location: 0.82),
-                            .init(color: .white, location: 1),
-                        ],
-                        startPoint: .topLeading,
-                        endPoint: .bottomTrailing
-                    )
-                }
-        }
-        .compositingGroup()
-    }
 }
 
 /// 玻璃合成的 WindowServer 侧。它独占一个鼠标穿透的面板，这样窗口模糊不会把内容窗口里的
