@@ -1272,6 +1272,13 @@ struct ChipView: View {
     /// 悬停名气泡。**任何 chip 悬停就弹**（2026-08-16 改成原生 Dock 那种「图标正上方的气泡」
     /// 之前，这里还有一道「标题被截断才弹」的门槛）。锚点是**整张卡**的矩形——原生是对着
     /// 图标居中，不是对着药丸。
+    ///
+    /// **弹的是应用名，不是窗口标题**（owner 2026-08-17）。原生 Dock 的这颗气泡永远只写应用名，
+    /// 而我们原来写 `displayTitle`（AX 窗口标题），所以普遍长得多——「AGENTS.md - 项目名 -
+    /// Obsidian」对上原生的「Obsidian」。这不是抓取规则的偏差，是两边显示的东西根本不同。
+    ///
+    /// **已知代价，owner 拍板接受**：同一应用的多张窗口卡，气泡内容完全一样，分不出是哪个窗口。
+    /// 兜底没有丢——两个分支都保留了 `.help(displayTitle)`，悬停久一点仍能看到完整窗口标题。
     private func updateWindowTitleTooltip(hovering: Bool, anchor: CGRect? = nil) {
         let rect = anchor ?? cardScreenRect
         guard hovering, showsHover, rect != .zero else {
@@ -1280,7 +1287,7 @@ struct ChipView: View {
         }
         onWindowTitleTooltipEvent(.update(WindowTitleTooltipRequest(
             chipID: item.id,
-            title: displayTitle,
+            title: appName,
             anchorVisibleRect: rect
         )))
     }
@@ -1364,7 +1371,8 @@ struct ChipView: View {
             onEvent: recordPressEvent
         )
         .nativeContextMenu { buildChipMenu() }
-        .onChange(of: capturedDisplayTitle) { _ in
+        // 气泡内容是应用名，所以跟的是 appName 而不是窗口标题（标题变化不再影响气泡）。
+        .onChange(of: appName) { _ in
             if isHovering { updateWindowTitleTooltip(hovering: true) }
         }
         .onChange(of: scale) { _ in
@@ -1449,7 +1457,8 @@ struct ChipView: View {
             onEvent: recordPressEvent
         )
         .nativeContextMenu { buildChipMenu() }
-        .onChange(of: displayTitle) { _ in
+        // 同 bareIconChip：气泡是应用名，跟 appName。
+        .onChange(of: appName) { _ in
             if isHovering { updateWindowTitleTooltip(hovering: true) }
         }
         .onChange(of: scale) { _ in

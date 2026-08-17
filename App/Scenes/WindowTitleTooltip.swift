@@ -2,12 +2,16 @@ import AppKit
 import os
 import SwiftUI
 
+/// 条内**药丸里那行窗口标题**的度量。只服务药丸的排版——它撑多宽、最多多宽。
+///
+/// 2026-08-17 删掉了 `isTruncated` / `needsTooltip` / `truncationTolerance`：那套是给
+/// 「标题被截断才弹 tooltip」用的门槛，而气泡先是改成「悬停就弹」、后又改成「只写应用名」，
+/// 截断与否已经不影响任何行为，生产代码里一个调用方都不剩。想找完整窗口标题看
+/// `ChipView` 上的 `.help(displayTitle)`（系统 tooltip 兜底）。
 enum WindowTitleTextMetrics {
-    /// 条内标题的最大宽度（中档基线）。**渲染和截断判定必须共用同一个值**——
-    /// 以前 `ChipView` 那边写死 140、这边也写死 140，两处随缩放各走各的就会出现
-    /// 「视觉上截断了但不弹 tooltip」（或反之）。任务条缩放后一律走 `maximumWidth(for:)`。
+    /// 条内标题的最大宽度（中档基线）。任务条缩放后一律走 `maximumWidth(for:)`，
+    /// 别在调用点另写一份字面值——两处各走各的曾经让药丸和判定对不上。
     static let maximumWidth: CGFloat = 140
-    static let truncationTolerance: CGFloat = 2
 
     static func maximumWidth(for scale: CGFloat) -> CGFloat { maximumWidth * scale }
 
@@ -25,21 +29,6 @@ enum WindowTitleTextMetrics {
         (title as NSString).size(withAttributes: [.font: font(scale: scale)]).width
     }
 
-    static func isTruncated(
-        intrinsicWidth: CGFloat,
-        maximumWidth: CGFloat = maximumWidth,
-        tolerance: CGFloat = truncationTolerance
-    ) -> Bool {
-        ceil(intrinsicWidth) > maximumWidth + tolerance
-    }
-
-    static func needsTooltip(for title: String, scale: CGFloat) -> Bool {
-        guard !title.isEmpty else { return false }
-        return isTruncated(
-            intrinsicWidth: intrinsicWidth(of: title, scale: scale),
-            maximumWidth: maximumWidth(for: scale)
-        )
-    }
 }
 
 /// 带标题窗口卡「药丸」的布局常量。**渲染与推导必须共用它**——tooltip 的锚点契约是 pill rect

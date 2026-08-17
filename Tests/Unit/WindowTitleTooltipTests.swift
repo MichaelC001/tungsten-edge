@@ -33,22 +33,9 @@ final class WindowTitleTooltipTests: XCTestCase {
         XCTAssertEqual(WindowTitleTextMetrics.maximumWidth(for: 1.0), 140)
     }
 
-    func testTruncationThresholdIncludesTolerance() {
-        XCTAssertFalse(WindowTitleTextMetrics.isTruncated(intrinsicWidth: 142))
-        XCTAssertTrue(WindowTitleTextMetrics.isTruncated(intrinsicWidth: 142.01))
-    }
-
-    func testEmptyAndShortTitlesDoNotNeedTooltip() {
-        XCTAssertFalse(WindowTitleTextMetrics.needsTooltip(for: "", scale: 1))
-        XCTAssertFalse(WindowTitleTextMetrics.needsTooltip(for: "Short", scale: 1))
-    }
-
-    func testLongTitleNeedsTooltip() {
-        XCTAssertTrue(WindowTitleTextMetrics.needsTooltip(
-            for: String(repeating: "Window title ", count: 20),
-            scale: 1
-        ))
-    }
+    // 截断判定（`isTruncated` / `needsTooltip`）连同它的三条测试于 2026-08-17 删除：
+    // 那是「标题被截断才弹 tooltip」的门槛，气泡先改成悬停就弹、后又改成只写应用名，
+    // 生产代码里已无调用方。别按旧签名把它们恢复回来。
 }
 
 /// 悬停时 chip 的几何**恒定不动**——应用名 2026-08-16 改成了原生 Dock 那种「图标正上方的
