@@ -85,6 +85,7 @@ final class DockThemeTests: XCTestCase {
         }
         XCTAssertEqual(composite(over: 0), 173, accuracy: 6, "黑底实测 173")
         XCTAssertEqual(composite(over: 145), 216, accuracy: 6, "绿壁纸底实测 216")
+        XCTAssertEqual(composite(over: 235), 247, accuracy: 6, "浅色窗口底实测 247（2026-08-17 新增第三点）")
         // 反过来钉住「它是半透的」：完全不透就跟不上背景，浅壁纸下会显得脏。
         XCTAssertLessThan(theme.tooltipPlateOpacity, 0.85)
     }

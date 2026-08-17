@@ -27,6 +27,9 @@ struct LauncherChip: View {
     /// 成员 / 管理菜单项（右键菜单末尾），如「在程序坞中保留」「标记为消息应用」。
     /// 空数组 = 无成员项。
     var membershipItems: [LauncherMembershipItem] = []
+    /// 未读角标文本（消息区专用），`nil` = 不画。画在 chip 内部而不是由调用方叠 ZStack，
+    /// 这样悬停放大、按压回缩、档位缩放它全都跟着走——理由见 `ChipBadgeView`。
+    var badgeText: String? = nil
     /// When set, replaces the default tap behavior (drawer show/hide toggle). Used by
     /// app-level strip entries that must reopen a missing main window.
     var onTap: (() -> Void)? = nil
@@ -96,7 +99,6 @@ struct LauncherChip: View {
         }
         .frame(width: ChipPillMetrics.cardWidth * scale,
                height: ChipPillMetrics.chipHeight * scale)
-        .chipQuietHoverScale(quietHoverFeedback)
         .overlay(alignment: .bottom) {
             if visual.showsRunningDot {
                 Circle()
@@ -105,16 +107,27 @@ struct LauncherChip: View {
                     .padding(.bottom, 2)
             }
         }
+        // 未读角标：**必须挂在两个缩放之前**（owner 2026-08-17）。见 `ChipBadgeView`。
+        .overlay(alignment: .topTrailing) {
+            if let badgeText {
+                ChipBadgeView(text: badgeText, scale: scale)
+            }
+        }
+        // 运行点原本挂在放大**之后**（点不跟着放大），和 `ChipView.bareIconChip` 不一致；
+        // 这次一并对齐：两处都是「图标 + 点 + 角标」整体缩放。
+        .chipQuietHoverScale(quietHoverFeedback,
+                             cardWidth: ChipPillMetrics.cardWidth * scale,
+                             scale: scale)
         .chipPressScale(isTapPressed)
         .background(ScreenRectReader(delivery: .tooltip) { rect in
             guard rect != cardScreenRect else { return }
             cardScreenRect = rect
-            if isHovering { updateTooltip(hovering: true) }
+            if isHovering { updateTooltip(hovering: true, reason: .refresh) }
         })
         .contentShape(Rectangle())
         .onHover { hovering in
             isHovering = hovering
-            updateTooltip(hovering: hovering)
+            updateTooltip(hovering: hovering, reason: .pointerEntered)
             ChipAnimationTrace.event(
                 chipID: bundleID,
                 kind: "launcher",
@@ -158,13 +171,14 @@ struct LauncherChip: View {
         .onChange(of: isHovering) { trace("isHovering=\($0)") }
     }
 
-    private func updateTooltip(hovering: Bool) {
+    private func updateTooltip(hovering: Bool, reason: WindowTitleTooltipRequest.Reason) {
         guard hovering, showsHover, cardScreenRect != .zero else {
             onWindowTitleTooltipEvent(.exit(chipID: bundleID))
             return
         }
         onWindowTitleTooltipEvent(.update(WindowTitleTooltipRequest(
-            chipID: bundleID, title: displayName, anchorVisibleRect: cardScreenRect
+            chipID: bundleID, title: displayName, anchorVisibleRect: cardScreenRect,
+            reason: reason
         )))
     }
 

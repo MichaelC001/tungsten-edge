@@ -94,10 +94,9 @@ struct PanelScreenGeometry: Equatable {
 }
 
 enum PanelGeometry {
-    /// 气泡**尖端**到锚点顶边的距离。原生实测 6.5pt（`WindowTitleTooltipStyle.tipGap`）；
-    /// 气泡视图自己的高度已经把尖角算进去了，所以这里就是尖端的间距。
-    static let windowTitleTooltipGap: CGFloat = 6.5
     static let windowTitleTooltipScreenMargin: CGFloat = 8
+    /// 阴影留白**不随档位缩放**：气泡的阴影 token 本身是固定的，跟着缩会动到定稿的观感。
+    /// 视图侧和这里必须用同一个值（视图 `.padding(它)`，这里再减回去）。
     static let windowTitleTooltipShadowPadding: CGFloat = 8
 
     static func dockTargetFrame(
@@ -172,9 +171,12 @@ enum PanelGeometry {
 
     /// Window-title tooltip panel frame. The panel includes transparent padding for its SwiftUI
     /// shadow, while the visible bubble stays 8pt above the pill and 8pt inside the screen edges.
+    /// `tipGap` = 气泡**尖端**到锚点顶边的距离，随档位缩放，由调用方从
+    /// `WindowTitleTooltipStyle.tipGap` 传进来——系数只在样式那一处算，这里不再算第二遍。
     static func windowTitleTooltipTargetFrame(
         anchorVisibleRect: CGRect,
         size: CGSize,
+        tipGap: CGFloat,
         on screen: PanelScreenGeometry
     ) -> CGRect {
         let inset = windowTitleTooltipShadowPadding
@@ -184,7 +186,7 @@ enum PanelGeometry {
         let maxVisibleX = screen.frame.maxX - windowTitleTooltipScreenMargin - visibleWidth
         let desiredVisibleX = anchorVisibleRect.midX - visibleWidth / 2
         let visibleX = min(max(desiredVisibleX, minVisibleX), maxVisibleX)
-        let desiredVisibleY = anchorVisibleRect.maxY + windowTitleTooltipGap
+        let desiredVisibleY = anchorVisibleRect.maxY + tipGap
         let maxVisibleY = screen.topUsableY - visibleHeight
         let visibleY = min(desiredVisibleY, maxVisibleY)
 

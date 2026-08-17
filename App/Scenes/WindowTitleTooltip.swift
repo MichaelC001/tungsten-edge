@@ -72,17 +72,66 @@ enum ChipPillMetrics {
     /// 有一半是大小，不只是颜色。
     static let bareIconVisibleSlot: CGFloat = 32.5
 
-    /// 安静档悬停时整块放大的倍数（见 `View.chipQuietHoverScale`）。
+    /// 安静档悬停时整块放大的**上限**（见 `View.chipQuietHoverScale`）。
     ///
     /// 1.10 不会让相邻图标的可见像素相撞：卡宽 40、图标可见方块只有 32.5，
     /// 放大到 35.75 仍在卡内，两侧还各剩 2pt 多的透明边距。
+    ///
+    /// **注意这段论证只覆盖图标卡**，见下面 `quietHoverScale(forCardWidth:scale:)`。
     static let quietHoverScale: CGFloat = 1.10
+
+    /// 悬停放大时，卡片每侧最多向外长这么多（未缩放，随档位乘 `scale`）。
+    ///
+    /// 两张标题卡之间的可见缝是 `2 * titledCardInset + Style.chipSpacing` = 10pt，
+    /// 留 3pt 预算 → 最坏情况仍剩 7pt。
+    static let quietHoverEdgeBudget: CGFloat = 3
+
+    /// 按卡宽收敛的放大倍数。
+    ///
+    /// **等比放大的绝对位移跟卡宽走，所以「同一个 1.10」从来不是「同样多的反馈」。**
+    /// owner 2026-08-17 报「特别宽的标签页放大会挤到旁边的标签」，在他的截图上实测：
+    /// 图标卡 40pt 宽 → 每侧外扩 2.0pt；那张标题卡 168.5pt 宽 → 每侧外扩 **8.4pt**（4 倍），
+    /// 把 10pt 的缝吃到只剩 3.5pt。上面 `quietHoverScale` 的论证里根本没有标题卡。
+    ///
+    /// 修法是给**每侧外扩量**封顶，而不是按卡片类型分叉：
+    /// 图标卡算出来是 1.15、被上限截回 1.10（**一个像素不变**），只有宽到会挤的卡才被收。
+    /// 一条规则覆盖四种卡，以后新增一种卡也不会漏掉分支。
+    ///
+    /// 比值与档位无关（预算和卡宽同乘 `scale`），显式写出来是为了调用方传的是已缩放的卡宽。
+    static func quietHoverScale(forCardWidth width: CGFloat, scale: CGFloat) -> CGFloat {
+        guard width > 0 else { return quietHoverScale }
+        return min(quietHoverScale, 1 + 2 * quietHoverEdgeBudget * scale / width)
+    }
     /// 纯图标卡的卡宽。**中心间距 = `cardWidth + Style.chipSpacing`，两者要一起看。**
     /// 2026-08-16 实测原生 Dock 的图标中心间距是 42pt（40 的 tile + 2pt 缝），
     /// 钨极原来是 52pt（44 + 8），稀疏了一倍；改成 40 + 2 对齐。
     /// 卡宽等于图标尺寸，所以图标横向没有额外余量——原生也是这样，
     /// 可见的缝来自图标资源自带的透明边距。
     static let cardWidth: CGFloat = 40
+
+    /// 卡与卡之间的间距。**定义在这里，`Style.chipSpacing` 引用它**——气泡的邻域判定
+    /// （`PanelCoordinator`）也要用到中心间距，而 `Style` 是 private、别的文件读不到，
+    /// 两处各写一个 2 迟早对不上。
+    ///
+    /// 2pt：对齐原生 Dock 的图标中心间距 42pt。**改它必须同步改
+    /// `StripContextMenuZone.defaultMinimumGapWidth`**——那个阈值要严格落在「普通缝」和
+    /// 「分割线缝」之间，否则任务条空白区右键会整个失效。
+    static let chipSpacing: CGFloat = 2
+
+    /// 图标卡的中心间距（原生实测 42pt）。
+    static let iconPitch: CGFloat = cardWidth + chipSpacing
+
+    // MARK: 未读角标（`ChipBadgeView`）
+    //
+    // 中档 = 下面这组字面值，与 2026-08-17 之前逐字相同；其余档位整体乘 `scale`。
+    // 在此之前这几个数是写死的，**四个档位一样大**——70pt 的条上那颗红点偏小、46pt 上偏大。
+    // 和悬停气泡是同一类漏网（AGENTS《Taskbar Size Tiers》：条内每条渲染路径都要吃 `scale`）。
+    static let badgeFontSize: CGFloat = 10
+    /// 角标胶囊的最小尺寸（一位数时就是它）。
+    static let badgeMinimumSize: CGFloat = 16
+    static let badgeHorizontalPadding: CGFloat = 5
+    /// 从卡片右上角往下推的量：原生的角标大部分压在图标上，只稍微探出圆角。
+    static let badgeTopOffset: CGFloat = 5
 
     /// 药丸盒顶边到卡片顶边的距离：两个 `Spacer` 平分 `chipHeight - boxHeight`。
     static let boxTopInset: CGFloat = (chipHeight - boxHeight) / 2
@@ -401,9 +450,18 @@ struct ChipAnimationTraceBuffer {
 }
 
 struct WindowTitleTooltipRequest: Equatable {
+    /// 这次请求是**谁**发起的。归属守卫只对 `.refresh` 生效，见 `WindowTitleTooltipOwnership`。
+    enum Reason: Equatable {
+        /// 指针真的移进了这张卡（`.onHover(true)`）。**一律放行。**
+        case pointerEntered
+        /// 没有指针动作的重发：矩形变了 / 应用名变了 / 档位变了。**要过守卫。**
+        case refresh
+    }
+
     let chipID: String
     let title: String
     let anchorVisibleRect: CGRect
+    let reason: Reason
 }
 
 enum WindowTitleTooltipEvent: Equatable {
@@ -429,27 +487,114 @@ enum WindowTitleTooltipEvent: Equatable {
 /// 尖角侧影在两张不同宽度的原生截图里**逐像素一致**（半宽 16.5/14/12.5/10.5/9.5/8.5/7.5/
 /// 6.5/5.5/4/3 @2x），所以它是固定尺寸的零件，不随气泡宽度变。中段斜率约 1.17（半宽/深度），
 /// 外推到 0 应在 7.1pt 处，实际 6.5pt 就收——**差的那截就是圆头**（owner 说的「更圆润」）。
-enum WindowTitleTooltipStyle {
-    static let height: CGFloat = 26
-    static let cornerRadius: CGFloat = height / 2
-    static let horizontalPadding: CGFloat = 13
-    static let fontSize: CGFloat = 14
-    static let tailWidth: CGFloat = 23
-    static let tailHeight: CGFloat = 6.5
+///
+/// **整颗随任务条档位缩放**（owner 2026-08-17）：上表是**中档**的值，其余档位整体乘
+/// `DockSize.scale`。系数用现成的 `DockSize.scale` 就对——它已经是「中档归一」
+/// （`panelHeight / DockSize.medium.panelHeight`），中档恒等于 1.0，所以中档这一列
+/// 逐字保持实测原值。别再另算一个系数，更别拿条高除以某个字面量。
+struct WindowTitleTooltipStyle: Equatable {
+    /// 档位系数（中档 = 1）。
+    let scale: CGFloat
+    let height: CGFloat
+    let cornerRadius: CGFloat
+    let horizontalPadding: CGFloat
+    let fontSize: CGFloat
+    let tailWidth: CGFloat
+    let tailHeight: CGFloat
     /// 直边段的上端：基部外扩到这里收住。
-    static let tailShoulderDepth: CGFloat = 1.6
-    static let tailShoulderHalfWidth: CGFloat = 6.6
+    let tailShoulderDepth: CGFloat
+    let tailShoulderHalfWidth: CGFloat
     /// 圆头起点：从这里开始是那顶圆帽。
-    static let tailTipDepth: CGFloat = 5.6
-    static let tailTipHalfWidth: CGFloat = 1.9
+    let tailTipDepth: CGFloat
+    let tailTipHalfWidth: CGFloat
     /// 尖端到锚点顶边的距离。
-    static let tipGap: CGFloat = 6.5
-    static let maximumWidth: CGFloat = 360
+    let tipGap: CGFloat
+    let maximumWidth: CGFloat
+
+    init(scale: CGFloat) {
+        self.scale = scale
+        height = 26 * scale
+        // 胶囊：圆角恒为高的一半，缩放后依然是胶囊。
+        cornerRadius = height / 2
+        horizontalPadding = 13 * scale
+        fontSize = 14 * scale
+        tailWidth = 23 * scale
+        tailHeight = 6.5 * scale
+        tailShoulderDepth = 1.6 * scale
+        tailShoulderHalfWidth = 6.6 * scale
+        tailTipDepth = 5.6 * scale
+        tailTipHalfWidth = 1.9 * scale
+        tipGap = 6.5 * scale
+        maximumWidth = 360 * scale
+    }
+
+    /// 实测原表 = 中档。测试拿它锁住「缩放没有顺手改掉原生像素」。
+    static let native = WindowTitleTooltipStyle(scale: 1)
+}
+
+/// 谁有资格占用那**唯一一块**气泡面板：指针必须落在这张卡的锚点矩形里。
+///
+/// 这条规矩本来就存在，只是**过去只有看门狗在执行**（每 0.1s 复核一次），
+/// `.update` 入口反而无条件接受任何一张卡的请求。缺口在于卡片侧的 `@State isHovering`
+/// 会**卡在 true**：SwiftUI 的 `.onHover(false)` 在指针快速划出、或卡片被重排/移除从指针底下
+/// 抽走时会整个漏掉（看门狗的注释里就写着这件事），而没有任何人给那份状态复位。
+/// 于是那张卡会在**没有新悬停动作**的情况下继续重发 `.update`——只要整条重排一次
+/// （别处窗口标题变了、药丸宽度变了）让它的屏幕矩形更新就够——把面板拽到自己头上，
+/// 100ms 后再被看门狗收掉。owner 2026-08-17 报的「在条左边滑动，右边的应用闪了一下气泡」
+/// 正是这个形状，也解释了为什么当场复现不了（要先有一张卡漏过一次 exit）。
+///
+/// 入口和看门狗**共用这一个函数**，两边不会漂移。
+///
+/// **守卫只拦「内容驱动」的重发，真实的悬停进入一律放行**（`WindowTitleTooltipRequest.Reason`）。
+/// 第一版对所有 `.update` 都拦，那是错的：`.onHover(true)` 是事件驱动的，主线程处理到它时
+/// 指针可能已经划过去了，于是这张卡的气泡整个不弹——而它的 `isHovering` 仍是 true，
+/// 不会再补发。守卫要防的从来就是「没有指针动作的重发」，不是用户真的把指针移了上去。
+enum WindowTitleTooltipOwnership {
+    /// 2pt 容差：锚点是去抖上报的，重排刚落定的那一帧可能还差一点点。
+    static let pointerTolerance: CGFloat = 2
+
+    static func canOwnBubble(anchorVisibleRect: CGRect,
+                             pointer: CGPoint,
+                             tolerance: CGFloat = pointerTolerance) -> Bool {
+        guard anchorVisibleRect.width > 0, anchorVisibleRect.height > 0 else { return false }
+        return anchorVisibleRect.insetBy(dx: -tolerance, dy: -tolerance).contains(pointer)
+    }
+
+    /// 是否接受这次 `.update`。
+    static func accepts(_ request: WindowTitleTooltipRequest, pointer: CGPoint) -> Bool {
+        switch request.reason {
+        case .pointerEntered: return true
+        case .refresh: return canOwnBubble(anchorVisibleRect: request.anchorVisibleRect,
+                                           pointer: pointer)
+        }
+    }
+
+    /// 指针离开了这张卡，但气泡该不该**继续留着**。
+    ///
+    /// 原来的做法是「指针还在条上就挂 90ms，到点收掉」。问题出在卡与卡之间那 2pt 间隙：
+    /// 落在里面时**没有任何卡被悬停**，慢慢滑（试探边界时正是慢动作，慢于 22pt/s 就够）
+    /// 就会超时 → 气泡收掉 → 进下一张卡再重新弹。用户看到的是「A → 空 → B」，
+    /// 而**原生 Dock 的磁贴是连续铺满的，永远没有「哪个都不是」的中间态**，所以它是一条硬线
+    /// （owner 2026-08-17：「原生有很明显的界限，钨极有点模糊」）。
+    ///
+    /// 改成按**邻域**判定：指针还在当前锚点左右一个图标中心间距之内就留着，隔壁卡一进来
+    /// 自然接管；真的走远了（宽的分区分隔线、条两端）才收，不会挂着一颗过期气泡。
+    /// 横向放宽、纵向仍用 2pt 容差——竖着离开条就该收。
+    static func shouldHoldBubble(anchorVisibleRect: CGRect,
+                                 pointer: CGPoint,
+                                 horizontalReach: CGFloat,
+                                 tolerance: CGFloat = pointerTolerance) -> Bool {
+        guard anchorVisibleRect.width > 0, anchorVisibleRect.height > 0 else { return false }
+        return anchorVisibleRect
+            .insetBy(dx: -max(tolerance, horizontalReach), dy: -tolerance)
+            .contains(pointer)
+    }
 }
 
 /// 胶囊 + 向下水滴尖角。尖角画在**形状里**而不是叠一个三角形：
 /// 叠加的话两块的描边会在接缝处交叉出一条横线，原生那颗是一整块连续的轮廓。
 struct WindowTitleTooltipShape: InsettableShape {
+    let style: WindowTitleTooltipStyle
     /// `strokeBorder` 用：把描边**整条画在形状里面**。
     ///
     /// 原来用 `stroke`，它把线骑在轮廓上——0.5pt 的线有一半落到形状外，被抗锯齿吃掉一半，
@@ -464,11 +609,11 @@ struct WindowTitleTooltipShape: InsettableShape {
 
     func path(in outerRect: CGRect) -> Path {
         let rect = outerRect.insetBy(dx: insetAmount, dy: insetAmount)
-        let tail = WindowTitleTooltipStyle.tailHeight
+        let tail = style.tailHeight
         let body = CGRect(x: rect.minX, y: rect.minY,
                           width: rect.width, height: max(0, rect.height - tail))
-        let radius = min(WindowTitleTooltipStyle.cornerRadius, body.height / 2)
-        let halfTail = min(WindowTitleTooltipStyle.tailWidth, body.width) / 2
+        let radius = min(style.cornerRadius, body.height / 2)
+        let halfTail = min(style.tailWidth, body.width) / 2
         let centerX = body.midX
 
         var path = Path()
@@ -482,10 +627,10 @@ struct WindowTitleTooltipShape: InsettableShape {
         // 尖角三段（原生实测）：基部外扩的凹肩 → 中段直边 → 圆头。
         // **不是一个尖点**：外推直边应在 7.1pt 处收口，实际 6.5pt 就到底，差的那截是圆帽。
         let base = body.maxY
-        let shoulderY = base + WindowTitleTooltipStyle.tailShoulderDepth
-        let shoulderX = WindowTitleTooltipStyle.tailShoulderHalfWidth
-        let tipY = base + WindowTitleTooltipStyle.tailTipDepth
-        let tipX = WindowTitleTooltipStyle.tailTipHalfWidth
+        let shoulderY = base + style.tailShoulderDepth
+        let shoulderX = style.tailShoulderHalfWidth
+        let tipY = base + style.tailTipDepth
+        let tipX = style.tailTipHalfWidth
         // 二次曲线在 t=0.5 处到达 (起点 + 2×控制点 + 终点)/4，所以控制点的 y 这样反解出峰值 = base + tail。
         let capControlY = 2 * (base + tail) - tipY
 
@@ -505,28 +650,88 @@ struct WindowTitleTooltipShape: InsettableShape {
 
 struct WindowTitleTooltipView: View {
     let title: String
+    /// 档位样式。**故意不给默认值**——漏传必须是编译错误，同 `ChipView.scale` / `hoverStyle` /
+    /// `onWindowTitleTooltipEvent`（AGENTS《Taskbar Size Tiers》）。
+    let style: WindowTitleTooltipStyle
+    /// 底板走不走真·液态玻璃。**同样不给默认值**，值由 `PanelCoordinator` 传
+    /// （它的 `usesLiquidGlass` 是全局唯一来源）。
+    let usesLiquidGlass: Bool
 
     private let theme = DockThemeTokens.standard
 
     var body: some View {
-        let shape = WindowTitleTooltipShape()
+        let shape = WindowTitleTooltipShape(style: style)
         return Text(title)
-            .font(.system(size: WindowTitleTooltipStyle.fontSize, weight: .regular))
+            .font(.system(size: style.fontSize, weight: .regular))
             .foregroundStyle(theme.tooltipText.color)
             .lineLimit(1)
             .truncationMode(.tail)
-            .frame(maxWidth: WindowTitleTooltipStyle.maximumWidth)
-            .padding(.horizontal, WindowTitleTooltipStyle.horizontalPadding)
+            .frame(maxWidth: style.maximumWidth)
+            .padding(.horizontal, style.horizontalPadding)
             // 文字盒撑满主体高度并居中；尖角靠额外的下内边距占位，文字不会被它带偏。
-            .frame(height: WindowTitleTooltipStyle.height)
-            .padding(.bottom, WindowTitleTooltipStyle.tailHeight)
-            // **底下不垫 `.ultraThinMaterial`。** 实测它在这里只透过约 54% 的背景、而且不加白，
-            // 垫着只会把整颗压暗：白底上我们读到 174，原生该是 249。降底板不透明度也救不回来
-            // ——算下来要板色 384 才够，超出 255。代价是没有背景模糊（原生有），
-            // 但只透三成，糊不糊看不太出来；真要补，得用 macOS 26 的玻璃效果，不是这层材质。
-            .background(shape.fill(theme.tooltipPlate.color.opacity(theme.tooltipPlateOpacity)))
+            .frame(height: style.height)
+            .padding(.bottom, style.tailHeight)
+            .background(plate(shape: shape))
             .overlay(shape.strokeBorder(theme.tooltipRim.color, lineWidth: 0.5))
             .dockShadow(theme.tooltipShadow)
             .padding(PanelGeometry.windowTitleTooltipShadowPadding)
+    }
+
+    /// 气泡底板。玻璃可用时走真·液态玻璃（有折射），否则退回那块签收过的平板。
+    ///
+    /// **原生这颗不是普通的背景模糊，是液态玻璃折射**（owner 2026-08-17 指出，实测也吻合）：
+    /// 同一亮度背景（~235）下原生填充 247、我们 239，而两条「板色 × 不透明度」模型只差 4 级。
+    /// 差额来自**背后取的是什么**——原生取折射后的邻域，浅色窗口上零星的深色文字被抹平；
+    /// 我们取背后的真实像素，于是原生糊成一片、我们能一个字一个字读出来。
+    ///
+    /// **我们自己手搓折射仍然不可能**（`.behindWindow` 合成在 WindowServer，本进程看不到
+    /// 自己背后的像素），但**用系统的玻璃是另一回事**，五块面板已经在用了。
+    /// `.glassEffect(_:in:)` 的 `in:` 吃任意 `Shape`，所以尾巴能和体一起渲染，
+    /// 不用拆成两块（拆开会在接缝横一条线，这条踩过）。
+    ///
+    /// 结构和 `DockLiquidGlassPlate` 同构：玻璃 + 它**之下**一层加白。
+    /// 那两个 `materialActiveAppearance` / `appearsActive` 不能省——气泡面板永远不会成为
+    /// key 窗口，不强制的话材质按「非活动」渲染、整块发灰（面板那边已经踩过）。
+    /// **玻璃垫在板底下，不是取代板。** 这是本轮最贵的一课，实测数字如下（黑底 / 浅底 235）：
+    ///
+    /// | 底板做法 | 黑底 | 浅底 | 原生 |
+    /// |---|---|---|---|
+    /// | 只用 `Glass.clear`（任务条那条） | — | **205**（比背景还暗） | — |
+    /// | 只用 `Glass.regular` + 加白 0.22 | **45** | 245 | 173 / 247 |
+    /// | 近白板 0.70 **压在玻璃之上**（现行） | 见验证 | 见验证 | 173 / 247 |
+    ///
+    /// 只用玻璃在浅底上能调到 247，**但黑底只有 45**——`.regular` 会跟着背景变暗，
+    /// 而原生这颗在纯黑上仍然是浅灰 173，黑字才读得出来。**一个背景标定不出两个未知数**
+    /// （`Docs/28` 那条），差点又栽在同一个坑里。
+    ///
+    /// 原生的行为是「近白半透板 + 背后被糊过」，所以板的代数一个字不改（`0.965 @ 0.70`，
+    /// 三点实测标定过、也被 `DockThemeTests` 锁着），玻璃只负责**把透过来的那 30% 糊掉**。
+    /// 两条路径因此代数完全相同，唯一区别是那 30% 清不清楚——回退路径不会跑偏。
+    @ViewBuilder
+    private func plate(shape: WindowTitleTooltipShape) -> some View {
+        // 板：两条路径共用，**不因玻璃而改**。
+        // 这里底下不能垫 `.ultraThinMaterial`：实测它只透约 54% 背景、不加白，
+        // 白底上把气泡压到 174（原生 249），降不透明度也救不回来（要板色 384）。
+        let plate = shape.fill(theme.tooltipPlate.color.opacity(theme.tooltipPlateOpacity))
+        if #available(macOS 26.0, *), usesLiquidGlass {
+            plate.background {
+                shape
+                    .fill(Color.clear)
+                    // **`.clear` 而不是 `.regular`：它保色明显更好。** 同一块红靶实测
+                    // （板在上、玻璃在下，两者的黑 / 白亮度点完全一致）：
+                    // `.clear` (232,197,194) 饱和 **0.164**，`.regular` (206,187,186) 饱和 0.097。
+                    // 反推玻璃自己的输出，`.clear` 的饱和有 0.63——**冲淡颜色的是上面那块白板**，
+                    // 不是玻璃。原生是 0.269，我们到不了：把板调薄能补上色度，但黑底那 173
+                    // 会跟着塌（a=0.55 时算出来只剩 141），而黑底上黑字读得清全靠它。
+                    // 原生那块材质在暗处自发光**又**保色，线性叠层做不到，这是已接受的边界。
+                    .glassEffect(.clear.interactive(false), in: shape)
+                    // 气泡面板永远不会成为 key 窗口，不强制的话材质按「非活动」渲染、
+                    // 整块发灰（面板那边已经踩过，注释在 `DockLiquidGlassPlate`）。
+                    .materialActiveAppearance(.active)
+                    .environment(\.appearsActive, true)
+            }
+        } else {
+            plate
+        }
     }
 }

@@ -47,16 +47,18 @@ struct ShelfChip: View {
         }
         .frame(width: ChipPillMetrics.cardWidth * scale,
                height: ChipPillMetrics.chipHeight * scale)
-        .chipQuietHoverScale(quietHoverFeedback)
+        .chipQuietHoverScale(quietHoverFeedback,
+                             cardWidth: ChipPillMetrics.cardWidth * scale,
+                             scale: scale)
         .contentShape(Rectangle())
         .background(ScreenRectReader(delivery: .tooltip) { rect in
             guard rect != cardScreenRect else { return }
             cardScreenRect = rect
-            if isHovering { updateTooltip(hovering: true) }
+            if isHovering { updateTooltip(hovering: true, reason: .refresh) }
         })
         .onHover { hovering in
             isHovering = hovering
-            updateTooltip(hovering: hovering)
+            updateTooltip(hovering: hovering, reason: .pointerEntered)
         }
         .onDisappear { onWindowTitleTooltipEvent(.exit(chipID: "shelf")) }
         .onTapGesture { onTap() }
@@ -107,7 +109,7 @@ struct ShelfChip: View {
         .dockGlow(theme.shelfDropGlow, radius: 3, active: isDropTargeted)
     }
 
-    private func updateTooltip(hovering: Bool) {
+    private func updateTooltip(hovering: Bool, reason: WindowTitleTooltipRequest.Reason) {
         guard hovering, showsHover, cardScreenRect != .zero else {
             onWindowTitleTooltipEvent(.exit(chipID: "shelf"))
             return
@@ -115,7 +117,8 @@ struct ShelfChip: View {
         onWindowTitleTooltipEvent(.update(WindowTitleTooltipRequest(
             chipID: "shelf",
             title: itemCount > 0 ? "中转 · \(itemCount)" : "中转",
-            anchorVisibleRect: cardScreenRect
+            anchorVisibleRect: cardScreenRect,
+            reason: reason
         )))
     }
 

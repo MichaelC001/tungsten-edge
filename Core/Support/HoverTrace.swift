@@ -33,6 +33,21 @@ enum HoverTrace {
         )
     }
 
+    /// 一张卡想占用气泡面板、但指针根本不在它身上 —— 被 `WindowTitleTooltipOwnership` 挡掉。
+    ///
+    /// **这是「气泡串台」唯一的现场证据。** 那条缺陷需要某张卡先漏掉一次 `.onHover(false)`
+    /// 才会发生，当场复现不了（owner 2026-08-17 报「在条左边滑动，右边的应用闪了一下气泡」）。
+    /// 有了这一行，下次它再犯就能直接看出是谁在没有指针的情况下发的请求，不用再靠推理。
+    static func tooltipRejected(chipID: String, pointer: CGPoint, anchor: CGRect) {
+        guard isEnabled else { return }
+        Writer.shared.append(
+            "{\"t\":\(stamp()),\"kind\":\"tooltipRejected\",\"chip\":\(quote(chipID))," +
+            "\"px\":\(round(pointer.x * 10) / 10),\"py\":\(round(pointer.y * 10) / 10)," +
+            "\"ax\":\(round(anchor.minX * 10) / 10),\"ay\":\(round(anchor.minY * 10) / 10)," +
+            "\"aw\":\(round(anchor.width * 10) / 10),\"ah\":\(round(anchor.height * 10) / 10)}"
+        )
+    }
+
     static func dismiss(reason: String) {
         guard isEnabled else { return }
         Writer.shared.append("{\"t\":\(stamp()),\"kind\":\"dismiss\",\"why\":\(quote(reason))}")

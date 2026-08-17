@@ -81,40 +81,6 @@ extension DockRGB {
     var color: Color { Color(red: red, green: green, blue: blue) }
 }
 
-/// 悬停放大的动画曲线。**调参用的临时脚手架**——owner 挑定一条之后就把这个枚举拆掉、
-/// 把选中的曲线写死回 `chipQuietHoverScale`（同药丸浓度那批候选的处理方式）。
-///
-/// 为什么需要挑：主线程实测在这 120ms 里**没有任何卡顿、没有重算、没有 relayout**，
-/// 所以「不够流畅」不是被抢了资源，而是曲线本身——120ms 在 60Hz 下只有 7 帧，
-/// 位移又只有 4pt，容易读成"跳"而不是"滑"。这类东西量不出来，只能上眼。
-enum ChipHoverCurve: String {
-    /// 现状：短促的减速曲线。
-    case easeOut12
-    /// 同样的减速，但拉长到 180ms —— 帧数多一半。
-    case easeOut18
-    /// 弹簧，收尾带一点点回弹。原生 Dock 的放大就是这一类手感。
-    case spring
-
-    static let current: ChipHoverCurve = {
-        let raw = ProcessInfo.processInfo.environment["DOCK_HOVER_CURVE"]?
-            .trimmingCharacters(in: .whitespacesAndNewlines)
-            .lowercased() ?? ""
-        switch raw {
-        case "easeout18", "18": return .easeOut18
-        case "spring": return .spring
-        default: return .easeOut12
-        }
-    }()
-
-    var animation: Animation {
-        switch self {
-        case .easeOut12: return .easeOut(duration: 0.12)
-        case .easeOut18: return .easeOut(duration: 0.18)
-        case .spring: return .spring(response: 0.28, dampingFraction: 0.72)
-        }
-    }
-}
-
 extension DockShelfTileStyle {
     /// 瓷砖的上→下渐变。`lifted` = 外部文件悬停命中，整块朝白提一点。
     func gradient(lifted: Bool) -> LinearGradient {
@@ -269,10 +235,19 @@ extension View {
     /// 动画用 `.animation(_:value:)`（值域限定），只有 `isActive` 变化时才动。
     /// `LauncherChip` 的启动弹跳有自己更内层的 `.animation(_:value: bounceUp)`，
     /// 内层优先，不会被这一层裹走——AGENTS 里「安静档不产生事务」防的就是弹跳被劫持。
-    func chipQuietHoverScale(_ isActive: Bool) -> some View {
-        self
-            .scaleEffect(isActive ? ChipPillMetrics.quietHoverScale : 1, anchor: .bottom)
-            .animation(ChipHoverCurve.current.animation, value: isActive)
+    ///
+    /// **曲线是 owner 2026-08-17 从三档里挑定的（`easeOut 0.12` = 保持现状）**，不是随手写的默认值。
+    /// 依据分两层，别混着读：**实测**——合成一次悬停，那 120ms 内主线程零卡顿、整条零重算、
+    /// 零 relayout；**由此推断**——他说的「不够流畅」是曲线取舍，不是被别的东西抢了资源，
+    /// 而曲线属于观感，量不出来，所以做成三档让他上眼比。比完选了现状，脚手架随即拆除。
+    /// `cardWidth` 是**这张卡自己的宽度**（已按档位缩放），用来把每侧外扩量封顶——
+    /// 等比放大在 168pt 的标题卡上会外扩 8.4pt，把 10pt 的卡间缝挤掉（owner 2026-08-17 报）。
+    /// **故意不给默认值**：漏传必须是编译错误，同 `scale` / `hoverStyle` 那条既有规矩。
+    func chipQuietHoverScale(_ isActive: Bool, cardWidth: CGFloat, scale: CGFloat) -> some View {
+        let target = ChipPillMetrics.quietHoverScale(forCardWidth: cardWidth, scale: scale)
+        return self
+            .scaleEffect(isActive ? target : 1, anchor: .bottom)
+            .animation(.easeOut(duration: 0.12), value: isActive)
     }
 
     /// 给毛玻璃底板加背景提饱和。**1.0 时整个修饰符都不挂**——`.saturation(1.0)` 虽是恒等，

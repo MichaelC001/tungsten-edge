@@ -22,14 +22,15 @@ final class WindowTitleTooltipTests: XCTestCase {
         XCTAssertLessThan(regular, large)
     }
 
-    func testTooltipThresholdTracksDockScaleButBubbleDoesNot() {
+    func testInStripTitleWidthTracksTheDockScale() {
         // 条内标题宽度随任务条缩放，截断判定必须用同一个宽度——两处各写死 140 就会出现
-        // 「看着截断了却不弹 tooltip」（或反之）。
-        for scale in [0.846153846, 1.0, 1.153846154, 1.307692308] as [CGFloat] {
-            XCTAssertEqual(WindowTitleTextMetrics.maximumWidth(for: scale),
-                           WindowTitleTextMetrics.maximumWidth * scale, accuracy: 0.001)
+        // 「看着截断了却不弹 tooltip」（或反之）。这一条只管**条内**那段文字；
+        // 气泡自己的缩放锁在 `testMediumTierKeepsTheNativePixelsAndOtherTiersScaleWholesale`。
+        for tier in DockSize.allCases {
+            XCTAssertEqual(WindowTitleTextMetrics.maximumWidth(for: tier.scale),
+                           WindowTitleTextMetrics.maximumWidth * tier.scale, accuracy: 0.001)
         }
-        // 中档必须与历史字面值一致。气泡面板本身不缩（独立表面），这里只锁条内那段。
+        // 中档必须与历史字面值一致。
         XCTAssertEqual(WindowTitleTextMetrics.maximumWidth(for: 1.0), 140)
     }
 
@@ -99,6 +100,72 @@ final class ChipPillMetricsTests: XCTestCase {
         let scale: CGFloat = 1
         let expected = (2 * 10 + 22 + 6) * scale + ceil(WindowTitleTextMetrics.maximumWidth(for: scale))
         XCTAssertEqual(ChipPillMetrics.width(title: long, scale: scale), expected, accuracy: 0.001)
+    }
+
+    // MARK: - 安静档悬停放大：按卡宽收敛
+
+    /// **主锁**：图标卡的观感一个像素不变。
+    ///
+    /// 封顶规则在 40pt 卡上算出 1.15，被 `quietHoverScale` 上限截回 1.10 ——
+    /// 收敛只该咬到宽到会挤的卡。四种图标卡（窗口卡 / kept / 消息区 / 中转格）都是这个宽度。
+    func testIconCardKeepsTheAcceptedFullScale() {
+        for tier in DockSize.allCases {
+            let width = ChipPillMetrics.cardWidth * tier.scale
+            XCTAssertEqual(
+                ChipPillMetrics.quietHoverScale(forCardWidth: width, scale: tier.scale),
+                ChipPillMetrics.quietHoverScale, accuracy: 0.0001,
+                "档位 \(tier) 的图标卡必须仍是 1.10"
+            )
+        }
+    }
+
+    /// 任何卡宽下，每侧向外长出的量都不超预算——这才是「不再挤」的直接判据。
+    /// （倍数本身是多少无所谓，用户看见的是边缘位移。）
+    func testNoCardGrowsBeyondTheEdgeBudget() {
+        for tier in DockSize.allCases {
+            let budget = ChipPillMetrics.quietHoverEdgeBudget * tier.scale
+            for base in [40, 60, 96, 140, 168.5, 196, 400] as [CGFloat] {
+                let width = base * tier.scale
+                let s = ChipPillMetrics.quietHoverScale(forCardWidth: width, scale: tier.scale)
+                let growthPerSide = width * (s - 1) / 2
+                XCTAssertLessThanOrEqual(growthPerSide, budget + 0.0001,
+                                         "卡宽 \(base) 档位 \(tier) 每侧外扩 \(growthPerSide) 超预算")
+            }
+        }
+    }
+
+    /// 两张满宽标题卡相邻：放大之后仍要剩得下缝。
+    /// 静息可见缝 = `2 * titledCardInset + chipSpacing` = 10pt，预算 3pt → 至少剩 7pt。
+    func testTwoWidestTitledCardsStillLeaveAVisibleGap() {
+        let scale: CGFloat = 1
+        let longTitle = String(repeating: "very-long-window-title-", count: 20)
+        let cardWidth = ChipPillMetrics.width(title: longTitle, scale: scale)
+            + 2 * ChipPillMetrics.titledCardInset * scale
+        let restingGap = 2 * ChipPillMetrics.titledCardInset * scale + 2 /* Style.chipSpacing */
+        let s = ChipPillMetrics.quietHoverScale(forCardWidth: cardWidth, scale: scale)
+        let remaining = restingGap - cardWidth * (s - 1) / 2
+
+        XCTAssertEqual(restingGap, 10, accuracy: 0.001, "静息缝的构成变了，这条判据要跟着重算")
+        XCTAssertGreaterThanOrEqual(remaining, 7 - 0.001,
+                                    "放大后只剩 \(remaining)pt，宽卡又会挤到邻居")
+    }
+
+    /// 未读角标的尺寸：中档逐字等于历史字面值，其余档位整体跟着 `scale` 走。
+    ///
+    /// 改成缩放前这四个数是写死的，四个档位一样大——和悬停气泡是同一类漏网。
+    func testBadgeMetricsKeepTheMediumLiteralsAndScaleWithTheTier() {
+        XCTAssertEqual(ChipPillMetrics.badgeFontSize, 10)
+        XCTAssertEqual(ChipPillMetrics.badgeMinimumSize, 16)
+        XCTAssertEqual(ChipPillMetrics.badgeHorizontalPadding, 5)
+        XCTAssertEqual(ChipPillMetrics.badgeTopOffset, 5)
+        // 中档 scale 恒为 1，所以「乘 scale」在中档就是原值——这条同时锁住那个恒等式。
+        XCTAssertEqual(DockSize.medium.scale, 1.0, accuracy: 0.0000001)
+    }
+
+    /// 宽度为 0（还没量到）不能算出 NaN / 无穷大。
+    func testZeroWidthFallsBackToTheCap() {
+        XCTAssertEqual(ChipPillMetrics.quietHoverScale(forCardWidth: 0, scale: 1),
+                       ChipPillMetrics.quietHoverScale)
     }
 
     /// 药丸在卡内水平居中 → midX 直接沿用卡片的；竖向全部来自常量。
@@ -292,39 +359,170 @@ final class ScreenRectReaderTests: XCTestCase {
     /// 气泡尺寸是 2026-08-17 从原生 macOS 26 Dock 的截图上逐像素量出来的，不是设计出来的。
     /// 这条锁住那组数——要改先重新截图重新量，别凭手感调。
     func testBubbleMetricsMatchTheMeasuredNativeDockLabel() {
-        XCTAssertEqual(WindowTitleTooltipStyle.height, 26)
-        XCTAssertEqual(WindowTitleTooltipStyle.fontSize, 14)
-        XCTAssertEqual(WindowTitleTooltipStyle.horizontalPadding, 13)
-        XCTAssertEqual(WindowTitleTooltipStyle.tailWidth, 23)
-        XCTAssertEqual(WindowTitleTooltipStyle.tailHeight, 6.5)
+        let native = WindowTitleTooltipStyle.native
+        XCTAssertEqual(native.height, 26)
+        XCTAssertEqual(native.fontSize, 14)
+        XCTAssertEqual(native.horizontalPadding, 13)
+        XCTAssertEqual(native.tailWidth, 23)
+        XCTAssertEqual(native.tailHeight, 6.5)
+        XCTAssertEqual(native.tipGap, 6.5)
+        XCTAssertEqual(native.maximumWidth, 360)
         // 中段直边的斜率（半宽/深度）实测 ≈1.17；圆头存在的证据就是它外推不到底。
-        let slope = (WindowTitleTooltipStyle.tailShoulderHalfWidth - WindowTitleTooltipStyle.tailTipHalfWidth)
-            / (WindowTitleTooltipStyle.tailTipDepth - WindowTitleTooltipStyle.tailShoulderDepth)
+        let slope = (native.tailShoulderHalfWidth - native.tailTipHalfWidth)
+            / (native.tailTipDepth - native.tailShoulderDepth)
         XCTAssertEqual(slope, 1.17, accuracy: 0.05)
-        let extrapolated = WindowTitleTooltipStyle.tailTipDepth + WindowTitleTooltipStyle.tailTipHalfWidth / slope
-        XCTAssertGreaterThan(extrapolated, WindowTitleTooltipStyle.tailHeight,
+        let extrapolated = native.tailTipDepth + native.tailTipHalfWidth / slope
+        XCTAssertGreaterThan(extrapolated, native.tailHeight,
                              "直边外推必须落在实际尖端之下——差的那截才是圆头")
         // **胶囊，不是圆角矩形**：圆角必须正好是高的一半。
-        XCTAssertEqual(WindowTitleTooltipStyle.cornerRadius, WindowTitleTooltipStyle.height / 2)
-        // 间距量的是**尖端**到条顶，气泡自己的高度已经含尖角。
-        XCTAssertEqual(PanelGeometry.windowTitleTooltipGap, WindowTitleTooltipStyle.tipGap)
+        XCTAssertEqual(native.cornerRadius, native.height / 2)
+    }
+
+    /// 气泡随任务条档位缩放（owner 2026-08-17），但**中档必须一个像素不动**。
+    ///
+    /// 这条同时是那个分母陷阱的回归锁：系数得用 `DockSize.scale`（已按中档归一），
+    /// 中档恒等于 1.0。若谁改成「条高 ÷ 某个字面量」，中档立刻不再是 1，签收过的原生像素就被改掉。
+    func testMediumTierKeepsTheNativePixelsAndOtherTiersScaleWholesale() {
+        XCTAssertEqual(DockSize.medium.scale, 1.0, accuracy: 0.0000001)
+        let medium = WindowTitleTooltipStyle(scale: DockSize.medium.scale)
+        XCTAssertEqual(medium, WindowTitleTooltipStyle.native)
+
+        for tier in DockSize.allCases {
+            let style = WindowTitleTooltipStyle(scale: tier.scale)
+            XCTAssertEqual(style.height, 26 * tier.scale, accuracy: 0.001)
+            XCTAssertEqual(style.fontSize, 14 * tier.scale, accuracy: 0.001)
+            XCTAssertEqual(style.tipGap, 6.5 * tier.scale, accuracy: 0.001)
+            XCTAssertEqual(style.horizontalPadding, 13 * tier.scale, accuracy: 0.001)
+            // 缩放后仍是胶囊。
+            XCTAssertEqual(style.cornerRadius, style.height / 2, accuracy: 0.001)
+        }
+    }
+
+    /// 尾巴那顶圆帽在任意档位都还在（直边外推必须过冲真实尖端）。
+    func testTailStaysRoundedAtEveryTier() {
+        for tier in DockSize.allCases {
+            let style = WindowTitleTooltipStyle(scale: tier.scale)
+            let slope = (style.tailShoulderHalfWidth - style.tailTipHalfWidth)
+                / (style.tailTipDepth - style.tailShoulderDepth)
+            let extrapolated = style.tailTipDepth + style.tailTipHalfWidth / slope
+            XCTAssertGreaterThan(extrapolated, style.tailHeight, "档位 \(tier) 的尖端不该变尖")
+        }
     }
 
     /// 尖角必须画在同一条闭合路径里：叠一个三角形会在接缝处交叉出一条横线。
     /// 这里验证形状确实向下伸出尖角，且尖端落在水平中心。
     func testShapeExtendsADownwardTailAtTheHorizontalCentre() {
-        let rect = CGRect(x: 0, y: 0, width: 85, height: 26 + WindowTitleTooltipStyle.tailHeight)
-        let box = WindowTitleTooltipShape().path(in: rect).boundingRect
+        let style = WindowTitleTooltipStyle.native
+        let rect = CGRect(x: 0, y: 0, width: 85, height: style.height + style.tailHeight)
+        let box = WindowTitleTooltipShape(style: style).path(in: rect).boundingRect
         XCTAssertEqual(box.maxY, rect.maxY, accuracy: 0.5, "尖端要顶到形状底边")
         XCTAssertEqual(box.width, rect.width, accuracy: 0.5, "主体要占满整宽")
 
         // 尖端所在那一行只剩很窄一条，且居中。
-        let tip = WindowTitleTooltipShape().path(in: rect)
+        let tip = WindowTitleTooltipShape(style: style).path(in: rect)
         let nearTip = tip.boundingRect
         XCTAssertEqual(nearTip.midX, rect.midX, accuracy: 0.5)
         XCTAssertFalse(tip.contains(CGPoint(x: rect.minX + 2, y: rect.maxY - 1)),
                        "尖角两侧必须是空的，不能是一整条底边")
         XCTAssertTrue(tip.contains(CGPoint(x: rect.midX, y: rect.maxY - 1)),
                       "中心那一竖必须还在形状里")
+    }
+}
+
+/// 谁能占用那唯一一块气泡面板。缺陷现场和为什么需要这条判定见
+/// `WindowTitleTooltipOwnership` 的注释（owner 2026-08-17 报「左边滑动、右边闪气泡」）。
+final class WindowTitleTooltipOwnershipTests: XCTestCase {
+    private let anchor = CGRect(x: 100, y: 0, width: 40, height: 54)
+
+    func testPointerInsideTheAnchorMayOwnTheBubble() {
+        XCTAssertTrue(WindowTitleTooltipOwnership.canOwnBubble(
+            anchorVisibleRect: anchor, pointer: CGPoint(x: 120, y: 27)))
+    }
+
+    /// 核心那条：指针在别处的卡不得抢面板。
+    func testPointerOnAnotherChipMayNotOwnTheBubble() {
+        XCTAssertFalse(WindowTitleTooltipOwnership.canOwnBubble(
+            anchorVisibleRect: anchor, pointer: CGPoint(x: 600, y: 27)))
+    }
+
+    /// 2pt 容差：重排刚落定那一帧锚点可能还差一点点，不能因此把气泡判死。
+    func testToleranceBandStillCounts() {
+        XCTAssertTrue(WindowTitleTooltipOwnership.canOwnBubble(
+            anchorVisibleRect: anchor, pointer: CGPoint(x: anchor.maxX + 1.5, y: 27)))
+        XCTAssertFalse(WindowTitleTooltipOwnership.canOwnBubble(
+            anchorVisibleRect: anchor, pointer: CGPoint(x: anchor.maxX + 3, y: 27)))
+    }
+
+    /// 还没量到矩形（`.zero`）时谁都不能拥有——容差不该把零矩形撑成一个 4×4 的命中区。
+    func testUnmeasuredAnchorNeverOwnsTheBubble() {
+        XCTAssertFalse(WindowTitleTooltipOwnership.canOwnBubble(
+            anchorVisibleRect: .zero, pointer: .zero))
+    }
+
+    // MARK: - 守卫只拦「内容驱动」的重发
+
+    /// **真实的悬停进入一律放行，哪怕指针已经划过去了。**
+    ///
+    /// `.onHover(true)` 是事件驱动的，主线程处理到它时指针可能早已离开这张卡。
+    /// 第一版对所有 `.update` 都拦，于是快速横扫时整张卡的气泡直接不弹——而它的
+    /// `isHovering` 仍是 true，不会再补发。这条锁住那个回归。
+    func testPointerEnteredIsAlwaysAcceptedEvenWhenThePointerHasMovedOn() {
+        let request = WindowTitleTooltipRequest(chipID: "a", title: "A",
+                                                anchorVisibleRect: anchor,
+                                                reason: .pointerEntered)
+        XCTAssertTrue(WindowTitleTooltipOwnership.accepts(
+            request, pointer: CGPoint(x: 900, y: 27)))
+    }
+
+    /// 没有指针动作的重发（矩形变了 / 名字变了）仍然要过守卫——这才是当初要防的偷面板。
+    func testRefreshFromAChipThePointerIsNotOnIsRejected() {
+        let request = WindowTitleTooltipRequest(chipID: "a", title: "A",
+                                                anchorVisibleRect: anchor,
+                                                reason: .refresh)
+        XCTAssertFalse(WindowTitleTooltipOwnership.accepts(
+            request, pointer: CGPoint(x: 900, y: 27)))
+        XCTAssertTrue(WindowTitleTooltipOwnership.accepts(
+            request, pointer: CGPoint(x: 120, y: 27)))
+    }
+
+    // MARK: - 跨卡片时气泡不消失
+
+    /// 卡与卡之间的缝里**没有任何卡被悬停**。原来 `.exit` 挂 90ms 到点就无条件收，
+    /// 慢慢滑过去看到的是「A → 空 → B」；原生的磁贴连续铺满，永远没有中间态。
+    ///
+    /// 取标题卡之间那条 10pt 缝的正中（图标卡之间只有 2pt，正好还在 2pt 容差里，
+    /// 反而不是最坏情况）：它已经**超出容差**，但必须仍在邻域内、气泡不许收。
+    func testBubbleHoldsWhileCrossingTheGapToTheNeighbouringChip() {
+        let inGap = CGPoint(x: anchor.maxX + 5, y: 27)
+        XCTAssertFalse(WindowTitleTooltipOwnership.canOwnBubble(
+            anchorVisibleRect: anchor, pointer: inGap),
+                       "超出 2pt 容差 —— 这正是原来会被收掉的位置")
+        XCTAssertTrue(WindowTitleTooltipOwnership.shouldHoldBubble(
+            anchorVisibleRect: anchor, pointer: inGap,
+            horizontalReach: ChipPillMetrics.iconPitch))
+    }
+
+    /// 但走远了要收，不能挂着一颗过期气泡（宽的分区分隔线、条两端）。
+    func testBubbleStopsHoldingOnceThePointerLeavesTheNeighbourhood() {
+        let reach = ChipPillMetrics.iconPitch
+        XCTAssertFalse(WindowTitleTooltipOwnership.shouldHoldBubble(
+            anchorVisibleRect: anchor,
+            pointer: CGPoint(x: anchor.maxX + reach + 1, y: 27),
+            horizontalReach: reach))
+    }
+
+    /// **纵向不放宽**：竖着离开条就该收，邻域只在横向伸展。
+    func testHoldingIsHorizontalOnly() {
+        XCTAssertFalse(WindowTitleTooltipOwnership.shouldHoldBubble(
+            anchorVisibleRect: anchor,
+            pointer: CGPoint(x: anchor.midX, y: anchor.maxY + 20),
+            horizontalReach: ChipPillMetrics.iconPitch))
+    }
+
+    /// 中心间距就是原生实测的 42pt，而且和条内实际用的间距是同一个常量。
+    func testIconPitchMatchesTheNativeDock() {
+        XCTAssertEqual(ChipPillMetrics.iconPitch, 42)
+        XCTAssertEqual(ChipPillMetrics.iconPitch,
+                       ChipPillMetrics.cardWidth + ChipPillMetrics.chipSpacing)
     }
 }

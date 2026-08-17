@@ -98,6 +98,36 @@ final class PanelCoordinator: NSObject {
     /// 才不会出现「条是玻璃、紧挨着的胶囊还是毛玻璃」。
     private var usesLiquidGlass: Bool { dockGlassBackgroundPanel != nil }
 
+    /// 建一块悬浮面板。**玻璃开着时必须用 `DockLiquidGlassPanel`，五块面板一个都不能漏。**
+    ///
+    /// Liquid Glass 的「活跃」外观是按**窗口**的 key / main / active 状态判的，而我们所有面板
+    /// 都是 `.nonactivatingPanel`、永远不会成为 key —— 用普通 `NonConstrainingPanel` 时玻璃
+    /// 退到「非活跃」那一档，渲染成一块几乎不透光的奶白板。`DockLiquidGlassPanel` 覆写那五个
+    /// 私有的外观判定，把窗口一直报成活跃。
+    ///
+    /// 2026-08-17 之前**只有任务条**用了这个子类，于是抽屉 / 胶囊 / 两个弹窗 / 气泡跟它不是
+    /// 一种材质（owner 报「抽屉区好像也不是液态玻璃」）。黑 / 白靶窗实测的透光量：
+    ///
+    /// | | 任务条 | 胶囊 | 抽屉 |
+    /// |---|---|---|---|
+    /// | 修复前 | 145 | **172** | **170** |
+    /// | 修复后 | 145 | 149 | 148 |
+    ///
+    /// 差 25–27 级 → 收敛到 4 级以内。**别用「同一块背景上看着差不多」当验证**：
+    /// 黑白条纹靶上两者都读中灰，我就是这么误判过一次「胶囊和任务条一致」。
+    /// 判据必须是**透光量**（同一块面板在纯黑与纯白背景上的读数之差）。
+    ///
+    /// SwiftUI 侧那两句 `.materialActiveAppearance(.active)` / `.environment(\.appearsActive,)`
+    /// **顶不掉这一层**——它们管的是视图环境，窗口状态得在窗口上解决。
+    private func makeFloatingPanel(contentRect: NSRect) -> NonConstrainingPanel {
+        let styleMask: NSWindow.StyleMask = [.borderless, .nonactivatingPanel]
+        return usesLiquidGlass
+            ? DockLiquidGlassPanel(contentRect: contentRect, styleMask: styleMask,
+                                   backing: .buffered, defer: false)
+            : NonConstrainingPanel(contentRect: contentRect, styleMask: styleMask,
+                                   backing: .buffered, defer: false)
+    }
+
     private var taskbarPlateCornerRadius: CGFloat {
         DockShape.panelCornerRadius * settingsStore.dockSize.scale
     }
@@ -442,11 +472,8 @@ final class PanelCoordinator: NSObject {
         drawerSpringOpened = false   // 默认手动开；弹簧路径在 springOpenDrawer 里再置 true
 
         if drawerPanel == nil {
-            let panel = NonConstrainingPanel(
-                contentRect: NSRect(origin: .zero, size: lastDrawerSize),
-                styleMask: [.borderless, .nonactivatingPanel],
-                backing: .buffered,
-                defer: false
+            let panel = makeFloatingPanel(
+                contentRect: NSRect(origin: .zero, size: lastDrawerSize)
             )
             panel.level = .floating
             panel.collectionBehavior = [.canJoinAllSpaces, .stationary, .ignoresCycle, .fullScreenAuxiliary]
@@ -672,11 +699,8 @@ final class PanelCoordinator: NSObject {
         }
 
         if folderPopupPanel == nil {
-            let panel = NonConstrainingPanel(
-                contentRect: NSRect(origin: .zero, size: lastPopupSize),
-                styleMask: [.borderless, .nonactivatingPanel],
-                backing: .buffered,
-                defer: false
+            let panel = makeFloatingPanel(
+                contentRect: NSRect(origin: .zero, size: lastPopupSize)
             )
             panel.level = .floating
             panel.collectionBehavior = [.canJoinAllSpaces, .stationary, .ignoresCycle, .fullScreenAuxiliary]
@@ -1069,6 +1093,20 @@ final class PanelCoordinator: NSObject {
     private func handleWindowTitleTooltipEvent(_ event: WindowTitleTooltipEvent) {
         switch event {
         case let .update(request):
+            // **指针不在这张卡上 → 它不能占用气泡面板。** 全应用只有一块面板，谁发 `.update`
+            // 谁就把它抢走；而卡片侧的 `isHovering` 会卡在 true（漏掉的 `.onHover(false)`），
+            // 那张卡此后每次重排都会重发请求，把气泡拽到指针根本不在的地方闪一下。
+            //
+            // **只拦「内容驱动」的重发**（`request.reason == .refresh`）：`.onHover(true)` 是
+            // 事件驱动的，主线程处理到它时指针可能已经划过去，一律拦就会把正常的快速悬停
+            // 整个吞掉。判定与看门狗共用，理由和现场见 `WindowTitleTooltipOwnership`。
+            let pointer = NSEvent.mouseLocation
+            guard WindowTitleTooltipOwnership.accepts(request, pointer: pointer) else {
+                HoverTrace.tooltipRejected(chipID: request.chipID,
+                                           pointer: pointer,
+                                           anchor: request.anchorVisibleRect)
+                return
+            }
             if windowTitleTooltipSuppressedChipID == request.chipID { return }
             windowTitleTooltipSuppressedChipID = nil
             cancelWindowTitleTooltipLinger()
@@ -1115,11 +1153,17 @@ final class PanelCoordinator: NSObject {
             if windowTitleTooltipSuppressedChipID == chipID {
                 windowTitleTooltipSuppressedChipID = nil
             }
-            guard windowTitleTooltipRequest?.chipID == chipID else { return }
-            // 宽限**只在指针还留在条上时**才给：那种情况多半是正划向隔壁 chip，留着面板
-            // 让隔壁直接接管，比收掉再冷启动跟手。指针已经离开条了就立刻收——
-            // 拖着一颗 90ms 不走的气泡，正是 owner 说的「不干脆」。
-            if isPointInsideTaskbarPanels(NSEvent.mouseLocation) {
+            guard let current = windowTitleTooltipRequest, current.chipID == chipID else { return }
+            // 指针还在**这张卡的邻域**里就留着，等隔壁接管；走远了立刻收。
+            // 判据和理由见 `WindowTitleTooltipOwnership.shouldHoldBubble`——核心是卡与卡之间
+            // 那 2pt 间隙里没有任何卡被悬停，原来那条「盲目 90ms 到点收掉」会让慢慢滑过去的
+            // 人看到「A → 空 → B」，而原生的磁贴连续铺满、永远没有中间态。
+            if isPointInsideTaskbarPanels(NSEvent.mouseLocation),
+               WindowTitleTooltipOwnership.shouldHoldBubble(
+                   anchorVisibleRect: current.anchorVisibleRect,
+                   pointer: NSEvent.mouseLocation,
+                   horizontalReach: windowTitleTooltipHorizontalReach
+               ) {
                 scheduleWindowTitleTooltipLinger(for: chipID)
             } else {
                 dismissWindowTitleTooltip()
@@ -1127,7 +1171,16 @@ final class PanelCoordinator: NSObject {
         }
     }
 
+    /// 邻域判定的横向伸展量：一个图标中心间距。指针在当前卡左右一格之内就还算"正划向隔壁"。
+    private var windowTitleTooltipHorizontalReach: CGFloat {
+        ChipPillMetrics.iconPitch * settingsStore.dockSize.scale
+    }
+
     /// 延后收气泡；宽限内有别的 chip `.update` 进来就直接接管这块面板（见 `windowTitleTooltipLingerDelay`）。
+    ///
+    /// **到点不再无条件收掉**：先按邻域重新判一次，还在邻域里就把决定权交回 10Hz 看门狗
+    /// （它本来就只在气泡可见期间存活）。这条计时器因此降级成兜底——防止锚点过期时
+    /// 邻域判定永远为真、气泡永远不收。
     private func scheduleWindowTitleTooltipLinger(for chipID: String) {
         windowTitleTooltipTimer?.invalidate()
         windowTitleTooltipTimer = nil
@@ -1136,8 +1189,18 @@ final class PanelCoordinator: NSObject {
             Task { @MainActor [weak self] in
                 guard let self else { return }
                 self.windowTitleTooltipLingerTimer = nil
-                guard self.windowTitleTooltipRequest?.chipID == chipID else { return }
-                self.dismissWindowTitleTooltip()
+                guard let current = self.windowTitleTooltipRequest,
+                      current.chipID == chipID else { return }
+                guard self.isPointInsideTaskbarPanels(NSEvent.mouseLocation),
+                      WindowTitleTooltipOwnership.shouldHoldBubble(
+                          anchorVisibleRect: current.anchorVisibleRect,
+                          pointer: NSEvent.mouseLocation,
+                          horizontalReach: self.windowTitleTooltipHorizontalReach
+                      ) else {
+                    self.dismissWindowTitleTooltip()
+                    return
+                }
+                self.startWindowTitleTooltipWatchdog()
             }
         }
         windowTitleTooltipLingerTimer = timer
@@ -1168,16 +1231,20 @@ final class PanelCoordinator: NSObject {
                     self.stopWindowTitleTooltipWatchdog()
                     return
                 }
-                // 2pt 容差：锚点是去抖上报的，重排刚落定的那一帧可能还差一点点。
+                // 与 `.update` 入口共用同一条判定（含 2pt 容差），两边不会漂移。
                 let location = NSEvent.mouseLocation
-                guard !anchor.insetBy(dx: -2, dy: -2).contains(location) else { return }
-                // 指针还在任务条 / 胶囊上 → **不能直接收**：多半是正划向隔壁 chip，
-                // 立刻 orderOut 会让隔壁重新冷启动，横扫就变成一串闪。交给宽限，让隔壁接管。
-                if self.isPointInsideTaskbarPanels(location) {
-                    if self.windowTitleTooltipLingerTimer == nil,
-                       let chipID = self.windowTitleTooltipRequest?.chipID {
-                        self.scheduleWindowTitleTooltipLinger(for: chipID)
-                    }
+                guard !WindowTitleTooltipOwnership.canOwnBubble(
+                    anchorVisibleRect: anchor, pointer: location
+                ) else { return }
+                // 指针离开了锚点，但还在**这张卡的邻域**里 → 留着，多半是正划向隔壁 chip
+                // （卡与卡之间那 2pt 间隙里没有任何卡被悬停）。立刻 orderOut 会让隔壁重新
+                // 冷启动，慢慢滑过去就是 owner 报的「A → 空 → B」。
+                if self.isPointInsideTaskbarPanels(location),
+                   WindowTitleTooltipOwnership.shouldHoldBubble(
+                       anchorVisibleRect: anchor,
+                       pointer: location,
+                       horizontalReach: self.windowTitleTooltipHorizontalReach
+                   ) {
                     return
                 }
                 self.dismissWindowTitleTooltip()
@@ -1211,12 +1278,7 @@ final class PanelCoordinator: NSObject {
         if let existing = windowTitleTooltipPanel {
             panel = existing
         } else {
-            let created = NonConstrainingPanel(
-                contentRect: .zero,
-                styleMask: [.borderless, .nonactivatingPanel],
-                backing: .buffered,
-                defer: false
-            )
+            let created = makeFloatingPanel(contentRect: .zero)
             created.level = .floating
             created.collectionBehavior = [.canJoinAllSpaces, .stationary, .ignoresCycle, .fullScreenAuxiliary]
             created.isFloatingPanel = true
@@ -1230,12 +1292,18 @@ final class PanelCoordinator: NSObject {
             panel = created
         }
 
+        // 气泡整颗随任务条档位缩放（owner 2026-08-17）。`DockSize.scale` 已经是中档归一的，
+        // 中档恒为 1.0 → 中档逐字保持实测的原生像素。档位切换走既有的 `beginDockSizeChange`
+        // 事务，它会先收掉气泡，所以这里不需要额外的失效处理。
+        let style = WindowTitleTooltipStyle(scale: settingsStore.dockSize.scale)
         let contentHost: ManualPanelHost
         if let hosting = windowTitleTooltipHosting, let existingHost = windowTitleTooltipHost {
-            hosting.rootView = WindowTitleTooltipView(title: request.title)
+            hosting.rootView = WindowTitleTooltipView(title: request.title, style: style,
+                                                    usesLiquidGlass: usesLiquidGlass)
             contentHost = existingHost
         } else {
-            let hosting = NSHostingView(rootView: WindowTitleTooltipView(title: request.title))
+            let hosting = NSHostingView(rootView: WindowTitleTooltipView(title: request.title, style: style,
+                                                          usesLiquidGlass: usesLiquidGlass))
             hosting.wantsLayer = true
             hosting.layer?.backgroundColor = NSColor.clear.cgColor
             contentHost = ManualPanelHost(contentView: hosting, in: panel)
@@ -1260,6 +1328,7 @@ final class PanelCoordinator: NSObject {
         let target = PanelGeometry.windowTitleTooltipTargetFrame(
             anchorVisibleRect: request.anchorVisibleRect,
             size: size,
+            tipGap: style.tipGap,
             on: Self.screenGeometry(screen)
         )
         panel.setFrame(target, display: true)
@@ -1572,11 +1641,10 @@ final class PanelCoordinator: NSObject {
     }
 
     private func setupCapsulePanel() {
-        let panel = NonConstrainingPanel(
-            contentRect: NSRect(origin: .zero, size: CGSize(width: capsuleWidth + Self.shadowPadding * 2, height: capsuleWidth + Self.shadowPadding * 2)),
-            styleMask: [.borderless, .nonactivatingPanel],
-            backing: .buffered,
-            defer: false
+        let panel = makeFloatingPanel(
+            contentRect: NSRect(origin: .zero,
+                                size: CGSize(width: capsuleWidth + Self.shadowPadding * 2,
+                                             height: capsuleWidth + Self.shadowPadding * 2))
         )
         panel.level = .floating
         panel.collectionBehavior = [.canJoinAllSpaces, .stationary, .ignoresCycle, .fullScreenAuxiliary]

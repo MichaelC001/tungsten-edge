@@ -409,6 +409,7 @@ extension DockThemeTokens {
         // 246/255 = 0.965，透三成——解方程得来的，见 `tooltipPlate` 的注释。
         tooltipPlate: DockRGB(0.965, 0.965, 0.968),
         tooltipPlateOpacity: 0.70,
+        // 起始值，待实测标定（见字段注释里的三个目标点）。
         tooltipRim: .white(0.45),
         tooltipText: .black(0.85),
         tooltipShadow: DockShadow(tint: .black(0.14), radius: 5, y: 2),

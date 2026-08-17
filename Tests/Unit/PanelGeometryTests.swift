@@ -146,12 +146,13 @@ final class PanelGeometryTests: XCTestCase {
         let screen = screen(frame: CGRect(x: 0, y: 0, width: 1512, height: 982))
         let anchor = CGRect(x: 700, y: 20, width: 160, height: 34)
         let frame = PanelGeometry.windowTitleTooltipTargetFrame(
-            anchorVisibleRect: anchor, size: CGSize(width: 300, height: 60), on: screen
+            anchorVisibleRect: anchor, size: CGSize(width: 300, height: 60),
+            tipGap: WindowTitleTooltipStyle.native.tipGap, on: screen
         )
         let bubble = frame.insetBy(dx: PanelGeometry.windowTitleTooltipShadowPadding,
                                    dy: PanelGeometry.windowTitleTooltipShadowPadding)
 
-        XCTAssertEqual(bubble.minY, anchor.maxY + PanelGeometry.windowTitleTooltipGap)
+        XCTAssertEqual(bubble.minY, anchor.maxY + WindowTitleTooltipStyle.native.tipGap)
         XCTAssertEqual(bubble.midX, anchor.midX)
     }
 
@@ -160,12 +161,12 @@ final class PanelGeometryTests: XCTestCase {
         let size = CGSize(width: 300, height: 60)
         let left = PanelGeometry.windowTitleTooltipTargetFrame(
             anchorVisibleRect: CGRect(x: screen.frame.minX, y: 1000, width: 40, height: 30),
-            size: size, on: screen
+            size: size, tipGap: WindowTitleTooltipStyle.native.tipGap, on: screen
         ).insetBy(dx: PanelGeometry.windowTitleTooltipShadowPadding,
                   dy: PanelGeometry.windowTitleTooltipShadowPadding)
         let right = PanelGeometry.windowTitleTooltipTargetFrame(
             anchorVisibleRect: CGRect(x: screen.frame.maxX - 40, y: 1000, width: 40, height: 30),
-            size: size, on: screen
+            size: size, tipGap: WindowTitleTooltipStyle.native.tipGap, on: screen
         ).insetBy(dx: PanelGeometry.windowTitleTooltipShadowPadding,
                   dy: PanelGeometry.windowTitleTooltipShadowPadding)
 
@@ -181,7 +182,8 @@ final class PanelGeometryTests: XCTestCase {
         )
         let frame = PanelGeometry.windowTitleTooltipTargetFrame(
             anchorVisibleRect: CGRect(x: 700, y: 900, width: 100, height: 30),
-            size: CGSize(width: 300, height: 60), on: screen
+            size: CGSize(width: 300, height: 60),
+            tipGap: WindowTitleTooltipStyle.native.tipGap, on: screen
         )
         let bubble = frame.insetBy(dx: PanelGeometry.windowTitleTooltipShadowPadding,
                                    dy: PanelGeometry.windowTitleTooltipShadowPadding)

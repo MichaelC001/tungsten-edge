@@ -990,9 +990,11 @@ struct DockStripView: View {
             )
             .stripEntrance(id: entry.id, delay: 0, animatedEntryIDs: $animatedEntryIDs)
         case let .messagingApp(bid, main):
-            // Explicit ZStack: the badge is the LAST child + zIndex, guaranteed to
-            // draw on top of the icon (classic Dock badge sits over the icon corner).
-            ZStack(alignment: .topTrailing) {
+            // 未读角标交给 chip 自己画（`badgeText:`），不再由这里套一层 ZStack 叠上去。
+            // 叠在外面时它落在 chip 的缩放**之外**：悬停放大 / 按下回缩，红点纹丝不动
+            // （owner 2026-08-17 实测两帧都是 16×15pt）。见 `ChipBadgeView`。
+            let badge = badgeStore.badgesByBundleID[bid]
+            Group {
                 if let main {
                     // 运行中有主窗 → app chip 即主窗卡：标准 toggle + 完整窗口菜单。iconOnly 保持消息区
                     // 定宽图标行，运行点标记它是 app 入口。
@@ -1000,6 +1002,7 @@ struct DockStripView: View {
                     // 所以漏传是编译得过的——消息区（微信）整块没有气泡就是这么来的
                     // （owner 2026-08-17）。和 `scale:` 当年漏传是同一个坑，见 AGENTS《Taskbar Size Tiers》。
                     ChipView(item: main, scale: dockScale, hoverStyle: hoverStyle, iconOnly: true, showRunningDot: true,
+                             badgeText: badge,
                              onWindowTitleTooltipEvent: onWindowTitleTooltipEvent)
                 } else {
                     // 无主窗两态：运行中（关窗/常驻）→ 点击 reopen 主窗；未运行（图标下方无运行点）→ 点击启动。
@@ -1019,12 +1022,9 @@ struct DockStripView: View {
                                     isMessaging: true,
                                     controller: appMembershipController
                                  ),
+                                 badgeText: badge,
                                  onTap: running ? { Self.reopenMainWindow(bundleID: bid) } : nil,
                                  onLaunch: { runtime.beginLaunch(bid) })
-                }
-                if let badge = badgeStore.badgesByBundleID[bid] {
-                    ChipBadgeView(text: badge)
-                        .zIndex(1)
                 }
             }
         case let .keptApp(bid):
@@ -1212,6 +1212,11 @@ struct ChipView: View {
     /// 外部手势（重击/中键预览）触发的脉冲信号：nonce 变化即触发一次 fireTapPulse，
     /// 给活访达窗口预览那 ~200ms 反查延迟一个"点到了"的即时确认。默认 0 = 不脉冲。
     var pulseNonce: Int = 0
+    /// 未读角标文本（消息区专用），`nil` = 不画。默认 `nil` 是**正确**的省略语义
+    /// （绝大多数 chip 本来就没有角标），所以这一个可以有默认值——和 `scale` /
+    /// `hoverStyle` 那种"漏传即静默渲染错"的性质不同。
+    /// 画在 chip 内部而不是由调用方叠 ZStack，理由见 `ChipBadgeView`。
+    var badgeText: String? = nil
     /// 悬停名气泡的出口。**故意不给默认值**——同 `scale` / `hoverStyle` 那条铁律：
     /// 它有默认空实现的那两天里，消息区（微信）和拖动载体都静默漏传，整块没有气泡，
     /// 而且编译得过、测试也测不到（现有测试全是纯几何，不检查 SwiftUI 调用点）。
@@ -1286,7 +1291,9 @@ struct ChipView: View {
     ///
     /// **已知代价，owner 拍板接受**：同一应用的多张窗口卡，气泡内容完全一样，分不出是哪个窗口。
     /// 兜底没有丢——两个分支都保留了 `.help(displayTitle)`，悬停久一点仍能看到完整窗口标题。
-    private func updateWindowTitleTooltip(hovering: Bool, anchor: CGRect? = nil) {
+    private func updateWindowTitleTooltip(hovering: Bool,
+                                          reason: WindowTitleTooltipRequest.Reason,
+                                          anchor: CGRect? = nil) {
         let rect = anchor ?? cardScreenRect
         guard hovering, showsHover, rect != .zero else {
             onWindowTitleTooltipEvent(.exit(chipID: item.id))
@@ -1295,7 +1302,8 @@ struct ChipView: View {
         onWindowTitleTooltipEvent(.update(WindowTitleTooltipRequest(
             chipID: item.id,
             title: appName,
-            anchorVisibleRect: rect
+            anchorVisibleRect: rect,
+            reason: reason
         )))
     }
 
@@ -1352,9 +1360,19 @@ struct ChipView: View {
                     .padding(.bottom, 2)
             }
         }
+        // 未读角标：**必须挂在两个缩放之前**，否则图标放大 / 按下回缩时它一动不动
+        // （owner 2026-08-17 报「图标变大后数字红点是不是也要有变化」）。
+        .overlay(alignment: .topTrailing) {
+            if let badgeText {
+                ChipBadgeView(text: badgeText, scale: scale)
+            }
+        }
         // 安静档的悬停反馈：整块轻微放大。放在运行点 overlay **之后**，图标和点一起放大；
         // 放在 `chipPressScale` 之前，按下去时两个缩放叠乘，像同一块东西被按住。
-        .chipQuietHoverScale(quietHoverFeedback)
+        // 卡宽 40 → 封顶规则算出 1.15、被上限截回 1.10，图标卡的观感一个像素不变。
+        .chipQuietHoverScale(quietHoverFeedback,
+                             cardWidth: ChipPillMetrics.cardWidth * scale,
+                             scale: scale)
         .chipPressScale(isTapPressed)
         // 悬停名气泡：**纯图标卡也要弹**。2026-08-16 改成原生式气泡时只接了带标题卡，
         // 于是消息区的微信、以及所有单窗口应用（Obsidian / Illustrator / Dia …）整块没有气泡，
@@ -1362,13 +1380,14 @@ struct ChipView: View {
         .background(ScreenRectReader(delivery: .tooltip) { rect in
             guard rect != cardScreenRect else { return }
             cardScreenRect = rect
-            if isHovering { updateWindowTitleTooltip(hovering: true, anchor: rect) }
+            if isHovering { updateWindowTitleTooltip(hovering: true, reason: .refresh, anchor: rect) }
         })
         .contentShape(Rectangle())
         .onHover {
             isHovering = $0
             recordHoverEvent($0)
-            updateWindowTitleTooltip(hovering: $0)
+            // 真实的悬停进入 → 守卫放行（`WindowTitleTooltipOwnership`）。
+            updateWindowTitleTooltip(hovering: $0, reason: .pointerEntered)
         }
         .onTapGesture {
             if let drawerTap { drawerTap() } else { runtime.toggle(windowID: item.actionWindowID) }
@@ -1383,10 +1402,10 @@ struct ChipView: View {
         .nativeContextMenu { buildChipMenu() }
         // 气泡内容是应用名，所以跟的是 appName 而不是窗口标题（标题变化不再影响气泡）。
         .onChange(of: appName) { _ in
-            if isHovering { updateWindowTitleTooltip(hovering: true) }
+            if isHovering { updateWindowTitleTooltip(hovering: true, reason: .refresh) }
         }
         .onChange(of: scale) { _ in
-            if isHovering { updateWindowTitleTooltip(hovering: true) }
+            if isHovering { updateWindowTitleTooltip(hovering: true, reason: .refresh) }
         }
         .onDisappear { onWindowTitleTooltipEvent(.exit(chipID: item.id)) }
         .help(capturedDisplayTitle)
@@ -1457,7 +1476,16 @@ struct ChipView: View {
         .frame(height: ChipPillMetrics.chipHeight * scale)
         .padding(.horizontal, ChipPillMetrics.titledCardInset * scale)
         // 安静档的悬停反馈：整块轻微放大（标准档那一档的反馈是名字气泡 + 药丸提亮）。
-        .chipQuietHoverScale(quietHoverFeedback)
+        //
+        // **卡宽必须传这张卡自己的**：等比放大在宽卡上外扩得多得多（实测 168.5pt 的卡
+        // 每侧外扩 8.4pt，把 10pt 的卡间缝挤到只剩 3.5pt，owner 2026-08-17 报）。
+        // 宽度用渲染药丸的同一个 `ChipPillMetrics.width`，不另写一份。
+        .chipQuietHoverScale(
+            quietHoverFeedback,
+            cardWidth: ChipPillMetrics.width(title: capturedDisplayTitle, scale: scale)
+                + 2 * ChipPillMetrics.titledCardInset * scale,
+            scale: scale
+        )
         .chipPressScale(isTapPressed)
         // 探针挂在 scaleEffect **之外**：按下去那 7% 缩放不该被当成几何变化上报。
         // 量的是稳定的卡片矩形，pill rect 由 ChipPillMetrics 推出来，tooltip 的锚点契约不变。
@@ -1467,13 +1495,13 @@ struct ChipView: View {
         .background(ScreenRectReader(delivery: .tooltip) { rect in
             guard rect != cardScreenRect else { return }
             cardScreenRect = rect
-            if isHovering { updateWindowTitleTooltip(hovering: true, anchor: rect) }
+            if isHovering { updateWindowTitleTooltip(hovering: true, reason: .refresh, anchor: rect) }
         })
         .contentShape(Rectangle())
         .onHover { hovering in
             isHovering = hovering
             recordHoverEvent(hovering)
-            updateWindowTitleTooltip(hovering: hovering)
+            updateWindowTitleTooltip(hovering: hovering, reason: .pointerEntered)
         }
         .onTapGesture {
             if let drawerTap { drawerTap() } else { runtime.toggle(windowID: item.actionWindowID) }
@@ -1486,10 +1514,10 @@ struct ChipView: View {
         .nativeContextMenu { buildChipMenu() }
         // 同 bareIconChip：气泡是应用名，跟 appName。
         .onChange(of: appName) { _ in
-            if isHovering { updateWindowTitleTooltip(hovering: true) }
+            if isHovering { updateWindowTitleTooltip(hovering: true, reason: .refresh) }
         }
         .onChange(of: scale) { _ in
-            if isHovering { updateWindowTitleTooltip(hovering: true) }
+            if isHovering { updateWindowTitleTooltip(hovering: true, reason: .refresh) }
         }
         .onDisappear { onWindowTitleTooltipEvent(.exit(chipID: item.id)) }
     }
@@ -1707,27 +1735,36 @@ struct DrawerCapsuleButton: View {
 /// Classic Dock-style unread badge: red capsule, white text, top-right of the chip.
 /// Renders whatever string the app put on its Dock tile ("3", "99+", "•") as-is.
 /// Not a hit target — taps fall through to the chip underneath.
-/// internal：中转格（ShelfChip）复用它做暂存数量角标。
+///
+/// **它由 chip 自己画（`ChipView.bareIconChip` / `LauncherChip` 的 overlay），不是由调用方
+/// 套一层 ZStack 叠上去的。** 2026-08-17 之前是后者，于是它落在 `chipQuietHoverScale` 的
+/// **外面**：安静档悬停时图标放大 10%，红点纹丝不动（owner 实测两帧都是 16×15pt），
+/// 看着像图标从红点底下鼓出来。放进 chip 里之后，悬停放大、按压回缩、档位缩放它全都跟着走。
+///
+/// 尺寸常量在 `ChipPillMetrics.badge*`，中档与历史字面值逐字相同。
 struct ChipBadgeView: View {
     let text: String
+    /// 档位系数。**故意不给默认值**——同 `scale` / `hoverStyle` 那条铁律。
+    let scale: CGFloat
 
     var body: some View {
         Text(text)
-            .font(.system(size: 10, weight: .bold, design: .rounded))
+            .font(.system(size: ChipPillMetrics.badgeFontSize * scale, weight: .bold, design: .rounded))
             .foregroundStyle(.white)
             .lineLimit(1)
-            .padding(.horizontal, 5)
-            .frame(minWidth: 16, minHeight: 16)
+            .padding(.horizontal, ChipPillMetrics.badgeHorizontalPadding * scale)
+            .frame(minWidth: ChipPillMetrics.badgeMinimumSize * scale,
+                   minHeight: ChipPillMetrics.badgeMinimumSize * scale)
             .background(
                 Capsule().fill(Color(red: 1.0, green: 0.23, blue: 0.19))   // Apple badge red
             )
             .overlay(
+                // 0.5pt 是发丝线，和分隔线同理，不随档位缩放。
                 Capsule().strokeBorder(.black.opacity(0.25), lineWidth: 0.5)
             )
-            // Native Dock badges sit mostly ON the icon, protruding only slightly past
-            // its rounded corner. Chip frame is 44×52, icon inset (4, 8) → this offset
-            // puts the badge center just inside the icon's top-right corner.
-            .offset(x: 0, y: 5)
+            // 原生的角标大部分压在图标上，只稍稍探出圆角：卡片 40×54、可见图标方块 32.5，
+            // 这个下推量让角标中心正好落在图标右上角内侧。
+            .offset(x: 0, y: ChipPillMetrics.badgeTopOffset * scale)
             .allowsHitTesting(false)
     }
 }
@@ -1876,10 +1913,10 @@ private enum Style {
     // Content layout
     static let chipContentInset: CGFloat = 20  // horizontal padding inside blur; > cornerRadius avoids corner-clip
     static let edgeFadeWidth: CGFloat    = 16  // scroll edge fade-out width (pt)
-    // 2pt：对齐原生 Dock 的图标中心间距 42pt（= ChipPillMetrics.cardWidth 40 + 2）。
-    // **改它必须同步改 `StripContextMenuZone.defaultMinimumGapWidth`** —— 那个阈值要严格
-    // 落在「普通缝」和「分割线缝（间距+5+间距）」之间，否则任务条空白区右键会整个失效。
-    static let chipSpacing: CGFloat      = 2   // gap between chips (pt)
+    // 真身在 `ChipPillMetrics.chipSpacing`（气泡的邻域判定也要用中心间距，而本 enum 是
+    // private，别的文件读不到）。改它必须同步改 `StripContextMenuZone.defaultMinimumGapWidth`，
+    // 理由见那边的注释。
+    static let chipSpacing: CGFloat      = ChipPillMetrics.chipSpacing
     static let dividerHeight: CGFloat    = 20  // zone divider height (pt)
 
     // 描边的「顶强底弱」高光已由 DockThemeTokens.panelRimTop / panelRimBottom 正式接管
