@@ -1226,6 +1226,10 @@ struct ChipView: View {
     /// Visual hover state: the real pointer hover OR forced (drag copy)，再受悬停档位一道总闸。
     /// 「安静」档下恒 false，于是图标不缩、应用名不冒、胶囊底色不提亮、整行不重排。
     private var showsHover: Bool { hoverStyle.isExpressive && (forceHover || isHovering) }
+    /// 安静档的悬停反馈（标准档恒 false，那一档的反馈是名字气泡）。
+    private var quietHoverFeedback: Bool {
+        hoverStyle.showsQuietHoverFeedback(isHovering: isHovering, forceHover: forceHover)
+    }
     private var animationTraceKind: String {
         !iconOnly && (item.showsTitle || isMessagingAppWindow) ? "window" : "icon"
     }
@@ -1345,6 +1349,9 @@ struct ChipView: View {
                     .padding(.bottom, 2)
             }
         }
+        // 安静档的悬停反馈：整块轻微放大。放在运行点 overlay **之后**，图标和点一起放大；
+        // 放在 `chipPressScale` 之前，按下去时两个缩放叠乘，像同一块东西被按住。
+        .chipQuietHoverScale(quietHoverFeedback)
         .chipPressScale(isTapPressed)
         // 悬停名气泡：**纯图标卡也要弹**。2026-08-16 改成原生式气泡时只接了带标题卡，
         // 于是消息区的微信、以及所有单窗口应用（Obsidian / Illustrator / Dia …）整块没有气泡，
@@ -1431,6 +1438,8 @@ struct ChipView: View {
             .padding(.horizontal, ChipPillMetrics.titledCardInset * scale)
         }
         .animation(.easeInOut(duration: 0.18), value: showsHover)
+        // 安静档的悬停反馈：整块轻微放大（标准档那一档的反馈是名字气泡 + 药丸提亮）。
+        .chipQuietHoverScale(quietHoverFeedback)
         .chipPressScale(isTapPressed)
         // 探针挂在 scaleEffect **之外**：按下去那 7% 缩放不该被当成几何变化上报。
         // 量的是稳定的卡片矩形，pill rect 由 ChipPillMetrics 推出来，tooltip 的锚点契约不变。

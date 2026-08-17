@@ -28,6 +28,10 @@ struct ShelfChip: View {
     /// 悬停视觉的总闸：「安静」档下恒 false，图标不缩、名字气泡不出。
     /// 投放反馈（`isDropTargeted` 的提亮/描边/发光）不受它管。
     private var showsHover: Bool { hoverStyle.isExpressive && isHovering }
+    /// 安静档的悬停反馈（标准档恒 false）。见 `HoverStyle.showsQuietHoverFeedback`。
+    private var quietHoverFeedback: Bool {
+        hoverStyle.showsQuietHoverFeedback(isHovering: isHovering)
+    }
 
     /// 件数原本只写在悬停名字里，安静档下那行不出现，所以并进系统 tooltip 兜底。
     /// 两档都生效，条上不改变任何像素。
@@ -43,6 +47,7 @@ struct ShelfChip: View {
         }
         .frame(width: ChipPillMetrics.cardWidth * scale,
                height: ChipPillMetrics.chipHeight * scale)
+        .chipQuietHoverScale(quietHoverFeedback)
         .contentShape(Rectangle())
         .background(ScreenRectReader(delivery: .tooltip) { rect in
             guard rect != cardScreenRect else { return }

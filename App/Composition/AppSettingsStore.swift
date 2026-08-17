@@ -20,9 +20,26 @@ enum HoverStyle: String, CaseIterable {
 
     static let `default` = HoverStyle.standard
 
-    /// 悬停是否产生视觉变化。chip 视图统一用它做判据，不各自比 case；
-    /// 菜单的勾选态也读它（`.on` ⟺ `isExpressive`）。
+    /// 悬停是否产生**表现型**变化（名字气泡、文件夹格放大）。chip 视图统一用它做判据，
+    /// 不各自比 case；菜单的勾选态也读它（`.on` ⟺ `isExpressive`）。
     var isExpressive: Bool { self == .standard }
+
+    /// 安静档的悬停反馈：整块**轻微放大**。
+    ///
+    /// **标准档恒 false**——那一档的反馈是名字气泡，owner 2026-08-17 要求标准档一个像素不变。
+    /// 加这个是因为安静档原本**一点反馈都没有**：2026-08-16 把应用名挪进气泡时顺手冻结了
+    /// chip 的悬停几何（图标不缩、药丸不让位），标准档还剩气泡，安静档就归零了。
+    ///
+    /// 形式先做过「不改尺寸的淡底色」（`Docs/27` 早年预判的那条），owner 2026-08-17 实机
+    /// 看完说「一般」，改成轻微放大。**放大在今天是安全的**：当年否掉它的理由是「改尺寸会让
+    /// 整行重排」，而那说的是把应用名写在图标下方、名字一冒出来卡就变宽的老布局；
+    /// 名字挪进气泡之后两档都不再重排，且这里用的是 `scaleEffect`（纯渲染变换，不改布局）。
+    ///
+    /// `forceHover` 收进来是为了和各 chip 现有的 `showsHover` 同构：拖动的浮动副本恒传
+    /// `forceHover: false` 且自己的 `isHovering` 永远不亮，所以副本上不会放大。
+    func showsQuietHoverFeedback(isHovering: Bool, forceHover: Bool = false) -> Bool {
+        !isExpressive && (isHovering || forceHover)
+    }
 }
 
 

@@ -35,6 +35,10 @@ struct PinnedFolderChip: View {
     /// 悬停视觉的总闸：「安静」档下恒 false，整块放大不再发生。
     /// 投放高亮（`isDropTarget`）不受它管——那是拖放反馈，不是悬停。
     private var showsHover: Bool { hoverStyle.isExpressive && isHovering }
+    /// 本格**两档都放大**：安静档 2026-08-17 补悬停反馈时选的形式正好就是整块放大，
+    /// 和这里既有的做法撞在一起，那就用同一条，不必为安静档另叠一个缩放。
+    /// 幅度也不分档——分了反而要解释「为什么关掉名字之后放大得少一点」。
+    private var showsHoverScale: Bool { showsHover || hoverStyle.showsQuietHoverFeedback(isHovering: isHovering) }
 
     private var folderName: String {
         FileManager.default.displayName(atPath: path)
@@ -68,13 +72,13 @@ struct PinnedFolderChip: View {
         .contentShape(Rectangle())
         // 悬停：整个 chip 放大上顶（原生 Dock 手感）。anchor .bottom 让底部名称基本不动、封面往上顶起。
         // scaleEffect 只是渲染变换，不改布局 frame——拖放命中读的是 .background GeometryReader 上报的未缩放 frame，不受影响。
-        .scaleEffect(showsHover ? 1.12 : 1, anchor: .bottom)
+        .scaleEffect(showsHoverScale ? 1.12 : 1, anchor: .bottom)
         .onHover { isHovering = $0 }
         .onTapGesture { onTap() }
         .nativeContextMenu { buildMenu() }
         .help(folderName)
         .animation(.easeOut(duration: 0.12), value: isDropTarget)
-        .animation(.easeOut(duration: 0.12), value: showsHover)
+        .animation(.easeOut(duration: 0.12), value: showsHoverScale)
     }
 
     /// 封面：真缩略图方形裁切 + 细描边（深色下是白、浅色下是黑）；文件图标 / 空文件夹图标 fit 渲染不裁不描边。

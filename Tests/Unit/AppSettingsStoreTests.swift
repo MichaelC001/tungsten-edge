@@ -194,6 +194,30 @@ final class AppSettingsStoreTests: XCTestCase {
         XCTAssertFalse(HoverStyle.quiet.isExpressive)
     }
 
+    /// 安静档的悬停反馈：**标准档必须恒 false**。
+    ///
+    /// owner 2026-08-17 定：标准档的反馈是名字气泡，观感一个像素不变；
+    /// 这一条只补给关掉名字的那一档（在此之前它悬停时一点反馈都没有）。
+    func testQuietHoverFeedbackOnlyExistsInTheQuietTier() {
+        for hovering in [true, false] {
+            for forced in [true, false] {
+                XCTAssertFalse(
+                    HoverStyle.standard.showsQuietHoverFeedback(isHovering: hovering, forceHover: forced),
+                    "标准档任何输入都不该有反馈（hover=\(hovering) forced=\(forced)）"
+                )
+            }
+        }
+        XCTAssertTrue(HoverStyle.quiet.showsQuietHoverFeedback(isHovering: true))
+        XCTAssertFalse(HoverStyle.quiet.showsQuietHoverFeedback(isHovering: false))
+    }
+
+    /// 拖动的浮动副本恒传 `forceHover: false` 且自己的 `isHovering` 永不亮，所以副本上不放大；
+    /// 但参数留着，是为了和各 chip 现有的 `showsHover` 判据同构（那边确实用 forceHover）。
+    func testQuietHoverFeedbackHonoursForceHover() {
+        XCTAssertTrue(HoverStyle.quiet.showsQuietHoverFeedback(isHovering: false, forceHover: true))
+        XCTAssertFalse(HoverStyle.quiet.showsQuietHoverFeedback(isHovering: false, forceHover: false))
+    }
+
     @MainActor
     func testDockSizeRawValuesAreStableAcrossReleases() {
         // raw value 进了 UserDefaults，改名等于把所有老用户的档位悄悄重置成中档。

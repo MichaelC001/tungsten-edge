@@ -55,40 +55,48 @@ struct LauncherChip: View {
 
     /// 悬停视觉的总闸：「安静」档下恒 false，图标不缩、名字不浮出，连动画事务都不产生。
     private var showsHover: Bool { hoverStyle.isExpressive && isHovering }
+    /// 安静档的悬停反馈（标准档恒 false）。见 `HoverStyle.showsQuietHoverFeedback`。
+    private var quietHoverFeedback: Bool {
+        hoverStyle.showsQuietHoverFeedback(isHovering: isHovering)
+    }
 
     var body: some View {
         let visual = LauncherChipVisualPlan.visual(isRunning: isRunning)
-        return ChipHoverProgress(progress: showsHover ? 1 : 0) { progress in
-            let hover = ChipHoverVisual.resolve(progress: progress, scale: scale)
-            let _ = ChipAnimationTrace.record(
-                chipID: bundleID,
-                kind: "launcher",
-                visual: hover,
-                isTapPressed: isTapPressed,
-                showsHover: showsHover
-            )
-            VStack(spacing: 0) {
-                Spacer(minLength: 0)
-                Image(nsImage: AppIconResolver.icon(for: bundleID))
-                    .resizable()
-                    .aspectRatio(contentMode: .fit)
-                    .frame(width: hover.bareIconSize, height: hover.bareIconSize)
-                    .clipShape(RoundedRectangle(cornerRadius: hover.bareIconSize / 4, style: .continuous))
-                    .dockShadow(theme.iconShadow)
-                    .offset(y: bounceUp ? -6 : 0)
-                    .animation(.easeInOut(duration: 0.25), value: bounceUp)
-                // 槽位高度 = **静息**图标尺寸。槽位小于图标就会整块往下溢出（.top 对齐），
-                // 结果就是「打开的应用图标和没打开的高度不一样」——本视图画的正是没打开的那种。
-                // 与 `ChipView` 的 iconOnly 分支必须逐字相同。
-                .frame(width: ChipPillMetrics.cardWidth * scale,
-                       height: ChipPillMetrics.bareIconSlot * scale,
-                       alignment: .top)
-                Spacer(minLength: 0)
-            }
+        // **悬停不改变任何像素，所以不挂动画驱动器**——与 `ChipView.bareIconChip` 逐字相同
+        // （2026-08-17：那边先拆了，这边漏拆，白跑了一轮 0.18s 空动画）。
+        // 理由见 `bareIconChip` 的注释：主线程一忙 macOS 就合并鼠标移动事件，横扫会漏格。
+        //
+        // **这里尤其不能让事务上祖先链**：启动弹跳（`bounceUp`）就住在下面那个图标里，
+        // 祖先的 hover 事务会把它劫持掉。安静档的高亮因此走 `.background` 兄弟层。
+        let hover = ChipHoverVisual.resolve(progress: 0, scale: scale)
+        let _ = ChipAnimationTrace.record(
+            chipID: bundleID,
+            kind: "launcher",
+            visual: hover,
+            isTapPressed: isTapPressed,
+            showsHover: showsHover
+        )
+        return VStack(spacing: 0) {
+            Spacer(minLength: 0)
+            Image(nsImage: AppIconResolver.icon(for: bundleID))
+                .resizable()
+                .aspectRatio(contentMode: .fit)
+                .frame(width: hover.bareIconSize, height: hover.bareIconSize)
+                .clipShape(RoundedRectangle(cornerRadius: hover.bareIconSize / 4, style: .continuous))
+                .dockShadow(theme.iconShadow)
+                .offset(y: bounceUp ? -6 : 0)
+                .animation(.easeInOut(duration: 0.25), value: bounceUp)
+            // 槽位高度 = **静息**图标尺寸。槽位小于图标就会整块往下溢出（.top 对齐），
+            // 结果就是「打开的应用图标和没打开的高度不一样」——本视图画的正是没打开的那种。
+            // 与 `ChipView` 的 iconOnly 分支必须逐字相同。
             .frame(width: ChipPillMetrics.cardWidth * scale,
-                   height: ChipPillMetrics.chipHeight * scale)
+                   height: ChipPillMetrics.bareIconSlot * scale,
+                   alignment: .top)
+            Spacer(minLength: 0)
         }
-        .animation(.easeInOut(duration: 0.18), value: showsHover)
+        .frame(width: ChipPillMetrics.cardWidth * scale,
+               height: ChipPillMetrics.chipHeight * scale)
+        .chipQuietHoverScale(quietHoverFeedback)
         .overlay(alignment: .bottom) {
             if visual.showsRunningDot {
                 Circle()

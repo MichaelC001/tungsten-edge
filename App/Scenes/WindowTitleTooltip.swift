@@ -71,6 +71,12 @@ enum ChipPillMetrics {
     /// （中转格那枚）必须按这个尺寸画，否则它会比邻居明显大一圈——owner 报过的「太突兀」
     /// 有一半是大小，不只是颜色。
     static let bareIconVisibleSlot: CGFloat = 32.5
+
+    /// 安静档悬停时整块放大的倍数（见 `View.chipQuietHoverScale`）。
+    ///
+    /// 1.10 不会让相邻图标的可见像素相撞：卡宽 40、图标可见方块只有 32.5，
+    /// 放大到 35.75 仍在卡内，两侧还各剩 2pt 多的透明边距。
+    static let quietHoverScale: CGFloat = 1.10
     /// 纯图标卡的卡宽。**中心间距 = `cardWidth + Style.chipSpacing`，两者要一起看。**
     /// 2026-08-16 实测原生 Dock 的图标中心间距是 42pt（40 的 tile + 2pt 缝），
     /// 钨极原来是 52pt（44 + 8），稀疏了一倍；改成 40 + 2 对齐。

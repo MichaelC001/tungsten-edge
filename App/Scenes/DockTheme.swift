@@ -223,6 +223,24 @@ extension DockThemeTokens {
 }
 
 extension View {
+    /// 安静档的悬停反馈：整块**轻微放大**。判据见 `HoverStyle.showsQuietHoverFeedback`。
+    ///
+    /// `scaleEffect` 是纯渲染变换：**不改布局尺寸**（这一档的底线就是"鼠标划过任务条不重排"），
+    /// 也不影响 `.background` 里 GeometryReader 上报的投放命中矩形——`PinnedFolderChip`
+    /// 的整块放大早就是这么做的，同一条既有结论。
+    ///
+    /// anchor 取 `.bottom`：条只有 54pt 高、卡片撑满条高，从中心放大会往下越出条外；
+    /// 从底边顶起既留在条内，也更像原生 Dock 的放大方向。
+    ///
+    /// 动画用 `.animation(_:value:)`（值域限定），只有 `isActive` 变化时才动。
+    /// `LauncherChip` 的启动弹跳有自己更内层的 `.animation(_:value: bounceUp)`，
+    /// 内层优先，不会被这一层裹走——AGENTS 里「安静档不产生事务」防的就是弹跳被劫持。
+    func chipQuietHoverScale(_ isActive: Bool) -> some View {
+        self
+            .scaleEffect(isActive ? ChipPillMetrics.quietHoverScale : 1, anchor: .bottom)
+            .animation(.easeOut(duration: 0.12), value: isActive)
+    }
+
     /// 给毛玻璃底板加背景提饱和。**1.0 时整个修饰符都不挂**——`.saturation(1.0)` 虽是恒等，
     /// 但仍可能触发离屏渲染，多一层就可能破坏深色的逐像素冻结（同厚度层的理由）。
     @ViewBuilder
