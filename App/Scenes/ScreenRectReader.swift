@@ -65,6 +65,8 @@ struct ScreenRectReader: NSViewRepresentable {
         private var lastReported: CGRect?
         private var pendingTasks: [UUID: ScreenRectDeliveryTask] = [:]
         private var deliveryGeneration: UInt64 = 0
+        /// 宿主窗口移动 / 换屏的观察者，见 `observeWindowMovement`。
+        private var windowObservers: [NSObjectProtocol] = []
 
         init(
             delivery: Delivery,
@@ -78,7 +80,11 @@ struct ScreenRectReader: NSViewRepresentable {
         }
 
         required init?(coder: NSCoder) { fatalError() }
-        deinit { pendingTasks.values.forEach { $0.cancel() } }
+
+        deinit {
+            pendingTasks.values.forEach { $0.cancel() }
+            windowObservers.forEach(NotificationCenter.default.removeObserver)
+        }
 
         func update(delivery: Delivery, onChange: @escaping (CGRect) -> Void) {
             if self.delivery != delivery {
@@ -90,11 +96,35 @@ struct ScreenRectReader: NSViewRepresentable {
         }
 
         override func viewDidMoveToWindow() {
+            observeWindowMovement()
             guard window != nil else {
                 cancelPendingDelivery()
                 return
             }
             report()
+        }
+
+        /// **窗口移动了也要重新上报。**
+        ///
+        /// `layout()` 只在**视图树**的布局发生变化时触发；把整个面板搬到另一块屏（悬停切屏）
+        /// 或上下移动（边缘自动隐藏的收起 / 唤出）都不改变视图树，于是这里一次都不响，
+        /// 每张卡缓存的屏幕矩形就停在旧位置上。实际后果：owner 2026-08-17 报「在一块屏上划过
+        /// 图标，气泡有时弹到另一块没有任务条的屏上」——锚点还是换屏前那块屏的坐标。
+        ///
+        /// 观察者绑在**自己的宿主窗口**上（`object: window`），跟着 `viewDidMoveToWindow`
+        /// 装拆，和既有的「detach 时取消所有排队投递」是同一套生命周期。
+        private func observeWindowMovement() {
+            windowObservers.forEach(NotificationCenter.default.removeObserver)
+            windowObservers = []
+            guard let window else { return }
+            let center = NotificationCenter.default
+            for name in [NSWindow.didMoveNotification, NSWindow.didChangeScreenNotification] {
+                windowObservers.append(
+                    center.addObserver(forName: name, object: window, queue: .main) { [weak self] _ in
+                        self?.report()
+                    }
+                )
+            }
         }
 
         override func layout() {

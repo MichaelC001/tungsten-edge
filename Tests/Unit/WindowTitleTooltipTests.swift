@@ -253,6 +253,37 @@ final class ScreenRectReaderTests: XCTestCase {
         XCTAssertEqual(reported, [latest])
     }
 
+    /// 窗口移动 / 换屏必须重新上报。
+    ///
+    /// `layout()` 只在视图树变化时触发，把面板搬到另一块屏或上下移动都不改视图树——
+    /// 于是每张卡缓存的屏幕矩形停在旧位置，气泡会弹到没有任务条的那块屏上
+    /// （owner 2026-08-17 报）。这条锁住"装了观察者、而且拆得掉"。
+    func testWindowMovementTriggersAFreshReport() {
+        let scheduler = Scheduler()
+        var reported: [CGRect] = []
+        let view = ScreenRectReader.TrackingView(
+            delivery: .root, scheduler: scheduler, onChange: { reported.append($0) }
+        )
+        let window = NSWindow(contentRect: CGRect(x: 0, y: 0, width: 200, height: 100),
+                              styleMask: [.borderless], backing: .buffered, defer: false)
+        window.contentView?.addSubview(view)
+        view.frame = CGRect(x: 10, y: 10, width: 50, height: 20)
+        scheduler.runAll()
+        reported.removeAll()
+
+        window.setFrameOrigin(CGPoint(x: 400, y: 300))
+        NotificationCenter.default.post(name: NSWindow.didMoveNotification, object: window)
+        scheduler.runAll()
+        XCTAssertFalse(reported.isEmpty, "窗口移动后必须补一次上报")
+
+        // 拆掉之后不能再响，否则观察者会活过视图。
+        view.removeFromSuperview()
+        reported.removeAll()
+        NotificationCenter.default.post(name: NSWindow.didMoveNotification, object: window)
+        scheduler.runAll()
+        XCTAssertTrue(reported.isEmpty, "已 detach 的探针不该再上报")
+    }
+
     func testCallSiteDeliveryPoliciesStayExplicit() {
         XCTAssertEqual(ScreenRectReader.Delivery.root, .immediateDeduplicated)
         XCTAssertEqual(ScreenRectReader.Delivery.tooltip, .debounced(settleInterval: 0.05))

@@ -1240,8 +1240,14 @@ final class PanelCoordinator: NSObject {
         guard size.width > 0, size.height > 0 else { return }
 
         let anchorPoint = CGPoint(x: request.anchorVisibleRect.midX, y: request.anchorVisibleRect.midY)
+        // **锚点必须落在任务条所在的那块屏上。** 弹气泡的 chip 全都住在任务条 / 抽屉里，
+        // 两者永远同屏；锚点跑到别的屏上只可能是那张卡缓存的屏幕矩形过期了（面板换过屏）。
+        // 此时宁可这一帧不弹——`ScreenRectReader` 现在会在窗口移动时补一次上报，
+        // 下一帧就正确。真弹出去就是 owner 报的「气泡跑到没有任务条的那块屏上」。
+        let dockScreen = dockPanel.map { panelCurrentScreen(panel: $0) }
+        if let dockScreen, !dockScreen.frame.contains(anchorPoint) { return }
         let screen = NSScreen.screens.first(where: { $0.frame.contains(anchorPoint) })
-            ?? dockPanel.map { panelCurrentScreen(panel: $0) }
+            ?? dockScreen
             ?? NSScreen.main
             ?? NSScreen.screens[0]
         let target = PanelGeometry.windowTitleTooltipTargetFrame(
