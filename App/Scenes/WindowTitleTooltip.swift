@@ -109,16 +109,17 @@ enum ChipPillMetrics {
     /// 可见的缝来自图标资源自带的透明边距。
     static let cardWidth: CGFloat = 40
 
-    /// 卡与卡之间的间距。**定义在这里，`Style.chipSpacing` 引用它**——气泡的邻域判定
-    /// （`PanelCoordinator`）也要用到中心间距，而 `Style` 是 private、别的文件读不到，
-    /// 两处各写一个 2 迟早对不上。
+    /// 卡与卡之间的间距。**定义在这里，`Style.chipSpacing` 引用它**——悬停归属判定
+    /// （`StripHoverResolution` 的缝隙桥接量）也要用它，而 `Style` 是 private、
+    /// 别的文件读不到，两处各写一个 2 迟早对不上。
     ///
     /// 2pt：对齐原生 Dock 的图标中心间距 42pt。**改它必须同步改
     /// `StripContextMenuZone.defaultMinimumGapWidth`**——那个阈值要严格落在「普通缝」和
     /// 「分割线缝」之间，否则任务条空白区右键会整个失效。
     static let chipSpacing: CGFloat = 2
 
-    /// 图标卡的中心间距（原生实测 42pt）。
+    /// 图标卡的中心间距（原生实测 42pt）。目前只有测试在读它：它锁住的是
+    /// 「卡宽 + 间距 = 原生的 42」这条恒等式，改宽度或间距时会立刻炸。
     static let iconPitch: CGFloat = cardWidth + chipSpacing
 
     // MARK: 未读角标（`ChipBadgeView`）
@@ -449,19 +450,17 @@ struct ChipAnimationTraceBuffer {
     }
 }
 
+/// 气泡该显示什么、贴在哪。
+///
+/// **全应用只有一个发送方**：任务条整条那块跟踪区（`StripHoverResolution` → `DockStripView`
+/// 的 `bubbleRequest`）。以前是每张卡各自发，于是需要一整套「谁有资格占用这块面板」的守卫
+/// ——卡片侧的 `isHovering` 会卡在 true（漏掉的 `.onHover(false)`），那张卡此后每次重排都会
+/// 重发请求，把气泡拽到指针根本不在的地方闪一下（owner 2026-08-17 报过）。改成一个发送方
+/// 之后这类抢占在结构上不可能发生，守卫连同 `Reason` 一起删了。
 struct WindowTitleTooltipRequest: Equatable {
-    /// 这次请求是**谁**发起的。归属守卫只对 `.refresh` 生效，见 `WindowTitleTooltipOwnership`。
-    enum Reason: Equatable {
-        /// 指针真的移进了这张卡（`.onHover(true)`）。**一律放行。**
-        case pointerEntered
-        /// 没有指针动作的重发：矩形变了 / 应用名变了 / 档位变了。**要过守卫。**
-        case refresh
-    }
-
     let chipID: String
     let title: String
     let anchorVisibleRect: CGRect
-    let reason: Reason
 }
 
 enum WindowTitleTooltipEvent: Equatable {
@@ -530,65 +529,6 @@ struct WindowTitleTooltipStyle: Equatable {
 
     /// 实测原表 = 中档。测试拿它锁住「缩放没有顺手改掉原生像素」。
     static let native = WindowTitleTooltipStyle(scale: 1)
-}
-
-/// 谁有资格占用那**唯一一块**气泡面板：指针必须落在这张卡的锚点矩形里。
-///
-/// 这条规矩本来就存在，只是**过去只有看门狗在执行**（每 0.1s 复核一次），
-/// `.update` 入口反而无条件接受任何一张卡的请求。缺口在于卡片侧的 `@State isHovering`
-/// 会**卡在 true**：SwiftUI 的 `.onHover(false)` 在指针快速划出、或卡片被重排/移除从指针底下
-/// 抽走时会整个漏掉（看门狗的注释里就写着这件事），而没有任何人给那份状态复位。
-/// 于是那张卡会在**没有新悬停动作**的情况下继续重发 `.update`——只要整条重排一次
-/// （别处窗口标题变了、药丸宽度变了）让它的屏幕矩形更新就够——把面板拽到自己头上，
-/// 100ms 后再被看门狗收掉。owner 2026-08-17 报的「在条左边滑动，右边的应用闪了一下气泡」
-/// 正是这个形状，也解释了为什么当场复现不了（要先有一张卡漏过一次 exit）。
-///
-/// 入口和看门狗**共用这一个函数**，两边不会漂移。
-///
-/// **守卫只拦「内容驱动」的重发，真实的悬停进入一律放行**（`WindowTitleTooltipRequest.Reason`）。
-/// 第一版对所有 `.update` 都拦，那是错的：`.onHover(true)` 是事件驱动的，主线程处理到它时
-/// 指针可能已经划过去了，于是这张卡的气泡整个不弹——而它的 `isHovering` 仍是 true，
-/// 不会再补发。守卫要防的从来就是「没有指针动作的重发」，不是用户真的把指针移了上去。
-enum WindowTitleTooltipOwnership {
-    /// 2pt 容差：锚点是去抖上报的，重排刚落定的那一帧可能还差一点点。
-    static let pointerTolerance: CGFloat = 2
-
-    static func canOwnBubble(anchorVisibleRect: CGRect,
-                             pointer: CGPoint,
-                             tolerance: CGFloat = pointerTolerance) -> Bool {
-        guard anchorVisibleRect.width > 0, anchorVisibleRect.height > 0 else { return false }
-        return anchorVisibleRect.insetBy(dx: -tolerance, dy: -tolerance).contains(pointer)
-    }
-
-    /// 是否接受这次 `.update`。
-    static func accepts(_ request: WindowTitleTooltipRequest, pointer: CGPoint) -> Bool {
-        switch request.reason {
-        case .pointerEntered: return true
-        case .refresh: return canOwnBubble(anchorVisibleRect: request.anchorVisibleRect,
-                                           pointer: pointer)
-        }
-    }
-
-    /// 指针离开了这张卡，但气泡该不该**继续留着**。
-    ///
-    /// 原来的做法是「指针还在条上就挂 90ms，到点收掉」。问题出在卡与卡之间那 2pt 间隙：
-    /// 落在里面时**没有任何卡被悬停**，慢慢滑（试探边界时正是慢动作，慢于 22pt/s 就够）
-    /// 就会超时 → 气泡收掉 → 进下一张卡再重新弹。用户看到的是「A → 空 → B」，
-    /// 而**原生 Dock 的磁贴是连续铺满的，永远没有「哪个都不是」的中间态**，所以它是一条硬线
-    /// （owner 2026-08-17：「原生有很明显的界限，钨极有点模糊」）。
-    ///
-    /// 改成按**邻域**判定：指针还在当前锚点左右一个图标中心间距之内就留着，隔壁卡一进来
-    /// 自然接管；真的走远了（宽的分区分隔线、条两端）才收，不会挂着一颗过期气泡。
-    /// 横向放宽、纵向仍用 2pt 容差——竖着离开条就该收。
-    static func shouldHoldBubble(anchorVisibleRect: CGRect,
-                                 pointer: CGPoint,
-                                 horizontalReach: CGFloat,
-                                 tolerance: CGFloat = pointerTolerance) -> Bool {
-        guard anchorVisibleRect.width > 0, anchorVisibleRect.height > 0 else { return false }
-        return anchorVisibleRect
-            .insetBy(dx: -max(tolerance, horizontalReach), dy: -tolerance)
-            .contains(pointer)
-    }
 }
 
 /// 胶囊 + 向下水滴尖角。尖角画在**形状里**而不是叠一个三角形：

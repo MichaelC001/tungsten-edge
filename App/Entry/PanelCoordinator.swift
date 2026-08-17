@@ -1093,20 +1093,10 @@ final class PanelCoordinator: NSObject {
     private func handleWindowTitleTooltipEvent(_ event: WindowTitleTooltipEvent) {
         switch event {
         case let .update(request):
-            // **指针不在这张卡上 → 它不能占用气泡面板。** 全应用只有一块面板，谁发 `.update`
-            // 谁就把它抢走；而卡片侧的 `isHovering` 会卡在 true（漏掉的 `.onHover(false)`），
-            // 那张卡此后每次重排都会重发请求，把气泡拽到指针根本不在的地方闪一下。
-            //
-            // **只拦「内容驱动」的重发**（`request.reason == .refresh`）：`.onHover(true)` 是
-            // 事件驱动的，主线程处理到它时指针可能已经划过去，一律拦就会把正常的快速悬停
-            // 整个吞掉。判定与看门狗共用，理由和现场见 `WindowTitleTooltipOwnership`。
-            let pointer = NSEvent.mouseLocation
-            guard WindowTitleTooltipOwnership.accepts(request, pointer: pointer) else {
-                HoverTrace.tooltipRejected(chipID: request.chipID,
-                                           pointer: pointer,
-                                           anchor: request.anchorVisibleRect)
-                return
-            }
+            // 这里**不再做归属判定**。请求现在只有一个来源：任务条整条那块跟踪区按指针位置
+            // 算出来的（`StripHoverResolution`），发出来时指针必定压在那张卡上。
+            // 以前每张卡各自发请求才需要守卫（卡住的 `isHovering` 会抢面板），
+            // 理由留在 `WindowTitleTooltipRequest` 的注释里。
             if windowTitleTooltipSuppressedChipID == request.chipID { return }
             windowTitleTooltipSuppressedChipID = nil
             cancelWindowTitleTooltipLinger()
@@ -1153,35 +1143,23 @@ final class PanelCoordinator: NSObject {
             if windowTitleTooltipSuppressedChipID == chipID {
                 windowTitleTooltipSuppressedChipID = nil
             }
-            guard let current = windowTitleTooltipRequest, current.chipID == chipID else { return }
-            // 指针还在**这张卡的邻域**里就留着，等隔壁接管；走远了立刻收。
-            // 判据和理由见 `WindowTitleTooltipOwnership.shouldHoldBubble`——核心是卡与卡之间
-            // 那 2pt 间隙里没有任何卡被悬停，原来那条「盲目 90ms 到点收掉」会让慢慢滑过去的
-            // 人看到「A → 空 → B」，而原生的磁贴连续铺满、永远没有中间态。
-            if isPointInsideTaskbarPanels(NSEvent.mouseLocation),
-               WindowTitleTooltipOwnership.shouldHoldBubble(
-                   anchorVisibleRect: current.anchorVisibleRect,
-                   pointer: NSEvent.mouseLocation,
-                   horizontalReach: windowTitleTooltipHorizontalReach
-               ) {
-                scheduleWindowTitleTooltipLinger(for: chipID)
+            guard windowTitleTooltipRequest?.chipID == chipID else { return }
+            // `.exit` 现在的含义很干脆：**指针没压在任何一张卡上**——分区分隔线那道宽缝、
+            // 条两端的留白，或者已经离开任务条。卡与卡之间那 2pt 窄缝不会走到这里：
+            // 归属判定把它桥接掉了（`StripHoverResolution`），所以「A → 空 → B」在源头上没了。
+            //
+            // 还留一个 90ms 宽限：横穿分隔线时别闪一下，隔壁一发 `.update` 就接管。
+            // 指针已经不在任务条上就立刻收，不挂一颗过期气泡。
+            if isPointInsideTaskbarPanels(NSEvent.mouseLocation) {
+                scheduleWindowTitleTooltipLinger()
             } else {
                 dismissWindowTitleTooltip()
             }
         }
     }
 
-    /// 邻域判定的横向伸展量：一个图标中心间距。指针在当前卡左右一格之内就还算"正划向隔壁"。
-    private var windowTitleTooltipHorizontalReach: CGFloat {
-        ChipPillMetrics.iconPitch * settingsStore.dockSize.scale
-    }
-
     /// 延后收气泡；宽限内有别的 chip `.update` 进来就直接接管这块面板（见 `windowTitleTooltipLingerDelay`）。
-    ///
-    /// **到点不再无条件收掉**：先按邻域重新判一次，还在邻域里就把决定权交回 10Hz 看门狗
-    /// （它本来就只在气泡可见期间存活）。这条计时器因此降级成兜底——防止锚点过期时
-    /// 邻域判定永远为真、气泡永远不收。
-    private func scheduleWindowTitleTooltipLinger(for chipID: String) {
+    private func scheduleWindowTitleTooltipLinger() {
         windowTitleTooltipTimer?.invalidate()
         windowTitleTooltipTimer = nil
         cancelWindowTitleTooltipLinger()
@@ -1189,18 +1167,7 @@ final class PanelCoordinator: NSObject {
             Task { @MainActor [weak self] in
                 guard let self else { return }
                 self.windowTitleTooltipLingerTimer = nil
-                guard let current = self.windowTitleTooltipRequest,
-                      current.chipID == chipID else { return }
-                guard self.isPointInsideTaskbarPanels(NSEvent.mouseLocation),
-                      WindowTitleTooltipOwnership.shouldHoldBubble(
-                          anchorVisibleRect: current.anchorVisibleRect,
-                          pointer: NSEvent.mouseLocation,
-                          horizontalReach: self.windowTitleTooltipHorizontalReach
-                      ) else {
-                    self.dismissWindowTitleTooltip()
-                    return
-                }
-                self.startWindowTitleTooltipWatchdog()
+                self.dismissWindowTitleTooltip()
             }
         }
         windowTitleTooltipLingerTimer = timer
@@ -1212,11 +1179,16 @@ final class PanelCoordinator: NSObject {
         windowTitleTooltipLingerTimer = nil
     }
 
-    /// 气泡在屏上时的看门狗：指针一旦离开锚点矩形就收气泡。
+    /// 气泡在屏上时的看门狗：指针离开了会弹气泡的那些面板就收掉。
     ///
-    /// **不能只靠 SwiftUI 的 `.onHover(false)`。** 它在指针快速划出窗口、或 chip 被重排/移除
-    /// 从指针底下抽走时会整个漏掉，气泡就永远挂着（owner 报「有时候鼠标移走气泡还在」）。
-    /// 这里用 `NSEvent.mouseLocation` 做 AppKit 层的独立复核——它和锚点是同一套屏幕坐标。
+    /// 改造之后它只剩**兜底**这一个身份：条上谁拥有气泡由整条那块跟踪区实时算
+    /// （`StripHoverResolution`），它自己的 `mouseExited` 才是正常的收气泡路径。
+    /// 但面板被 `orderOut`（贴边隐藏、进全屏）、或 chip 从指针底下被抽走时，
+    /// 跟踪区不保证补一次 exit，那时就靠这条 10Hz 复核，免得气泡永远挂着
+    /// （owner 报过「有时候鼠标移走气泡还在」）。
+    ///
+    /// **判定用整块面板，不用锚点矩形**：条内的归属交给跟踪区，这里再按锚点判一次
+    /// 只会和它打架——指针停在分隔线或窄缝上时两边结论不同，气泡会被抢着收掉。
     ///
     /// 刻意用**只在气泡可见期间存活**的定时器，而不是常驻的 `.mouseMoved` 全局监视器：
     /// 后者是事件 tap，我们自己的菜单弹起时会把鼠标事件拖慢（AGENTS《Menus, Panels, And Screens》
@@ -1227,26 +1199,11 @@ final class PanelCoordinator: NSObject {
             Task { @MainActor [weak self] in
                 guard let self else { return }
                 guard self.windowTitleTooltipPanel?.isVisible == true,
-                      let anchor = self.windowTitleTooltipRequest?.anchorVisibleRect else {
+                      self.windowTitleTooltipRequest != nil else {
                     self.stopWindowTitleTooltipWatchdog()
                     return
                 }
-                // 与 `.update` 入口共用同一条判定（含 2pt 容差），两边不会漂移。
-                let location = NSEvent.mouseLocation
-                guard !WindowTitleTooltipOwnership.canOwnBubble(
-                    anchorVisibleRect: anchor, pointer: location
-                ) else { return }
-                // 指针离开了锚点，但还在**这张卡的邻域**里 → 留着，多半是正划向隔壁 chip
-                // （卡与卡之间那 2pt 间隙里没有任何卡被悬停）。立刻 orderOut 会让隔壁重新
-                // 冷启动，慢慢滑过去就是 owner 报的「A → 空 → B」。
-                if self.isPointInsideTaskbarPanels(location),
-                   WindowTitleTooltipOwnership.shouldHoldBubble(
-                       anchorVisibleRect: anchor,
-                       pointer: location,
-                       horizontalReach: self.windowTitleTooltipHorizontalReach
-                   ) {
-                    return
-                }
+                guard !self.isPointInsideTaskbarPanels(NSEvent.mouseLocation) else { return }
                 self.dismissWindowTitleTooltip()
             }
         }

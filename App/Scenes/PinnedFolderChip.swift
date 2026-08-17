@@ -27,18 +27,19 @@ struct PinnedFolderChip: View {
     let scale: CGFloat
     /// 悬停效果档位。**同样故意不给默认值**——漏传必须是编译错误，理由同 `scale`。
     let hoverStyle: HoverStyle
+    /// 指针在不在这张卡上。由任务条整条那块跟踪区算好后传进来（见 `StripHoverResolution`）；
+    /// 拖动载体传 `false`。**故意不给默认值**，理由同 `scale` / `hoverStyle`。
+    let isHovered: Bool
 
     private let theme = DockThemeTokens.standard
 
-    @State private var isHovering = false
-
     /// 悬停视觉的总闸：「安静」档下恒 false，整块放大不再发生。
     /// 投放高亮（`isDropTarget`）不受它管——那是拖放反馈，不是悬停。
-    private var showsHover: Bool { hoverStyle.isExpressive && isHovering }
+    private var showsHover: Bool { hoverStyle.isExpressive && isHovered }
     /// 本格**两档都放大**：安静档 2026-08-17 补悬停反馈时选的形式正好就是整块放大，
     /// 和这里既有的做法撞在一起，那就用同一条，不必为安静档另叠一个缩放。
     /// 幅度也不分档——分了反而要解释「为什么关掉名字之后放大得少一点」。
-    private var showsHoverScale: Bool { showsHover || hoverStyle.showsQuietHoverFeedback(isHovering: isHovering) }
+    private var showsHoverScale: Bool { showsHover || hoverStyle.showsQuietHoverFeedback(isHovering: isHovered) }
 
     private var folderName: String {
         FileManager.default.displayName(atPath: path)
@@ -73,7 +74,6 @@ struct PinnedFolderChip: View {
         // 悬停：整个 chip 放大上顶（原生 Dock 手感）。anchor .bottom 让底部名称基本不动、封面往上顶起。
         // scaleEffect 只是渲染变换，不改布局 frame——拖放命中读的是 .background GeometryReader 上报的未缩放 frame，不受影响。
         .scaleEffect(showsHoverScale ? 1.12 : 1, anchor: .bottom)
-        .onHover { isHovering = $0 }
         .onTapGesture { onTap() }
         .nativeContextMenu { buildMenu() }
         .help(folderName)

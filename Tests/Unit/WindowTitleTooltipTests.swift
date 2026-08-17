@@ -429,97 +429,13 @@ final class ScreenRectReaderTests: XCTestCase {
     }
 }
 
-/// 谁能占用那唯一一块气泡面板。缺陷现场和为什么需要这条判定见
-/// `WindowTitleTooltipOwnership` 的注释（owner 2026-08-17 报「左边滑动、右边闪气泡」）。
-final class WindowTitleTooltipOwnershipTests: XCTestCase {
-    private let anchor = CGRect(x: 100, y: 0, width: 40, height: 54)
-
-    func testPointerInsideTheAnchorMayOwnTheBubble() {
-        XCTAssertTrue(WindowTitleTooltipOwnership.canOwnBubble(
-            anchorVisibleRect: anchor, pointer: CGPoint(x: 120, y: 27)))
-    }
-
-    /// 核心那条：指针在别处的卡不得抢面板。
-    func testPointerOnAnotherChipMayNotOwnTheBubble() {
-        XCTAssertFalse(WindowTitleTooltipOwnership.canOwnBubble(
-            anchorVisibleRect: anchor, pointer: CGPoint(x: 600, y: 27)))
-    }
-
-    /// 2pt 容差：重排刚落定那一帧锚点可能还差一点点，不能因此把气泡判死。
-    func testToleranceBandStillCounts() {
-        XCTAssertTrue(WindowTitleTooltipOwnership.canOwnBubble(
-            anchorVisibleRect: anchor, pointer: CGPoint(x: anchor.maxX + 1.5, y: 27)))
-        XCTAssertFalse(WindowTitleTooltipOwnership.canOwnBubble(
-            anchorVisibleRect: anchor, pointer: CGPoint(x: anchor.maxX + 3, y: 27)))
-    }
-
-    /// 还没量到矩形（`.zero`）时谁都不能拥有——容差不该把零矩形撑成一个 4×4 的命中区。
-    func testUnmeasuredAnchorNeverOwnsTheBubble() {
-        XCTAssertFalse(WindowTitleTooltipOwnership.canOwnBubble(
-            anchorVisibleRect: .zero, pointer: .zero))
-    }
-
-    // MARK: - 守卫只拦「内容驱动」的重发
-
-    /// **真实的悬停进入一律放行，哪怕指针已经划过去了。**
-    ///
-    /// `.onHover(true)` 是事件驱动的，主线程处理到它时指针可能早已离开这张卡。
-    /// 第一版对所有 `.update` 都拦，于是快速横扫时整张卡的气泡直接不弹——而它的
-    /// `isHovering` 仍是 true，不会再补发。这条锁住那个回归。
-    func testPointerEnteredIsAlwaysAcceptedEvenWhenThePointerHasMovedOn() {
-        let request = WindowTitleTooltipRequest(chipID: "a", title: "A",
-                                                anchorVisibleRect: anchor,
-                                                reason: .pointerEntered)
-        XCTAssertTrue(WindowTitleTooltipOwnership.accepts(
-            request, pointer: CGPoint(x: 900, y: 27)))
-    }
-
-    /// 没有指针动作的重发（矩形变了 / 名字变了）仍然要过守卫——这才是当初要防的偷面板。
-    func testRefreshFromAChipThePointerIsNotOnIsRejected() {
-        let request = WindowTitleTooltipRequest(chipID: "a", title: "A",
-                                                anchorVisibleRect: anchor,
-                                                reason: .refresh)
-        XCTAssertFalse(WindowTitleTooltipOwnership.accepts(
-            request, pointer: CGPoint(x: 900, y: 27)))
-        XCTAssertTrue(WindowTitleTooltipOwnership.accepts(
-            request, pointer: CGPoint(x: 120, y: 27)))
-    }
-
-    // MARK: - 跨卡片时气泡不消失
-
-    /// 卡与卡之间的缝里**没有任何卡被悬停**。原来 `.exit` 挂 90ms 到点就无条件收，
-    /// 慢慢滑过去看到的是「A → 空 → B」；原生的磁贴连续铺满，永远没有中间态。
-    ///
-    /// 取标题卡之间那条 10pt 缝的正中（图标卡之间只有 2pt，正好还在 2pt 容差里，
-    /// 反而不是最坏情况）：它已经**超出容差**，但必须仍在邻域内、气泡不许收。
-    func testBubbleHoldsWhileCrossingTheGapToTheNeighbouringChip() {
-        let inGap = CGPoint(x: anchor.maxX + 5, y: 27)
-        XCTAssertFalse(WindowTitleTooltipOwnership.canOwnBubble(
-            anchorVisibleRect: anchor, pointer: inGap),
-                       "超出 2pt 容差 —— 这正是原来会被收掉的位置")
-        XCTAssertTrue(WindowTitleTooltipOwnership.shouldHoldBubble(
-            anchorVisibleRect: anchor, pointer: inGap,
-            horizontalReach: ChipPillMetrics.iconPitch))
-    }
-
-    /// 但走远了要收，不能挂着一颗过期气泡（宽的分区分隔线、条两端）。
-    func testBubbleStopsHoldingOnceThePointerLeavesTheNeighbourhood() {
-        let reach = ChipPillMetrics.iconPitch
-        XCTAssertFalse(WindowTitleTooltipOwnership.shouldHoldBubble(
-            anchorVisibleRect: anchor,
-            pointer: CGPoint(x: anchor.maxX + reach + 1, y: 27),
-            horizontalReach: reach))
-    }
-
-    /// **纵向不放宽**：竖着离开条就该收，邻域只在横向伸展。
-    func testHoldingIsHorizontalOnly() {
-        XCTAssertFalse(WindowTitleTooltipOwnership.shouldHoldBubble(
-            anchorVisibleRect: anchor,
-            pointer: CGPoint(x: anchor.midX, y: anchor.maxY + 20),
-            horizontalReach: ChipPillMetrics.iconPitch))
-    }
-
-    /// 中心间距就是原生实测的 42pt，而且和条内实际用的间距是同一个常量。
+/// 图标中心间距：原生实测的 42pt，而且和条内实际用的间距是同一个常量。
+///
+///（原来这里还有一整套 `WindowTitleTooltipOwnership` 的用例：谁有资格占用那唯一一块气泡面板、
+/// 跨缝时要不要留着。2026-08-17 把悬停改成「整条一块跟踪区 + 按位置反查」之后，
+/// 气泡只有一个发送方，抢占在结构上不可能发生，那套判定连同用例一起删了；
+/// 缝隙与边界现在锁在 `StripHoverResolutionTests` 里。）
+final class ChipIconPitchTests: XCTestCase {
     func testIconPitchMatchesTheNativeDock() {
         XCTAssertEqual(ChipPillMetrics.iconPitch, 42)
         XCTAssertEqual(ChipPillMetrics.iconPitch,

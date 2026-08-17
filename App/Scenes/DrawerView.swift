@@ -232,10 +232,18 @@ struct DrawerView: View {
                      isHidden: running ? isHiddenInSnapshot(id) : false,
                      isLaunching: runtime.launchingBundleIDs.contains(id),
                      scale: 0.7,
-                     // 抽屉有意不受「悬停效果」设置影响（owner 2026-08-02）：抽屉是网格，
-                     // 悬停冒名字在这里很有用。和上面的 scale: 0.7 同理——有意固定的值写在
-                     // 调用处，不靠默认值（视图侧刻意没有默认值，漏传是编译错误）。
-                     hoverStyle: .standard,
+                     // 抽屉有意不受「悬停效果」设置影响（owner 2026-08-02），但**固定成安静档**
+                     // （owner 2026-08-17 要「抽屉图标悬停微微放大」）。
+                     //
+                     // 当年写 `.standard` 是为了「悬停冒名字」，那个理由 2026-08-16 就没了：
+                     // 名字挪进了图标上方的气泡，而抽屉这个调用处**根本没接气泡回调**——
+                     // 于是 `.standard` 在这里等于「什么都不做」，抽屉悬停零反馈。
+                     // `.quiet` 恰好就是「没有名字，所以给一个轻微放大」那一档，语义对得上。
+                     // 网格是 30.8pt 的格子配 8pt 间距，放大 1.10 后每侧只涨 1.5pt，撞不到邻居。
+                     hoverStyle: .quiet,
+                     // 抽屉这块面板没有整条那样的跟踪区，图标各自挂 `.onHover`。
+                     // 格子 30.8pt、指针在里面停留的时间远长于条上横扫，漏格不成问题。
+                     hoverInput: .selfTracked,
                      membershipItems: membershipItems(for: id),
                      onLaunch: { runtime.beginLaunch(id) },
                      onPrimaryAction: onPrimaryAction)

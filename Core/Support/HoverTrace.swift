@@ -33,18 +33,16 @@ enum HoverTrace {
         )
     }
 
-    /// 一张卡想占用气泡面板、但指针根本不在它身上 —— 被 `WindowTitleTooltipOwnership` 挡掉。
+    /// 整条那块跟踪区每收到一次指针位置就记一行，附带算出来的归属。
     ///
-    /// **这是「气泡串台」唯一的现场证据。** 那条缺陷需要某张卡先漏掉一次 `.onHover(false)`
-    /// 才会发生，当场复现不了（owner 2026-08-17 报「在条左边滑动，右边的应用闪了一下气泡」）。
-    /// 有了这一行，下次它再犯就能直接看出是谁在没有指针的情况下发的请求，不用再靠推理。
-    static func tooltipRejected(chipID: String, pointer: CGPoint, anchor: CGRect) {
+    /// **这是「悬停到底跟不跟得上」唯一的现场证据。** 2026-08-17 改成整条一块跟踪区时，
+    /// 第一版靠 `NSTrackingArea` 的 `.mouseMoved`，实测每 35 次指针移动只有个位数报上来
+    /// （我们这些面板永远不是 key 窗口）。没有这一行就只能靠猜。
+    static func pointer(x: CGFloat, chip: String?) {
         guard isEnabled else { return }
         Writer.shared.append(
-            "{\"t\":\(stamp()),\"kind\":\"tooltipRejected\",\"chip\":\(quote(chipID))," +
-            "\"px\":\(round(pointer.x * 10) / 10),\"py\":\(round(pointer.y * 10) / 10)," +
-            "\"ax\":\(round(anchor.minX * 10) / 10),\"ay\":\(round(anchor.minY * 10) / 10)," +
-            "\"aw\":\(round(anchor.width * 10) / 10),\"ah\":\(round(anchor.height * 10) / 10)}"
+            "{\"t\":\(stamp()),\"kind\":\"pointer\",\"x\":\(round(x * 10) / 10)," +
+            "\"chip\":\(chip.map(quote) ?? "null")}"
         )
     }
 

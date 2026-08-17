@@ -10,8 +10,6 @@ import SwiftUI
 /// `membershipItems` (在程序坞中保留 / 标记为消息应用).
 
 struct LauncherChip: View {
-    /// 悬停名气泡（原生 Dock 那种，图标正上方）。默认空 = 不弹。
-    var onWindowTitleTooltipEvent: (WindowTitleTooltipEvent) -> Void = { _ in }
     let bundleID: String
     let isRunning: Bool   // supplied by the displayed zone's runtime/process projection
     let isHidden: Bool    // supplied by the displayed zone's runtime/process projection
@@ -22,8 +20,11 @@ struct LauncherChip: View {
     /// 见 AGENTS《Taskbar Size Tiers》。
     let scale: CGFloat
     /// 悬停效果档位。**同样故意不给默认值**——漏传必须是编译错误，理由同 `scale`。
-    /// 抽屉调用处有意写死 `.standard`（抽屉不受该设置影响，owner 2026-08-02）。
+    /// 抽屉调用处有意写死 `.quiet`（抽屉不受该设置影响，owner 2026-08-02 / 2026-08-17）。
     let hoverStyle: HoverStyle
+    /// 悬停从哪来。任务条传 `.resolved(…)`（整条一块跟踪区算好的），抽屉传 `.selfTracked`
+    /// （那块面板没有跟踪区）。**故意不给默认值**，理由同 `scale` / `hoverStyle`。
+    let hoverInput: ChipHoverInput
     /// 成员 / 管理菜单项（右键菜单末尾），如「在程序坞中保留」「标记为消息应用」。
     /// 空数组 = 无成员项。
     var membershipItems: [LauncherMembershipItem] = []
@@ -43,18 +44,23 @@ struct LauncherChip: View {
 
     private let theme = DockThemeTokens.standard
 
-    @State private var isHovering = false
+    /// `.selfTracked` 时才用得上（抽屉）。任务条走 `.resolved(…)`，这份状态原地不动。
+    @State private var selfHovering = false
     @State private var bounceUp = false
     @State private var bounceTimer: Timer?
     /// 按压确认脉冲。2026-08-11 之前这个组件**完全没有按压反馈**——消息区（主窗关着 / 未运行）、
     /// kept 图标、抽屉图标点下去一动不动，而窗口卡和抽屉胶囊都有。纯视图层信号，永不喂
     /// planner / frontmost 轴（AGENTS）。
     @State private var isTapPressed = false
-    /// 整张卡的屏幕矩形——悬停气泡的锚点。
-    @State private var cardScreenRect: CGRect = .zero
-
     private static let launchTraceEnabled =
         ProcessInfo.processInfo.environment["DOCK_LAUNCH_TRACE"] == "1"
+
+    private var isHovering: Bool {
+        switch hoverInput {
+        case let .resolved(value): return value
+        case .selfTracked: return selfHovering
+        }
+    }
 
     /// 悬停视觉的总闸：「安静」档下恒 false，图标不缩、名字不浮出，连动画事务都不产生。
     private var showsHover: Bool { hoverStyle.isExpressive && isHovering }
@@ -119,15 +125,11 @@ struct LauncherChip: View {
                              cardWidth: ChipPillMetrics.cardWidth * scale,
                              scale: scale)
         .chipPressScale(isTapPressed)
-        .background(ScreenRectReader(delivery: .tooltip) { rect in
-            guard rect != cardScreenRect else { return }
-            cardScreenRect = rect
-            if isHovering { updateTooltip(hovering: true, reason: .refresh) }
-        })
         .contentShape(Rectangle())
-        .onHover { hovering in
-            isHovering = hovering
-            updateTooltip(hovering: hovering, reason: .pointerEntered)
+        // 任务条上悬停由整条那块跟踪区算好后传进来；只有抽屉（`.selfTracked`）才自己挂
+        // `.onHover`，因为那块面板没有跟踪区。成因见 `StripHoverResolution`。
+        .modifier(SelfTrackedHover(enabled: hoverInput == .selfTracked, isHovering: $selfHovering))
+        .onChange(of: isHovering) { hovering in
             ChipAnimationTrace.event(
                 chipID: bundleID,
                 kind: "launcher",
@@ -161,7 +163,6 @@ struct LauncherChip: View {
         .onDisappear {
             trace("disappear cleanup")
             cleanupBounce()
-            onWindowTitleTooltipEvent(.exit(chipID: bundleID))
         }
         .onChange(of: isLaunching) { newValue in
             trace("isLaunching=\(newValue)")
@@ -169,17 +170,6 @@ struct LauncherChip: View {
         }
         .onChange(of: bounceUp) { trace("bounceUp=\($0)") }
         .onChange(of: isHovering) { trace("isHovering=\($0)") }
-    }
-
-    private func updateTooltip(hovering: Bool, reason: WindowTitleTooltipRequest.Reason) {
-        guard hovering, showsHover, cardScreenRect != .zero else {
-            onWindowTitleTooltipEvent(.exit(chipID: bundleID))
-            return
-        }
-        onWindowTitleTooltipEvent(.update(WindowTitleTooltipRequest(
-            chipID: bundleID, title: displayName, anchorVisibleRect: cardScreenRect,
-            reason: reason
-        )))
     }
 
     private func buildLauncherMenu() -> NSMenu {
@@ -419,5 +409,23 @@ enum AppDisplayNameResolver {
             names.insert(AppNameRegistry.normalize(url.deletingPathExtension().lastPathComponent))
         }
         return names
+    }
+}
+
+/// 只有在没有外部跟踪区的面板（抽屉）上才挂 `.onHover`。
+///
+/// 条件写成 `if`/`else` 而不是"总是挂上、值不用就忽略"：多留一块跟踪区就多一份事件派发，
+/// 而我们改这一轮**正是为了不再依赖每张卡各自的进出事件**（见 `StripHoverResolution`）。
+/// `enabled` 在同一个调用点上永不翻转，所以 `_ConditionalContent` 的身份切换不会真的发生。
+private struct SelfTrackedHover: ViewModifier {
+    let enabled: Bool
+    @Binding var isHovering: Bool
+
+    func body(content: Content) -> some View {
+        if enabled {
+            content.onHover { isHovering = $0 }
+        } else {
+            content
+        }
     }
 }
