@@ -35,10 +35,8 @@ enum HoverStyle: String, CaseIterable {
     /// 整行重排」，而那说的是把应用名写在图标下方、名字一冒出来卡就变宽的老布局；
     /// 名字挪进气泡之后两档都不再重排，且这里用的是 `scaleEffect`（纯渲染变换，不改布局）。
     ///
-    /// `forceHover` 收进来是为了和各 chip 现有的 `showsHover` 同构：拖动的浮动副本恒传
-    /// `forceHover: false` 且自己的 `isHovering` 永远不亮，所以副本上不会放大。
-    func showsQuietHoverFeedback(isHovering: Bool, forceHover: Bool = false) -> Bool {
-        !isExpressive && (isHovering || forceHover)
+    func showsQuietHoverFeedback(isHovering: Bool) -> Bool {
+        !isExpressive && isHovering
     }
 }
 

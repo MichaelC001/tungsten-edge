@@ -217,7 +217,6 @@ final class PanelCoordinator: NSObject {
     private var windowTitleTooltipPanel: NSPanel?
     private var windowTitleTooltipRequest: WindowTitleTooltipRequest?
     private var windowTitleTooltipSuppressedChipID: String?
-    private var windowTitleTooltipTimer: Timer?
     private var windowTitleTooltipLingerTimer: Timer?
     /// 只在气泡在屏上时跑的看门狗，见 `startWindowTitleTooltipWatchdog`。
     private var windowTitleTooltipWatchdog: Timer?
@@ -1077,17 +1076,14 @@ final class PanelCoordinator: NSObject {
 
     // MARK: - Window title tooltip
 
-    /// 冷启动延迟：气泡当前**不在屏上**时等多久才弹。**0 = 立刻**。
-    ///
-    /// 一开始留了 0.05s「去抖」，想的是横扫一排时别每个都闪。但原生 Dock 根本没有这个延迟——
-    /// owner 匀速划过时每个图标都及时响应，我们却「很多来不及显示」。原因是这 0.05s 撞上了
-    /// 匀速扫过单个图标的停留时间（图标中心间距 42pt，正常划手速度下每格只有几十毫秒），
-    /// 于是大多数格子在计时器到点前就已经离开了。去抖的收益是假的：面板保活之后，
-    /// 换 chip 本来就不闪。
-    private static let windowTitleTooltipAppearDelay: TimeInterval = 0
     /// 离开宽限：`.exit` 之后不立刻收，等这么久。**这条是「跟手」的关键。**
-    /// 从 A 划到 B 时两个 chip 的 exit / update 谁先到是不确定的；若 exit 先到就立刻 orderOut，
-    /// B 只能重新走冷启动（去抖 + 淡入），一排扫过去就是一串闪烁 + 每格都慢半拍。
+    /// 横穿分区分隔线时指针短暂不在任何卡上，立刻 orderOut 就会闪一下；隔壁一发
+    /// `.update` 就接管，宽限自然作废。
+    ///
+    /// **配套的「冷启动延迟」已经删掉了，别再加回来。** 那里曾经留过 0.05s 去抖，
+    /// 想的是横扫一排时别每个都闪，实际是反效果：0.05s 正好撞上匀速扫过单个图标的停留时间
+    ///（中心间距 42pt，正常划手速度下每格只有几十毫秒），于是大多数格子在计时器到点前就已经
+    /// 离开了。原生 Dock 根本没有这个延迟。面板保活之后，换 chip 本来就不闪。
     private static let windowTitleTooltipLingerDelay: TimeInterval = 0.09
 
     private func handleWindowTitleTooltipEvent(_ event: WindowTitleTooltipEvent) {
@@ -1102,41 +1098,10 @@ final class PanelCoordinator: NSObject {
             cancelWindowTitleTooltipLinger()
 
             HoverTrace.hover(chipID: request.chipID, entered: true)
-            let wasSameChip = windowTitleTooltipRequest?.chipID == request.chipID
             windowTitleTooltipRequest = request
             installWindowTitleTooltipMouseMonitors()
-
-            // 已经在屏上 → **立刻**换文字换位置，不再等去抖、不再淡入。
-            // 原生就是这样：第一次悬停有一点点延迟，之后沿着一排横扫是跟手的。
-            if windowTitleTooltipPanel?.isVisible == true {
-                windowTitleTooltipTimer?.invalidate()
-                windowTitleTooltipTimer = nil
-                presentWindowTitleTooltip(request)
-                return
-            }
-            // 同一个 chip 的重复上报（锚点微调 / 标题变化）不该把已在跑的去抖重新计时，
-            // 否则鼠标只要在卡上轻微移动就能把气泡无限期推后。
-            if wasSameChip, windowTitleTooltipTimer != nil { return }
-
-            windowTitleTooltipTimer?.invalidate()
-            windowTitleTooltipTimer = nil
-            guard Self.windowTitleTooltipAppearDelay > 0 else {
-                presentWindowTitleTooltip(request)
-                return
-            }
-
-            let chipID = request.chipID
-            let timer = Timer(timeInterval: Self.windowTitleTooltipAppearDelay, repeats: false) { [weak self] _ in
-                Task { @MainActor [weak self] in
-                    guard let self,
-                          let current = self.windowTitleTooltipRequest,
-                          current.chipID == chipID else { return }
-                    self.windowTitleTooltipTimer = nil
-                    self.presentWindowTitleTooltip(current)
-                }
-            }
-            windowTitleTooltipTimer = timer
-            RunLoop.main.add(timer, forMode: .common)
+            // 立刻换文字换位置：不去抖、不淡入（见上面那条常量的注释）。
+            presentWindowTitleTooltip(request)
 
         case let .exit(chipID):
             HoverTrace.hover(chipID: chipID, entered: false)
@@ -1160,8 +1125,6 @@ final class PanelCoordinator: NSObject {
 
     /// 延后收气泡；宽限内有别的 chip `.update` 进来就直接接管这块面板（见 `windowTitleTooltipLingerDelay`）。
     private func scheduleWindowTitleTooltipLinger() {
-        windowTitleTooltipTimer?.invalidate()
-        windowTitleTooltipTimer = nil
         cancelWindowTitleTooltipLinger()
         let timer = Timer(timeInterval: Self.windowTitleTooltipLingerDelay, repeats: false) { [weak self] _ in
             Task { @MainActor [weak self] in
@@ -1315,8 +1278,6 @@ final class PanelCoordinator: NSObject {
         if suppressCurrentUntilExit, let chipID = windowTitleTooltipRequest?.chipID {
             windowTitleTooltipSuppressedChipID = chipID
         }
-        windowTitleTooltipTimer?.invalidate()
-        windowTitleTooltipTimer = nil
         cancelWindowTitleTooltipLinger()
         stopWindowTitleTooltipWatchdog()
         windowTitleTooltipRequest = nil

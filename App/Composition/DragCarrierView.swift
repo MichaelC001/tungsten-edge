@@ -15,8 +15,8 @@ struct DragCarrierView: View {
 
     /// 来自任务条的载体用档位缩放；**未转正的抽屉图标不缩**——它离开的是抽屉，抽屉本轮不随档位缩放。
     private var dockScale: CGFloat { settingsStore.dockSize.scale }
-    /// 载体不可命中、且三处都传 `forceHover: false`，两档渲染其实相同；跟着 store 走只为自洽，
-    /// 免得以后有人打开 forceHover 时这里悄悄留一份写死的档位。
+    /// 载体不可命中、三处都传 `isHovered: false`，两档渲染其实相同；跟着 store 走只为自洽，
+    /// 免得以后这里悄悄留一份写死的档位。
     private var hoverStyle: HoverStyle { settingsStore.hoverStyle }
 
     private let theme = DockThemeTokens.standard
@@ -42,16 +42,15 @@ struct DragCarrierView: View {
             // 载体不参与悬停：它是跟着鼠标飞的浮动副本，不可命中，条上那块跟踪区也报不到它。
             // 显式写 `isHovered: false` 而不是靠默认值——那个属性刻意没有默认值。
             ChipView(item: rep, scale: dockScale, hoverStyle: hoverStyle,
-                     isHovered: false, showRunningDot: true, forceHover: false)
+                     isHovered: false, showRunningDot: true)
                 .dockShadow(theme.carrierShadow)
         } else {
             switch p.visualKind {
             case .stripChip:
                 if let item = p.item {
-                    // forceHover: false —— 悬停态会在图标下方带出 app 名,拖动时不想要（owner 2026-06-21）。
                     // 非悬停态 = 干净的大图标(单窗口卡),贴近抽屉拖动的观感。代价是起拖瞬间图标略放大,可接受。
                     ChipView(item: item, scale: dockScale, hoverStyle: hoverStyle,
-                             isHovered: false, showRunningDot: true, forceHover: false)
+                             isHovered: false, showRunningDot: true)
                         .dockShadow(theme.carrierShadow)
                 }
             case .drawerIcon:

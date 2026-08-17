@@ -416,7 +416,7 @@ struct DockStripView: View {
             onCommit: { target, urls in handleExternalDrop(target, urls: urls) }
         ))
         // 与 "strip" 命名空间同一视图 → 屏幕 frame 即 "strip" 空间原点，供抽屉拖回任务条做坐标映射 + 进出判定。
-        .background(ScreenRectReader(delivery: .root) { rect in
+        .background(ScreenRectReader { rect in
             guard rect != stripRootScreenRect else { return }
             stripRootScreenRect = rect
             refreshHoveredEntry(frames: stripHoverFrames, origin: rect)
@@ -1049,20 +1049,13 @@ struct DockStripView: View {
         }
     }
 
-    /// `dragging: true` 强制 chip 的悬停视觉。注：现在浮动载体已移到 `DragCarrierView`（且用
-    /// `forceHover: false`），条内不再用 `dragging: true` 渲染载体；此参数保留默认 false，渲染行为不变。
-    ///
     /// 悬停命中帧在这里**一处**上报（`StripHoverFramePreferenceKey`），所以四个区不可能漏
     /// ——`ChipView.onWindowTitleTooltipEvent` 当年那种"某个调用点漏传、编译还过"的坑
     /// 在这条路径上不会重演。分隔线也报：它占住那 5pt，指针压上去就没人拥有气泡，
     /// 于是宽缝天然是"什么都不弹"，两边的卡也不会隔着它抢。
     @ViewBuilder
-    private func stripEntryView(
-        _ entry: StripEntry,
-        projection: StripProjection,
-        dragging: Bool = false
-    ) -> some View {
-        stripEntryContent(entry, projection: projection, dragging: dragging)
+    private func stripEntryView(_ entry: StripEntry, projection: StripProjection) -> some View {
+        stripEntryContent(entry, projection: projection)
             .background(
                 GeometryReader { geo in
                     Color.clear.preference(key: StripHoverFramePreferenceKey.self,
@@ -1072,11 +1065,7 @@ struct DockStripView: View {
     }
 
     @ViewBuilder
-    private func stripEntryContent(
-        _ entry: StripEntry,
-        projection: StripProjection,
-        dragging: Bool
-    ) -> some View {
+    private func stripEntryContent(_ entry: StripEntry, projection: StripProjection) -> some View {
         let hovered = hoveredEntryID == entry.id
         switch entry {
         case let .window(item):
@@ -1085,7 +1074,6 @@ struct DockStripView: View {
                      hoverStyle: hoverStyle,
                      isHovered: hovered,
                      showRunningDot: true,
-                     forceHover: dragging,
                      pulseNonce: chipPulseNonces[item.id] ?? 0)
         case .divider:
             Rectangle()
@@ -1341,9 +1329,6 @@ struct ChipView: View {
     var iconOnly: Bool = false
     var showRunningDot: Bool = false
     var drawerTap: (() -> Void)? = nil
-    /// Force the hovered visual regardless of pointer (used by the floating drag copy, which
-    /// isn't hit-testable so its own `isHovering` would never light up).
-    var forceHover: Bool = false
     /// 外部手势（重击/中键预览）触发的脉冲信号：nonce 变化即触发一次 fireTapPulse，
     /// 给活访达窗口预览那 ~200ms 反查延迟一个"点到了"的即时确认。默认 0 = 不脉冲。
     var pulseNonce: Int = 0
@@ -1359,10 +1344,10 @@ struct ChipView: View {
 
     /// Visual hover state: the real pointer hover OR forced (drag copy)，再受悬停档位一道总闸。
     /// 「安静」档下恒 false，于是图标不缩、应用名不冒、胶囊底色不提亮、整行不重排。
-    private var showsHover: Bool { hoverStyle.isExpressive && (forceHover || isHovered) }
+    private var showsHover: Bool { hoverStyle.isExpressive && isHovered }
     /// 安静档的悬停反馈（标准档恒 false，那一档的反馈是名字气泡）。
     private var quietHoverFeedback: Bool {
-        hoverStyle.showsQuietHoverFeedback(isHovering: isHovered, forceHover: forceHover)
+        hoverStyle.showsQuietHoverFeedback(isHovering: isHovered)
     }
     private var animationTraceKind: String {
         !iconOnly && (item.showsTitle || isMessagingAppWindow) ? "window" : "icon"
@@ -1385,7 +1370,7 @@ struct ChipView: View {
             kind: animationTraceKind,
             event: ChipAnimationTraceEvent.hover(hovering),
             isTapPressed: isTapPressed,
-            showsHover: hoverStyle.isExpressive && (forceHover || hovering)
+            showsHover: hoverStyle.isExpressive && hovering
         )
     }
 

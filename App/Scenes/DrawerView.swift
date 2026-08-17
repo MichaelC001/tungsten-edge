@@ -122,7 +122,7 @@ struct DrawerView: View {
                       usesLiquidGlass: usesLiquidGlass)
         // 抽屉根视图的屏幕 frame（AppKit 换算,绕开 .global/y 翻转/shadowPadding 的坑,Codex 二审 P1-3）。
         // 与 `"drawer"` 命名空间挂在同一视图上 → 既能判"光标在不在抽屉里",又能把屏幕坐标映回 drawer 空间命中格子。
-        .background(ScreenRectReader(delivery: .root) { rect in
+        .background(ScreenRectReader { rect in
             if rect != drawerRootScreenRect { drawerRootScreenRect = rect }
         })
         .coordinateSpace(name: "drawer")

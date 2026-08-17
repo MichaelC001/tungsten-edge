@@ -130,6 +130,7 @@ struct LauncherChip: View {
         // `.onHover`，因为那块面板没有跟踪区。成因见 `StripHoverResolution`。
         .modifier(SelfTrackedHover(enabled: hoverInput == .selfTracked, isHovering: $selfHovering))
         .onChange(of: isHovering) { hovering in
+            trace("isHovering=\(hovering)")
             ChipAnimationTrace.event(
                 chipID: bundleID,
                 kind: "launcher",
@@ -169,7 +170,6 @@ struct LauncherChip: View {
             if newValue { startBounce() } else { stopBounce() }
         }
         .onChange(of: bounceUp) { trace("bounceUp=\($0)") }
-        .onChange(of: isHovering) { trace("isHovering=\($0)") }
     }
 
     private func buildLauncherMenu() -> NSMenu {

@@ -29,26 +29,22 @@ extension DispatchWorkItem: ScreenRectDeliveryTask {}
 
 /// Reads a SwiftUI host's frame in AppKit screen coordinates. Delivery is asynchronous because
 /// writing SwiftUI state synchronously from `layout()` is undefined.
+///
+/// **只有一种投递方式：每个不同的矩形都按顺序送达，重复的丢掉。** 曾经还有一档 50ms 尾去抖，
+/// 专给悬停气泡用——那时每张卡各自量自己的锚点，悬停时卡片矩形逐帧变，不去抖会把 chip
+/// 反复重算。2026-08-18 悬停改成整条一块跟踪区之后，锚点由条上的命中帧直接算出来，
+/// 卡片不再自己量，那一档就没有任何调用点了，连同它的 `pendingRect` / 去抖分支一起删掉。
 struct ScreenRectReader: NSViewRepresentable {
-    enum Delivery: Equatable {
-        case immediateDeduplicated
-        case debounced(settleInterval: TimeInterval)
-
-        static let root: Delivery = .immediateDeduplicated
-        static let tooltip: Delivery = .debounced(settleInterval: 0.05)
-    }
-
-    var delivery: Delivery = .root
     var scheduler: ScreenRectDeliveryScheduling = MainQueueScreenRectDeliveryScheduler.shared
     let onChange: (CGRect) -> Void
 
     func makeNSView(context: Context) -> NSView {
-        TrackingView(delivery: delivery, scheduler: scheduler, onChange: onChange)
+        TrackingView(scheduler: scheduler, onChange: onChange)
     }
 
     func updateNSView(_ nsView: NSView, context: Context) {
         guard let view = nsView as? TrackingView else { return }
-        view.update(delivery: delivery, onChange: onChange)
+        view.update(onChange: onChange)
         view.report()
     }
 
@@ -57,10 +53,8 @@ struct ScreenRectReader: NSViewRepresentable {
     }
 
     final class TrackingView: NSView {
-        private var delivery: Delivery
         private let scheduler: ScreenRectDeliveryScheduling
         private var onChange: (CGRect) -> Void
-        private var pendingRect: CGRect?
         private var lastQueuedImmediateRect: CGRect?
         private var lastReported: CGRect?
         private var pendingTasks: [UUID: ScreenRectDeliveryTask] = [:]
@@ -69,11 +63,9 @@ struct ScreenRectReader: NSViewRepresentable {
         private var windowObservers: [NSObjectProtocol] = []
 
         init(
-            delivery: Delivery,
             scheduler: ScreenRectDeliveryScheduling = MainQueueScreenRectDeliveryScheduler.shared,
             onChange: @escaping (CGRect) -> Void
         ) {
-            self.delivery = delivery
             self.scheduler = scheduler
             self.onChange = onChange
             super.init(frame: .zero)
@@ -86,12 +78,7 @@ struct ScreenRectReader: NSViewRepresentable {
             windowObservers.forEach(NotificationCenter.default.removeObserver)
         }
 
-        func update(delivery: Delivery, onChange: @escaping (CGRect) -> Void) {
-            if self.delivery != delivery {
-                cancelPendingDelivery()
-                lastReported = nil
-                self.delivery = delivery
-            }
+        func update(onChange: @escaping (CGRect) -> Void) {
             self.onChange = onChange
         }
 
@@ -138,27 +125,13 @@ struct ScreenRectReader: NSViewRepresentable {
         }
 
         func enqueue(_ rect: CGRect) {
-            switch delivery {
-            case .immediateDeduplicated:
-                guard rect != lastQueuedImmediateRect else { return }
-                lastQueuedImmediateRect = rect
-                schedule(after: 0) { [weak self] in self?.deliverIfChanged(rect) }
-
-            case let .debounced(settleInterval):
-                guard rect != pendingRect,
-                      !(pendingTasks.isEmpty && rect == lastReported) else { return }
-                cancelScheduledTasks(incrementGeneration: true)
-                pendingRect = rect
-                schedule(after: settleInterval) { [weak self] in
-                    self?.pendingRect = nil
-                    self?.deliverIfChanged(rect)
-                }
-            }
+            guard rect != lastQueuedImmediateRect else { return }
+            lastQueuedImmediateRect = rect
+            schedule(after: 0) { [weak self] in self?.deliverIfChanged(rect) }
         }
 
         func cancelPendingDelivery() {
             cancelScheduledTasks(incrementGeneration: true)
-            pendingRect = nil
             lastQueuedImmediateRect = nil
         }
 

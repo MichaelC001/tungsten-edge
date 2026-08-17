@@ -218,11 +218,11 @@ final class ScreenRectReaderTests: XCTestCase {
         }
     }
 
-    func testImmediateModeReportsEveryDistinctRectInOrder() {
+    func testReportsEveryDistinctRectInOrder() {
         let scheduler = Scheduler()
         var reported: [CGRect] = []
         let view = ScreenRectReader.TrackingView(
-            delivery: .root, scheduler: scheduler, onChange: { reported.append($0) }
+            scheduler: scheduler, onChange: { reported.append($0) }
         )
         let a = CGRect(x: 1, y: 2, width: 3, height: 4)
         let b = CGRect(x: 2, y: 3, width: 4, height: 5)
@@ -237,88 +237,37 @@ final class ScreenRectReaderTests: XCTestCase {
         XCTAssertEqual(scheduler.scheduled.count, 0)
     }
 
-    func testDebounceReportsOnlyTheLatestRectAfterSettleInterval() {
-        let scheduler = Scheduler()
-        var reported: [CGRect] = []
-        let view = ScreenRectReader.TrackingView(
-            delivery: .tooltip, scheduler: scheduler, onChange: { reported.append($0) }
-        )
-        let a = CGRect(x: 1, y: 2, width: 3, height: 4)
-        let b = CGRect(x: 2, y: 3, width: 4, height: 5)
 
-        view.enqueue(a)
-        view.enqueue(b)
-        XCTAssertEqual(scheduler.scheduled.map(\.delay), [0.05, 0.05])
-        scheduler.runAll()
-
-        XCTAssertEqual(reported, [b])
-    }
-
-    func testDebounceGenerationRejectsAnOldTaskEvenWhenCancellationArrivesTooLate() {
-        let scheduler = Scheduler()
-        var reported: [CGRect] = []
-        let view = ScreenRectReader.TrackingView(
-            delivery: .tooltip, scheduler: scheduler, onChange: { reported.append($0) }
-        )
-        let old = CGRect(x: 1, y: 2, width: 3, height: 4)
-        let latest = CGRect(x: 2, y: 3, width: 4, height: 5)
-
-        view.enqueue(old)
-        let oldTask = scheduler.scheduled[0].task
-        view.enqueue(latest)
-        oldTask.forceRun()
-        scheduler.scheduled[1].task.forceRun()
-
-        XCTAssertEqual(reported, [latest])
-    }
 
     func testPendingDeliveryUsesTheLatestCallback() {
         let scheduler = Scheduler()
         var old: [CGRect] = []
         var latest: [CGRect] = []
         let view = ScreenRectReader.TrackingView(
-            delivery: .tooltip, scheduler: scheduler, onChange: { old.append($0) }
+            scheduler: scheduler, onChange: { old.append($0) }
         )
         let rect = CGRect(x: 1, y: 2, width: 3, height: 4)
 
         view.enqueue(rect)
-        view.update(delivery: .tooltip, onChange: { latest.append($0) })
+        view.update(onChange: { latest.append($0) })
         scheduler.runAll()
 
         XCTAssertTrue(old.isEmpty)
         XCTAssertEqual(latest, [rect])
     }
 
-    func testDetachCancellationBlocksImmediateAndDebouncedCallbacks() {
-        for delivery in [ScreenRectReader.Delivery.root, .tooltip] {
-            let scheduler = Scheduler()
-            var reported: [CGRect] = []
-            let view = ScreenRectReader.TrackingView(
-                delivery: delivery, scheduler: scheduler, onChange: { reported.append($0) }
-            )
-            view.enqueue(CGRect(x: 1, y: 2, width: 3, height: 4))
-            view.cancelPendingDelivery()
-            scheduler.runAll()
-            XCTAssertTrue(reported.isEmpty, "cancel must block \(delivery)")
-        }
-    }
-
-    func testChangingDeliveryCancelsTheOldModeAndAllowsTheNewMode() {
+    func testDetachCancellationBlocksPendingCallbacks() {
         let scheduler = Scheduler()
         var reported: [CGRect] = []
         let view = ScreenRectReader.TrackingView(
-            delivery: .tooltip, scheduler: scheduler, onChange: { reported.append($0) }
+            scheduler: scheduler, onChange: { reported.append($0) }
         )
-        let old = CGRect(x: 1, y: 2, width: 3, height: 4)
-        let latest = CGRect(x: 2, y: 3, width: 4, height: 5)
-
-        view.enqueue(old)
-        view.update(delivery: .root, onChange: { reported.append($0) })
-        view.enqueue(latest)
+        view.enqueue(CGRect(x: 1, y: 2, width: 3, height: 4))
+        view.cancelPendingDelivery()
         scheduler.runAll()
-
-        XCTAssertEqual(reported, [latest])
+        XCTAssertTrue(reported.isEmpty, "detach 之后排队的投递必须作废")
     }
+
 
     /// 窗口移动 / 换屏必须重新上报。
     ///
@@ -329,7 +278,7 @@ final class ScreenRectReaderTests: XCTestCase {
         let scheduler = Scheduler()
         var reported: [CGRect] = []
         let view = ScreenRectReader.TrackingView(
-            delivery: .root, scheduler: scheduler, onChange: { reported.append($0) }
+            scheduler: scheduler, onChange: { reported.append($0) }
         )
         let window = NSWindow(contentRect: CGRect(x: 0, y: 0, width: 200, height: 100),
                               styleMask: [.borderless], backing: .buffered, defer: false)
@@ -349,11 +298,6 @@ final class ScreenRectReaderTests: XCTestCase {
         NotificationCenter.default.post(name: NSWindow.didMoveNotification, object: window)
         scheduler.runAll()
         XCTAssertTrue(reported.isEmpty, "已 detach 的探针不该再上报")
-    }
-
-    func testCallSiteDeliveryPoliciesStayExplicit() {
-        XCTAssertEqual(ScreenRectReader.Delivery.root, .immediateDeduplicated)
-        XCTAssertEqual(ScreenRectReader.Delivery.tooltip, .debounced(settleInterval: 0.05))
     }
 
     /// 气泡尺寸是 2026-08-17 从原生 macOS 26 Dock 的截图上逐像素量出来的，不是设计出来的。

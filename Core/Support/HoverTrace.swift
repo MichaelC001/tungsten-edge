@@ -46,11 +46,6 @@ enum HoverTrace {
         )
     }
 
-    static func dismiss(reason: String) {
-        guard isEnabled else { return }
-        Writer.shared.append("{\"t\":\(stamp()),\"kind\":\"dismiss\",\"why\":\(quote(reason))}")
-    }
-
     /// 主线程卡顿：预定 8ms 触发，实际晚了 `lateMs`。只记超过 12ms 的，免得自己刷屏。
     /// 60Hz 下一帧 16.7ms，所以 >16.7 基本等于至少掉一帧。
     static func mainLoopStall(lateMs: Double) {
