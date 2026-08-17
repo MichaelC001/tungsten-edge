@@ -188,8 +188,14 @@ final class PanelCoordinator: NSObject {
     private var windowTitleTooltipRequest: WindowTitleTooltipRequest?
     private var windowTitleTooltipSuppressedChipID: String?
     private var windowTitleTooltipTimer: Timer?
+    private var windowTitleTooltipLingerTimer: Timer?
+    /// 只在气泡在屏上时跑的看门狗，见 `startWindowTitleTooltipWatchdog`。
+    private var windowTitleTooltipWatchdog: Timer?
     private var windowTitleTooltipLocalMonitor: Any?
     private var windowTitleTooltipGlobalMonitor: Any?
+    /// 复用同一棵托管视图：每次悬停新建 `NSHostingView` 会在换 chip 时闪一下，也白付一次构建成本。
+    private var windowTitleTooltipHosting: NSHostingView<WindowTitleTooltipView>?
+    private var windowTitleTooltipHost: ManualPanelHost?
     private var pinnedFolderStoreSubscription: AnyCancellable?
     private var pinnedFolderSortSubscription: AnyCancellable?
     private var snapshotWidthSubscription: AnyCancellable?
@@ -376,6 +382,8 @@ final class PanelCoordinator: NSObject {
         capsuleContentHost = nil
         drawerContentHost = nil
         folderPopupContentHost = nil
+        windowTitleTooltipHosting = nil
+        windowTitleTooltipHost = nil
         tearDownTaskbarGlassBackground()
         for panel in [dockPanel, capsulePanel, drawerPanel, folderPopupPanel, windowTitleTooltipPanel] {
             guard let panel else { continue }
@@ -1038,46 +1046,160 @@ final class PanelCoordinator: NSObject {
 
     // MARK: - Window title tooltip
 
+    /// 冷启动延迟：气泡当前**不在屏上**时等多久才弹。**0 = 立刻**。
+    ///
+    /// 一开始留了 0.05s「去抖」，想的是横扫一排时别每个都闪。但原生 Dock 根本没有这个延迟——
+    /// owner 匀速划过时每个图标都及时响应，我们却「很多来不及显示」。原因是这 0.05s 撞上了
+    /// 匀速扫过单个图标的停留时间（图标中心间距 42pt，正常划手速度下每格只有几十毫秒），
+    /// 于是大多数格子在计时器到点前就已经离开了。去抖的收益是假的：面板保活之后，
+    /// 换 chip 本来就不闪。
+    private static let windowTitleTooltipAppearDelay: TimeInterval = 0
+    /// 离开宽限：`.exit` 之后不立刻收，等这么久。**这条是「跟手」的关键。**
+    /// 从 A 划到 B 时两个 chip 的 exit / update 谁先到是不确定的；若 exit 先到就立刻 orderOut，
+    /// B 只能重新走冷启动（去抖 + 淡入），一排扫过去就是一串闪烁 + 每格都慢半拍。
+    private static let windowTitleTooltipLingerDelay: TimeInterval = 0.09
+
     private func handleWindowTitleTooltipEvent(_ event: WindowTitleTooltipEvent) {
         switch event {
         case let .update(request):
             if windowTitleTooltipSuppressedChipID == request.chipID { return }
             windowTitleTooltipSuppressedChipID = nil
-            if windowTitleTooltipRequest?.chipID == request.chipID {
-                windowTitleTooltipRequest = request
-                if windowTitleTooltipPanel?.isVisible == true {
-                    presentWindowTitleTooltip(request, animated: false)
-                }
+            cancelWindowTitleTooltipLinger()
+
+            HoverTrace.hover(chipID: request.chipID, entered: true)
+            let wasSameChip = windowTitleTooltipRequest?.chipID == request.chipID
+            windowTitleTooltipRequest = request
+            installWindowTitleTooltipMouseMonitors()
+
+            // 已经在屏上 → **立刻**换文字换位置，不再等去抖、不再淡入。
+            // 原生就是这样：第一次悬停有一点点延迟，之后沿着一排横扫是跟手的。
+            if windowTitleTooltipPanel?.isVisible == true {
+                windowTitleTooltipTimer?.invalidate()
+                windowTitleTooltipTimer = nil
+                presentWindowTitleTooltip(request)
+                return
+            }
+            // 同一个 chip 的重复上报（锚点微调 / 标题变化）不该把已在跑的去抖重新计时，
+            // 否则鼠标只要在卡上轻微移动就能把气泡无限期推后。
+            if wasSameChip, windowTitleTooltipTimer != nil { return }
+
+            windowTitleTooltipTimer?.invalidate()
+            windowTitleTooltipTimer = nil
+            guard Self.windowTitleTooltipAppearDelay > 0 else {
+                presentWindowTitleTooltip(request)
                 return
             }
 
-            dismissWindowTitleTooltip()
-            windowTitleTooltipRequest = request
-            installWindowTitleTooltipMouseMonitors()
             let chipID = request.chipID
-            let timer = Timer(timeInterval: 0.7, repeats: false) { [weak self] _ in
+            let timer = Timer(timeInterval: Self.windowTitleTooltipAppearDelay, repeats: false) { [weak self] _ in
                 Task { @MainActor [weak self] in
                     guard let self,
                           let current = self.windowTitleTooltipRequest,
                           current.chipID == chipID else { return }
                     self.windowTitleTooltipTimer = nil
-                    self.presentWindowTitleTooltip(current, animated: true)
+                    self.presentWindowTitleTooltip(current)
                 }
             }
             windowTitleTooltipTimer = timer
             RunLoop.main.add(timer, forMode: .common)
 
         case let .exit(chipID):
+            HoverTrace.hover(chipID: chipID, entered: false)
             if windowTitleTooltipSuppressedChipID == chipID {
                 windowTitleTooltipSuppressedChipID = nil
             }
             guard windowTitleTooltipRequest?.chipID == chipID else { return }
-            dismissWindowTitleTooltip()
+            // 宽限**只在指针还留在条上时**才给：那种情况多半是正划向隔壁 chip，留着面板
+            // 让隔壁直接接管，比收掉再冷启动跟手。指针已经离开条了就立刻收——
+            // 拖着一颗 90ms 不走的气泡，正是 owner 说的「不干脆」。
+            if isPointInsideTaskbarPanels(NSEvent.mouseLocation) {
+                scheduleWindowTitleTooltipLinger(for: chipID)
+            } else {
+                dismissWindowTitleTooltip()
+            }
         }
     }
 
-    private func presentWindowTitleTooltip(_ request: WindowTitleTooltipRequest, animated: Bool) {
+    /// 延后收气泡；宽限内有别的 chip `.update` 进来就直接接管这块面板（见 `windowTitleTooltipLingerDelay`）。
+    private func scheduleWindowTitleTooltipLinger(for chipID: String) {
+        windowTitleTooltipTimer?.invalidate()
+        windowTitleTooltipTimer = nil
+        cancelWindowTitleTooltipLinger()
+        let timer = Timer(timeInterval: Self.windowTitleTooltipLingerDelay, repeats: false) { [weak self] _ in
+            Task { @MainActor [weak self] in
+                guard let self else { return }
+                self.windowTitleTooltipLingerTimer = nil
+                guard self.windowTitleTooltipRequest?.chipID == chipID else { return }
+                self.dismissWindowTitleTooltip()
+            }
+        }
+        windowTitleTooltipLingerTimer = timer
+        RunLoop.main.add(timer, forMode: .common)
+    }
+
+    private func cancelWindowTitleTooltipLinger() {
+        windowTitleTooltipLingerTimer?.invalidate()
+        windowTitleTooltipLingerTimer = nil
+    }
+
+    /// 气泡在屏上时的看门狗：指针一旦离开锚点矩形就收气泡。
+    ///
+    /// **不能只靠 SwiftUI 的 `.onHover(false)`。** 它在指针快速划出窗口、或 chip 被重排/移除
+    /// 从指针底下抽走时会整个漏掉，气泡就永远挂着（owner 报「有时候鼠标移走气泡还在」）。
+    /// 这里用 `NSEvent.mouseLocation` 做 AppKit 层的独立复核——它和锚点是同一套屏幕坐标。
+    ///
+    /// 刻意用**只在气泡可见期间存活**的定时器，而不是常驻的 `.mouseMoved` 全局监视器：
+    /// 后者是事件 tap，我们自己的菜单弹起时会把鼠标事件拖慢（AGENTS《Menus, Panels, And Screens》
+    /// 那条 100ms 粘滞就是这么来的），为一颗 tooltip 不值得再开一个。
+    private func startWindowTitleTooltipWatchdog() {
+        guard windowTitleTooltipWatchdog == nil else { return }
+        let timer = Timer(timeInterval: 0.1, repeats: true) { [weak self] _ in
+            Task { @MainActor [weak self] in
+                guard let self else { return }
+                guard self.windowTitleTooltipPanel?.isVisible == true,
+                      let anchor = self.windowTitleTooltipRequest?.anchorVisibleRect else {
+                    self.stopWindowTitleTooltipWatchdog()
+                    return
+                }
+                // 2pt 容差：锚点是去抖上报的，重排刚落定的那一帧可能还差一点点。
+                let location = NSEvent.mouseLocation
+                guard !anchor.insetBy(dx: -2, dy: -2).contains(location) else { return }
+                // 指针还在任务条 / 胶囊上 → **不能直接收**：多半是正划向隔壁 chip，
+                // 立刻 orderOut 会让隔壁重新冷启动，横扫就变成一串闪。交给宽限，让隔壁接管。
+                if self.isPointInsideTaskbarPanels(location) {
+                    if self.windowTitleTooltipLingerTimer == nil,
+                       let chipID = self.windowTitleTooltipRequest?.chipID {
+                        self.scheduleWindowTitleTooltipLinger(for: chipID)
+                    }
+                    return
+                }
+                self.dismissWindowTitleTooltip()
+            }
+        }
+        windowTitleTooltipWatchdog = timer
+        RunLoop.main.add(timer, forMode: .common)
+    }
+
+    /// 指针是否还落在「会弹气泡的那些面板」上（任务条本体 + 胶囊 + 打开着的抽屉）。
+    /// 用整窗 frame 就够：多算进去的只有 20pt 透明阴影边，宽限到点自然会收。
+    private func isPointInsideTaskbarPanels(_ point: CGPoint) -> Bool {
+        if let dock = dockPanel, dock.frame.contains(point) { return true }
+        if let capsule = capsulePanel, capsule.frame.contains(point) { return true }
+        if drawerWantsOpen, let drawer = drawerPanel, drawer.frame.contains(point) { return true }
+        return false
+    }
+
+    private func stopWindowTitleTooltipWatchdog() {
+        windowTitleTooltipWatchdog?.invalidate()
+        windowTitleTooltipWatchdog = nil
+    }
+
+    private func presentWindowTitleTooltip(_ request: WindowTitleTooltipRequest) {
         guard request.anchorVisibleRect != .zero else { return }
+        let traceStart = CACurrentMediaTime()
+        let traceCold = windowTitleTooltipPanel?.isVisible != true
+        defer { HoverTrace.present(chipID: request.chipID, cold: traceCold,
+                                   elapsed: CACurrentMediaTime() - traceStart) }
         let panel: NSPanel
         if let existing = windowTitleTooltipPanel {
             panel = existing
@@ -1101,10 +1223,18 @@ final class PanelCoordinator: NSObject {
             panel = created
         }
 
-        let hosting = NSHostingView(rootView: WindowTitleTooltipView(title: request.title))
-        hosting.wantsLayer = true
-        hosting.layer?.backgroundColor = NSColor.clear.cgColor
-        let contentHost = ManualPanelHost(contentView: hosting, in: panel)
+        let contentHost: ManualPanelHost
+        if let hosting = windowTitleTooltipHosting, let existingHost = windowTitleTooltipHost {
+            hosting.rootView = WindowTitleTooltipView(title: request.title)
+            contentHost = existingHost
+        } else {
+            let hosting = NSHostingView(rootView: WindowTitleTooltipView(title: request.title))
+            hosting.wantsLayer = true
+            hosting.layer?.backgroundColor = NSColor.clear.cgColor
+            contentHost = ManualPanelHost(contentView: hosting, in: panel)
+            windowTitleTooltipHosting = hosting
+            windowTitleTooltipHost = contentHost
+        }
         panel.layoutIfNeeded()
         let size = contentHost.fittingSize
         guard size.width > 0, size.height > 0 else { return }
@@ -1121,21 +1251,17 @@ final class PanelCoordinator: NSObject {
         )
         panel.setFrame(target, display: true)
 
-        guard animated, !panel.isVisible else {
-            panel.alphaValue = 1
-            if !panel.isVisible { panel.orderFrontRegardless() }
-            return
-        }
-        panel.alphaValue = 0
-        panel.orderFrontRegardless()
-        NSAnimationContext.runAnimationGroup { context in
-            context.duration = 0.1
-            context.timingFunction = CAMediaTimingFunction(name: .easeOut)
-            panel.animator().alphaValue = 1
-        }
+        // **不淡入。** 实测输入 → 气泡上屏只要 2.9–9.5ms，链路本来就是即时的；
+        // owner 说的「没有原生那么干脆」是这 0.1s 淡入带来的**软**，不是慢
+        // （原生 Dock 的应用名是直接出现的）。同理离开也是直接收，见 `.exit` 分支。
+        panel.alphaValue = 1
+        if !panel.isVisible { panel.orderFrontRegardless() }
+        startWindowTitleTooltipWatchdog()
     }
 
+    /// **幂等**：每次 `.update` 都会调它（换 chip 不再先 dismiss 后重装），重复装会漏掉旧监视器。
     private func installWindowTitleTooltipMouseMonitors() {
+        guard windowTitleTooltipLocalMonitor == nil, windowTitleTooltipGlobalMonitor == nil else { return }
         let mask: NSEvent.EventTypeMask = [.leftMouseDown, .rightMouseDown, .otherMouseDown]
         windowTitleTooltipLocalMonitor = NSEvent.addLocalMonitorForEvents(matching: mask) { [weak self] event in
             self?.dismissWindowTitleTooltip(suppressCurrentUntilExit: true)
@@ -1152,6 +1278,8 @@ final class PanelCoordinator: NSObject {
         }
         windowTitleTooltipTimer?.invalidate()
         windowTitleTooltipTimer = nil
+        cancelWindowTitleTooltipLinger()
+        stopWindowTitleTooltipWatchdog()
         windowTitleTooltipRequest = nil
         if let monitor = windowTitleTooltipLocalMonitor {
             NSEvent.removeMonitor(monitor)

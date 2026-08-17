@@ -94,7 +94,9 @@ struct PanelScreenGeometry: Equatable {
 }
 
 enum PanelGeometry {
-    static let windowTitleTooltipGap: CGFloat = 8
+    /// 气泡**尖端**到锚点顶边的距离。原生实测 6.5pt（`WindowTitleTooltipStyle.tipGap`）；
+    /// 气泡视图自己的高度已经把尖角算进去了，所以这里就是尖端的间距。
+    static let windowTitleTooltipGap: CGFloat = 6.5
     static let windowTitleTooltipScreenMargin: CGFloat = 8
     static let windowTitleTooltipShadowPadding: CGFloat = 8
 

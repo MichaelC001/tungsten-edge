@@ -126,9 +126,7 @@ struct FolderGridPopupView: View {
     /// 已固定判定（已固定的目录不再显示「固定到固定区」）。
     var isFolderPinned: ((URL) -> Bool)?
 
-    /// 浅 / 深色两套视觉数值（见 `DockThemeTokens`）。
-    @Environment(\.colorScheme) private var colorScheme
-    private var theme: DockThemeTokens { .resolve(colorScheme) }
+    private let theme = DockThemeTokens.standard
 
     @StateObject private var model: FolderPopupModel
     /// 下钻栈：空 = 根目录；push 子文件夹 URL。
@@ -337,9 +335,7 @@ struct FolderGridCell: View {
     var contextMenu: (() -> NSMenu)? = nil
     let onTap: () -> Void
 
-    /// 浅 / 深色两套视觉数值（见 `DockThemeTokens`）。
-    @Environment(\.colorScheme) private var colorScheme
-    private var theme: DockThemeTokens { .resolve(colorScheme) }
+    private let theme = DockThemeTokens.standard
 
     @State private var isHovering = false
     @State private var resolvedIcon: NSImage?

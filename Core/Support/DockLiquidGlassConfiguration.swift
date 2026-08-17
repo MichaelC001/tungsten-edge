@@ -91,7 +91,11 @@ struct DockLiquidGlassConfiguration: Equatable {
 
     static func resolve(environment: [String: String] = ProcessInfo.processInfo.environment) -> Self {
         Self(
-            isEnabled: trimmed(environment["DOCK_LIQUID_GLASS"]) == "1",
+            // **默认开**（owner 2026-08-17 转正）。此前是「默认关 + `DOCK_LIQUID_GLASS=1` 才开」，
+            // 那是探路期该有的样子；观感验收通过之后再留着默认关，只会造成"跑错实例"——
+            // 系统重启后自动拉起的进程不带环境变量，看到的就是没有玻璃的旧观感（真发生过）。
+            // `=0` 仍是关掉它的开关，macOS 12–25 走 `renderPath` 里的毛玻璃回退，与此无关。
+            isEnabled: trimmed(environment["DOCK_LIQUID_GLASS"]) != "0",
             clearTintOpacity: boundedDouble(
                 environment["DOCK_LIQUID_GLASS_CLEAR_TINT"],
                 range: 0 ... 1,

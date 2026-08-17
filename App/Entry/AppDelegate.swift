@@ -1,5 +1,6 @@
 import AppKit
 import Combine
+import QuartzCore
 import SwiftUI
 import os
 
@@ -55,12 +56,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var edgeToggleHotKey: GlobalHotKeyMonitor?
     private var terminationTask: Task<Void, Never>?
     private var debugWindow: NSWindow?
+    /// 只在 `DOCK_HOVER_TRACE=1` 时存在，见 `startMainLoopStallProbeIfTracing`。
+    private var mainLoopStallProbe: Timer?
     private var permissionWindow: NSWindow?
     private var permissionHostingView: NSHostingView<PermissionOnboardingWindowContent>?
     private var workspaceObservers: [NSObjectProtocol] = []
     private var messagingAutoRegisterSubscription: AnyCancellable?
     private var windowLiftSettingSubscription: AnyCancellable?
-    private var appearanceSubscription: AnyCancellable?
     private let permissionService = PermissionService()
     private var installLocation: AppInstallLocation = .other
     private var permissionCoordinator: PermissionRecoveryCoordinator?
@@ -90,15 +92,25 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // 日志要攒满缓冲区才落盘。改成行缓冲后每条 print 立即写出，便于实时读日志。
         setvbuf(stdout, nil, _IOLBF, 0)
 
+        startMainLoopStallProbeIfTracing()
+
         // 首装时间戳：**故意放在所有分支判断之前**，搬家引导、权限引导、正常启动都要记。
         // 这三条分支的用户都是真的运行过钨极的人，将来转收费判定老用户时不该把谁漏掉。
         // 只写一次、之后永不覆盖，理由见 `InstallationRecord`。
         InstallationRecord.recordFirstLaunchIfNeeded()
 
-        // 外观档位排在最前面：搬家引导、权限引导、正常启动三条分支的第一个窗口就得是对的外观。
-        // `@Published` 订阅时先发一次当前值，所以这一句同时完成「启动时应用」和「之后跟随」。
-        appearanceSubscription = settingsStore.$appearanceMode
-            .sink { NSApp.appearance = $0.nsAppearance }
+        // **无条件钉死浅色，这一句不能省。** 产品固定浅色（owner 2026-08-16 删掉深色模式），
+        // 而 `NSVisualEffectView` 和 Liquid Glass 跟的是**窗口的 effectiveAppearance**、
+        // 不看 SwiftUI 环境。系统处于深色时若不钉，材质会渲染成深色，而 `DockThemeTokens`
+        // 只有一套浅色数值 —— 结果就是「文字是浅色的、底板是深色的」那种对不上
+        //（实测同屏同壁纸，底板亮度 37.7 对 143.2）。
+        //
+        // 钉在 `NSApp` 这一处就够：所有面板与窗口都没覆写自己的 `appearance`，会一路回落到
+        // 这里——**包括之后才按需新建的**抽屉、两个弹窗、tooltip、拖动载体，以及状态栏与
+        // 右键菜单。状态栏图标是 template image，仍由菜单栏按系统外观自己染色，不受影响。
+        //
+        // 排在最前面：搬家引导、权限引导、正常启动三条分支的第一个窗口就得是对的外观。
+        NSApp.appearance = NSAppearance(named: .aqua)
 
         // 位置分类必须排在接管其他实例和注册热键**之前**。
         // 挂载磁盘映像双击运行时，那份临时副本一旦执行 terminateOtherInstances()，
@@ -420,6 +432,23 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         window.makeKeyAndOrderFront(nil)
         NSApp.activate(ignoringOtherApps: true)
         debugWindow = window
+    }
+
+    /// 主线程卡顿探针：只在 `DOCK_HOVER_TRACE=1` 时才装（`HoverTrace.isEnabled` 是常量，
+    /// 关闭时这个计时器根本不创建，日常一分钱开销都没有）。
+    ///
+    /// 8ms 一次、跑在 `.common`——**必须是 `.common`**，否则菜单/拖拽期间它自己先停了，
+    /// 而那正是最想量的时段。
+    private func startMainLoopStallProbeIfTracing() {
+        guard HoverTrace.isEnabled else { return }
+        var expected = CACurrentMediaTime() + 0.008
+        let timer = Timer(timeInterval: 0.008, repeats: true) { _ in
+            let now = CACurrentMediaTime()
+            HoverTrace.mainLoopStall(lateMs: (now - expected) * 1000)
+            expected = now + 0.008
+        }
+        RunLoop.main.add(timer, forMode: .common)
+        mainLoopStallProbe = timer
     }
 
 }

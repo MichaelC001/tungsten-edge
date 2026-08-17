@@ -28,9 +28,7 @@ struct PinnedFolderChip: View {
     /// 悬停效果档位。**同样故意不给默认值**——漏传必须是编译错误，理由同 `scale`。
     let hoverStyle: HoverStyle
 
-    /// 浅 / 深色两套视觉数值（见 `DockThemeTokens`）。
-    @Environment(\.colorScheme) private var colorScheme
-    private var theme: DockThemeTokens { .resolve(colorScheme) }
+    private let theme = DockThemeTokens.standard
 
     @State private var isHovering = false
 
@@ -56,6 +54,8 @@ struct PinnedFolderChip: View {
             Text(folderName)
                 .font(.system(size: 10 * scale, weight: .medium, design: .rounded))
                 .foregroundStyle(theme.labelHover.color)
+                // **常驻**的裸文字，受背景影响比那些悬停标签更久。见 DockThemeTokens.labelHalo
+                .dockShadow(theme.labelHalo)
                 .lineLimit(1)
                 .truncationMode(.tail)
                 .frame(maxWidth: 48 * scale)

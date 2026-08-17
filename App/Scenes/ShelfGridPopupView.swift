@@ -17,9 +17,7 @@ struct ShelfGridPopupView: View {
     var onPinFolder: ((URL) -> Void)?
     var isFolderPinned: ((URL) -> Bool)?
 
-    /// 浅 / 深色两套视觉数值（见 `DockThemeTokens`）。
-    @Environment(\.colorScheme) private var colorScheme
-    private var theme: DockThemeTokens { .resolve(colorScheme) }
+    private let theme = DockThemeTokens.standard
 
     @State private var gridHeight: CGFloat = 0
 

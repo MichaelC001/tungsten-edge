@@ -97,6 +97,7 @@
 		A00000000000000000009311 /* ShelfStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = A00000000000000000009310 /* ShelfStore.swift */; };
 		A00000000000000000009312 /* ShelfStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = A00000000000000000009310 /* ShelfStore.swift */; };
 		A00000000000000000009321 /* ShelfChip.swift in Sources */ = {isa = PBXBuildFile; fileRef = A00000000000000000009320 /* ShelfChip.swift */; };
+		A00000000000000000009AA1 /* ShelfTrayArt.swift in Sources */ = {isa = PBXBuildFile; fileRef = A00000000000000000009AA0 /* ShelfTrayArt.swift */; };
 		A00000000000000000009331 /* ShelfGridPopupView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A00000000000000000009330 /* ShelfGridPopupView.swift */; };
 		A00000000000000000009341 /* StripDropRoutingTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A00000000000000000009340 /* StripDropRoutingTests.swift */; };
 		A00000000000000000009351 /* ShelfLogicTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A00000000000000000009350 /* ShelfLogicTests.swift */; };
@@ -124,6 +125,7 @@
 		B72000000000000000000001 /* AppDisplayNameCache.swift in Sources */ = {isa = PBXBuildFile; fileRef = B72000000000000000000003 /* AppDisplayNameCache.swift */; };
 		B72000000000000000000011 /* InstallationRecord.swift in Sources */ = {isa = PBXBuildFile; fileRef = B72000000000000000000013 /* InstallationRecord.swift */; };
 		C90000000000000000000006 /* ClickLatencyTrace.swift in Sources */ = {isa = PBXBuildFile; fileRef = C90000000000000000000005 /* ClickLatencyTrace.swift */; };
+		A00000000000000000009AB1 /* HoverTrace.swift in Sources */ = {isa = PBXBuildFile; fileRef = A00000000000000000009AB0 /* HoverTrace.swift */; };
 		C9000000000000000000000C /* ClickLatencyTrace.swift in Sources */ = {isa = PBXBuildFile; fileRef = C90000000000000000000005 /* ClickLatencyTrace.swift */; };
 		B72000000000000000000002 /* AppDisplayNameCache.swift in Sources */ = {isa = PBXBuildFile; fileRef = B72000000000000000000003 /* AppDisplayNameCache.swift */; };
 		B72000000000000000000012 /* InstallationRecord.swift in Sources */ = {isa = PBXBuildFile; fileRef = B72000000000000000000013 /* InstallationRecord.swift */; };
@@ -409,6 +411,7 @@
 		B72000000000000000000003 /* AppDisplayNameCache.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppDisplayNameCache.swift; sourceTree = "<group>"; };
 		B72000000000000000000013 /* InstallationRecord.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = InstallationRecord.swift; sourceTree = "<group>"; };
 		C90000000000000000000005 /* ClickLatencyTrace.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ClickLatencyTrace.swift; sourceTree = "<group>"; };
+		A00000000000000000009AB0 /* HoverTrace.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HoverTrace.swift; sourceTree = "<group>"; };
 		A00000000000000000009200 /* PinnedFolderStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PinnedFolderStore.swift; sourceTree = "<group>"; };
 		A00000000000000000009210 /* DirectoryWatcher.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DirectoryWatcher.swift; sourceTree = "<group>"; };
 		A00000000000000000009220 /* FolderContentsLoader.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FolderContentsLoader.swift; sourceTree = "<group>"; };
@@ -454,6 +457,7 @@
 		A00000000000000000009570 /* DrawerOrderStoreTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DrawerOrderStoreTests.swift; sourceTree = "<group>"; };
 		A00000000000000000009770 /* MessagingWindowOrderingTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MessagingWindowOrderingTests.swift; sourceTree = "<group>"; };
 		A00000000000000000009320 /* ShelfChip.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ShelfChip.swift; sourceTree = "<group>"; };
+		A00000000000000000009AA0 /* ShelfTrayArt.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ShelfTrayArt.swift; sourceTree = "<group>"; };
 		A00000000000000000009330 /* ShelfGridPopupView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ShelfGridPopupView.swift; sourceTree = "<group>"; };
 		A00000000000000000009340 /* StripDropRoutingTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StripDropRoutingTests.swift; sourceTree = "<group>"; };
 		A00000000000000000009350 /* ShelfLogicTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ShelfLogicTests.swift; sourceTree = "<group>"; };
@@ -605,6 +609,7 @@
 				A00000000000000000009240 /* FolderGridPopupView.swift */,
 				A00000000000000000009250 /* PinnedFolderChip.swift */,
 				A00000000000000000009320 /* ShelfChip.swift */,
+				A00000000000000000009AA0 /* ShelfTrayArt.swift */,
 				A00000000000000000009330 /* ShelfGridPopupView.swift */,
 				A0000000000000000000FC00 /* DockTheme.swift */,
 				A0000000000000000000FE00 /* DockGlassBackdrop.swift */,
@@ -646,6 +651,7 @@
 				B72000000000000000000003 /* AppDisplayNameCache.swift */,
 				B72000000000000000000013 /* InstallationRecord.swift */,
 				C90000000000000000000005 /* ClickLatencyTrace.swift */,
+				A00000000000000000009AB0 /* HoverTrace.swift */,
 				A0000000000000000000FB00 /* DockThemeTokens.swift */,
 				E10000000000000000000001 /* DockLiquidGlassConfiguration.swift */,
 				A00000000000000000009580 /* AppMembershipMenuPlan.swift */,
@@ -1106,6 +1112,7 @@
 					B72000000000000000000001 /* AppDisplayNameCache.swift in Sources */,
 					B72000000000000000000011 /* InstallationRecord.swift in Sources */,
 					C90000000000000000000006 /* ClickLatencyTrace.swift in Sources */,
+				A00000000000000000009AB1 /* HoverTrace.swift in Sources */,
 					A0000000000000000000FB01 /* DockThemeTokens.swift in Sources */,
 					E20000000000000000000001 /* DockLiquidGlassConfiguration.swift in Sources */,
 					A0000000000000000000FC01 /* DockTheme.swift in Sources */,
@@ -1120,6 +1127,7 @@
 					A00000000000000000009511 /* RunningApplicationStore.swift in Sources */,
 					A00000000000000000009521 /* AppMembershipController.swift in Sources */,
 					A00000000000000000009321 /* ShelfChip.swift in Sources */,
+				A00000000000000000009AA1 /* ShelfTrayArt.swift in Sources */,
 					A00000000000000000009331 /* ShelfGridPopupView.swift in Sources */,
 					A00000000000000000009241 /* FolderGridPopupView.swift in Sources */,
 					A00000000000000000009251 /* PinnedFolderChip.swift in Sources */,

@@ -51,99 +51,47 @@ final class WindowTitleTooltipTests: XCTestCase {
     }
 }
 
-/// 悬停几何的回归锁。这些断言**直接对着改造前那套 `VStack(spacing: 2)` 的布局公式**写，
-/// 而不是抄实现里的常量——否则实现改错时测试跟着一起错，等于没测。
+/// 悬停时 chip 的几何**恒定不动**——应用名 2026-08-16 改成了原生 Dock 那种「图标正上方的
+/// 气泡」，chip 内部不再需要为它腾地方。
 ///
-/// 旧布局（`s` = scale，`Hs` = 副标题行高，注意那个 `spacing: 2` 是**不缩放**的）：
-///   静息 `[Spacer, 2, pill(34s), 2, Spacer]`，总高 `52s`
-///   悬停 `[Spacer, 2, pill(28s), 2, sub(Hs), 2, Spacer]`
-final class ChipSubtitleMetricsTests: XCTestCase {
-    /// 从档位表推导，别写死——2026-08-16 中档由 52 改成 54（对齐原生 Dock）时，
-    /// 写死的 `[44/52, 1, 60/52, 68/52]` 就是要手工追的第一处。
+/// 这里以前锁的是 `ChipSubtitleMetrics` 那套位移公式（对着更早的 `VStack(spacing: 2)` 布局
+/// 解方程得来的 `pillHoverShift = 3s - 1 - Hs/2` 之类）。**那个类型和它的整组测试随功能
+/// 一起删除了，不要按旧公式恢复。**
+final class ChipHoverGeometryTests: XCTestCase {
     private let tiers: [CGFloat] = DockSize.allCases.map(\.scale)
 
-    /// 旧布局里静息态药丸的顶边：`VStack` 的两个 Spacer 平分卡片剩余高度。
-    /// **不要写死 9s** —— 那只是卡高 52 时代的取值，54 之后是 10s。
-    private func legacyRestPillTop(_ s: CGFloat) -> CGFloat {
-        (ChipPillMetrics.chipHeight - ChipPillMetrics.boxHeight) / 2 * s
-    }
-
-    /// 旧布局里悬停态药丸的顶边。那三个不缩放的 2 来自旧 `VStack(spacing: 2)`。
-    private func legacyHoverPillTop(_ s: CGFloat) -> CGFloat {
-        let leftover = ChipPillMetrics.chipHeight * s - 2 - ChipPillMetrics.hoveredHeight * s
-            - 2 - ChipSubtitleMetrics.rowHeight(for: s) - 2
-        return leftover / 2 + 2
-    }
-
-    /// 旧布局里悬停态副标题的**竖向中心**。
-    private func legacyHoverSubtitleCenter(_ s: CGFloat) -> CGFloat {
-        legacyHoverPillTop(s) + 28 * s + 2 + ChipSubtitleMetrics.rowHeight(for: s) / 2
-    }
-
-    func testRestPillTopIsUnchangedByTheNewFixedHeightBox() {
-        for s in tiers {
-            // 新结构：spacing 0，两个 Spacer 平分 chipHeight - boxHeight，静息不再位移。
-            let newTop = ChipPillMetrics.boxTopInset * s
-            XCTAssertEqual(newTop, legacyRestPillTop(s), accuracy: 0.001,
-                           "静息态药丸顶边必须与旧 VStack 布局一致（scale=\(s)）")
-        }
-        XCTAssertEqual(ChipPillMetrics.boxTopInset, 10, "卡高 54 − 药丸盒 34，各半（52 时代是 9）")
-    }
-
-    func testHoverPillShiftReproducesLegacyLayout() {
-        for s in tiers {
-            let newTop = ChipPillMetrics.boxTopInset * s + ChipSubtitleMetrics.pillHoverShift(for: s)
-            XCTAssertEqual(newTop, legacyHoverPillTop(s), accuracy: 0.001,
-                           "悬停态药丸顶边必须与旧布局一致（scale=\(s)）")
+    func testHoverDoesNotMoveAnyGeometry() {
+        for scale in tiers {
+            let rest = ChipHoverVisual.resolve(progress: 0, scale: scale)
+            let hover = ChipHoverVisual.resolve(progress: 1, scale: scale)
+            XCTAssertEqual(rest.bareIconSize, hover.bareIconSize, accuracy: 0.001,
+                           "悬停不该缩图标（scale=\(scale)）")
+            XCTAssertEqual(rest.pillHeight, hover.pillHeight, accuracy: 0.001,
+                           "悬停不该缩药丸（scale=\(scale)）")
+            XCTAssertEqual(rest.pillIconSize, hover.pillIconSize, accuracy: 0.001,
+                           "悬停不该缩药丸内的图标（scale=\(scale)）")
         }
     }
 
-    func testSubtitleShiftReproducesLegacyLayoutAndIsIndependentOfRowHeight() {
-        for s in tiers {
-            // 新结构：零高基线在药丸盒底边（boxTopInset + boxHeight，卡高 52 时代是 43），
-            // 文字以基线为中心。基线与旧布局的目标位置同时随卡高平移，所以 subtitleShift
-            // 本身与卡高无关，仍是 1 - 3s。
-            let baseline = ChipPillMetrics.boxTopInset + ChipPillMetrics.boxHeight
-            let newCenter = baseline * s + ChipSubtitleMetrics.subtitleShift(for: s)
-            XCTAssertEqual(newCenter, legacyHoverSubtitleCenter(s), accuracy: 0.001,
-                           "悬停态副标题中心必须与旧布局一致（scale=\(s)）")
+    /// 唯一还随悬停变化的量：药丸底与描边的提亮。
+    func testOnlyEmphasisTracksHover() {
+        XCTAssertEqual(ChipHoverVisual.resolve(progress: 0, scale: 1).emphasisProgress, 0)
+        XCTAssertEqual(ChipHoverVisual.resolve(progress: 1, scale: 1).emphasisProgress, 1)
+        XCTAssertEqual(ChipHoverVisual.resolve(progress: 0.5, scale: 1).emphasisProgress, 0.5)
+    }
+
+    func testProgressIsClamped() {
+        XCTAssertEqual(ChipHoverVisual.resolve(progress: -3, scale: 1).progress, 0)
+        XCTAssertEqual(ChipHoverVisual.resolve(progress: 9, scale: 1).progress, 1)
+    }
+
+    func testSizesTrackTheTier() {
+        for scale in tiers {
+            let v = ChipHoverVisual.resolve(progress: 0, scale: scale)
+            XCTAssertEqual(v.bareIconSize, ChipPillMetrics.bareIconSlot * scale, accuracy: 0.001)
+            XCTAssertEqual(v.pillHeight, ChipPillMetrics.boxHeight * scale, accuracy: 0.001)
+            XCTAssertEqual(v.pillIconSize, ChipPillMetrics.iconSlot * scale, accuracy: 0.001)
         }
-    }
-
-    /// 位移量**不是** `k * scale` 的形状——旧布局里那个不缩放的 `spacing: 2` 决定的。
-    /// 这条专门挡住"看着像比例关系就写成乘法"的回归（中档上两者恰好相等，只有别的档能发现）。
-    func testShiftsAreNotProportionalToScale() {
-        XCTAssertEqual(ChipSubtitleMetrics.subtitleShift(for: 1), -2, accuracy: 0.001)
-        XCTAssertNotEqual(ChipSubtitleMetrics.subtitleShift(for: 68.0 / 52), -2 * 68.0 / 52, accuracy: 0.05)
-    }
-
-    func testSubtitleFontMatchesRenderedRules() {
-        XCTAssertEqual(ChipSubtitleMetrics.font(scale: 0.5).pointSize, 8)   // max(8, 9*0.5)
-        XCTAssertEqual(ChipSubtitleMetrics.font(scale: 1).pointSize, 9)
-        XCTAssertEqual(ChipSubtitleMetrics.font(scale: 1.5).pointSize, 13.5)
-        XCTAssertTrue(ChipSubtitleMetrics.font(scale: 1).fontName.contains("Rounded"))
-    }
-
-    func testSubtitleWidthIsADefiniteInterpolatableValue() {
-        XCTAssertEqual(ChipSubtitleMetrics.width(of: "", scale: 1), 0, "空名不占宽度")
-        let latin = ChipSubtitleMetrics.width(of: "Safari", scale: 1)
-        let cjk = ChipSubtitleMetrics.width(of: "访达", scale: 1)
-        XCTAssertGreaterThan(latin, 0)
-        XCTAssertGreaterThan(cjk, 0)
-    }
-
-    func testSubtitleWidthClampsToTheMaximum() {
-        let long = String(repeating: "超长应用名", count: 40)
-        for s in tiers {
-            XCTAssertEqual(ChipSubtitleMetrics.width(of: long, scale: s),
-                           ChipSubtitleMetrics.maximumWidth(for: s), accuracy: 0.001,
-                           "撞上限后必须正好等于上限（scale=\(s)）")
-        }
-    }
-
-    func testSubtitleWidthTracksScale() {
-        XCTAssertLessThan(ChipSubtitleMetrics.width(of: "Safari", scale: 0.5),
-                          ChipSubtitleMetrics.width(of: "Safari", scale: 1.5))
     }
 }
 
@@ -169,120 +117,20 @@ final class ChipPillMetricsTests: XCTestCase {
     /// 药丸在卡内水平居中 → midX 直接沿用卡片的；竖向全部来自常量。
     func testPillRectIsHorizontallyCenteredOnTheCard() {
         let card = CGRect(x: 100, y: 200, width: 180, height: 52)
-        let rect = ChipPillMetrics.pillRect(inCard: card, title: "psd-文件", hovered: false, scale: 1)
+        let rect = ChipPillMetrics.pillRect(inCard: card, title: "psd-文件", scale: 1)
         XCTAssertEqual(rect.midX, card.midX, accuracy: 0.001)
     }
 
     /// 屏幕坐标 y 向上：静息态药丸顶边 = 卡片顶边下方 `boxTopInset`。
     func testRestPillRectSitsBoxTopInsetBelowTheCardTop() {
         let card = CGRect(x: 0, y: 0, width: 180, height: ChipPillMetrics.chipHeight)
-        let rect = ChipPillMetrics.pillRect(inCard: card, title: "psd-文件", hovered: false, scale: 1)
+        let rect = ChipPillMetrics.pillRect(inCard: card, title: "psd-文件", scale: 1)
         XCTAssertEqual(rect.maxY, card.maxY - ChipPillMetrics.boxTopInset, accuracy: 0.001)
         XCTAssertEqual(rect.height, 34, accuracy: 0.001)
     }
 
-    func testHoverPillRectUsesTheHoverShift() {
-        let card = CGRect(x: 0, y: 0, width: 180, height: ChipPillMetrics.chipHeight)
-        let rect = ChipPillMetrics.pillRect(inCard: card, title: "psd-文件", hovered: true, scale: 1)
-        XCTAssertEqual(
-            rect.maxY,
-            card.maxY - ChipPillMetrics.boxTopInset - ChipSubtitleMetrics.pillHoverShift(for: 1),
-            accuracy: 0.001
-        )
-        XCTAssertEqual(rect.height, 28, accuracy: 0.001)
-    }
 }
 
-final class ChipHoverVisualTests: XCTestCase {
-    private let tiers: [CGFloat] = DockSize.allCases.map(\.scale)
-
-    func testEndpointsMatchTheExistingRestAndHoverMetricsAtEveryTier() {
-        for scale in tiers {
-            let subtitleWidth = ChipSubtitleMetrics.width(of: "Safari", scale: scale)
-            let rest = ChipHoverVisual.resolve(progress: 0, scale: scale, subtitleNaturalWidth: subtitleWidth)
-            let hover = ChipHoverVisual.resolve(progress: 1, scale: scale, subtitleNaturalWidth: subtitleWidth)
-
-            XCTAssertEqual(rest.bareIconSize, 40 * scale, accuracy: 0.001)
-            XCTAssertEqual(hover.bareIconSize, 26 * scale, accuracy: 0.001)
-            XCTAssertEqual(rest.pillHeight, ChipPillMetrics.height(hovered: false, scale: scale), accuracy: 0.001)
-            XCTAssertEqual(hover.pillHeight, ChipPillMetrics.height(hovered: true, scale: scale), accuracy: 0.001)
-            XCTAssertEqual(rest.pillIconSize, 22 * scale, accuracy: 0.001)
-            XCTAssertEqual(hover.pillIconSize, 18 * scale, accuracy: 0.001)
-            XCTAssertEqual(rest.pillShift, 0, accuracy: 0.001)
-            XCTAssertEqual(hover.pillShift, ChipSubtitleMetrics.pillHoverShift(for: scale), accuracy: 0.001)
-            XCTAssertEqual(rest.subtitleSlotWidth, 0, accuracy: 0.001)
-            XCTAssertEqual(hover.subtitleSlotWidth, subtitleWidth, accuracy: 0.001)
-            XCTAssertEqual(rest.subtitleOpacity, 0, accuracy: 0.001)
-            XCTAssertEqual(hover.subtitleOpacity, 1, accuracy: 0.001)
-        }
-    }
-
-    func testProgressClampsAndAllHoverQuantitiesShareIt() {
-        let low = ChipHoverVisual.resolve(progress: -2, scale: 1, subtitleNaturalWidth: 100)
-        let middle = ChipHoverVisual.resolve(progress: 0.4, scale: 1, subtitleNaturalWidth: 100)
-        let high = ChipHoverVisual.resolve(progress: 2, scale: 1, subtitleNaturalWidth: 100)
-
-        XCTAssertEqual(low.progress, 0)
-        XCTAssertEqual(high.progress, 1)
-        XCTAssertEqual(middle.subtitleOpacity, 0.4, accuracy: 0.001)
-        XCTAssertEqual(middle.emphasisProgress, 0.4, accuracy: 0.001)
-        XCTAssertEqual(middle.subtitleSlotWidth, 40, accuracy: 0.001)
-        XCTAssertEqual(middle.pillHeight, 31.6, accuracy: 0.001)
-    }
-}
-
-final class ChipAnimationTraceTests: XCTestCase {
-    func testStateEventNamesAreDirectional() {
-        XCTAssertEqual(ChipAnimationTraceEvent.hover(true), "hoverEntered")
-        XCTAssertEqual(ChipAnimationTraceEvent.hover(false), "hoverExited")
-        XCTAssertEqual(ChipAnimationTraceEvent.tap(true), "tapPressed")
-        XCTAssertEqual(ChipAnimationTraceEvent.tap(false), "tapReleased")
-    }
-
-    func testRingBufferKeepsNewestSamplesAndDrainClearsIt() throws {
-        var buffer = ChipAnimationTraceBuffer(capacity: 2)
-        let first = sample(progress: 0.1, event: "sessionStart")
-        let second = sample(progress: 0.5, event: nil)
-        let third = sample(progress: 0.9, event: "tapReleased")
-
-        buffer.append(first)
-        buffer.append(second)
-        buffer.append(third)
-
-        XCTAssertEqual(buffer.samples, [second, third])
-        let drained = buffer.drain()
-        XCTAssertEqual(drained, [second, third])
-        XCTAssertTrue(buffer.samples.isEmpty)
-
-        let json = try XCTUnwrap(
-            JSONSerialization.jsonObject(with: JSONEncoder().encode(third)) as? [String: Any]
-        )
-        XCTAssertEqual(try XCTUnwrap(json["hoverProgress"] as? Double), 0.9, accuracy: 0.0001)
-        XCTAssertEqual(json["isTapPressed"] as? Bool, false)
-        XCTAssertEqual(json["showsHover"] as? Bool, false)
-        XCTAssertEqual(json["event"] as? String, "tapReleased")
-    }
-
-    private func sample(progress: Double, event: String?) -> ChipAnimationTraceSample {
-        ChipAnimationTraceSample(
-            sessionID: UUID(uuidString: "11111111-2222-3333-4444-555555555555")!,
-            chipID: "tabgrp-42-s1",
-            kind: "window",
-            uptime: 123.4,
-            hoverProgress: progress,
-            bareIconSize: 30,
-            pillHeight: 31,
-            pillIconSize: 20,
-            pillShift: 1,
-            subtitleSlotWidth: 80,
-            subtitleOpacity: progress,
-            emphasisProgress: progress,
-            isTapPressed: false,
-            showsHover: false,
-            event: event
-        )
-    }
-}
 
 final class ScreenRectReaderTests: XCTestCase {
     private final class Task: ScreenRectDeliveryTask {
@@ -421,5 +269,44 @@ final class ScreenRectReaderTests: XCTestCase {
     func testCallSiteDeliveryPoliciesStayExplicit() {
         XCTAssertEqual(ScreenRectReader.Delivery.root, .immediateDeduplicated)
         XCTAssertEqual(ScreenRectReader.Delivery.tooltip, .debounced(settleInterval: 0.05))
+    }
+
+    /// 气泡尺寸是 2026-08-17 从原生 macOS 26 Dock 的截图上逐像素量出来的，不是设计出来的。
+    /// 这条锁住那组数——要改先重新截图重新量，别凭手感调。
+    func testBubbleMetricsMatchTheMeasuredNativeDockLabel() {
+        XCTAssertEqual(WindowTitleTooltipStyle.height, 26)
+        XCTAssertEqual(WindowTitleTooltipStyle.fontSize, 14)
+        XCTAssertEqual(WindowTitleTooltipStyle.horizontalPadding, 13)
+        XCTAssertEqual(WindowTitleTooltipStyle.tailWidth, 23)
+        XCTAssertEqual(WindowTitleTooltipStyle.tailHeight, 6.5)
+        // 中段直边的斜率（半宽/深度）实测 ≈1.17；圆头存在的证据就是它外推不到底。
+        let slope = (WindowTitleTooltipStyle.tailShoulderHalfWidth - WindowTitleTooltipStyle.tailTipHalfWidth)
+            / (WindowTitleTooltipStyle.tailTipDepth - WindowTitleTooltipStyle.tailShoulderDepth)
+        XCTAssertEqual(slope, 1.17, accuracy: 0.05)
+        let extrapolated = WindowTitleTooltipStyle.tailTipDepth + WindowTitleTooltipStyle.tailTipHalfWidth / slope
+        XCTAssertGreaterThan(extrapolated, WindowTitleTooltipStyle.tailHeight,
+                             "直边外推必须落在实际尖端之下——差的那截才是圆头")
+        // **胶囊，不是圆角矩形**：圆角必须正好是高的一半。
+        XCTAssertEqual(WindowTitleTooltipStyle.cornerRadius, WindowTitleTooltipStyle.height / 2)
+        // 间距量的是**尖端**到条顶，气泡自己的高度已经含尖角。
+        XCTAssertEqual(PanelGeometry.windowTitleTooltipGap, WindowTitleTooltipStyle.tipGap)
+    }
+
+    /// 尖角必须画在同一条闭合路径里：叠一个三角形会在接缝处交叉出一条横线。
+    /// 这里验证形状确实向下伸出尖角，且尖端落在水平中心。
+    func testShapeExtendsADownwardTailAtTheHorizontalCentre() {
+        let rect = CGRect(x: 0, y: 0, width: 85, height: 26 + WindowTitleTooltipStyle.tailHeight)
+        let box = WindowTitleTooltipShape().path(in: rect).boundingRect
+        XCTAssertEqual(box.maxY, rect.maxY, accuracy: 0.5, "尖端要顶到形状底边")
+        XCTAssertEqual(box.width, rect.width, accuracy: 0.5, "主体要占满整宽")
+
+        // 尖端所在那一行只剩很窄一条，且居中。
+        let tip = WindowTitleTooltipShape().path(in: rect)
+        let nearTip = tip.boundingRect
+        XCTAssertEqual(nearTip.midX, rect.midX, accuracy: 0.5)
+        XCTAssertFalse(tip.contains(CGPoint(x: rect.minX + 2, y: rect.maxY - 1)),
+                       "尖角两侧必须是空的，不能是一整条底边")
+        XCTAssertTrue(tip.contains(CGPoint(x: rect.midX, y: rect.maxY - 1)),
+                      "中心那一竖必须还在形状里")
     }
 }

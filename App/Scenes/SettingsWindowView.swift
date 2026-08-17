@@ -32,13 +32,6 @@ struct SettingsWindowContent: View {
         VStack(alignment: .leading, spacing: 22) {
             settingsSection("通用") {
                 launchAtLoginRow
-
-                Picker("外观", selection: binding(get: { store.appearanceMode }, set: store.setAppearanceMode)) {
-                    ForEach(AppearanceMode.allCases, id: \.self) { mode in
-                        Text(mode.title).tag(mode)
-                    }
-                }
-                .pickerStyle(.segmented)
             }
 
             Divider()

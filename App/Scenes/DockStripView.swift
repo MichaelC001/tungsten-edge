@@ -106,8 +106,7 @@ struct DockStripView: View {
     @EnvironmentObject var appMembershipController: AppMembershipController
 
     /// 浅 / 深色两套视觉数值（见 `DockThemeTokens`）。深色列是冻结的历史值，调观感只动浅色列。
-    @Environment(\.colorScheme) private var colorScheme
-    private var theme: DockThemeTokens { .resolve(colorScheme) }
+    private let theme = DockThemeTokens.standard
 
     /// 文件夹 chip 点击 → 弹窗 toggle（path + chip 可视矩形·屏幕坐标）。PanelCoordinator 注入。
     var onFolderPopupToggle: (String, CGRect) -> Void = { _, _ in }
@@ -977,6 +976,7 @@ struct DockStripView: View {
             .stripEntrance(id: entry.id, delay: delay, animatedEntryIDs: $animatedEntryIDs)
         case .shelf:
             ShelfChip(
+                onWindowTitleTooltipEvent: onWindowTitleTooltipEvent,
                 itemCount: shelfStore.itemPaths.count,
                 isDropTargeted: externalDropTarget == .stash,
                 scale: dockScale,
@@ -993,12 +993,17 @@ struct DockStripView: View {
                 if let main {
                     // 运行中有主窗 → app chip 即主窗卡：标准 toggle + 完整窗口菜单。iconOnly 保持消息区
                     // 定宽图标行，运行点标记它是 app 入口。
-                    ChipView(item: main, scale: dockScale, hoverStyle: hoverStyle, iconOnly: true, showRunningDot: true)
+                    // 悬停气泡的回调**必须显式传**：`ChipView` 给它留了默认空实现，
+                    // 所以漏传是编译得过的——消息区（微信）整块没有气泡就是这么来的
+                    // （owner 2026-08-17）。和 `scale:` 当年漏传是同一个坑，见 AGENTS《Taskbar Size Tiers》。
+                    ChipView(item: main, scale: dockScale, hoverStyle: hoverStyle, iconOnly: true, showRunningDot: true,
+                             onWindowTitleTooltipEvent: onWindowTitleTooltipEvent)
                 } else {
                     // 无主窗两态：运行中（关窗/常驻）→ 点击 reopen 主窗；未运行（图标下方无运行点）→ 点击启动。
                     // 统一模型下消息应用也有「在程序坞中保留」勾选（与「取消标记」并存），由纯投影决定。
                     let running = runningApplicationStore.isRunning(bid)
-                    LauncherChip(bundleID: bid,
+                    LauncherChip(onWindowTitleTooltipEvent: onWindowTitleTooltipEvent,
+                                 bundleID: bid,
                                  isRunning: running,
                                  isHidden: running && projection.hiddenBundleIDs.contains(bid),
                                  isLaunching: runtime.launchingBundleIDs.contains(bid),
@@ -1026,6 +1031,7 @@ struct DockStripView: View {
                 ? { Self.reopenMainWindow(bundleID: bid) }
                 : nil
             LauncherChip(
+                onWindowTitleTooltipEvent: onWindowTitleTooltipEvent,
                 bundleID: bid,
                 isRunning: isRunning,
                 isHidden: runningApplicationStore.isHidden(bid),
@@ -1186,9 +1192,7 @@ struct ChipView: View {
     @EnvironmentObject var messagingStore: MessagingAppStore
     @EnvironmentObject var keptAppStore: KeptAppStore
     @EnvironmentObject var appMembershipController: AppMembershipController
-    /// 浅 / 深色两套视觉数值（见 `DockThemeTokens`）。
-    @Environment(\.colorScheme) private var colorScheme
-    private var theme: DockThemeTokens { .resolve(colorScheme) }
+    private let theme = DockThemeTokens.standard
     let item: StripItem
     /// 档位系数（`DockSize.scale`）。**故意不给默认值**：消息区曾因为它有默认值 1.0 而静默漏传，
     /// 在非中档下渲染成中档尺寸（见 AGENTS《Taskbar Size Tiers》）。漏传必须是编译错误。
@@ -1205,10 +1209,15 @@ struct ChipView: View {
     /// 外部手势（重击/中键预览）触发的脉冲信号：nonce 变化即触发一次 fireTapPulse，
     /// 给活访达窗口预览那 ~200ms 反查延迟一个"点到了"的即时确认。默认 0 = 不脉冲。
     var pulseNonce: Int = 0
-    var onWindowTitleTooltipEvent: (WindowTitleTooltipEvent) -> Void = { _ in }
+    /// 悬停名气泡的出口。**故意不给默认值**——同 `scale` / `hoverStyle` 那条铁律：
+    /// 它有默认空实现的那两天里，消息区（微信）和拖动载体都静默漏传，整块没有气泡，
+    /// 而且编译得过、测试也测不到（现有测试全是纯几何，不检查 SwiftUI 调用点）。
+    /// 载体这类"确实不该弹"的地方显式写 `{ _ in }`，让"不弹"是一个决定而不是一次遗忘。
+    let onWindowTitleTooltipEvent: (WindowTitleTooltipEvent) -> Void
 
     @State private var isHovering = false
-    @State private var titlePillScreenRect: CGRect = .zero
+    /// 整张卡的屏幕矩形——悬停气泡的锚点。
+    @State private var cardScreenRect: CGRect = .zero
     /// 点击确认脉冲：与状态无关的按压回弹。激活「已可见」窗口在亮/暗轴上零变化,
     /// 没有它就"毫无反应"（owner 2026-07-06）。纯视图层信号,永不喂 planner/frontmost 轴（AGENTS）。
     /// 声明式 .animation(value:) 驱动（LauncherChip 僵尸动画教训:禁 repeatForever+复位）。
@@ -1260,13 +1269,12 @@ struct ChipView: View {
         return !item.isAppLevelFallback && messagingStore.contains(bid)
     }
 
-    private var titleNeedsTooltip: Bool {
-        WindowTitleTextMetrics.needsTooltip(for: displayTitle, scale: scale)
-    }
-
+    /// 悬停名气泡。**任何 chip 悬停就弹**（2026-08-16 改成原生 Dock 那种「图标正上方的气泡」
+    /// 之前，这里还有一道「标题被截断才弹」的门槛）。锚点是**整张卡**的矩形——原生是对着
+    /// 图标居中，不是对着药丸。
     private func updateWindowTitleTooltip(hovering: Bool, anchor: CGRect? = nil) {
-        let rect = anchor ?? titlePillScreenRect
-        guard hovering, titleNeedsTooltip, rect != .zero else {
+        let rect = anchor ?? cardScreenRect
+        guard hovering, showsHover, rect != .zero else {
             onWindowTitleTooltipEvent(.exit(chipID: item.id))
             return
         }
@@ -1292,41 +1300,36 @@ struct ChipView: View {
 
     private var bareIconChip: some View {
         let capturedDisplayTitle = displayTitle
-        return ChipHoverProgress(progress: showsHover ? 1 : 0) { progress in
-            let hover = ChipHoverVisual.resolve(progress: progress, scale: scale, subtitleNaturalWidth: 0)
-            let _ = ChipAnimationTrace.record(
-                chipID: item.id,
-                kind: "icon",
-                visual: hover,
-                isTapPressed: isTapPressed,
-                showsHover: showsHover
-            )
-            VStack(spacing: 0) {
-                Spacer(minLength: 0)
-                ZStack(alignment: .top) {
-                    appIcon(size: hover.bareIconSize)
-
-                    Text(capturedDisplayTitle)
-                        .font(.system(size: max(8, 10 * scale), weight: .medium, design: .rounded))
-                        .foregroundStyle(theme.labelHover.color)
-                        .lineLimit(1)
-                        .frame(maxWidth: 64 * scale)
-                        .offset(y: ChipPillMetrics.bareSubtitleOffset * scale)
-                        .opacity(hover.subtitleOpacity)
-                        .allowsHitTesting(false)
-                        .accessibilityHidden(!showsHover)
-                }
-                // 槽位高度必须等于**静息**图标尺寸：这个 ZStack 是 .top 对齐的，
-                // 槽位小于图标就会整块往下溢出（写死 36 而图标改成 40 时实测下移 4pt）。
-                .frame(width: ChipPillMetrics.cardWidth * scale,
-                       height: ChipPillMetrics.bareIconSlot * scale,
-                       alignment: .top)
-                Spacer(minLength: 0)
-            }
+        // **纯图标卡的悬停不改变任何像素**，所以这里不挂动画驱动器。
+        //
+        // 应用名挪进图标上方的气泡之后，图标不再缩、槽位不再变，图标也从不按状态淡化
+        // （owner 2026-08-02）——`ChipHoverProgress` 剩下的唯一作用是让一个可动画标量
+        // 跑满 0.18s，每次悬停进出白白重算十来帧。横扫一排图标时这笔开销叠在主线程上，
+        // 而主线程一忙 macOS 就**合并鼠标移动事件**，中间掠过的格子根本收不到悬停回调
+        // ——正是 owner 说的「匀速划过很多来不及显示」。同一个机制在菜单上咬过一次，
+        // 见 AGENTS《Menus, Panels, And Screens》那条 100ms 粘滞。
+        //
+        // 带标题的卡仍然要它：药丸底与描边的提亮是真的在动。
+        let hover = ChipHoverVisual.resolve(progress: 0, scale: scale)
+        let _ = ChipAnimationTrace.record(
+            chipID: item.id,
+            kind: "icon",
+            visual: hover,
+            isTapPressed: isTapPressed,
+            showsHover: showsHover
+        )
+        return VStack(spacing: 0) {
+            Spacer(minLength: 0)
+            appIcon(size: hover.bareIconSize)
+            // 槽位高度必须等于**静息**图标尺寸：这个 ZStack 是 .top 对齐的，
+            // 槽位小于图标就会整块往下溢出（写死 36 而图标改成 40 时实测下移 4pt）。
             .frame(width: ChipPillMetrics.cardWidth * scale,
-                   height: ChipPillMetrics.chipHeight * scale)
+                   height: ChipPillMetrics.bareIconSlot * scale,
+                   alignment: .top)
+            Spacer(minLength: 0)
         }
-        .animation(.easeInOut(duration: 0.18), value: showsHover)
+        .frame(width: ChipPillMetrics.cardWidth * scale,
+               height: ChipPillMetrics.chipHeight * scale)
         .overlay(alignment: .bottom) {
             if showRunningDot {
                 Circle()
@@ -1336,10 +1339,19 @@ struct ChipView: View {
             }
         }
         .chipPressScale(isTapPressed)
+        // 悬停名气泡：**纯图标卡也要弹**。2026-08-16 改成原生式气泡时只接了带标题卡，
+        // 于是消息区的微信、以及所有单窗口应用（Obsidian / Illustrator / Dia …）整块没有气泡，
+        // owner 报「很多图标不显示」。两个分支的接法必须一模一样，别再只改一边。
+        .background(ScreenRectReader(delivery: .tooltip) { rect in
+            guard rect != cardScreenRect else { return }
+            cardScreenRect = rect
+            if isHovering { updateWindowTitleTooltip(hovering: true, anchor: rect) }
+        })
         .contentShape(Rectangle())
         .onHover {
             isHovering = $0
             recordHoverEvent($0)
+            updateWindowTitleTooltip(hovering: $0)
         }
         .onTapGesture {
             if let drawerTap { drawerTap() } else { runtime.toggle(windowID: item.actionWindowID) }
@@ -1352,6 +1364,13 @@ struct ChipView: View {
             onEvent: recordPressEvent
         )
         .nativeContextMenu { buildChipMenu() }
+        .onChange(of: capturedDisplayTitle) { _ in
+            if isHovering { updateWindowTitleTooltip(hovering: true) }
+        }
+        .onChange(of: scale) { _ in
+            if isHovering { updateWindowTitleTooltip(hovering: true) }
+        }
+        .onDisappear { onWindowTitleTooltipEvent(.exit(chipID: item.id)) }
         .help(capturedDisplayTitle)
     }
 
@@ -1361,12 +1380,8 @@ struct ChipView: View {
         // 图标恒为原色（不按状态淡化，owner 2026-08-02）；「在不在桌面上」只由标题颜色表达。
         let titleColor: Color = effectiveIsOnDesktop ? theme.labelActive.color : theme.labelInactive.color
         let capturedDisplayTitle = displayTitle
-        let capturedAppName = appName
-        let subtitleNaturalWidth = ChipSubtitleMetrics.width(of: capturedAppName, scale: scale)
         return ChipHoverProgress(progress: showsHover ? 1 : 0) { progress in
-            let hover = ChipHoverVisual.resolve(
-                progress: progress, scale: scale, subtitleNaturalWidth: subtitleNaturalWidth
-            )
+            let hover = ChipHoverVisual.resolve(progress: progress, scale: scale)
             let _ = ChipAnimationTrace.record(
                 chipID: item.id,
                 kind: "window",
@@ -1401,17 +1416,7 @@ struct ChipView: View {
                 Spacer(minLength: 0)
                 pill
                     .frame(height: ChipPillMetrics.boxHeight * scale, alignment: .top)
-                    .offset(y: hover.pillShift)
-                Text(capturedAppName)
-                    .font(.system(size: max(8, 9 * scale), weight: .medium, design: .rounded))
-                    .foregroundStyle(theme.labelSubtitle.color)
-                    .lineLimit(1)
-                    .frame(width: subtitleNaturalWidth)
-                    .frame(width: hover.subtitleSlotWidth, height: 0)
-                    .offset(y: ChipSubtitleMetrics.subtitleShift(for: scale))
-                    .opacity(hover.subtitleOpacity)
-                    .allowsHitTesting(false)
-                    .accessibilityHidden(!showsHover)
+                    
                 Spacer(minLength: 0)
             }
             .frame(height: ChipPillMetrics.chipHeight * scale)
@@ -1425,12 +1430,9 @@ struct ChipView: View {
         // 逐帧回写 @State 会在动画中途把 ChipView 重算一遍。tooltip 本来就有 0.7s 延迟，
         // 等得起；根 rect 那两个调用点**不能**用它（拖动几何要实时）。
         .background(ScreenRectReader(delivery: .tooltip) { rect in
-            let pillRect = ChipPillMetrics.pillRect(
-                inCard: rect, title: displayTitle, hovered: showsHover, scale: scale
-            )
-            guard pillRect != titlePillScreenRect else { return }
-            titlePillScreenRect = pillRect
-            if isHovering { updateWindowTitleTooltip(hovering: true, anchor: pillRect) }
+            guard rect != cardScreenRect else { return }
+            cardScreenRect = rect
+            if isHovering { updateWindowTitleTooltip(hovering: true, anchor: rect) }
         })
         .contentShape(Rectangle())
         .onHover { hovering in
@@ -1567,9 +1569,7 @@ struct DrawerCapsuleButton: View {
     @EnvironmentObject var settingsStore: AppSettingsStore
     /// 拖卡进抽屉的投放反馈：手指压在投放区时胶囊放大 + 高亮描边。
     @EnvironmentObject var dragController: DragController
-    /// 浅 / 深色两套视觉数值（见 `DockThemeTokens`）。
-    @Environment(\.colorScheme) private var colorScheme
-    private var theme: DockThemeTokens { .resolve(colorScheme) }
+    private let theme = DockThemeTokens.standard
     /// 右键胶囊 → 弹钨极菜单。胶囊是设置的**主要后路入口**：它恒在、位置固定、尺寸等于面板高度，
     /// 而且是钨极自己的部件（不属于任何 app），不像任务条底板那样只剩几条缝可点。
     var onRequestTaskbarMenu: (NSEvent, NSView) -> Void = { _, _ in }

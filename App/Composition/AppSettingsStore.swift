@@ -25,29 +25,6 @@ enum HoverStyle: String, CaseIterable {
     var isExpressive: Bool { self == .standard }
 }
 
-/// 外观档位（设置窗口「通用 → 外观」）。作用于**整个 app**：任务条、抽屉、各弹窗、
-/// 右键菜单、状态栏菜单、设置窗口一起变（owner 2026-08-06）。
-///
-/// 实现上只翻一个开关 `NSApp.appearance`（映射见 `DockTheme.swift` 的 `nsAppearance`），
-/// 因为主题取值链路是隐式的：`DockThemeTokens.resolve` 读 SwiftUI 的 `\.colorScheme`，
-/// 而那个值和毛玻璃 `NSVisualEffectView` 的材质**都**来自窗口的 `effectiveAppearance`。
-///
-/// rawValue 会落进 UserDefaults：**改名 = 把所有老用户重置回跟随系统**（同 `DockSize`）。
-enum AppearanceMode: String, CaseIterable {
-    case system
-    case light
-    case dark
-
-    static let `default` = AppearanceMode.system
-
-    var title: String {
-        switch self {
-        case .system: return "跟随系统"
-        case .light: return "浅色"
-        case .dark: return "深色"
-        }
-    }
-}
 
 @MainActor
 final class AppSettingsStore: ObservableObject {
@@ -68,8 +45,6 @@ final class AppSettingsStore: ObservableObject {
     @Published private(set) var dockSize: DockSize
     /// 悬停效果档位。只影响条内 chip 的悬停视觉，静息布局逐像素不变（因此无需 relayout）。
     @Published private(set) var hoverStyle: HoverStyle
-    /// 浅 / 深色档位，默认跟随系统。应用方式见 `AppearanceMode`。
-    @Published private(set) var appearanceMode: AppearanceMode
     /// 最大化窗口避让任务条（菜单「最大化窗口避开任务条」）。**默认关**——
     /// 这个功能会真的去改写别人应用的窗口尺寸，没主动选过的人不该被改。
     @Published private(set) var windowLiftEnabled: Bool
@@ -126,7 +101,6 @@ final class AppSettingsStore: ObservableObject {
         // 否则每次启动都要重新走一遍回退，且 UI 上勾选的档位和存的值对不上。
         dockSize = DockSize(rawValue: defaults.string(forKey: Keys.dockSize) ?? "") ?? .default
         hoverStyle = HoverStyle(rawValue: defaults.string(forKey: Keys.hoverStyle) ?? "") ?? .default
-        appearanceMode = AppearanceMode(rawValue: defaults.string(forKey: Keys.appearanceMode) ?? "") ?? .default
         let nativeDelay = Self.sanitizedStoredDelay(
             defaults.object(forKey: Keys.nativeDockAutoHideDelay),
             fallback: Self.defaultNativeDockAutoHideDelay
@@ -155,7 +129,6 @@ final class AppSettingsStore: ObservableObject {
         }
         defaults.set(dockSize.rawValue, forKey: Keys.dockSize)
         defaults.set(hoverStyle.rawValue, forKey: Keys.hoverStyle)
-        defaults.set(appearanceMode.rawValue, forKey: Keys.appearanceMode)
         defaults.set(nativeDelay, forKey: Keys.nativeDockAutoHideDelay)
         defaults.set(lastEnabledNativeDockAutoHideDelay, forKey: Keys.nativeDockAutoHideLastEnabledDelay)
         defaults.set(edgeDelay, forKey: Keys.edgeAutoHideDelay)
@@ -172,12 +145,6 @@ final class AppSettingsStore: ObservableObject {
         guard hoverStyle != value else { return }
         hoverStyle = value
         defaults.set(value.rawValue, forKey: Keys.hoverStyle)
-    }
-
-    func setAppearanceMode(_ value: AppearanceMode) {
-        guard appearanceMode != value else { return }
-        appearanceMode = value
-        defaults.set(value.rawValue, forKey: Keys.appearanceMode)
     }
 
     func setShowShelf(_ value: Bool) {
@@ -323,7 +290,8 @@ private enum Keys {
     static let showShelf = "com.tungsten.edge.showShelf"
     static let dockSize = "com.tungsten.edge.dockSize"
     static let hoverStyle = "com.tungsten.edge.hoverStyle"
-    static let appearanceMode = "com.tungsten.edge.appearanceMode"
+        // `com.tungsten.edge.appearanceMode` 已随深色模式一起删除（owner 2026-08-16）。
+        // **键留成孤儿，不读不写不删**——回退这轮改动时还读得回用户原来的选择。
     static let windowLiftEnabled = "com.tungsten.edge.windowLiftEnabled"
     static let fullscreenIntentEnabled = "com.tungsten.edge.fullscreenIntentEnabled"
     /// ⚠️ 这个键名进了用户磁盘。改名 = 所有已订阅的人重新看到订阅区块。

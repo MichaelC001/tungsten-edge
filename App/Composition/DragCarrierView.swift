@@ -19,9 +19,7 @@ struct DragCarrierView: View {
     /// 免得以后有人打开 forceHover 时这里悄悄留一份写死的档位。
     private var hoverStyle: HoverStyle { settingsStore.hoverStyle }
 
-    /// 浅 / 深色两套视觉数值（见 `DockThemeTokens`）。
-    @Environment(\.colorScheme) private var colorScheme
-    private var theme: DockThemeTokens { .resolve(colorScheme) }
+    private let theme = DockThemeTokens.standard
 
     var body: some View {
         if let p = controller.draggingPayload {
@@ -41,7 +39,10 @@ struct DragCarrierView: View {
         // 抽屉拖回任务条·转正后:载体改画**代表卡**整张(与条内载体同款),让"拖回来"和"条内拖动"观感一致。
         // 代表卡由 DockStripView 在窗口卡实体化后写入;未实体化前 nil → 仍按 visualKind 画(抽屉里就是小图标)。
         if let rep = controller.convertedRepresentative {
-            ChipView(item: rep, scale: dockScale, hoverStyle: hoverStyle, showRunningDot: true, forceHover: false)
+            // 载体不弹悬停气泡：它是跟着鼠标飞的浮动副本，不可命中，弹了也只会挡住投放目标。
+            // 显式写空实现而不是靠默认值——见 `ChipView.onWindowTitleTooltipEvent` 的注释。
+            ChipView(item: rep, scale: dockScale, hoverStyle: hoverStyle, showRunningDot: true, forceHover: false,
+                     onWindowTitleTooltipEvent: { _ in })
                 .dockShadow(theme.carrierShadow)
         } else {
             switch p.visualKind {
@@ -49,7 +50,8 @@ struct DragCarrierView: View {
                 if let item = p.item {
                     // forceHover: false —— 悬停态会在图标下方带出 app 名,拖动时不想要（owner 2026-06-21）。
                     // 非悬停态 = 干净的大图标(单窗口卡),贴近抽屉拖动的观感。代价是起拖瞬间图标略放大,可接受。
-                    ChipView(item: item, scale: dockScale, hoverStyle: hoverStyle, showRunningDot: true, forceHover: false)
+                    ChipView(item: item, scale: dockScale, hoverStyle: hoverStyle, showRunningDot: true, forceHover: false,
+                             onWindowTitleTooltipEvent: { _ in })
                         .dockShadow(theme.carrierShadow)
                 }
             case .drawerIcon:
@@ -94,9 +96,7 @@ struct DrawerDragIconView: View {
     /// 漏传必须是编译错误，见 AGENTS《Taskbar Size Tiers》。
     let scale: CGFloat
 
-    /// 浅 / 深色两套视觉数值（见 `DockThemeTokens`）。
-    @Environment(\.colorScheme) private var colorScheme
-    private var theme: DockThemeTokens { .resolve(colorScheme) }
+    private let theme = DockThemeTokens.standard
 
     var body: some View {
         // 拖动浮动副本必须与条上原卡逐像素同尺寸，否则松手前后会跳一下。

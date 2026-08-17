@@ -2,10 +2,15 @@ import XCTest
 @testable import macos_dock_cc_v2
 
 final class DockLiquidGlassConfigurationTests: XCTestCase {
-    func testDefaultKeepsAcceptedVisualEffectPath() {
+    /// **默认现在是开**（owner 2026-08-17 转正玻璃观感）。
+    ///
+    /// 这条以前叫「默认保持已验收的毛玻璃路径」，锁的是探路期「默认关 + `=1` 才开」。
+    /// 那条护栏的用意是「未验收的效果不许默认生效」——观感验收通过之后它就该翻面，
+    /// 否则系统重启后自动拉起的进程（不带环境变量）看到的永远是旧观感，真发生过。
+    func testDefaultNowShipsTheAcceptedGlassLook() {
         let configuration = DockLiquidGlassConfiguration.resolve(environment: [:])
 
-        XCTAssertFalse(configuration.isEnabled)
+        XCTAssertTrue(configuration.isEnabled)
         XCTAssertEqual(configuration.clearTintOpacity, 0.4)
         XCTAssertEqual(configuration.whiteOverlayOpacity, 0)
         XCTAssertEqual(configuration.dimmingOpacity, 0)
@@ -21,16 +26,22 @@ final class DockLiquidGlassConfigurationTests: XCTestCase {
         XCTAssertEqual(configuration.backgroundPlateOpacity, 0.001)
         XCTAssertEqual(
             configuration.renderPath(isGlassAPIAvailable: true, isCompositeAvailable: true),
+            .layeredTaskbar
+        )
+        // 12–25 上没有玻璃 API，仍然回退到毛玻璃——默认翻面不影响老系统。
+        XCTAssertEqual(
+            configuration.renderPath(isGlassAPIAvailable: false, isCompositeAvailable: true),
             .visualEffectFallback
         )
     }
 
-    func testEnableSwitchOnlyAcceptsOne() {
-        XCTAssertTrue(resolve(["DOCK_LIQUID_GLASS": "1"]).isEnabled)
-        XCTAssertTrue(resolve(["DOCK_LIQUID_GLASS": " 1 \n"]).isEnabled)
+    /// 关掉玻璃的开关**只认 `0`**。其余一切（含未设、乱填）都是开。
+    func testOnlyZeroTurnsGlassOff() {
+        XCTAssertFalse(resolve(["DOCK_LIQUID_GLASS": "0"]).isEnabled)
+        XCTAssertFalse(resolve(["DOCK_LIQUID_GLASS": " 0 \n"]).isEnabled)
 
-        for value in ["", "0", "true", "yes", "2"] {
-            XCTAssertFalse(resolve(["DOCK_LIQUID_GLASS": value]).isEnabled)
+        for value in ["", "1", "true", "yes", "2"] {
+            XCTAssertTrue(resolve(["DOCK_LIQUID_GLASS": value]).isEnabled)
         }
     }
 

@@ -10,6 +10,8 @@ import SwiftUI
 /// `membershipItems` (在程序坞中保留 / 标记为消息应用).
 
 struct LauncherChip: View {
+    /// 悬停名气泡（原生 Dock 那种，图标正上方）。默认空 = 不弹。
+    var onWindowTitleTooltipEvent: (WindowTitleTooltipEvent) -> Void = { _ in }
     let bundleID: String
     let isRunning: Bool   // supplied by the displayed zone's runtime/process projection
     let isHidden: Bool    // supplied by the displayed zone's runtime/process projection
@@ -36,9 +38,7 @@ struct LauncherChip: View {
     /// Only set by DrawerView; strip messaging chips leave it nil.
     var onPrimaryAction: (() -> Void)? = nil
 
-    /// 浅 / 深色两套视觉数值（见 `DockThemeTokens`）。
-    @Environment(\.colorScheme) private var colorScheme
-    private var theme: DockThemeTokens { .resolve(colorScheme) }
+    private let theme = DockThemeTokens.standard
 
     @State private var isHovering = false
     @State private var bounceUp = false
@@ -47,6 +47,8 @@ struct LauncherChip: View {
     /// kept 图标、抽屉图标点下去一动不动，而窗口卡和抽屉胶囊都有。纯视图层信号，永不喂
     /// planner / frontmost 轴（AGENTS）。
     @State private var isTapPressed = false
+    /// 整张卡的屏幕矩形——悬停气泡的锚点。
+    @State private var cardScreenRect: CGRect = .zero
 
     private static let launchTraceEnabled =
         ProcessInfo.processInfo.environment["DOCK_LAUNCH_TRACE"] == "1"
@@ -57,7 +59,7 @@ struct LauncherChip: View {
     var body: some View {
         let visual = LauncherChipVisualPlan.visual(isRunning: isRunning)
         return ChipHoverProgress(progress: showsHover ? 1 : 0) { progress in
-            let hover = ChipHoverVisual.resolve(progress: progress, scale: scale, subtitleNaturalWidth: 0)
+            let hover = ChipHoverVisual.resolve(progress: progress, scale: scale)
             let _ = ChipAnimationTrace.record(
                 chipID: bundleID,
                 kind: "launcher",
@@ -67,26 +69,14 @@ struct LauncherChip: View {
             )
             VStack(spacing: 0) {
                 Spacer(minLength: 0)
-                ZStack(alignment: .top) {
-                    Image(nsImage: AppIconResolver.icon(for: bundleID))
-                        .resizable()
-                        .aspectRatio(contentMode: .fit)
-                        .frame(width: hover.bareIconSize, height: hover.bareIconSize)
-                        .clipShape(RoundedRectangle(cornerRadius: hover.bareIconSize / 4, style: .continuous))
-                        .dockShadow(theme.iconShadow)
-                        .offset(y: bounceUp ? -6 : 0)
-                        .animation(.easeInOut(duration: 0.25), value: bounceUp)
-
-                    Text(displayName)
-                        .font(.system(size: max(8, 10 * scale), weight: .medium, design: .rounded))
-                        .foregroundStyle(theme.labelHover.color)
-                        .lineLimit(1)
-                        .frame(maxWidth: 64 * scale)
-                        .offset(y: ChipPillMetrics.bareSubtitleOffset * scale)
-                        .opacity(hover.subtitleOpacity)
-                        .allowsHitTesting(false)
-                        .accessibilityHidden(!showsHover)
-                }
+                Image(nsImage: AppIconResolver.icon(for: bundleID))
+                    .resizable()
+                    .aspectRatio(contentMode: .fit)
+                    .frame(width: hover.bareIconSize, height: hover.bareIconSize)
+                    .clipShape(RoundedRectangle(cornerRadius: hover.bareIconSize / 4, style: .continuous))
+                    .dockShadow(theme.iconShadow)
+                    .offset(y: bounceUp ? -6 : 0)
+                    .animation(.easeInOut(duration: 0.25), value: bounceUp)
                 // 槽位高度 = **静息**图标尺寸。槽位小于图标就会整块往下溢出（.top 对齐），
                 // 结果就是「打开的应用图标和没打开的高度不一样」——本视图画的正是没打开的那种。
                 // 与 `ChipView` 的 iconOnly 分支必须逐字相同。
@@ -108,9 +98,15 @@ struct LauncherChip: View {
             }
         }
         .chipPressScale(isTapPressed)
+        .background(ScreenRectReader(delivery: .tooltip) { rect in
+            guard rect != cardScreenRect else { return }
+            cardScreenRect = rect
+            if isHovering { updateTooltip(hovering: true) }
+        })
         .contentShape(Rectangle())
         .onHover { hovering in
             isHovering = hovering
+            updateTooltip(hovering: hovering)
             ChipAnimationTrace.event(
                 chipID: bundleID,
                 kind: "launcher",
@@ -144,6 +140,7 @@ struct LauncherChip: View {
         .onDisappear {
             trace("disappear cleanup")
             cleanupBounce()
+            onWindowTitleTooltipEvent(.exit(chipID: bundleID))
         }
         .onChange(of: isLaunching) { newValue in
             trace("isLaunching=\(newValue)")
@@ -151,6 +148,16 @@ struct LauncherChip: View {
         }
         .onChange(of: bounceUp) { trace("bounceUp=\($0)") }
         .onChange(of: isHovering) { trace("isHovering=\($0)") }
+    }
+
+    private func updateTooltip(hovering: Bool) {
+        guard hovering, showsHover, cardScreenRect != .zero else {
+            onWindowTitleTooltipEvent(.exit(chipID: bundleID))
+            return
+        }
+        onWindowTitleTooltipEvent(.update(WindowTitleTooltipRequest(
+            chipID: bundleID, title: displayName, anchorVisibleRect: cardScreenRect
+        )))
     }
 
     private func buildLauncherMenu() -> NSMenu {
