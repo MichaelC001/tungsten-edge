@@ -1,9 +1,11 @@
+import CoreGraphics
 import Foundation
 import QuartzCore
 
-/// 悬停名气泡的跟手度诊断。默认关闭，`DOCK_HOVER_TRACE=1` 打开。
+/// 任务条交互的手感诊断。默认关闭，`DOCK_HOVER_TRACE=1` 打开。
+/// （文件名沿用 `hover-trace.jsonl`：它最初只量悬停，2026-08-17 扩到点击 / 最小化那条路径。）
 ///
-/// 回答的问题只有两个，别扩：
+/// 悬停部分回答两个问题：
 /// 1. **鼠标匀速划过一排图标时，每个 chip 都收到悬停回调了吗？** 少了就是事件被合并掉了，
 ///    问题在主线程占用，不在气泡本身。
 /// 2. **收到之后，把气泡摆到位花了多久？** 长就是渲染/窗口调用慢，那才是气泡自己的问题。
@@ -37,9 +39,44 @@ enum HoverTrace {
     }
 
     /// 主线程卡顿：预定 8ms 触发，实际晚了 `lateMs`。只记超过 12ms 的，免得自己刷屏。
+    /// 60Hz 下一帧 16.7ms，所以 >16.7 基本等于至少掉一帧。
     static func mainLoopStall(lateMs: Double) {
         guard isEnabled, lateMs >= 12 else { return }
         Writer.shared.append("{\"t\":\(stamp()),\"kind\":\"stall\",\"lateMs\":\(round(lateMs * 10) / 10)}")
+    }
+
+    // MARK: - 点击 / 最小化那条路径（owner 2026-08-17 报「点击和最小化之后的动作会卡」）
+
+    /// 任务条 body 求值一次。**用来回答「一次点击让整条重算了几次」**——
+    /// `DockStripView` 订阅的是整个 `AppRuntime`，任何一个 `@Published` 变化都会打翻整条。
+    static func stripBody(items: Int) {
+        guard isEnabled else { return }
+        Writer.shared.append("{\"t\":\(stamp()),\"kind\":\"stripBody\",\"items\":\(items)}")
+    }
+
+    /// 一次 `relayout`：同步量整条宽度花了多久、量出多少、和上次比变没变、是否带动画。
+    ///
+    /// **`changed:false` 且 `animated:true` 就是纯浪费**——宽度没变还要跑一遍窗口尺寸动画，
+    /// 而那动画的每一帧都要重画玻璃底板和描边。这是本轮头号嫌疑。
+    static func relayout(measureMs: CFTimeInterval, width: CGFloat, changed: Bool, animated: Bool) {
+        guard isEnabled else { return }
+        Writer.shared.append(
+            "{\"t\":\(stamp()),\"kind\":\"relayout\",\"measureMs\":\(round(measureMs * 10000) / 10)," +
+            "\"width\":\(round(width * 10) / 10),\"changed\":\(changed),\"animated\":\(animated)}"
+        )
+    }
+
+    /// 面板 frame 全等 → 整组动画被跳过。**这条是上面那条浪费真的被堵住的证据**，
+    /// 光看 `relayout` 次数看不出来（短路发生在下游的 `setFrames` 里）。
+    static func framesUnchanged() {
+        guard isEnabled else { return }
+        Writer.shared.append("{\"t\":\(stamp()),\"kind\":\"framesSkipped\"}")
+    }
+
+    /// 用户动作的时间窗标记。没有它，日志里一堆卡顿不知道该算在谁头上。
+    static func action(_ kind: String, phase: String) {
+        guard isEnabled else { return }
+        Writer.shared.append("{\"t\":\(stamp()),\"kind\":\"action\",\"what\":\(quote(kind)),\"phase\":\(quote(phase))}")
     }
 
     private static func stamp() -> Double { round(CACurrentMediaTime() * 10000) / 10 }

@@ -235,6 +235,10 @@ final class PanelCoordinator: NSObject {
     private var lastDrawerSize: CGSize = CGSize(width: 210, height: 60)
     /// 目标 frame 驱动布局：每次 layoutPanels 算齐三个目标并存这里。drop zone 命中、开抽屉定位都读**目标**
     /// 而非 live frame——动画中 live frame 是中途值,会和视觉/逻辑短暂不一致（Codex 二审 P2）。
+    /// `setFrames` 上一次真正提交过的目标 frame 序列。用来堵掉「目标没变还重启一遍动画」——
+    /// 实测启动 7 秒内有 8 次这种空转，其中 6 次挤在 1.1ms 内，等于把同一组窗口尺寸动画
+    /// 连着重启六遍，而它的每一帧都要重画玻璃底板和描边。
+    private var lastCommittedFrames: [NSRect] = []
     private var lastDockTargetFrame: NSRect = .zero
     private var lastCapsuleTargetFrame: NSRect = .zero
     private var lastDrawerTargetFrame: NSRect = .zero
@@ -396,6 +400,9 @@ final class PanelCoordinator: NSObject {
         drawerPanel = nil
         folderPopupPanel = nil
         windowTitleTooltipPanel = nil
+        // 面板全拆了，「上次提交过的目标」随之作废——留着会让重建后的第一次布局被误判成
+        // 「目标没变」而跳过，条就停在旧几何上。
+        lastCommittedFrames = []
     }
 
     /// 最大化避让只在钨极常驻且真正可见时取得上下文；一次性返回完整几何，避免切屏时撕裂读取。
@@ -1839,7 +1846,14 @@ final class PanelCoordinator: NSObject {
     /// 量当前内容宽度后布局（内容变化的统一入口）。
     private func relayout(animated: Bool) {
         guard let panel = dockPanel, let hosting = dockContentHost else { return }
+        // `fittingSize` 是**主线程上把整条任务条同步布局一遍**，不是读一个缓存值。
+        // 探针量的就是它 + 宽度到底变没变（没变还跑动画就是纯浪费）。
+        let measureStart = CACurrentMediaTime()
         let measured = hosting.fittingSize.width - 2 * Self.shadowPadding
+        HoverTrace.relayout(measureMs: CACurrentMediaTime() - measureStart,
+                            width: measured,
+                            changed: measured != lastDesiredWidth,
+                            animated: animated)
         lastDesiredWidth = measured
         // 跨面板转正进行中 → 任务条宽度钳在拖动前的值（窗口卡溢出/留空而非改变面板宽度，owner 2026-06-22）；
         // 松手/还原解钳后，下一次 relayout 用真实测量值把任务条变到最终长度。
@@ -1848,7 +1862,26 @@ final class PanelCoordinator: NSObject {
     }
 
     /// 三面板同一个动画组提交,共用一条时间轴（Codex 二审 P2：避免各跑各的时间轴抖动）。
+    ///
+    /// **目标 frame 和现状完全一样时直接返回，一帧都不跑。**
+    /// 2026-08-17 实测（`DOCK_HOVER_TRACE=1`）：启动后 6 秒里 10 次 `relayout`，其中 **8 次**
+    /// 宽度根本没变却仍然 `animated: true`，还有连着 6 次挤在 1.1ms 内。每一次都会启动一组
+    /// 窗口尺寸动画，把三个面板"动画"到和现在一模一样的尺寸——**而窗口尺寸动画的每一帧都要
+    /// 重画玻璃底板和那圈描边**。测量本身很便宜（`fittingSize` 0.2ms），贵的是这个空动画。
+    ///
+    /// 判据用**最终 frame 全等**而不是「宽度没变」：换屏、改档位、边缘隐藏都会在宽度不变的
+    /// 情况下真的挪动面板，只比宽度会把它们一起吃掉。
     private func setFrames(_ pairs: [(NSPanel, NSRect)], animated: Bool) {
+        // **和上一次的目标比，不和面板的实时 frame 比。**
+        // 实时 frame 在动画途中是插值出来的中间值，永远和目标不等——那样这个短路一次都不会命中
+        // （实测 0 次）。AGENTS《Menus, Panels, And Screens》早写过同一条：relayout 是目标
+        // frame 驱动的，别在动画期间读面板的实时 frame。
+        let targets = pairs.map(\.1)
+        guard targets != lastCommittedFrames else {
+            HoverTrace.framesUnchanged()
+            return
+        }
+        lastCommittedFrames = targets
         guard animated else { for (p, f) in pairs { p.setFrame(f, display: true) }; return }
         NSAnimationContext.runAnimationGroup { ctx in
             ctx.duration = Self.layoutAnimationDuration

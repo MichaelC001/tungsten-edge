@@ -308,7 +308,10 @@ struct DockStripView: View {
 
     var body: some View {
         let projection = makeProjection()
-        ZStack {
+        // 「一次点击让整条重算了几次」——`DockStripView` 订阅整个 `AppRuntime`，
+        // 任何一个 `@Published` 变化都会打翻整条。默认关，`DOCK_HOVER_TRACE=1` 才记。
+        let _ = HoverTrace.stripBody(items: projection.entries.count)
+        return ZStack {
             // macOS 26 的 Liquid Glass 由统一底板接管；默认关闭，旧系统与未开关时仍是原毛玻璃。
             DockPanelBackdrop(theme: theme,
                               cornerRadius: taskbarCornerRadius,
@@ -1391,53 +1394,68 @@ struct ChipView: View {
 
     // MARK: - Labeled chip
 
+    /// 药丸的底 + 描边，是这张卡上**唯一**还随悬停变化的东西。
+    /// 逐帧插值的范围就到这里为止，理由见 `multiWindowChip` 里的注释。
+    private var pillEmphasisBackground: some View {
+        ChipHoverProgress(progress: showsHover ? 1 : 0) { progress in
+            let shape = RoundedRectangle(cornerRadius: 10 * scale, style: .continuous)
+            // 悬停进度的诊断采样点必须留在这里——它要的就是逐帧的 progress
+            //（`DOCK_CHIP_ANIM_TRACE=1`，默认关）。
+            let _ = ChipAnimationTrace.record(
+                chipID: item.id,
+                kind: "window",
+                visual: ChipHoverVisual.resolve(progress: progress, scale: scale),
+                isTapPressed: isTapPressed,
+                showsHover: showsHover
+            )
+            shape
+                .fill(theme.chipPillFill.color(emphasisProgress: Double(progress)))
+                .overlay(
+                    shape.strokeBorder(
+                        theme.chipPillRimStyle(emphasisProgress: Double(progress)),
+                        lineWidth: 0.5
+                    )
+                )
+        }
+        .animation(.easeInOut(duration: 0.18), value: showsHover)
+    }
+
     private var multiWindowChip: some View {
         // 图标恒为原色（不按状态淡化，owner 2026-08-02）；「在不在桌面上」只由标题颜色表达。
         let titleColor: Color = effectiveIsOnDesktop ? theme.labelActive.color : theme.labelInactive.color
         let capturedDisplayTitle = displayTitle
-        return ChipHoverProgress(progress: showsHover ? 1 : 0) { progress in
-            let hover = ChipHoverVisual.resolve(progress: progress, scale: scale)
-            let _ = ChipAnimationTrace.record(
-                chipID: item.id,
-                kind: "window",
-                visual: hover,
-                isTapPressed: isTapPressed,
-                showsHover: showsHover
-            )
-            let pill = HStack(spacing: ChipPillMetrics.iconSpacing * scale) {
-                appIcon(size: hover.pillIconSize)
-                    .frame(width: ChipPillMetrics.iconSlot * scale, height: ChipPillMetrics.iconSlot * scale)
-                Text(capturedDisplayTitle)
-                    .font(.system(size: max(10, 12 * scale), weight: .medium, design: .rounded))
-                    .foregroundStyle(titleColor)
-                    .lineLimit(1)
-                    .frame(maxWidth: WindowTitleTextMetrics.maximumWidth(for: scale), alignment: .leading)
-            }
-            .padding(.horizontal, ChipPillMetrics.horizontalPadding * scale)
-            .frame(height: hover.pillHeight)
-            .background(
-                RoundedRectangle(cornerRadius: 10 * scale, style: .continuous)
-                    .fill(theme.chipPillFill.color(emphasisProgress: hover.emphasisProgress))
-                    .overlay(
-                        RoundedRectangle(cornerRadius: 10 * scale, style: .continuous)
-                            .strokeBorder(
-                                theme.chipPillRimStyle(emphasisProgress: hover.emphasisProgress),
-                                lineWidth: 0.5
-                            )
-                    )
-            )
-
-            VStack(spacing: 0) {
-                Spacer(minLength: 0)
-                pill
-                    .frame(height: ChipPillMetrics.boxHeight * scale, alignment: .top)
-                    
-                Spacer(minLength: 0)
-            }
-            .frame(height: ChipPillMetrics.chipHeight * scale)
-            .padding(.horizontal, ChipPillMetrics.titledCardInset * scale)
+        // **可动画标量只包住药丸的底和描边，不包整张卡。**
+        //
+        // `ChipHoverProgress` 是 `Animatable` 视图：它的 `animatableData` 每变一次就重跑一次
+        // 内容闭包。以前它裹着整张卡，于是 0.18s 动画的**每一帧**都要把图标、文字、
+        // 内边距、布局整套重算，而真正在动的只有药丸底色和描边——`ChipHoverVisual` 的
+        // 其余字段（图标尺寸、药丸高度）在 2026-08-16 冻结悬停几何之后全是常量。
+        // 横扫一排标题卡时这笔开销是乘以卡数的。
+        //
+        // 缩进 `.background` 之后逐帧重算的只剩两个 shape，插值函数和数值一模一样，
+        // 所以观感逐像素不变（那是签收过的观感）。
+        let metrics = ChipHoverVisual.resolve(progress: 0, scale: scale)
+        let pill = HStack(spacing: ChipPillMetrics.iconSpacing * scale) {
+            appIcon(size: metrics.pillIconSize)
+                .frame(width: ChipPillMetrics.iconSlot * scale, height: ChipPillMetrics.iconSlot * scale)
+            Text(capturedDisplayTitle)
+                .font(.system(size: max(10, 12 * scale), weight: .medium, design: .rounded))
+                .foregroundStyle(titleColor)
+                .lineLimit(1)
+                .frame(maxWidth: WindowTitleTextMetrics.maximumWidth(for: scale), alignment: .leading)
         }
-        .animation(.easeInOut(duration: 0.18), value: showsHover)
+        .padding(.horizontal, ChipPillMetrics.horizontalPadding * scale)
+        .frame(height: metrics.pillHeight)
+        .background(pillEmphasisBackground)
+
+        return VStack(spacing: 0) {
+            Spacer(minLength: 0)
+            pill
+                .frame(height: ChipPillMetrics.boxHeight * scale, alignment: .top)
+            Spacer(minLength: 0)
+        }
+        .frame(height: ChipPillMetrics.chipHeight * scale)
+        .padding(.horizontal, ChipPillMetrics.titledCardInset * scale)
         // 安静档的悬停反馈：整块轻微放大（标准档那一档的反馈是名字气泡 + 药丸提亮）。
         .chipQuietHoverScale(quietHoverFeedback)
         .chipPressScale(isTapPressed)
