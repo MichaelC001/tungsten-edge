@@ -118,7 +118,7 @@ final class UpdateCheckerTests: XCTestCase {
 
         XCTAssertEqual(content.openURL, UpdateCheckAlertContent.downloadPageURL)
         XCTAssertNotEqual(content.openURL, releaseURL)
-        XCTAssertEqual(content.openButtonTitle, "前往下载")
+        XCTAssertEqual(content.openButtonTitle, String(localized: "Download"))
     }
 
     func testMenuStateRejectsDuplicateChecksAndRestoresAfterFinish() {
@@ -126,10 +126,10 @@ final class UpdateCheckerTests: XCTestCase {
 
         XCTAssertTrue(state.begin())
         XCTAssertFalse(state.begin())
-        XCTAssertEqual(state.presentation, UpdateCheckMenuPresentation(title: "正在检查更新…", isEnabled: false))
+        XCTAssertEqual(state.presentation, UpdateCheckMenuPresentation(title: String(localized: "Checking for Updates…"), isEnabled: false))
 
         state.finish()
-        XCTAssertEqual(state.presentation, UpdateCheckMenuPresentation(title: "检查更新…", isEnabled: true))
+        XCTAssertEqual(state.presentation, UpdateCheckMenuPresentation(title: String(localized: "Check for Updates…"), isEnabled: true))
         XCTAssertTrue(state.begin())
     }
 

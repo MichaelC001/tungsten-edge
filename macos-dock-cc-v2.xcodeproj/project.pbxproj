@@ -212,6 +212,8 @@
 		A0000000000000000000B062 /* PermissionOnboardingTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A0000000000000000000B060 /* PermissionOnboardingTests.swift */; };
 		A00000000000000000001014 /* StripItem.swift in Sources */ = {isa = PBXBuildFile; fileRef = A00000000000000000000014 /* StripItem.swift */; };
 		A00000000000000000001015 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = A00000000000000000000015 /* Assets.xcassets */; };
+		A00000000000000000001F10 /* Localizable.xcstrings in Resources */ = {isa = PBXBuildFile; fileRef = A00000000000000000000F10 /* Localizable.xcstrings */; };
+		A00000000000000000001F11 /* InfoPlist.xcstrings in Resources */ = {isa = PBXBuildFile; fileRef = A00000000000000000000F11 /* InfoPlist.xcstrings */; };
 		A00000000000000000001016 /* main.swift in Sources */ = {isa = PBXBuildFile; fileRef = A00000000000000000000017 /* main.swift */; };
 		A0000000000000000000101C /* ObservationKindMergeRule.swift in Sources */ = {isa = PBXBuildFile; fileRef = A00000000000000000000053 /* ObservationKindMergeRule.swift */; };
 		A0000000000000000000101D /* AXWindowReader.swift in Sources */ = {isa = PBXBuildFile; fileRef = A00000000000000000000054 /* AXWindowReader.swift */; };
@@ -404,6 +406,8 @@
 		A00000000000000000000014 /* StripItem.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StripItem.swift; sourceTree = "<group>"; };
 		A00000000000000000000015 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
 		A00000000000000000000016 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Resources/Info.plist; sourceTree = SOURCE_ROOT; };
+		A00000000000000000000F10 /* Localizable.xcstrings */ = {isa = PBXFileReference; lastKnownFileType = text.json.xcstrings; path = Localizable.xcstrings; sourceTree = "<group>"; };
+		A00000000000000000000F11 /* InfoPlist.xcstrings */ = {isa = PBXFileReference; lastKnownFileType = text.json.xcstrings; path = InfoPlist.xcstrings; sourceTree = "<group>"; };
 		A00000000000000000000017 /* main.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = main.swift; sourceTree = "<group>"; };
 		A00000000000000000000018 /* macos-dock-cc-v2.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = "macos-dock-cc-v2.app"; sourceTree = BUILT_PRODUCTS_DIR; };
 		A00000000000000000000019 /* window-lab */ = {isa = PBXFileReference; explicitFileType = "compiled.mach-o.executable"; includeInIndex = 0; path = "window-lab"; sourceTree = BUILT_PRODUCTS_DIR; };
@@ -836,6 +840,8 @@
 			children = (
 				A00000000000000000000015 /* Assets.xcassets */,
 				A00000000000000000000016 /* Info.plist */,
+				A00000000000000000000F10 /* Localizable.xcstrings */,
+				A00000000000000000000F11 /* InfoPlist.xcstrings */,
 			);
 			path = Resources;
 			sourceTree = "<group>";
@@ -1026,6 +1032,7 @@
 			knownRegions = (
 				en,
 				Base,
+				"zh-Hans",
 			);
 			mainGroup = A0000000000000000000001C;
 			productRefGroup = A00000000000000000000023 /* Products */;
@@ -1045,6 +1052,8 @@
 			buildActionMask = 2147483647;
 			files = (
 				A00000000000000000001015 /* Assets.xcassets in Resources */,
+				A00000000000000000001F10 /* Localizable.xcstrings in Resources */,
+				A00000000000000000001F11 /* InfoPlist.xcstrings in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

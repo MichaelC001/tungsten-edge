@@ -186,19 +186,19 @@ struct LauncherChip: View {
             case .open:
                 // 右键「打开」：复用 runtime 启动路径，但不触发 onPrimaryAction——
                 // 否则抽屉图标右键打开会顺手关掉抽屉。
-                menu.addItem(ClosureMenuItem("打开") { launch(firePrimaryAction: false) })
+                menu.addItem(ClosureMenuItem(String(localized: "Open")) { launch(firePrimaryAction: false) })
             case .recentDocuments:
                 AppMenuBuilder.appendRecentDocuments(to: menu, bundleID: bundleID)
             case .show:
                 if !runningApps.isEmpty {
-                    menu.addItem(ClosureMenuItem("显示") {
+                    menu.addItem(ClosureMenuItem(String(localized: "Show")) {
                         for app in runningApps { _ = app.unhide() }
                         runningApps.first?.activate(options: .activateIgnoringOtherApps)
                     })
                 }
             case .hide:
                 if !runningApps.isEmpty {
-                    menu.addItem(ClosureMenuItem("隐藏") {
+                    menu.addItem(ClosureMenuItem(String(localized: "Hide")) {
                         for app in runningApps { _ = app.hide() }
                     })
                 }

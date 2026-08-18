@@ -33,10 +33,10 @@ enum DockSize: String, CaseIterable {
 
     var title: String {
         switch self {
-        case .small: return "小"
-        case .medium: return "中"
-        case .large: return "大"
-        case .extraLarge: return "特大"
+        case .small: return String(localized: "Small")
+        case .medium: return String(localized: "Medium")
+        case .large: return String(localized: "Large")
+        case .extraLarge: return String(localized: "Extra Large")
         }
     }
 

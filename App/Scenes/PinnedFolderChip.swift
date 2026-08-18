@@ -112,11 +112,11 @@ struct PinnedFolderChip: View {
 
     private func buildMenu() -> NSMenu {
         let menu = NSMenu()
-        menu.addItem(ClosureMenuItem("预览内容") { onPreview() })
-        menu.addItem(ClosureMenuItem("在访达中打开") { onOpenInFinder() })
+        menu.addItem(ClosureMenuItem(String(localized: "Preview Contents")) { onPreview() })
+        menu.addItem(ClosureMenuItem(String(localized: "Open in Finder")) { onOpenInFinder() })
         menu.addItem(.separator())
         // 排序方式 ▸（原生 Stacks 同款）：弹窗网格与 chip 封面都跟随,逐文件夹记忆。
-        let sortItem = NSMenuItem(title: "排序方式", action: nil, keyEquivalent: "")
+        let sortItem = NSMenuItem(title: String(localized: "Sort by"), action: nil, keyEquivalent: "")
         let sortMenu = NSMenu()
         for order in FolderSortOrder.allCases {
             let item = ClosureMenuItem(order.menuTitle) { onSetSortOrder(order) }
@@ -126,8 +126,8 @@ struct PinnedFolderChip: View {
         sortItem.submenu = sortMenu
         menu.addItem(sortItem)
         menu.addItem(.separator())
-        menu.addItem(ClosureMenuItem("添加文件夹…") { onAddFolder() })
-        menu.addItem(ClosureMenuItem("从固定区移除") { onRemove() })
+        menu.addItem(ClosureMenuItem(String(localized: "Add Folder…")) { onAddFolder() })
+        menu.addItem(ClosureMenuItem(String(localized: "Remove from Taskbar")) { onRemove() })
         return menu
     }
 }

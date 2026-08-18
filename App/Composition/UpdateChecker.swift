@@ -118,13 +118,13 @@ enum UpdateCheckError: LocalizedError, Equatable {
     var errorDescription: String? {
         switch self {
         case .invalidCurrentVersion:
-            return "无法读取当前版本号。"
+            return String(localized: "Couldn’t read the current version number.")
         case .invalidLatestVersion:
-            return "最新版本号格式无效。"
+            return String(localized: "The latest version number is not in a valid format.")
         case .invalidResponse:
-            return "更新服务器返回了无效响应。"
+            return String(localized: "The update server returned an invalid response.")
         case .httpStatus(let status):
-            return "更新服务器返回状态码 \(status)。"
+            return String(format: String(localized: "The update server returned status code %d."), status)
         }
     }
 }
@@ -139,9 +139,9 @@ struct UpdateCheckMenuState {
 
     var presentation: UpdateCheckMenuPresentation {
         if isCheckingUpdates {
-            return UpdateCheckMenuPresentation(title: "正在检查更新…", isEnabled: false)
+            return UpdateCheckMenuPresentation(title: String(localized: "Checking for Updates…"), isEnabled: false)
         }
-        return UpdateCheckMenuPresentation(title: "检查更新…", isEnabled: true)
+        return UpdateCheckMenuPresentation(title: String(localized: "Check for Updates…"), isEnabled: true)
     }
 
     mutating func begin() -> Bool {
@@ -190,23 +190,23 @@ struct UpdateCheckAlertContent: Equatable {
         case let .updateAvailable(currentVersion, latestVersion, _):
             // 这里**故意不用** outcome 里的 releaseURL：那是 GitHub release 页，已经没有安装包了。
             self.init(
-                title: "发现新版本 \(latestVersion)",
-                message: "当前版本 \(currentVersion)。钨极目前仍需手动下载安装。",
-                openButtonTitle: "前往下载",
+                title: String(format: String(localized: "Version %@ Is Available"), latestVersion),
+                message: String(format: String(localized: "You have %@. Tungsten Edge still has to be downloaded and installed manually."), currentVersion),
+                openButtonTitle: String(localized: "Download"),
                 openURL: Self.downloadPageURL
             )
         case let .upToDate(currentVersion, latestVersion):
             self.init(
-                title: "当前已是最新版本",
-                message: "当前版本 \(currentVersion)，最新正式版为 \(latestVersion)。"
+                title: String(localized: "You’re Up to Date"),
+                message: String(format: String(localized: "You have %@; the latest release is %@."), currentVersion, latestVersion)
             )
         }
     }
 
     static let failure = UpdateCheckAlertContent(
-        title: "暂时无法检查更新",
-        message: "请检查网络连接后重试，也可以直接打开官网下载页。",
-        openButtonTitle: "打开官网",
+        title: String(localized: "Can’t Check for Updates Right Now"),
+        message: String(localized: "Check your network connection and try again, or open the download page directly."),
+        openButtonTitle: String(localized: "Open Website"),
         openURL: UpdateCheckAlertContent.downloadPageURL,
         isWarning: true
     )

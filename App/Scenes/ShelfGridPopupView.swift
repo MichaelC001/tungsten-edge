@@ -62,7 +62,7 @@ struct ShelfGridPopupView: View {
     private func gridBody(entries: [FolderContentsLoader.Entry], contentWidth: CGFloat, columnCount: Int) -> some View {
         VStack(spacing: 0) {
             if entries.isEmpty {
-                Text("拖文件到中转格暂存")
+                Text("Drag files here to park them")
                     .font(.system(size: Style.labelSize))
                     .foregroundStyle(theme.popupSecondaryText.color)
                     .frame(maxWidth: .infinity)

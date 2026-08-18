@@ -213,7 +213,8 @@ final class AppSettingsStoreTests: XCTestCase {
     func testDockSizeRawValuesAreStableAcrossReleases() {
         // raw value 进了 UserDefaults，改名等于把所有老用户的档位悄悄重置成中档。
         XCTAssertEqual(DockSize.allCases.map(\.rawValue), ["small", "medium", "large", "extraLarge"])
-        XCTAssertEqual(DockSize.allCases.map(\.title), ["小", "中", "大", "特大"])
+        XCTAssertEqual(DockSize.allCases.map(\.title),
+                       [String(localized: "Small"), String(localized: "Medium"), String(localized: "Large"), String(localized: "Extra Large")])
     }
 
     @MainActor
@@ -316,19 +317,19 @@ final class AppSettingsStoreTests: XCTestCase {
     func testLaunchAtLoginMenuPresentationCoversFourStates() {
         XCTAssertEqual(
             LaunchAtLoginMenuPresentation(state: .unsupported),
-            LaunchAtLoginMenuPresentation(title: "登录时启动（macOS 13+）", isEnabled: false, isChecked: false, showsSettingsItem: false)
+            LaunchAtLoginMenuPresentation(title: String(localized: "Open at Login (macOS 13+)"), isEnabled: false, isChecked: false, showsSettingsItem: false)
         )
         XCTAssertEqual(
             LaunchAtLoginMenuPresentation(state: .off),
-            LaunchAtLoginMenuPresentation(title: "登录时启动", isEnabled: true, isChecked: false, showsSettingsItem: false)
+            LaunchAtLoginMenuPresentation(title: String(localized: "Open at Login"), isEnabled: true, isChecked: false, showsSettingsItem: false)
         )
         XCTAssertEqual(
             LaunchAtLoginMenuPresentation(state: .on),
-            LaunchAtLoginMenuPresentation(title: "登录时启动", isEnabled: true, isChecked: true, showsSettingsItem: false)
+            LaunchAtLoginMenuPresentation(title: String(localized: "Open at Login"), isEnabled: true, isChecked: true, showsSettingsItem: false)
         )
         XCTAssertEqual(
             LaunchAtLoginMenuPresentation(state: .requiresApproval),
-            LaunchAtLoginMenuPresentation(title: "登录时启动（待批准）", isEnabled: true, isChecked: false, showsSettingsItem: true)
+            LaunchAtLoginMenuPresentation(title: String(localized: "Open at Login (Pending Approval)"), isEnabled: true, isChecked: false, showsSettingsItem: true)
         )
     }
 
@@ -609,11 +610,11 @@ final class AppSettingsStoreTests: XCTestCase {
     func testEdgeSectionTitleMentionsShortcutOnlyWhenRegistered() {
         XCTAssertEqual(
             AutoHideToggleMenuModel.edgeSectionTitle(isHotKeyRegistered: true),
-            "Tungsten Edge 钨极（⌥⇧⌘D 显隐）"
+            String(localized: "Tungsten Edge (⌥⇧⌘D to show/hide)")
         )
         XCTAssertEqual(
             AutoHideToggleMenuModel.edgeSectionTitle(isHotKeyRegistered: false),
-            "Tungsten Edge 钨极"
+            String(localized: "Tungsten Edge")
         )
     }
 
@@ -658,7 +659,8 @@ final class AppSettingsStoreTests: XCTestCase {
             description: AutoHideToggleMenuModel.nativeApplyTitle(draft: AppSettingsStore.neverWakeDelay)
         )
         // 按钮标题恒为「应用」，档位只走 accessibility：VoiceOver 用户看不到滑块位置。
-        XCTAssertEqual(row.accessibilityLabel(), "应用「不唤醒」（Dock 会重启一下）")
+        XCTAssertEqual(row.accessibilityLabel(),
+                       String(format: String(localized: "Apply “%@” (the Dock will restart)"), String(localized: "Never Wake")))
     }
 
     func testNativeApplyRowAppearsOnlyWhenDraftDiffersFromAppliedTier() {
@@ -681,24 +683,24 @@ final class AppSettingsStoreTests: XCTestCase {
     func testNativeApplyTitleNamesTheTargetTier() {
         XCTAssertEqual(
             AutoHideToggleMenuModel.nativeApplyTitle(draft: AppSettingsStore.neverWakeDelay),
-            "应用「不唤醒」（Dock 会重启一下）"
+            String(format: String(localized: "Apply “%@” (the Dock will restart)"), String(localized: "Never Wake"))
         )
         XCTAssertEqual(
             AutoHideToggleMenuModel.nativeApplyTitle(draft: AppSettingsStore.neverHideDelay),
-            "应用「常驻」（Dock 会重启一下）"
+            String(format: String(localized: "Apply “%@” (the Dock will restart)"), String(localized: "Always Visible"))
         )
         XCTAssertEqual(
             AutoHideToggleMenuModel.nativeApplyTitle(draft: 1.0),
-            "应用「1.0s」（Dock 会重启一下）"
+            String(format: String(localized: "Apply “%@” (the Dock will restart)"), "1.0s")
         )
     }
 
     func testDelayDisplayNameIsSharedBySliderAndApplyRow() {
         // 滑块本体与确认行必须同一口径，否则确认行说的档位和滑块显示的不是一回事。
-        XCTAssertEqual(AutoHideToggleMenuModel.delayDisplayName(sliderIndex: 0), "常驻")
+        XCTAssertEqual(AutoHideToggleMenuModel.delayDisplayName(sliderIndex: 0), String(localized: "Always Visible"))
         XCTAssertEqual(
             AutoHideToggleMenuModel.delayDisplayName(sliderIndex: AppSettingsStore.sliderIndexMax),
-            "不唤醒"
+            String(localized: "Never Wake")
         )
         XCTAssertEqual(
             AutoHideToggleMenuModel.delayDisplayName(
@@ -795,7 +797,8 @@ final class AppSettingsStoreTests: XCTestCase {
         // ⌥⌘D 归 macOS，我们不定义也不注册它。删掉显隐命令后它是「把 Dock 临时叫回来」的
         // 唯一一键入口，所以标题必须提到它——但只能是纯文字，设成 keyEquivalent 会被菜单捕获。
         XCTAssertTrue(AutoHideToggleMenuModel.nativeDockSectionTitle.contains("⌥⌘D"))
-        XCTAssertTrue(AutoHideToggleMenuModel.nativeDockSectionTitle.contains("系统 Dock"))
+        // 「Dock」两种语言里都在（中文「系统 Dock」/ 英文「The Dock」），断言语言无关的那部分。
+        XCTAssertTrue(AutoHideToggleMenuModel.nativeDockSectionTitle.contains("Dock"))
     }
 
     func testReconciledStoreDelayAlignsStoreWithSystemTruth() {

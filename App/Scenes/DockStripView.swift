@@ -728,7 +728,9 @@ struct DockStripView: View {
             return appBubbleName(bundleID: bid, fallback: bid)
         case .shelf:
             let count = shelfStore.itemPaths.count
-            return count > 0 ? "中转 · \(count)" : "中转"
+            return count > 0
+                ? String(format: String(localized: "Shelf · %d"), count)
+                : String(localized: "Shelf")
         case .pinnedFolder, .divider:
             return nil
         }
@@ -1599,9 +1601,9 @@ struct ChipView: View {
         if item.isAppLevelFallback {
             if isFinderChip { AppMenuBuilder.appendFinderItems(to: menu) }
             if effectiveStatus == "hidden" {
-                menu.addItem(ClosureMenuItem("显示") { runtime.activate(windowID: item.actionWindowID) })
+                menu.addItem(ClosureMenuItem(String(localized: "Show")) { runtime.activate(windowID: item.actionWindowID) })
             } else {
-                menu.addItem(ClosureMenuItem("隐藏") { runtime.hide(windowID: item.actionWindowID) })
+                menu.addItem(ClosureMenuItem(String(localized: "Hide")) { runtime.hide(windowID: item.actionWindowID) })
             }
             // 成员项在前、退出恒为末项——与下面的窗口卡片分支保持一致。
             appendMembershipItems(to: menu)
@@ -1611,22 +1613,22 @@ struct ChipView: View {
             }
         } else {
             if isFinderChip { AppMenuBuilder.appendFinderItems(to: menu) }
-            menu.addItem(ClosureMenuItem("新建窗口") { runtime.newWindow(windowID: item.actionWindowID) })
+            menu.addItem(ClosureMenuItem(String(localized: "New Window")) { runtime.newWindow(windowID: item.actionWindowID) })
             if effectiveStatus == "minimized" {
-                menu.addItem(ClosureMenuItem("还原") { runtime.activate(windowID: item.actionWindowID) })
+                menu.addItem(ClosureMenuItem(String(localized: "Restore")) { runtime.activate(windowID: item.actionWindowID) })
             } else {
-                menu.addItem(ClosureMenuItem("最小化") { runtime.minimize(windowID: item.actionWindowID) })
+                menu.addItem(ClosureMenuItem(String(localized: "Minimize")) { runtime.minimize(windowID: item.actionWindowID) })
             }
             if effectiveStatus == "hidden" {
-                menu.addItem(ClosureMenuItem("显示") { runtime.activate(windowID: item.actionWindowID) })
+                menu.addItem(ClosureMenuItem(String(localized: "Show")) { runtime.activate(windowID: item.actionWindowID) })
             } else {
-                menu.addItem(ClosureMenuItem("隐藏 App") { runtime.hide(windowID: item.actionWindowID) })
+                menu.addItem(ClosureMenuItem(String(localized: "Hide App")) { runtime.hide(windowID: item.actionWindowID) })
             }
             appendMembershipItems(to: menu)
             menu.addItem(.separator())
             // 整组关闭（2026-06-14）：标签组的「关闭窗口」关掉组内每个标签；
             // 普通窗口 memberWindowIDs == [id]，行为不变。
-            menu.addItem(ClosureMenuItem("关闭窗口") {
+            menu.addItem(ClosureMenuItem(String(localized: "Close Window")) {
                 for wid in item.memberWindowIDs { runtime.close(windowID: wid) }
             })
             AppMenuBuilder.appendQuitItems(to: menu, bundleID: bid) {

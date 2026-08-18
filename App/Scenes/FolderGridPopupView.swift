@@ -233,7 +233,7 @@ struct FolderGridPopupView: View {
                 .overlay(Circle().strokeBorder(theme.backChipRim.color, lineWidth: 0.5))
                 .contentShape(Circle())
                 .onTapGesture { _ = drillStack.removeLast() }
-                .help("返回上一级")
+                .help(Text("Back"))
                 .padding(10)
                 .transition(.opacity)
         }
@@ -244,13 +244,13 @@ struct FolderGridPopupView: View {
     private var gridBody: some View {
         VStack(spacing: 0) {
             if model.loadFailed {
-                Text("无法读取文件夹内容")
+                Text("Can’t read this folder")
                     .font(.system(size: 12, weight: .medium))
                     .foregroundStyle(theme.popupPrimaryText.color)
                     .frame(maxWidth: .infinity)
                     .padding(.vertical, 14)
             } else if model.entries.isEmpty && model.didFirstLoad {
-                Text("文件夹是空的")
+                Text("This folder is empty")
                     .font(.system(size: Style.labelSize))
                     .foregroundStyle(theme.popupSecondaryText.color)
                     .frame(maxWidth: .infinity)
@@ -265,7 +265,7 @@ struct FolderGridPopupView: View {
                                    contextMenu: { cellMenu(for: entry) }) { open(entry) }
                 }
                 // 原生同款尾格：在访达中打开当前目录。
-                FolderGridCell(iconPath: nil, staticIcon: Self.finderIcon, label: "在访达中打开") {
+                FolderGridCell(iconPath: nil, staticIcon: Self.finderIcon, label: String(localized: "Open in Finder")) {
                     NSWorkspace.shared.open(currentURL)
                     onFileOpened()
                 }

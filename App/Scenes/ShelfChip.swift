@@ -32,7 +32,9 @@ struct ShelfChip: View {
     /// 件数原本只写在悬停名字里，安静档下那行不出现，所以并进系统 tooltip 兜底。
     /// 两档都生效，条上不改变任何像素。
     private var helpText: String {
-        itemCount > 0 ? "中转 · \(itemCount)：拖文件到这里暂存" : "中转：拖文件到这里暂存"
+        itemCount > 0
+            ? String(format: String(localized: "Shelf · %d — drag files here to park them"), itemCount)
+            : String(localized: "Shelf — drag files here to park them")
     }
 
     var body: some View {
@@ -97,12 +99,12 @@ struct ShelfChip: View {
 
     private func buildMenu() -> NSMenu {
         let menu = NSMenu()
-        menu.addItem(ClosureMenuItem("打开中转") { onTap() })
+        menu.addItem(ClosureMenuItem(String(localized: "Open Shelf")) { onTap() })
         if itemCount > 0 {
-            menu.addItem(ClosureMenuItem("清空中转") { onClear() })
+            menu.addItem(ClosureMenuItem(String(localized: "Clear Shelf")) { onClear() })
         }
         menu.addItem(.separator())
-        menu.addItem(ClosureMenuItem("添加文件夹…") { onAddFolder() })
+        menu.addItem(ClosureMenuItem(String(localized: "Add Folder…")) { onAddFolder() })
         return menu
     }
 }
