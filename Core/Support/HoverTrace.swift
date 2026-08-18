@@ -3,7 +3,8 @@ import Foundation
 import QuartzCore
 
 /// 任务条交互的手感诊断。默认关闭，`DOCK_HOVER_TRACE=1` 打开。
-/// （文件名沿用 `hover-trace.jsonl`：它最初只量悬停，2026-08-17 扩到点击 / 最小化那条路径。）
+/// （文件名沿用 `hover-trace.jsonl`：它最初只量悬停，2026-08-17 扩到点击 / 最小化那条路径，
+/// 2026-08-18 再扩到拖拽。所有手感诊断共用这一个开关和一个文件——多开一套 I/O 没有意义。）
 ///
 /// 悬停部分回答两个问题：
 /// 1. **鼠标匀速划过一排图标时，每个 chip 都收到悬停回调了吗？** 少了就是事件被合并掉了，
@@ -86,6 +87,135 @@ enum HoverTrace {
         guard isEnabled else { return }
         Writer.shared.append("{\"t\":\(stamp()),\"kind\":\"action\",\"what\":\(quote(kind)),\"phase\":\(quote(phase))}")
     }
+
+    // MARK: - 拖拽（owner 2026-08-18 报「从抽屉拖进任务条不容易挤开别的图标 / 会出现两个影子」）
+
+    /// 抽屉图标拖向任务条时，**每一次光标位置更新**都记一行判定现场。
+    ///
+    /// 这条存在的理由和 `pointer` 一样：转正判定是一串 `guard`，任何一条不过就静默返回，
+    /// 从外面看全是「没反应」。没有这一行只能靠猜是几何、是模式、还是落点。
+    /// `enter` / `clearlyOut` 是那个迟滞框的两个布尔，`mode` 是 `DrawerDragOutMode`。
+    static func drawerToStrip(x: CGFloat, y: CGFloat,
+                              strip: CGRect,
+                              enter: Bool, clearlyOut: Bool,
+                              mode: String, converted: Bool) {
+        guard isEnabled else { return }
+        Writer.shared.append(
+            "{\"t\":\(stamp()),\"kind\":\"d2s\",\"x\":\(r1(x)),\"y\":\(r1(y))," +
+            "\"sx\":\(r1(strip.minX)),\"sy\":\(r1(strip.minY))," +
+            "\"sw\":\(r1(strip.width)),\"sh\":\(r1(strip.height))," +
+            "\"enter\":\(enter),\"out\":\(clearlyOut),\"mode\":\(quote(mode)),\"conv\":\(converted)}"
+        )
+    }
+
+    /// 转正 / 回滚那一刻的落点暂存。**`target` 为 null = 整块落到 live 区末尾**——
+    /// 而转正期间任务条宽度是冻结的，落末尾往往被裁在可视区外，看起来就是「什么都没发生」。
+    static func drawerToStripStage(bundleID: String, target: String?, after: Bool) {
+        guard isEnabled else { return }
+        Writer.shared.append(
+            "{\"t\":\(stamp()),\"kind\":\"d2sStage\",\"bid\":\(quote(bundleID))," +
+            "\"target\":\(target.map(quote) ?? "null"),\"after\":\(after)}"
+        )
+    }
+
+    /// 转正态下「载体画哪张卡」与「条上隐藏哪张卡」各是谁。
+    /// 两者**必须同时有值**，否则条上那张卡不透明地画着、手里又拎着一个 = 两个影子。
+    static func carrierRepresentative(rep: String?, hidden: String?) {
+        guard isEnabled else { return }
+        Writer.shared.append(
+            "{\"t\":\(stamp()),\"kind\":\"carrierRep\"," +
+            "\"rep\":\(rep.map(quote) ?? "null"),\"hidden\":\(hidden.map(quote) ?? "null")}"
+        )
+    }
+
+    /// 转正后的整块连续重排：这一次有没有找到落点目标。`target` 为 null = 光标没压在任何一张
+    /// live 卡上（在条外、在消息区/文件夹区、或在卡与卡之间），于是**整块原地不动**。
+    static func stripBlockReorder(target: String?, after: Bool, why: String) {
+        guard isEnabled else { return }
+        Writer.shared.append(
+            "{\"t\":\(stamp()),\"kind\":\"blockReorder\",\"target\":\(target.map(quote) ?? "null")," +
+            "\"after\":\(after),\"why\":\(quote(why))}"
+        )
+    }
+
+    /// 起拖那一帧各步花了多久（owner 2026-08-18 报「选中图标拖动的第一帧有卡顿」）。
+    /// `carrierCreated` = 这次是不是现建的载体面板——建面板要连带起一棵 SwiftUI 宿主树，
+    /// 只有整个会话的第一次拖动会付这笔钱，靠它才分得清「每次都卡」还是「只有第一次卡」。
+    static func dragStart(totalMs: Double, carrierMs: Double, carrierCreated: Bool) {
+        guard isEnabled else { return }
+        Writer.shared.append(
+            "{\"t\":\(stamp()),\"kind\":\"dragStart\",\"ms\":\(round(totalMs * 10) / 10)," +
+            "\"carrierMs\":\(round(carrierMs * 10) / 10),\"created\":\(carrierCreated)}"
+        )
+    }
+
+    /// 起拖之后的三个时刻，用来定位「图标凭空消失」那段空档到底卡在哪一步。
+    /// `what` 取值：`beginDrag` / `slotHidden`（条上那张卡真的藏了）/ `carrierDrawn`（副本真的画了第一帧）。
+    /// **空档 = slotHidden 早于 carrierDrawn**，两者之差就是屏幕上什么都没有的时长。
+    static func dragHandoff(_ what: String, msSinceBegin: Double) {
+        guard isEnabled else { return }
+        Writer.shared.append(
+            "{\"t\":\(stamp()),\"kind\":\"handoff\",\"what\":\(quote(what))," +
+            "\"ms\":\(round(msSinceBegin * 10) / 10)}"
+        )
+    }
+
+    /// 载体宿主视图摆到哪了：想要的原点、设完立刻读回的、下一轮再读回的、以及它是不是还在自动布局手里。
+    /// **`deferred` 和 `wanted` 对不上就说明有人把它挪走了**（自动布局在下一次 layout 覆盖 frame 是头号嫌疑）。
+    static func carrierPlacement(wanted: CGPoint, immediate: CGPoint, deferred: CGPoint,
+                                 size: CGSize, autolayout: Bool) {
+        guard isEnabled else { return }
+        Writer.shared.append(
+            "{\"t\":\(stamp()),\"kind\":\"place\",\"wx\":\(r1(wanted.x)),\"wy\":\(r1(wanted.y))," +
+            "\"ix\":\(r1(immediate.x)),\"iy\":\(r1(immediate.y))," +
+            "\"dx\":\(r1(deferred.x)),\"dy\":\(r1(deferred.y))," +
+            "\"w\":\(r1(size.width)),\"h\":\(r1(size.height)),\"al\":\(autolayout)}"
+        )
+    }
+
+    /// **不变量自检**：条上那格已经空了，副本却不在屏幕上 —— 这一刻用户看到的就是「图标凭空消失」。
+    /// 把「偶尔会出现」变成一条可以事后统计的记录，不用再靠截图猜。
+    static func carrierGap(reason: String, alpha: Double, hostX: CGFloat, hostY: CGFloat) {
+        guard isEnabled else { return }
+        Writer.shared.append(
+            "{\"t\":\(stamp()),\"kind\":\"GAP\",\"why\":\(quote(reason))," +
+            "\"alpha\":\(round(alpha * 100) / 100),\"hx\":\(r1(hostX)),\"hy\":\(r1(hostY))}"
+        )
+    }
+
+    /// 副作用路径 `reconcileLiveOrder` 这一轮拿到的是不是**新鲜**的 projection。
+    ///
+    /// 这条是 2026-08-18 那个坑的直接证据，值得常驻：老式 `onChange(of:perform:)` 触发时
+    /// 跑的是上一帧装进去的闭包，projection 落后一代——渲染已经有这张卡了、`sync` 手里还没有，
+    /// 于是抽屉转正的落点暂存一次都没被消费。`carried=true` 而 `has=false` 就是它复发了。
+    static func orderSync(count: Int, carriedID: String?, hasCarried: Bool) {
+        guard isEnabled else { return }
+        Writer.shared.append(
+            "{\"t\":\(stamp()),\"kind\":\"orderSync\",\"n\":\(count)," +
+            "\"carried\":\(carriedID.map(quote) ?? "null"),\"has\":\(hasCarried)}"
+        )
+    }
+
+    /// 顺序层真正落子后的可见序（只在拖拽诊断打开时记）。判「缝到底开在哪一格」的最终依据。
+    static func liveOrder(_ ids: [String]) {
+        guard isEnabled else { return }
+        Writer.shared.append(
+            "{\"t\":\(stamp()),\"kind\":\"liveOrder\",\"ids\":[\(ids.map(quote).joined(separator: ","))]}"
+        )
+    }
+
+    /// 松手后的归位飞行：起点、终点、有没有拿到锚点。
+    /// `to` 为 null = 没有落点锚点，走瞬时收尾（老行为）。
+    static func landing(from: CGPoint, to: CGPoint?, source: String) {
+        guard isEnabled else { return }
+        let target = to.map { "[\(r1($0.x)),\(r1($0.y))]" } ?? "null"
+        Writer.shared.append(
+            "{\"t\":\(stamp()),\"kind\":\"landing\",\"from\":[\(r1(from.x)),\(r1(from.y))]," +
+            "\"to\":\(target),\"src\":\(quote(source))}"
+        )
+    }
+
+    private static func r1(_ value: CGFloat) -> Double { (Double(value) * 10).rounded() / 10 }
 
     private static func stamp() -> Double { round(CACurrentMediaTime() * 10000) / 10 }
 

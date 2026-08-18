@@ -1007,6 +1007,12 @@ final class PanelCoordinator: NSObject {
         dragController.onDrawerToStripCompleted = { [weak self] _ in
             self?.closeDrawerAfterAction()
         }
+        // 载体面板提前建好，别让用户的第一次拖动付那 20ms + 一次 39ms 主线程卡顿
+        // （理由与实测见 `DragController.prewarmCarrier`）。**排到下一轮 run loop**：
+        // 启动是一整笔首帧事务，不能往里塞额外的 SwiftUI 布局。
+        DispatchQueue.main.async { [weak dragController] in
+            dragController?.prewarmCarrier()
+        }
     }
 
     /// 投放候选区（屏幕坐标），按拖动来源分：
@@ -1055,7 +1061,7 @@ final class PanelCoordinator: NSObject {
     private func subscribeDragSpringLoad() {
         // 订阅 globalLocation（不是 isOverDropZone）——光标回到任务条上不改 isOverDropZone,
         // 必须靠位置才能实时收回抽屉（owner 2026-06-21：拖回任务条即收、再移回胶囊再开）。
-        dragSpringSubscription = dragController.$globalLocation
+        dragSpringSubscription = dragController.pointerMoves
             .combineLatest(dragController.$draggingPayload)
             .receive(on: DispatchQueue.main)
             .sink { [weak self] location, payload in

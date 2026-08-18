@@ -134,7 +134,11 @@ struct DrawerView: View {
         .padding(PanelCoordinator.shadowPadding)
         // 入场用弹窗同款快出缓停参数（PopoverAnimation）;网格重排等内容动画仍用 DrawerAnimation.duration。
         .onAppear { withAnimation(.easeOut(duration: PopoverAnimation.openDuration)) { isPresented = true } }
-        .onPreferenceChange(DrawerChipFramePreferenceKey.self) { drawerFrames = $0 }
+        // 格子帧变了就重报落点锚点（理由同任务条那侧：松手后指针没事件了，网格还在重排）。
+        .onPreferenceChange(DrawerChipFramePreferenceKey.self) { frames in
+            drawerFrames = frames
+            updateLandingAnchor()
+        }
         .onPreferenceChange(DrawerContentHeightKey.self) { contentHeight = $0 }
         // 拖动中被拖图标的 app 从成员里消失（外部移除等）→ 取消拖动，免得空位卡死。
         // 例外：转正进任务条（抽屉拖回任务条·精确落点）会**主动**把它移出抽屉，不算异常消失，不取消。
@@ -146,7 +150,11 @@ struct DrawerView: View {
         }
         // 任务条卡拖进抽屉时跟光标算运行区落点；抽屉内拖动时跟光标做重排。都由全局鼠标位置驱动,
         // 不在 body 里发布(用 onChange + 去重,Codex 二审 P2-6)。
-        .onChange(of: dragController.globalLocation) { _ in updateStripDropPreview(); updateDrawerReorder() }
+        // `onReceive` 而不是 `onChange(of: globalLocation)`，理由同 `DockStripView`：
+        // 那个值一旦是 `@Published`，每动一下鼠标就要把整个面板打翻重算。
+        .onReceive(dragController.pointerMoves) { _ in
+            updateStripDropPreview(); updateDrawerReorder(); updateLandingAnchor()
+        }
         .onChange(of: dragController.draggingPayload?.id) { _ in updateStripDropPreview() }
     }
 
@@ -207,9 +215,27 @@ struct DrawerView: View {
 
     // MARK: - 单个图标（含拖动）
 
+    /// `carriedPayload` 而不是 `draggingPayload`：松手后还有一段归位飞行，
+    /// 那段时间格子必须继续空着，否则图标先在格子里显形、载体还在往这儿飞。
     private func isDragging(_ id: String) -> Bool {
-        guard let p = dragController.draggingPayload else { return false }
+        guard let p = dragController.hiddenSlotPayload else { return false }
         return p.source == .drawer && p.id == id
+    }
+
+    /// 松手时浮动副本该飞回抽屉哪一格（屏幕坐标）。任务条侧同样在写它那一份，靠 owner 标签分开。
+    /// 任务条卡收进抽屉（来源已翻成 `.drawer`）也走这里 —— 图标会直接飞进它落定的格子。
+    private func updateLandingAnchor() {
+        let anchor: CGRect? = {
+            // `carriedPayload`：飞行途中也要继续报，网格重排落定后才纠得了偏。
+            guard let p = dragController.carriedPayload, p.source == .drawer,
+                  !dragController.isConvertedToStrip,
+                  drawerRootScreenRect != .zero,
+                  let frame = drawerFrames[p.id] else { return nil }
+            return CGRect(x: drawerRootScreenRect.minX + frame.minX,
+                          y: drawerRootScreenRect.maxY - frame.maxY,
+                          width: frame.width, height: frame.height)
+        }()
+        dragController.setLandingAnchor(anchor, owner: .drawer)
     }
 
     private func membershipItems(for id: String) -> [LauncherMembershipItem] {

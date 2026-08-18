@@ -1,7 +1,12 @@
 import AppKit
+import Combine
 import SwiftUI
 
 // `DragSource` 定义在 Core/Support/DragConversionPlan.swift（纯决策层，测试 target 本地编译）。
+
+/// 载体面板的容器。普通透明视图，只为了不让 `NSHostingView` 直接当 `contentView`
+///（AGENTS 那条护栏），顺带让「摆位置」变成改一个子视图的 frame。
+private final class CarrierContainerView: NSView {}
 
 /// 载体（飘浮副本）画成什么样。
 enum DragVisualKind { case stripChip, drawerIcon, folderChip, keptAppIcon, messagingIcon }
@@ -29,11 +34,187 @@ struct DragPayload {
 @MainActor
 final class DragController: ObservableObject {
     @Published private(set) var draggingPayload: DragPayload?
-    @Published private(set) var globalLocation: CGPoint = .zero
     @Published private(set) var isOverDropZone = false
+
+    /// 拖动中的光标位置（屏幕坐标）。**刻意不是 `@Published`。**
+    ///
+    /// 实测 2026-08-18（`DOCK_HOVER_TRACE`）：它曾经是 `@Published`，而 `DockStripView`
+    /// 用 `@EnvironmentObject` 订阅着本对象——于是**每动一下鼠标就把整条任务条打翻重算一次**，
+    /// 一秒钟拖动量到 **46 次整条 body 重算**（每次都要重建整份投影：快照转卡、成员投影、顺序对账）。
+    /// 主线程被这些占满，载体的位置更新就迟到，快速拖动时甚至丢帧——正是 owner 报的
+    /// 「起拖有迟滞」「拖快了图标会短暂消失」。
+    ///
+    /// 现在改成：值本身是普通属性，变化通过 `pointerMoves` 广播。
+    /// - 载体的**位置**根本不再经过 SwiftUI —— `update()` 直接设宿主视图的 frame（见 `placeCarrier`）。
+    /// - 需要**每帧跑副作用**的（条内重排、跨面板转换）→ 用 `.onReceive(pointerMoves)`：
+    ///   闭包照跑，但不给视图建立依赖，只有副作用真的改了什么才会重画。
+    private(set) var globalLocation: CGPoint = .zero
+    private let pointerSubject = CurrentValueSubject<CGPoint, Never>(.zero)
+    /// **存成 `let`，不要每次调用现 erase**：SwiftUI 的 `onReceive` 换了 publisher 实例就会重订阅，
+    /// 而 `CurrentValueSubject` 一订阅就补发当前值，等于每次 body 都白跑一遍副作用。
+    let pointerMoves: AnyPublisher<CGPoint, Never>
 
     private(set) var grabOffset: CGSize = .zero
     private(set) var carrierScreenFrame: CGRect = .zero
+
+    // MARK: - 松手归位飞行
+
+    /// 松手之后、载体真正消失之前的那 0.26 秒：浮动副本从光标飞回卡槽。
+    /// 见 `DragLandingPlan`。`nil` = 没有飞行在进行（含被关掉、拿不到落点两种）。
+    struct Landing: Equatable {
+        /// 每次飞行一个新令牌：视图靠它做 `.id()`，连着两次拖动才不会复用同一个动画状态。
+        let token: Int
+        let payload: DragPayload
+        let representative: StripItem?
+        /// **飞行途中可以改终点**（`var` 不是 `let`）。松手那一刻卡槽往往还在跑让位动画，
+        /// 量到的是插值中的位置；等它落定再纠一次偏，图标才不会在最后一下跳过去。
+        var flight: DragLandingFlight
+        /// 已经飞到终点、正在做交接：**条上那张卡这一刻起显形，载体停在原地淡出**。
+        /// 两步显式分开，就没有「谁先渲染」的赛跑——见 `DragLandingPlan.handoffFade`。
+        var settled = false
+
+        static func == (lhs: Landing, rhs: Landing) -> Bool {
+            lhs.token == rhs.token && lhs.flight == rhs.flight && lhs.settled == rhs.settled
+        }
+    }
+    @Published private(set) var landing: Landing?
+
+    /// **视图判「哪一格要空着」一律用它**，不要各自写 `draggingPayload ?? landing?.payload`：
+    /// 归位飞行期间原位必须继续空着，否则卡先显形、载体还在飞 = 又是两个影子。
+    var carriedPayload: DragPayload? { draggingPayload ?? landing?.payload }
+
+    /// 「手里正拎着东西」（含松手后的归位飞行与交接淡出）。悬停反馈与名字气泡在这期间一律关掉——
+    /// 见 `DockStripView.refreshHoveredEntry`。**要一直 true 到载体真的没了**，
+    /// 否则卡在淡出途中就长出悬停放大，和还停在上面的载体差出一截。
+    var isCarrying: Bool { carriedPayload != nil }
+
+    /// **「这一格要空着」用它，不要用 `carriedPayload`。** 两头都要等对面先画出来：
+    ///
+    /// - **起拖**：载体真的画出来之前，条上那张卡**不能**先藏。藏早了就是「两边都没有」，
+    ///   屏幕上那个图标凭空消失一下——owner 2026-08-18 报「选中一瞬间快速移动鼠标，
+    ///   图标会暂时消失」。起拖时载体面板要 order front、SwiftUI 还要走一趟布局，
+    ///   比条上改个 opacity 慢，所以这个顺序不能靠运气。
+    /// - **落地**：飞行落定之后卡就该显形了（载体停在同一位置淡出，重叠看不出来）；
+    ///   继续空着反而会在淡出结束时露出一帧空位。
+    ///
+    /// 两头都是「先让新的出现，再让旧的消失」，重叠一两帧无害、空档一帧就是可见的闪。
+    var hiddenSlotPayload: DragPayload? {
+        if draggingPayload != nil { return carrierReady ? draggingPayload : nil }
+        guard let landing, !landing.settled else { return nil }
+        return landing.payload
+    }
+
+    /// 载体这一次拖动已经上屏了吗。**`beginDrag` 里排一个 `main.async` 置位**——
+    /// 恰好晚一轮 run loop，也就是恰好晚一帧：这一帧里条上的卡和副本**同时**可见（重叠，
+    /// 位置尺寸都一样，看不出来），下一帧卡才藏。
+    ///
+    /// 上一版用的是 33ms 计时器，反而是 bug 的来源：副本首帧偶尔晚于 33ms，计时器先到就把卡藏了，
+    /// 于是两边都没有——owner 连拍的第 4 帧就是这个。现在位置是 AppKit 同步摆好的、
+    /// 宿主也预热过，一轮 run loop 足够，不需要猜时间。
+    @Published private(set) var carrierReady = false
+
+    /// 拎在手里时的缩放。载体和飞行起点共用这一个表达式——分开写过就会漂。
+    var carriedScale: CGFloat {
+        isOverDropZone && !isConvertedToStrip ? DragLandingPlan.dropZoneScale : DragLandingPlan.carriedScale
+    }
+
+    /// 落点锚点（屏幕坐标）。**两个视图各写各的、每次光标更新都写**，带 owner 标签：
+    /// 任务条侧管 `.strip` / `.messaging` 载荷，抽屉侧管 `.drawer` 载荷。
+    /// 不owner 标签的话，抽屉图标转正进任务条之后，抽屉那边写下的旧锚点会留着，
+    /// 图标就会往已经关掉的抽屉里飞。
+    enum LandingAnchorOwner { case strip, drawer }
+    private var landingAnchor: (owner: LandingAnchorOwner, rect: CGRect)?
+    private var landingTimer: Timer?
+    private var carrierReadyFallback: Timer?
+    private var landingFadeTimer: Timer?
+    private var carrierRenderReported = false
+    /// 每次起拖 +1。载体视图拿它做 `.id()`，保证每次拖动都是全新视图、`onAppear` 一定会来。
+    @Published private(set) var dragSessionID = 0
+    private var dragBeganAt: CFTimeInterval = 0
+    private var landingToken = 0
+    /// 纠偏可以把飞行往后推，但不能无限推。飞行一开始就定死这个上限。
+    private var landingDeadline: CFTimeInterval = 0
+
+    func setLandingAnchor(_ rect: CGRect?, owner: LandingAnchorOwner) {
+        if let rect {
+            landingAnchor = (owner, rect)
+        } else if landingAnchor?.owner == owner {
+            landingAnchor = nil
+        }
+        retargetLandingIfNeeded()
+    }
+
+    /// 飞行途中的**中途纠偏**。
+    ///
+    /// 松手那一刻卡槽多半还在跑让位动画（条内 0.28s 的 spring / 抽屉 0.22s 的网格重排），
+    /// `GeometryReader` 报的是插值中的中间值——照它飞过去，等载体撤掉时卡已经落到别处，
+    /// 差出来的那十几 pt 就是 owner 看到的「归位还在抖」。锚点在飞行期间会继续更新
+    /// （视图那边改成按帧变化上报，见 `updateLandingAnchor`），这里跟着改终点，
+    /// SwiftUI 会从当前位置平滑地接上去。
+    ///
+    /// 门槛 0.5pt：亚像素抖动不值得为它重发一次（`DockStripView` 观察着本对象，
+    /// 每发一次都要重算整条 body）。
+    private func retargetLandingIfNeeded() {
+        guard var current = landing, !current.settled,
+              DragLandingPlan.allowsRetarget(
+                remainingBeforeDeadline: landingDeadline - CACurrentMediaTime(),
+                flightDuration: current.flight.duration),
+              let rect = landingAnchor?.rect,
+              let updated = DragLandingPlan.flight(from: current.flight.from,
+                                                   fromScale: current.flight.fromScale,
+                                                   anchorScreenRect: rect,
+                                                   carrierScreenFrame: carrierScreenFrame),
+              hypot(updated.to.x - current.flight.to.x, updated.to.y - current.flight.to.y) > 0.5
+        else { return }
+        current.flight = updated
+        landing = current
+        // 重发一次位移动画：AppKit 会从当前插值位置平滑接到新终点。
+        placeCarrier(center: panelPoint(fromTopLeft: updated.to),
+                     animated: true, duration: updated.duration)
+        // 改了终点就等于重新起飞一段，**计时器必须跟着往后推**——否则载体在半路被撤掉，
+        // 那正是要治的那一下跳。上限 `landingDeadline` 保证卡槽万一一直动也不会挂着不放。
+        scheduleLandingFinish(token: current.token)
+    }
+
+    /// **淡出安排在飞行的最后一小段，而不是落地之后。**
+    ///
+    /// 原来的做法是「落地 → 卡显形 → 载体再淡出 90ms」，指望两者位置一样所以重叠看不出来。
+    /// 实际不是：owner 2026-08-18 的连拍里，落地后那 90ms 能清楚看到一实一虚两个图标上下错开
+    /// （载体的最终位置和卡的实际位置差了几个 pt——这个差值我还没查清）。
+    /// 改成提前淡：等卡显形的时候载体已经淡到 0 了，**差多少都看不见**。
+    private func beginLandingFadeOut(token: Int, flightDuration: TimeInterval) {
+        let lead = max(0, flightDuration - DragLandingPlan.handoffFade)
+        let timer = Timer(timeInterval: lead, repeats: false) { [weak self] _ in
+            Task { @MainActor in
+                guard let self, self.landing?.token == token, let panel = self.carrierPanel else { return }
+                NSAnimationContext.runAnimationGroup { context in
+                    context.duration = DragLandingPlan.handoffFade
+                    panel.animator().alphaValue = 0
+                }
+            }
+        }
+        RunLoop.main.add(timer, forMode: .common)
+        landingFadeTimer = timer
+    }
+
+    /// 飞到终点：载体此刻已经淡到 0，直接收掉并让条上那张卡显形。幂等。
+    func finishLanding() {
+        landingTimer?.invalidate(); landingTimer = nil
+        guard var current = landing, !current.settled else { return }
+        current.settled = true
+        landing = current
+        abortLanding()
+    }
+
+    /// 立刻结束飞行、不做交接（新拖动打断、异常取消、面板拆除）。
+    func abortLanding() {
+        landingTimer?.invalidate(); landingTimer = nil
+        landingFadeTimer?.invalidate(); landingFadeTimer = nil
+        guard landing != nil else { return }
+        landing = nil
+        carrierPanel?.orderOut(nil)
+        carrierPanel?.alphaValue = 1       // 下次起拖必须是不透明的
+    }
 
     /// 胶囊高亮只在「任务条卡/消息 chip 正悬在收纳区」时亮；任务条移回高亮只在「抽屉图标正悬在任务条」时亮。
     var isOverStashZone: Bool {
@@ -77,12 +258,26 @@ final class DragController: ObservableObject {
         return false
     }
 
-    /// 转正后载体改画的**唯一代表卡**：载体（画哪张卡）与任务条空位（隐藏哪张卡）都认它，避免"手里拎 A、
-    /// 条里空出 B"（Codex 三审 P1）。由 DockStripView 在窗口卡实体化后写入（显示序里该 app 第一张已实体化的
-    /// 卡），未实体化前为 nil（载体仍画抽屉小图标）。`revert`/`teardown` 清空。
+    /// 转正后载体改画的**唯一代表卡**。由 DockStripView 在窗口卡实体化后写入（显示序里该 app 第一张
+    /// 已实体化的**真窗口卡**），未实体化前为 nil（载体仍画抽屉小图标）。`revert`/`teardown` 清空。
     @Published private(set) var convertedRepresentative: StripItem?
-    func setConvertedRepresentative(_ item: StripItem?) {
+
+    /// 转正后**条上要隐藏哪张卡**（让出空位）。和上面那个刻意分开成两个字段：
+    ///
+    /// 载体只能画 `StripItem`，而条上物化出来的可能是 `.keptApp` 占位或 `isAppLevelFallback`
+    /// 的兜底卡——两者都不是"能画成一张窗口卡"的东西，`liveChipIDs` 也把它们排除在外。
+    /// 早先两件事共用 `convertedRepresentative` 一个字段，于是 `keepPlacement` 路径
+    /// （未运行的保留应用、只有 app 级兜底卡的运行应用）它永远是 nil，**条上那张卡全不透明地
+    /// 画着、手里还拎着同一个图标 = 两个影子**（owner 2026-08-18 报）。
+    /// 所以这里存的是 chip id，不是卡本身。
+    @Published private(set) var convertedChipID: String?
+
+    func setConvertedRepresentative(_ item: StripItem?, chipID: String?) {
         if convertedRepresentative != item { convertedRepresentative = item }
+        if convertedChipID != chipID {
+            convertedChipID = chipID
+            HoverTrace.carrierRepresentative(rep: item?.id, hidden: chipID)
+        }
     }
     /// 成功松手落定（converted 态）时回调，组合层接到后 `stripOrderStore.commitExternalBlock()`。
     /// 唯一收到 mouseUp 的是 `endDrag`，commit 必须由它触发，不靠 DockStripView 推断 payload 变 nil。
@@ -133,6 +328,47 @@ final class DragController: ObservableObject {
     private let carrierFactory: (DragController) -> NSView
 
     private var carrierPanel: NSPanel?
+    /// 副本那块小 hosting 视图。**位置就是它的 frame**，由 `placeCarrier` 直接设。
+    private var carrierHost: NSView?
+    private weak var carrierContainer: CarrierContainerView?
+
+    /// 副本的 SwiftUI 内容**真的构建出来了**——由 `DragCarrierView` 在内容 `onAppear` 里回报。
+    ///
+    /// 条上那格要等这一声、**再多等一轮 run loop**（让这一帧真的提交）才允许空出来。
+    /// 宁可两边重叠一两帧（位置尺寸一样，看不出来），也绝不能出现两边都没有的空档。
+    ///
+    /// 走过的两条弯路，都记在这儿免得再来一遍：
+    /// - `CarrierContainerView.viewWillDraw` 收不到：`NSHostingView` 走 CoreAnimation 图层，
+    ///   不经过视图的绘制路径（实测 5 次全部落到兜底计时器上）。
+    /// - **`layoutSubtreeIfNeeded()` + `displayIfNeeded()` 逼不出来**：那两个逼的是 AppKit 的
+    ///   布局与绘制，而此刻载荷刚发布、SwiftUI 那次更新还没处理，逼出来的是**上一帧的空内容**。
+    ///   照着它当场放行，几乎每次拖动都会露出空档（owner 2026-08-18：「几乎每次都消失」）。
+    ///   SwiftUI 自己什么时候画好，只有它自己知道——所以只能听它的 `onAppear`。
+    func markCarrierRendered() {
+        guard draggingPayload != nil, !carrierReady, !carrierRenderReported else { return }
+        carrierRenderReported = true
+        HoverTrace.dragHandoff("carrierRendered", msSinceBegin: (CACurrentMediaTime() - dragBeganAt) * 1000)
+        DispatchQueue.main.async { [weak self] in
+            guard let self, self.draggingPayload != nil, !self.carrierReady else { return }
+            self.carrierReady = true
+            HoverTrace.dragHandoff("slotHidden", msSinceBegin: (CACurrentMediaTime() - self.dragBeganAt) * 1000)
+        }
+    }
+
+    /// 兜底：万一那一声始终没来，也不能让条上一直留着卡（那就成了"原地和手里各一个"）。
+    /// 给得比实测宽裕得多——宁可晚藏，不可早藏。
+    private func armCarrierReadyFallback() {
+        let timer = Timer(timeInterval: 0.05, repeats: false) { [weak self] _ in
+            Task { @MainActor in
+                guard let self, self.draggingPayload != nil, !self.carrierReady else { return }
+                self.carrierReady = true
+                HoverTrace.dragHandoff("slotHiddenByFallback",
+                                       msSinceBegin: (CACurrentMediaTime() - self.dragBeganAt) * 1000)
+            }
+        }
+        RunLoop.main.add(timer, forMode: .common)
+        carrierReadyFallback = timer
+    }
     private var localMonitor: Any?
     private var globalMonitor: Any?
     private var pollTimer: Timer?
@@ -143,6 +379,7 @@ final class DragController: ObservableObject {
          dropZonesProvider: @escaping (DragSource) -> [CGRect],
          screenProvider: @escaping () -> NSScreen,
          carrierFactory: @escaping (DragController) -> NSView) {
+        self.pointerMoves = pointerSubject.eraseToAnyPublisher()
         self.drawerStore = drawerStore
         self.messagingStore = messagingStore
         self.keptAppStore = keptAppStore
@@ -155,13 +392,30 @@ final class DragController: ObservableObject {
 
     func beginDrag(payload: DragPayload, startScreenLocation: CGPoint, grabOffset: CGSize) {
         guard draggingPayload == nil else { return }
+        // 上一次的归位还在飞就立刻收掉（**不走交接淡出**：那是给正常落地用的）。
+        abortLanding()
+        let started = CACurrentMediaTime()
+        dragBeganAt = started
+        let hadCarrier = carrierPanel != nil
+        carrierReady = false
+        carrierRenderReported = false
+        dragSessionID &+= 1
         self.grabOffset = grabOffset
         globalLocation = startScreenLocation
+        pointerSubject.send(startScreenLocation)
+        // **先把载体摆到位、再发布载荷**：宿主视图的 frame 是同步设的，所以 SwiftUI 一画出内容
+        // 就已经在正确的位置上，不会先出现在别处再跳过去。
+        let beforeCarrier = CACurrentMediaTime()
+        showCarrier()
+        let afterCarrier = CACurrentMediaTime()
         draggingPayload = payload
         refreshDropZone()
-        showCarrier()
         installMonitors()
         startPoll()
+        armCarrierReadyFallback()
+        HoverTrace.dragStart(totalMs: (CACurrentMediaTime() - started) * 1000,
+                             carrierMs: (afterCarrier - beforeCarrier) * 1000,
+                             carrierCreated: !hadCarrier)
     }
 
     // MARK: - 任务条卡进抽屉体 → 转成抽屉内拖动（统一手感，owner 2026-06-22）
@@ -232,6 +486,7 @@ final class DragController: ObservableObject {
         drawerStore.add(bid)
         conversion = nil
         convertedRepresentative = nil   // 载体恢复抽屉小图标
+        convertedChipID = nil           // 条上不再有卡需要让位
     }
 
     // MARK: - 抽屉里的消息应用拖进消息区范围 → 临时释放回消息区 / 离区还原（评审 P1-3）
@@ -261,12 +516,57 @@ final class DragController: ObservableObject {
 
     private func update(_ loc: CGPoint) {
         globalLocation = loc
+        // **同步摆位，第一件事就做**：这是跟手性的全部。走 SwiftUI 的老路子每帧要过一遍渲染管线，
+        // 拖快了副本会落在光标后面一百多 pt（owner 2026-08-18 连拍实证）。
+        placeCarrier(center: carrierCenterInPanel())
         refreshDropZone()
+        pointerSubject.send(loc)    // 副作用订阅方（条 / 抽屉），不建立视图依赖
+        auditCarrierVisibility()
+        auditCarrierDouble()
     }
 
+    /// 反向自检：**副本已经在屏幕上了，条上那格却还占着** = 同一个图标画了两份（重影）。
+    /// owner 2026-08-18 的连拍里这是最显眼的一条，靠肉眼分不清是重影还是动态模糊，这里直接记事实。
+    private func auditCarrierDouble() {
+        guard HoverTrace.isEnabled, draggingPayload != nil, !carrierReady,
+              let panel = carrierPanel, panel.isVisible, panel.alphaValue > 0.99,
+              carrierRenderReported else { return }
+        HoverTrace.carrierGap(reason: "doubleImage", alpha: panel.alphaValue,
+                              hostX: carrierHost?.frame.minX ?? -1,
+                              hostY: carrierHost?.frame.minY ?? -1)
+    }
+
+    /// 每次光标更新自检一次：**条上那格已经空了，副本是不是真的在屏幕上？**
+    /// 两者只要不同时成立，用户看到的就是「图标不见了」。owner 连着三轮报「偶尔会消失」，
+    /// 靠截图只能猜；这条把它变成日志里可以数的事实。
+    private func auditCarrierVisibility() {
+        guard HoverTrace.isEnabled, let payload = hiddenSlotPayload,
+              let panel = carrierPanel, let host = carrierHost else { return }
+        let onScreen = panel.isVisible && panel.alphaValue > 0.99
+        // 图标中心（不是宿主整块）必须真的落在屏幕内：宿主 360×200 比图标大得多，
+        // 只判 `intersects` 会把「图标已经出屏、宿主边角还压着」当成正常。
+        let iconOnScreen = CGRect(origin: .zero, size: carrierScreenFrame.size)
+            .insetBy(dx: -24, dy: -24).contains(CGPoint(x: host.frame.midX, y: host.frame.midY))
+        // `.stripChip` 却没带 `item` → `DragCarrierView.content` 什么都不画，副本是空的。
+        let drawable = payload.visualKind != .stripChip || payload.item != nil
+            || convertedRepresentative != nil
+        guard !onScreen || !iconOnScreen || !drawable else { return }
+        let reason = !panel.isVisible ? "panelHidden"
+            : (panel.alphaValue <= 0.99 ? "panelFaded"
+               : (!drawable ? "emptyContent" : "iconOffscreen"))
+        _ = payload
+        HoverTrace.carrierGap(reason: reason, alpha: panel.alphaValue,
+                              hostX: host.frame.minX, hostY: host.frame.minY)
+    }
+
+    /// **只在结论真的变了才写**：`@Published` 是每次赋值都发通知，不比较旧值。
+    /// 每动一下鼠标写一次，就等于每动一下鼠标打翻一次整条任务条（同 `globalLocation` 那条）。
     private func refreshDropZone() {
-        guard let p = draggingPayload, p.canExternalDrop else { isOverDropZone = false; return }
-        isOverDropZone = dropZonesProvider(p.source).contains { $0.contains(globalLocation) }
+        let next: Bool = {
+            guard let p = draggingPayload, p.canExternalDrop else { return false }
+            return dropZonesProvider(p.source).contains { $0.contains(globalLocation) }
+        }()
+        if isOverDropZone != next { isOverDropZone = next }
     }
 
     // MARK: - 收尾（幂等，先清后提交）
@@ -285,7 +585,7 @@ final class DragController: ObservableObject {
                                                   isConvertedToStrip: converted,
                                                   isOverDropZone: external,
                                                   isMessagingMember: messagingStore.contains(p.bundleID))
-        teardown()
+        teardown(landing: plannedLanding(for: p))
         switch p.source {
         case .folder:
             onFolderDragEnded?(p.id, folderZone)
@@ -333,6 +633,9 @@ final class DragController: ObservableObject {
     /// 取消：拖动中目标消失、切屏等异常路径。先按当前转换态回滚已发生的 store 变更
     /// （与各"拖出还原"同路径），再收尾——每个临时态都恢复原成员关系。
     func cancelDrag() {
+        // 归位飞行期间 `draggingPayload` 已经是 nil，但载体面板还开着——切屏 / 面板拆除
+        // 这些路径都走这里，不先收掉的话会把一个半透明的全屏载体留在屏幕上。
+        abortLanding()
         guard draggingPayload != nil else { return }
         switch conversion {
         case .stripToDrawer:
@@ -347,19 +650,67 @@ final class DragController: ObservableObject {
         case nil:
             break
         }
-        teardown()
+        // 异常取消（目标消失/切屏）不飞：那不是"落到某一格"，飞回一个已经不存在的位置只会更怪。
+        teardown(landing: nil)
     }
 
-    private func teardown() {
+    /// 这次松手该不该飞、飞到哪。拿不到落点锚点（或被 `DOCK_DRAG_LANDING=0` 关掉）→ nil → 瞬时收尾。
+    private func plannedLanding(for payload: DragPayload) -> Landing? {
+        guard DragLandingSwitches.enabled else { return nil }
+        let from = carrierPosition()
+        let flight = DragLandingPlan.flight(from: from,
+                                            fromScale: carriedScale,
+                                            anchorScreenRect: landingAnchor?.rect,
+                                            carrierScreenFrame: carrierScreenFrame)
+        HoverTrace.landing(from: from, to: flight?.to, source: "\(payload.source)")
+        guard let flight else { return nil }
+        landingToken &+= 1
+        return Landing(token: landingToken, payload: payload,
+                       representative: convertedRepresentative, flight: flight)
+    }
+
+    /// 收尾。`landing` 非空时**不收载体面板**——它还要飞 0.26 秒；到点由 `finishLanding()` 收。
+    private func teardown(landing flight: Landing?) {
         conversion = nil                  // 落定路径：清转换态不回滚（commit）；解冻任务条宽度
         convertedRepresentative = nil
+        convertedChipID = nil
         folderDragZone = nil
         folderDropGeometry = nil
         draggingPayload = nil
         isOverDropZone = false
+        landingAnchor = nil
+        carrierReady = false
+        carrierRenderReported = false
+        carrierReadyFallback?.invalidate(); carrierReadyFallback = nil
         removeMonitors()
         pollTimer?.invalidate(); pollTimer = nil
-        carrierPanel?.orderOut(nil)
+        landingTimer?.invalidate(); landingTimer = nil
+        landing = flight
+        guard let flight else { carrierPanel?.orderOut(nil); return }
+        landingDeadline = CACurrentMediaTime() + DragLandingPlan.maximumDuration
+        // 位移交给 AppKit（缩放仍在 SwiftUI，两边同一条曲线同一个时长）。
+        placeCarrier(center: panelPoint(fromTopLeft: flight.flight.to),
+                     animated: true, duration: flight.flight.duration)
+        beginLandingFadeOut(token: flight.token, flightDuration: flight.flight.duration)
+        scheduleLandingFinish(token: flight.token)
+    }
+
+    /// 排（或重排）「飞完了就收载体」那一下。
+    /// `.common`：松手瞬间主 run loop 可能还在事件跟踪模式，default 模式的计时器不会触发，
+    /// 载体就会永远停在半空（同 `armSpringOpenTimer` 的理由）。
+    private func scheduleLandingFinish(token: Int) {
+        landingTimer?.invalidate()
+        let flightDuration = landing?.flight.duration ?? DragLandingPlan.duration
+        let remaining = max(0.05, min(flightDuration + DragLandingPlan.settleMargin,
+                                      landingDeadline - CACurrentMediaTime()))
+        let timer = Timer(timeInterval: remaining, repeats: false) { [weak self] _ in
+            Task { @MainActor in
+                guard let self, self.landing?.token == token else { return }
+                self.finishLanding()
+            }
+        }
+        RunLoop.main.add(timer, forMode: .common)
+        landingTimer = timer
     }
 
     /// 任务条卡能否收纳：只拦无 bundleID 与 Finder（Finder 永远保留任务条入口）。
@@ -372,13 +723,85 @@ final class DragController: ObservableObject {
 
     // MARK: - 载体面板
 
+    /// 提前把载体面板和它那棵 SwiftUI 宿主树建好，别让用户的**第一次拖动**替我们付这笔钱。
+    ///
+    /// 实测（`DOCK_HOVER_TRACE`，2026-08-18）：会话里第一次起拖 `showCarrier()` 要 **20.3ms**，
+    /// 同时主线程有一次 **38.9ms** 的卡顿——60Hz 下就是丢掉两三帧，正是 owner 说的
+    /// 「选中图标拖动的第一帧有卡顿」。之后每次只要 5.9ms。
+    ///
+    /// 得**真的 order front 一次**才算数：`NSHostingView` 不在可见窗口里不会走布局，
+    /// 光 `contentView = host` 只建了对象，SwiftUI 那一趟还是留给第一次拖动。
+    /// alpha 归零 + `ignoresMouseEvents`，这一瞬间屏幕上什么都看不到。
+    func prewarmCarrier() {
+        guard carrierPanel == nil else { return }
+        let panel = makeCarrierPanel()
+        panel.setFrame(screenProvider().frame, display: false)
+        panel.alphaValue = 0
+        panel.orderFrontRegardless()
+        panel.contentView?.layoutSubtreeIfNeeded()
+        panel.orderOut(nil)
+        panel.alphaValue = 1
+        carrierPanel = panel
+    }
+
     private func showCarrier() {
         let screen = screenProvider()
         carrierScreenFrame = screen.frame
         let panel = carrierPanel ?? makeCarrierPanel()
         panel.setFrame(screen.frame, display: false)
+        panel.alphaValue = 1               // 上一次交接淡出可能把它留在半透明
+        placeCarrier(center: carrierCenterInPanel())
         panel.orderFrontRegardless()
         carrierPanel = panel
+    }
+
+    /// 把副本摆到面板内的某个中心点（AppKit 坐标，左下原点）。
+    ///
+    /// - `animated: false`（跟手那条路）**必须关掉隐式动画**：CALayer 的 position 默认带 0.25s 的
+    ///   隐式动画，不关的话每一帧都在往上一帧的目标插值，副本会永远软绵绵地落在光标后面。
+    /// - `animated: true` 只给归位飞行用，曲线与时长和 SwiftUI 那边的缩放**取同一份**
+    ///   （`DragLandingPlan.curve` / `flight.duration`），两者才像一次运动。
+    private func placeCarrier(center: CGPoint, animated: Bool = false, duration: TimeInterval = 0) {
+        guard let host = carrierHost else { return }
+        let size = host.frame.size
+        let origin = CGPoint(x: center.x - size.width / 2, y: center.y - size.height / 2)
+        guard animated else {
+            CATransaction.begin()
+            CATransaction.setDisableActions(true)
+            host.setFrameOrigin(origin)
+            CATransaction.commit()
+            if HoverTrace.isEnabled {
+                let immediate = host.frame.origin
+                DispatchQueue.main.async { [weak host] in
+                    guard let host else { return }
+                    HoverTrace.carrierPlacement(wanted: origin, immediate: immediate,
+                                                deferred: host.frame.origin,
+                                                size: host.frame.size,
+                                                autolayout: !host.translatesAutoresizingMaskIntoConstraints)
+                }
+            }
+            return
+        }
+        let c = DragLandingPlan.curve
+        NSAnimationContext.runAnimationGroup { context in
+            context.duration = duration
+            context.timingFunction = CAMediaTimingFunction(
+                controlPoints: Float(c.c0x), Float(c.c0y), Float(c.c1x), Float(c.c1y))
+            context.allowsImplicitAnimation = true
+            host.animator().setFrameOrigin(origin)
+        }
+    }
+
+    /// 屏幕坐标 → 载体面板内 **AppKit** 坐标（左下原点）的副本中心。
+    /// `grabOffset` 是在 `"strip"` / `"drawer"` 那种 y 向下的空间里量的，所以纵向要反号。
+    private func carrierCenterInPanel() -> CGPoint {
+        CGPoint(x: globalLocation.x - carrierScreenFrame.minX + grabOffset.width,
+                y: globalLocation.y - carrierScreenFrame.minY - grabOffset.height)
+    }
+
+    /// `DragLandingPlan` 算出来的终点是 y 向下的面板内坐标，翻成 AppKit 的左下原点。
+    private func panelPoint(fromTopLeft point: CGPoint) -> CGPoint {
+        CGPoint(x: point.x, y: carrierScreenFrame.height - point.y)
     }
 
     private func makeCarrierPanel() -> NSPanel {
@@ -398,16 +821,18 @@ final class DragController: ObservableObject {
         let host = carrierFactory(self)
         host.wantsLayer = true
         host.layer?.backgroundColor = NSColor(white: 1.0, alpha: 0.0).cgColor
-        // 这里**故意**让 NSHostingView 直接当 contentView，是 AGENTS「面板不得用 hosting 当
-        // contentView」那条护栏的**已评估例外**——别看到这行就顺手改成 ManualPanelHost：
-        //   1. 载体不是 PanelCoordinator 创建的面板，那条护栏管的是"协调器独占 frame 所有权"，
-        //      而载体的 frame 归本类，只在创建时写死成 screen.frame，之后再不从内容尺寸推导；
-        //   2. 存活期只有一次拖动，换档事务（beginDockSizeChange）会先取消拖动再改几何，
-        //      两者碰不上；
-        //   3. 至今没观察到尺寸打架（拖动一直正常）。
-        // 但它确实是这个模式的第 4 个暴露点。**万一以后出现"起拖瞬间载体尺寸/位置异常"，
-        // 第一个怀疑对象就是这里**——届时套 ManualPanelHost 即可，改法与 dock/胶囊/tooltip 相同。
-        panel.contentView = host
+        host.frame = CGRect(origin: .zero, size: DragLandingPlan.carrierHostSize)
+        // 面板的 contentView 是一块**普通全屏 NSView**，副本那块小 hosting 视图挂在里面。
+        // 这样既满足 AGENTS「面板不得拿 hosting 当 contentView」那条护栏（原来这里是那条规则的
+        // 第 4 处暴露点），又让「摆位置」变成改一个子视图的 frame —— 摆位从此不经过 SwiftUI。
+        let container = CarrierContainerView(frame: screenProvider().frame)
+        container.wantsLayer = true
+        container.layer?.backgroundColor = NSColor(white: 1.0, alpha: 0.0).cgColor
+        container.autoresizingMask = [.width, .height]
+        container.addSubview(host)
+        carrierContainer = container
+        panel.contentView = container
+        carrierHost = host
         return panel
     }
 
@@ -418,8 +843,10 @@ final class DragController: ObservableObject {
         c.orderFrontRegardless()
     }
 
-    /// 屏幕坐标(bottom-left) → 载体面板内 SwiftUI 坐标(top-left, y-down) 的卡片中心位置。
-    func carrierPosition() -> CGPoint {
+    /// 屏幕坐标(bottom-left) → 载体面板内 y 向下的卡片中心位置。
+    /// **只剩 `DragLandingPlan.flight` 的起点在用它**（那套判定用的是 y 向下的坐标系）；
+    /// 实际摆位走 `carrierCenterInPanel()` + `placeCarrier`。
+    private func carrierPosition() -> CGPoint {
         CGPoint(x: globalLocation.x - carrierScreenFrame.minX + grabOffset.width,
                 y: carrierScreenFrame.maxY - globalLocation.y + grabOffset.height)
     }

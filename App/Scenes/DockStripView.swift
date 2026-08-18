@@ -72,6 +72,24 @@ struct StripProjection {
             return item.id
         }
     }
+
+    /// 该 app 在 live 区占了位置的**所有卡**，显示序，**不排除 app 级兜底卡与 `.keptApp` 占位**。
+    ///
+    /// 和 `liveChipIDs` 是两个口径，不要合并：那个回答「载体该画哪张窗口卡」，
+    /// 这个回答「条上哪张卡要让位」。兜底卡和占位卡画不成载体，但它们实实在在占着一格——
+    /// 早先两个问题共用前一个口径，`keepPlacement` 路径就永远不让位（双影，owner 2026-08-18）。
+    func liveEntryIDs(bundleID: String) -> [String] {
+        entries.compactMap { entry -> String? in
+            switch entry {
+            case let .window(item):
+                return item.bundleIdentifier == bundleID ? item.id : nil
+            case let .keptApp(bid):
+                return bid == bundleID ? entry.id : nil
+            default:
+                return nil
+            }
+        }
+    }
 }
 
 struct DockStripView: View {
@@ -271,6 +289,9 @@ struct DockStripView: View {
         )
         let byID = Dictionary(projectedLive.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
         let orderedLive = order.compactMap { byID[$0] }
+        if HoverTrace.isEnabled, dragController.carriedPayload != nil {
+            HoverTrace.liveOrder(orderedLive.map(\.id))
+        }
         let folderEntries = (settingsStore.showShelf ? [StripEntry.shelf] : [])
             + pinnedFolderStore.folderPaths.map { StripEntry.pinnedFolder(path: $0) }
         var zones = [messaging, folderEntries, orderedLive].filter { !$0.isEmpty }
@@ -287,13 +308,17 @@ struct DockStripView: View {
             return bundleID
         }
         let draggingID: String?
-        if let payload = dragController.draggingPayload,
+        // `carriedPayload` 而不是 `draggingPayload`：松手后还有 0.26 秒的归位飞行，
+        // 那段时间原位必须继续空着，否则卡先显形、载体还在飞。
+        if let payload = dragController.hiddenSlotPayload,
            payload.source == .strip,
            liveOrderIDs.contains(payload.id) {
             draggingID = payload.id
-        } else if let representative = dragController.convertedRepresentative,
-                  liveOrderIDs.contains(representative.id) {
-            draggingID = representative.id
+        } else if let converted = dragController.convertedChipID,
+                  liveOrderIDs.contains(converted) {
+            // **认 chip id，不认代表卡**：`keepPlacement` 路径物化出来的是 `.keptApp` 占位或
+            // app 级兜底卡，两者都当不了 `StripItem` 代表卡，跟着代表卡走就永远不让位（双影）。
+            draggingID = converted
         } else {
             draggingID = nil
         }
@@ -311,6 +336,22 @@ struct DockStripView: View {
             draggingID: draggingID
         )
     }
+
+    /// **`onChange` 闭包里必须用它，不能用闭包捕获的 `projection`。**
+    ///
+    /// 老式 `onChange(of:perform:)` 触发时跑的是**上一帧**装进去的闭包，里面那份 projection
+    /// 因此永远落后一代。平时无所谓（下一次变化会追上），但抽屉转正那一刻是致命的
+    /// （实测 2026-08-18：渲染已经是 12 张卡了，`sync` 收到的还是 11 张，不含刚冒出来的占位）：
+    ///
+    /// 1. `sync` 里 `next.contains("app-<bid>")` 为 false → **落点暂存一次都没被消费**；
+    /// 2. 记忆序 `liveOrder` 因此始终没有这个 id → 后续 `reorderBlock` 的 `movingBlock`
+    ///    找不到要移动的 id，**每一次都原样返回**（日志里五次 `ok` 全是空转）；
+    /// 3. 渲染只能退回 `reconciled` 的 kept 稳定名次，把它钉在一个跟光标无关的固定位置。
+    ///
+    /// 也就是 owner 说的「不容易触发把其他图标挤走」。这里重建一次 projection 的代价可以接受：
+    /// 它只在 live 区卡的集合真的变了时触发，不是每帧、更不是每次鼠标移动。
+    /// （AGENTS 那条「一次 body 只建一个 projection」管的是**渲染路径**，这里是副作用路径。）
+    private func freshProjection() -> StripProjection { makeProjection() }
 
     /// 渲染路径（`reconciled`）与副作用路径（`sync`）**必须喂同一份 appKeyOf**，否则落盘的记忆序
     /// 与显示序不一致。抽成一个函数，让两条路径无从写岔。
@@ -438,13 +479,27 @@ struct DockStripView: View {
         // 抽屉图标拖到任务条上：进任务条区即转正成窗口卡、跟光标整块实时让位（镜像 DrawerView 的全局鼠标驱动）。
         // 消息区的重排/释放同样由全局鼠标驱动——重排会挪动被拖 chip,SwiftUI 会取消原手势,
         // 不能依赖 chip 自己的 .onChanged（同抽屉教训,owner 2026-06-22 / Codex 评审 P1-4）。
-        .onChange(of: dragController.globalLocation) { _ in
+        // **`onReceive` 而不是 `onChange(of: globalLocation)`**：后者要求那个值是 `@Published`，
+        // 而那正是「动一下鼠标就打翻整条任务条」的来源（实测 1.2 秒拖动 46 次整条重算）。
+        // `onReceive` 照跑闭包，但不给本视图建立依赖——只有下面这些副作用真的改了什么才重画。
+        .onReceive(dragController.pointerMoves) { _ in
             updateDrawerToMessagingRelease(projection: projection)
             updateDrawerToStripConvert(projection: projection)
             updateStripBlockReorder(projection: projection)
             updateMessagingReorder(messagingIDs: projection.messagingIDs)
             syncConvertedCarrier(projection: projection)
             updateFolderDragZone()
+            updateLandingAnchor()
+        }
+        // 转正那一刻上面那个闭包手里的 projection 还是**旧的**（app 还在抽屉里），代表卡/让位卡都算不出来。
+        // 光靠鼠标驱动就意味着「光标停在边界不动 = 一直双影」。store 一变就再算一次，把那一帧补上。
+        .onChange(of: projection.liveOrderIDs) { _ in
+            syncConvertedCarrier(projection: freshProjection())
+        }
+        // 归位飞行结束、手里空了 → 立刻重判一次悬停。没有这条的话，指针不动就一直是"无人悬停"，
+        // 松手之后要晃一下鼠标名字气泡才回来。
+        .onChange(of: dragController.isCarrying) { _ in
+            refreshHoveredEntry(frames: stripHoverFrames, origin: stripRootScreenRect)
         }
         // 拖动中消息 chip 的 app 从消息区消失（退出/外部 unmark/快照丢）→ 取消拖动，免得空位卡死。
         // 收纳预览（messagingToDrawer）不误判：转换后载荷来源已是 .drawer（Codex 评审 P2-5）。
@@ -472,11 +527,16 @@ struct DockStripView: View {
             if let previous = bubbleOwnerID { onWindowTitleTooltipEvent(.exit(chipID: previous)) }
             bubbleOwnerID = nil
         }
-        .onChange(of: projection.liveOrderIDs) { _ in reconcileLiveOrder(projection) }
-        .onChange(of: keptAppStore.bundleIDs) { _ in reconcileLiveOrder(projection) }
-        .onChange(of: messagingStore.bundleIDs) { _ in reconcileLiveOrder(projection) }
+        .onChange(of: projection.liveOrderIDs) { _ in reconcileLiveOrder(freshProjection()) }
+        .onChange(of: keptAppStore.bundleIDs) { _ in reconcileLiveOrder(freshProjection()) }
+        .onChange(of: messagingStore.bundleIDs) { _ in reconcileLiveOrder(freshProjection()) }
         .onAppear { reconcileLiveOrder(projection) }
-        .onPreferenceChange(ChipFramePreferenceKey.self) { chipFrames = $0 }
+        // 卡帧变了就重报落点锚点。**光靠 `globalLocation` 驱动不够**：松手之后指针不再有事件，
+        // 而让位弹簧还在跑，卡槽要再过一两百毫秒才停。归位飞行的中途纠偏就靠这条。
+        .onPreferenceChange(ChipFramePreferenceKey.self) { frames in
+            chipFrames = frames
+            updateLandingAnchor()
+        }
         // 条重排 / 换档时指针没动，但它脚下的卡换人了——同一处重判。
         .onPreferenceChange(StripHoverFramePreferenceKey.self) { frames in
             stripHoverFrames = frames
@@ -501,7 +561,7 @@ struct DockStripView: View {
 
     /// 正在拖动的文件夹 chip path（nil = 没有）。拖动中原位隐藏成空位,副本由载体面板画。
     private var draggingFolderPath: String? {
-        if let p = dragController.draggingPayload, p.source == .folder { return p.id }
+        if let p = dragController.hiddenSlotPayload, p.source == .folder { return p.id }
         return nil
     }
 
@@ -642,6 +702,11 @@ struct DockStripView: View {
                 appKeyByChipID: appKeys
               )
             : nil
+        if HoverTrace.isEnabled, let p = dragController.carriedPayload {
+            HoverTrace.orderSync(count: current.count,
+                                 carriedID: p.bundleID,
+                                 hasCarried: current.contains("app-\(p.bundleID)"))
+        }
         stripOrderStore.sync(current: current, appKeyOf: appKeys,
                              headPreferred: Set(messagingStore.bundleIDs),
                              projectionSample: sample)
@@ -676,15 +741,44 @@ struct DockStripView: View {
         )
     }
 
-    /// 这个 app 当前在 live 区的窗口卡 id（按显示序，排除 app-fallback）。转正后用于整块连续重排。
-    /// 转正后维护载体的"代表卡"：显示序里该 app **第一张已实体化**的窗口卡。实体化前保持 nil（载体仍画
-    /// 抽屉小图标，不画"没有空位的卡"）。载体与空位都认这同一张（Codex 三审 P1）。非转正态由 DragController 清空。
+    /// 转正后同步两件**不同**的事，所以算两个值（分开的理由见 `DragController.convertedChipID`）：
+    ///
+    /// - `rep`：载体改画哪张卡。只能是真窗口卡；没有就保持 nil，载体继续画抽屉小图标。
+    /// - `chipID`：条上隐藏哪张卡让出空位。**含 `.keptApp` 占位与 app 级兜底卡**——
+    ///   `keepPlacement` 路径物化的正是这两种，漏了它们就是 owner 2026-08-18 报的「两个影子」。
+    ///
+    /// 由 `onChange(globalLocation)` 和 `onChange(liveOrderIDs)` 两处驱动。后者不能省：
+    /// 转正和这里在同一个闭包里跑，用的是**上一帧**的 projection（那时 app 还在抽屉里），
+    /// 只靠鼠标驱动的话，光标停在边界不动就会一直双影。
     private func syncConvertedCarrier(projection: StripProjection) {
         let dc = dragController
         guard dc.isConvertedToStrip, let p = dc.draggingPayload, p.source == .drawer else { return }
         let rep = projection.liveChipIDs(bundleID: p.bundleID).first
             .flatMap { projection.liveOrderIDs.contains($0) ? projection.item(forID: $0) : nil }
-        dc.setConvertedRepresentative(rep)
+        dc.setConvertedRepresentative(rep, chipID: projection.liveEntryIDs(bundleID: p.bundleID).first)
+    }
+
+
+    /// 松手时浮动副本该飞回哪一格（屏幕坐标）。**每次光标更新都写，包括写 nil**——
+    /// 抽屉侧也在写它自己那一份，靠 owner 标签互不覆盖；不写 nil 的话，抽屉图标转正进任务条之后，
+    /// 抽屉留下的旧锚点会让图标往已经关掉的抽屉里飞（见 `DragController.setLandingAnchor`）。
+    ///
+    /// 条内重排 / 消息区重排能给出准确落点：让位在拖动过程中就实时发生了，松手那一刻
+    /// 这张卡的帧**就是**它的最终槽位。转正进任务条那一支给 nil——松手会解冻条宽、
+    /// 整条重新居中，落点在飞行途中还会漂。
+    private func updateLandingAnchor() {
+        let anchor: CGRect? = {
+            // `carriedPayload`：飞行途中也要继续报，卡槽落定后 `DragController` 才纠得了偏。
+            guard let p = dragController.carriedPayload, !dragController.isConvertedToStrip,
+                  stripRootScreenRect != .zero else { return nil }
+            switch p.source {
+            case .strip:  return chipFrames[p.id].map(stripFrameToScreen)
+            case .folder: return folderChipFrames[p.id].map(stripFrameToScreen)
+            case .messaging: return messagingChipFrames[p.bundleID].map(stripFrameToScreen)
+            case .drawer: return nil   // 抽屉侧自己写
+            }
+        }()
+        dragController.setLandingAnchor(anchor, owner: .strip)
     }
 
     /// 屏幕坐标（bottom-left）→ "strip" 空间点（top-left, y-down）。
@@ -703,6 +797,13 @@ struct DockStripView: View {
     /// `onPreferenceChange` 闭包里读到的是旧值。
     private func refreshHoveredEntry(frames: [String: CGRect], origin: CGRect) {
         let resolved: String? = {
+            // 手里拎着东西时不判悬停。两个理由，第二个是 owner 2026-08-18 点名的「落地一瞬间别抖」：
+            // ① 拖动途中指针扫过谁就给谁点亮、还弹名字气泡，本来就不对；
+            // ② 松手位置必然压在刚落定的那张卡上——载体画的是**非悬停**态，
+            //    卡一显形却已经是悬停态（安静档还要放大 1.10），两者尺寸不一样，
+            //    交接那一帧就"啵"地跳一下。关掉之后卡先按非悬停显形，
+            //    再由它自己那条 0.12~0.18s 的悬停动画平滑长起来。
+            guard !dragController.isCarrying else { return nil }
             guard let pointer = pointerBox.value, origin != .zero else { return nil }
             let point = CGPoint(x: pointer.x - origin.minX, y: origin.maxY - pointer.y)
             return StripHoverResolution.chip(
@@ -777,12 +878,12 @@ struct DockStripView: View {
         )
     }
 
-    /// 在 "strip" 点上命中**不属于本组**的目标卡（整帧命中），返回落到它左/右。
-    private func blockTarget(at point: CGPoint, excluding block: Set<String>) -> (id: String, after: Bool)? {
-        for (cid, frame) in chipFrames where !block.contains(cid) && frame.contains(point) {
-            return (cid, point.x > frame.midX)
-        }
-        return nil
+    /// 抽屉整块落点：**只看 x、永远给得出答案**。判据与理由（以及为什么不能用整帧 `contains`）
+    /// 见纯类型 `StripBlockLanding`——简单说，转正判定框故意伸到条上沿之外 16pt，
+    /// 而整帧命中在那里永远失败，首次落点因此 100% 退化成末尾。
+    private func blockTarget(atX x: CGFloat, excluding block: Set<String>) -> (id: String, after: Bool)? {
+        StripBlockLanding.target(pointerX: x,
+                                 frames: chipFrames.filter { !block.contains($0.key) })
     }
 
     /// 进/出任务条区驱动转正/还原（迟滞防边界抖）。
@@ -795,17 +896,31 @@ struct DockStripView: View {
         let bid = p.bundleID
         let g = dc.globalLocation
         let r = stripRootScreenRect
-        let enter      = g.x >= r.minX - 8  && g.x <= r.maxX + 8  && g.y >= r.minY - 8  && g.y <= r.maxY + 16
-        let clearlyOut = g.x < r.minX - 24  || g.x > r.maxX + 24  || g.y < r.minY - 24  || g.y > r.maxY + 40
+        // 右侧容差要一直伸到**抽屉入口胶囊**的外缘：抽屉的可视右缘是和胶囊右缘对齐的，
+        // 比任务条本体还要靠右 `capsuleGap + capsuleWidth`（中档 62pt）。只放 8pt 的话，
+        // 抽屉最右一列多多少少垂直往下拖，光标全程落在胶囊上、**永远进不了判定框**
+        // （实测 2026-08-18：整趟 60 帧 enter 全 false）。对抽屉来源的载荷来说胶囊没有别的语义
+        // ——它的投放区只有任务条面板——所以这里把它并进来不会和收纳打架。
+        let rightReach = metrics.capsuleGap + metrics.capsuleWidth
+        let enter      = g.x >= r.minX - 8  && g.x <= r.maxX + rightReach
+                      && g.y >= r.minY - 8  && g.y <= r.maxY + 16
+        let clearlyOut = g.x < r.minX - 24  || g.x > r.maxX + rightReach + 16
+                      || g.y < r.minY - 24  || g.y > r.maxY + 40
+        if HoverTrace.isEnabled {
+            HoverTrace.drawerToStrip(x: g.x, y: g.y, strip: r, enter: enter, clearlyOut: clearlyOut,
+                                     mode: "\(currentDrawerDragOutMode(bid, projection: projection))",
+                                     converted: dc.isConvertedToStrip)
+        }
         if !dc.isConvertedToStrip {
             guard enter else { return }
             let mode = currentDrawerDragOutMode(bid, projection: projection)
             // reject 留在抽屉；releaseToMessaging 由 updateDrawerToMessagingRelease 按消息区范围处理。
             guard mode == .unstash || mode == .keepPlacement else { return }
             // 此刻本组窗口卡还没出现在 live 区，命中目标只在**已有**卡里找（exclude 空集即可）。
-            let target = stripPoint(from: g).flatMap { blockTarget(at: $0, excluding: []) }
+            let target = stripPoint(from: g).flatMap { blockTarget(atX: $0.x, excluding: []) }
             dc.convertDrawerToStrip()
             stripOrderStore.stageExternalBlock(bundleID: bid, relativeTo: target?.id, after: target?.after ?? false)
+            HoverTrace.drawerToStripStage(bundleID: bid, target: target?.id, after: target?.after ?? false)
         } else if clearlyOut {
             stripOrderStore.cancelExternalBlock()
             dc.revertDrawerToStrip()
@@ -817,7 +932,7 @@ struct DockStripView: View {
     /// 正在拖动的消息区 chip 的 bundleID（nil = 没有）。起拖后原位 opacity 隐藏、布局空位保留
     /// （空位即落点反馈）。收纳预览期载荷来源翻成 .drawer,此值自动归 nil——chip 那时已从区里消失。
     private var draggingMessagingBundleID: String? {
-        if let p = dragController.draggingPayload, p.source == .messaging { return p.bundleID }
+        if let p = dragController.hiddenSlotPayload, p.source == .messaging { return p.bundleID }
         return nil
     }
 
@@ -878,9 +993,19 @@ struct DockStripView: View {
         guard dc.isConvertedToStrip, let p = dc.draggingPayload, p.source == .drawer else { return }
         let ids = projection.liveChipIDs(bundleID: p.bundleID)
         let blockIDs = ids.isEmpty ? ["app-\(p.bundleID)"] : ids
-        guard !blockIDs.isEmpty, blockIDs.allSatisfy(projection.liveOrderIDs.contains),
-              let pt = stripPoint(from: dc.globalLocation),
-              let target = blockTarget(at: pt, excluding: Set(blockIDs)) else { return }
+        guard !blockIDs.isEmpty, blockIDs.allSatisfy(projection.liveOrderIDs.contains) else {
+            HoverTrace.stripBlockReorder(target: nil, after: false, why: "notMaterialized")
+            return
+        }
+        guard let pt = stripPoint(from: dc.globalLocation) else {
+            HoverTrace.stripBlockReorder(target: nil, after: false, why: "noStripRect")
+            return
+        }
+        guard let target = blockTarget(atX: pt.x, excluding: Set(blockIDs)) else {
+            HoverTrace.stripBlockReorder(target: nil, after: false, why: "liveZoneEmpty")
+            return
+        }
+        HoverTrace.stripBlockReorder(target: target.id, after: target.after, why: "ok")
         stripOrderStore.reorderBlock(ids: blockIDs, relativeTo: target.id, after: target.after)
     }
 
