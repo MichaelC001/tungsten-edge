@@ -65,12 +65,12 @@ final class StatusMenuController: NSObject, NSMenuDelegate {
 
     private let statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.squareLength)
     private let menu = NSMenu()
-    private let permissionWarningItem = NSMenuItem(title: "辅助功能权限未开启", action: #selector(openAccessibilitySettings), keyEquivalent: "")
+    private let permissionWarningItem = NSMenuItem(title: String(localized: "Accessibility Permission Required"), action: #selector(openAccessibilitySettings), keyEquivalent: "")
     private let permissionWarningSeparator = NSMenuItem.separator()
-    private let settingsItem = NSMenuItem(title: "设置…", action: #selector(showSettings), keyEquivalent: ",")
-    private let launchAtLoginItem = NSMenuItem(title: "登录时启动", action: #selector(toggleLaunchAtLogin), keyEquivalent: "")
-    private let openLoginItemsSettingsItem = NSMenuItem(title: "打开登录项设置…", action: #selector(openLoginItemsSettings), keyEquivalent: "")
-    private let checkForUpdatesItem = NSMenuItem(title: "检查更新…", action: #selector(checkForUpdates), keyEquivalent: "")
+    private let settingsItem = NSMenuItem(title: String(localized: "Settings…"), action: #selector(showSettings), keyEquivalent: ",")
+    private let launchAtLoginItem = NSMenuItem(title: String(localized: "Open at Login"), action: #selector(toggleLaunchAtLogin), keyEquivalent: "")
+    private let openLoginItemsSettingsItem = NSMenuItem(title: String(localized: "Open Login Items Settings…"), action: #selector(openLoginItemsSettings), keyEquivalent: "")
+    private let checkForUpdatesItem = NSMenuItem(title: String(localized: "Check for Updates…"), action: #selector(checkForUpdates), keyEquivalent: "")
     /// 钨极组的分组标题，恒不可点（title 在 refreshEdgeSectionTitle 里随热键注册状态落）。
     private let edgeSectionItem = NSMenuItem(title: "", action: nil, keyEquivalent: "")
     // 中转站 / 悬停 / 最大化避让 / 任务条大小**只在设置窗口里**（owner 2026-08-03）：
@@ -85,7 +85,7 @@ final class StatusMenuController: NSObject, NSMenuDelegate {
     /// 「以为设好了其实没生效」——比原来的闪更糟（owner 2026-08-02 验收时指出）。
     private let nativeDockApplyItem = NSMenuItem()
     private let nativeDockApplyRow = NativeDockApplyRowView()
-    private let openNativeDockSettingsItem = NSMenuItem(title: "打开系统 Dock 设置…", action: #selector(openNativeDockSettings), keyEquivalent: "")
+    private let openNativeDockSettingsItem = NSMenuItem(title: String(localized: "Dock Settings…"), action: #selector(openNativeDockSettings), keyEquivalent: "")
     private let nativeDockSliderView: PreferenceSliderMenuItemView
     private let edgeSliderView: PreferenceSliderMenuItemView
 
@@ -109,8 +109,8 @@ final class StatusMenuController: NSObject, NSMenuDelegate {
         self.onQuit = onQuit
         self.toggleHotKeyShortcut = toggleHotKeyShortcut
         self.isToggleHotKeyRegistered = isToggleHotKeyRegistered
-        nativeDockSliderView = PreferenceSliderMenuItemView(accessibilityTitle: "系统 Dock 唤醒时间")
-        edgeSliderView = PreferenceSliderMenuItemView(accessibilityTitle: "Tungsten Edge 钨极唤醒时间")
+        nativeDockSliderView = PreferenceSliderMenuItemView(accessibilityTitle: String(localized: "Dock wake delay"))
+        edgeSliderView = PreferenceSliderMenuItemView(accessibilityTitle: String(localized: "Tungsten Edge wake delay"))
         super.init()
         configureStatusItem()
         configureMenu()
@@ -142,7 +142,7 @@ final class StatusMenuController: NSObject, NSMenuDelegate {
         menu.delegate = self
 
         permissionWarningItem.target = self
-        permissionWarningItem.image = NSImage(systemSymbolName: "exclamationmark.triangle.fill", accessibilityDescription: "警告")
+        permissionWarningItem.image = NSImage(systemSymbolName: "exclamationmark.triangle.fill", accessibilityDescription: String(localized: "Warning"))
         permissionWarningItem.isHidden = true
         permissionWarningSeparator.isHidden = true
         menu.addItem(permissionWarningItem)
@@ -207,13 +207,13 @@ final class StatusMenuController: NSObject, NSMenuDelegate {
         menu.addItem(.separator())
         #if DEBUG
         let debugMenu = NSMenu()
-        let showDebug = NSMenuItem(title: "显示调试台", action: #selector(showDebugConsole), keyEquivalent: "")
+        let showDebug = NSMenuItem(title: String(localized: "Show Debug Console"), action: #selector(showDebugConsole), keyEquivalent: "")
         showDebug.target = self
         debugMenu.addItem(showDebug)
-        let exportSnapshot = NSMenuItem(title: "导出任务条快照", action: #selector(exportDebugSnapshot), keyEquivalent: "")
+        let exportSnapshot = NSMenuItem(title: String(localized: "Export Taskbar Snapshot"), action: #selector(exportDebugSnapshot), keyEquivalent: "")
         exportSnapshot.target = self
         debugMenu.addItem(exportSnapshot)
-        let debugItem = NSMenuItem(title: "调试", action: nil, keyEquivalent: "")
+        let debugItem = NSMenuItem(title: String(localized: "Debug"), action: nil, keyEquivalent: "")
         debugItem.submenu = debugMenu
         menu.addItem(debugItem)
         menu.addItem(.separator())
@@ -238,7 +238,7 @@ final class StatusMenuController: NSObject, NSMenuDelegate {
             menu.addItem(versionItem)
         }
 
-        let quitItem = NSMenuItem(title: "退出 Tungsten Edge 钨极", action: #selector(quit), keyEquivalent: "q")
+        let quitItem = NSMenuItem(title: String(localized: "Quit Tungsten Edge"), action: #selector(quit), keyEquivalent: "q")
         quitItem.target = self
         menu.addItem(quitItem)
     }
@@ -362,8 +362,8 @@ final class StatusMenuController: NSObject, NSMenuDelegate {
     @objc private func openNativeDockSettings() {
         guard settingsCoordinator.openNativeDockSettings() else {
             presentError(
-                title: "无法打开系统 Dock 设置",
-                message: "请从系统设置进入「桌面与程序坞」（macOS 12 为「程序坞与菜单栏」）。"
+                title: String(localized: "Can’t Open Dock Settings"),
+                message: String(localized: "Open System Settings and go to Desktop & Dock (on macOS 12, Dock & Menu Bar).")
             )
             return
         }
@@ -398,7 +398,7 @@ final class StatusMenuController: NSObject, NSMenuDelegate {
     @objc private func toggleLaunchAtLogin() {
         guard let enable = LaunchAtLoginMenuModel.requestedEnabledValue(afterSelecting: settingsCoordinator.launchAtLoginState) else { return }
         if case .failure(let error) = settingsCoordinator.setLaunchAtLogin(enable) {
-            presentError(title: "登录时启动设置失败", message: error.localizedDescription)
+            presentError(title: String(localized: "Couldn’t Change Open at Login"), message: error.localizedDescription)
         }
         refreshCheckmarks()
     }
@@ -433,13 +433,13 @@ final class StatusMenuController: NSObject, NSMenuDelegate {
         alert.informativeText = content.message
         if let openButtonTitle = content.openButtonTitle, let openURL = content.openURL {
             alert.addButton(withTitle: openButtonTitle)
-            alert.addButton(withTitle: "稍后")
+            alert.addButton(withTitle: String(localized: "Later"))
             if Self.runModalInForeground(alert) == .alertFirstButtonReturn {
                 NSWorkspace.shared.open(openURL)
             }
             return
         }
-        alert.addButton(withTitle: "好")
+        alert.addButton(withTitle: String(localized: "OK"))
         Self.runModalInForeground(alert)
     }
 
@@ -459,7 +459,7 @@ final class StatusMenuController: NSObject, NSMenuDelegate {
             self.nativeDockSliderView.sync(delay: outcome.resolvedDelay)
             self.nativeDockApplyItem.isHidden = true
             if let error = outcome.error {
-                self.presentError(title: "系统 Dock 设置失败", message: error.localizedDescription)
+                self.presentError(title: String(localized: "Couldn’t Change Dock Settings"), message: error.localizedDescription)
             }
         }
     }
@@ -469,7 +469,7 @@ final class StatusMenuController: NSObject, NSMenuDelegate {
         alert.alertStyle = .warning
         alert.messageText = title
         alert.informativeText = message
-        alert.addButton(withTitle: "好")
+        alert.addButton(withTitle: String(localized: "OK"))
         Self.runModalInForeground(alert)
     }
 
@@ -521,8 +521,11 @@ final class PreferenceSliderMenuItemView: NSView {
     private let leftEndpointDot = EndpointDotView()
     private let rightEndpointDot = EndpointDotView()
     private let delayLabel = NSTextField(labelWithString: "")
-    private let leftEndpointLabel = NSTextField(labelWithString: "常驻")
-    private let rightEndpointLabel = NSTextField(labelWithString: "不唤醒")
+    // 端点小标签只有 34pt 宽（见 layout() 的 sliderSideInset），是刻度标记不是档位名：
+    // 完整档位名由中间那行大字（delayLabel ← delayDisplayName）显示，那里有 ~190pt。
+    // 英文因此用短词——实测 "Always Visible" 在 9pt 字体下 62.5pt，放不进 34pt。
+    private let leftEndpointLabel = NSTextField(labelWithString: String(localized: "Always"))
+    private let rightEndpointLabel = NSTextField(labelWithString: String(localized: "Never"))
     private let slider = MenuTrackingSlider()
 
     init(accessibilityTitle: String) {
@@ -694,8 +697,8 @@ final class PreferenceSliderMenuItemView: NSView {
 final class NativeDockApplyRowView: NSView {
     var onApply: (() -> Void)?
 
-    private let hintLabel = NSTextField(labelWithString: "Dock 会重启一下")
-    private let applyButton = MenuActionButton(title: "应用")
+    private let hintLabel = NSTextField(labelWithString: String(localized: "The Dock will restart"))
+    private let applyButton = MenuActionButton(title: String(localized: "Apply"))
 
     init() {
         super.init(frame: NSRect(x: 0, y: 0, width: 300, height: 42))
