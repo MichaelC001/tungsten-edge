@@ -257,8 +257,11 @@ extension View {
         if amount == 1.0 { self } else { self.saturation(amount) }
     }
 
-    /// 应用一个 `DockShadow`（x 恒为 0）。**拍拖动副本时一律不画**——投影是载体图层的属性，
-    /// 不烘进位图（理由与实测见 `EnvironmentValues.isDragCarrierSnapshot`）。
+    /// 应用一个 `DockShadow`（x 恒为 0）。**拍拖动副本时一律不画**（理由与实测见
+    /// `EnvironmentValues.isDragCarrierSnapshot`）。
+    ///
+    /// 注意这里已经**没有图标投影这一路了**：图标 / 中转格 / 文件夹封面都不带外投影
+    /// （owner 2026-08-19，对齐原生 Dock）。剩下的用户是面板、弹窗、气泡和文字光晕。
     func dockShadow(_ shadow: DockShadow) -> some View {
         modifier(DockShadowModifier(shadow: shadow))
     }
@@ -279,11 +282,11 @@ extension EnvironmentValues {
     ///
     /// 拍出来的位图与屏幕上那张卡有**两处刻意的不同**，都由它控制：
     /// - **不画运行小圆点**：原生 Dock 拖起有圆点的图标时圆点是消失的，落位才回来（owner 2026-08-19）。
-    /// - **不烘任何投影**：投影必须是载体图层的属性（AGENTS 早有这条），而 `cacheDisplay` 抓
-    ///   SwiftUI 的 `.shadow` 只抓到约四分之一强度——实测同一块白板 0.6 的投影只捕到 alpha 23（
-    ///   `ImageRenderer` 同一张是 99）。于是飞行中的副本几乎没有图标投影，卡一显形投影就补上来，
-    ///   看着就是「落位时阴影闪一下变强」。改成不烘、由图层投影在飞行末收成图标投影的形状，
-    ///   交接两边就一致了（见 `DragController.flyCarrier`）。
+    /// - **不烘任何 `dockShadow`**：图标的外投影 2026-08-19 已按 owner 决定整个去掉（条上和载体
+    ///   都不投影），所以这一条现在只管得着**文件夹名的描边光晕**（`theme.labelHalo`）。仍然保留
+    ///   不烘，是因为 `cacheDisplay` 抓 SwiftUI 的 `.shadow` 只抓到约四分之一强度——实测同一块
+    ///   白板 0.6 的投影只捕到 alpha 23（`ImageRenderer` 同一张是 99）——烘进去会得到一份比卡上
+    ///   淡得多的光晕，落位交接反而出现台阶，比干脆不画更糟。这正是上一轮 +2.85 台阶的成因。
     var isDragCarrierSnapshot: Bool {
         get { self[DragCarrierSnapshotKey.self] }
         set { self[DragCarrierSnapshotKey.self] = newValue }

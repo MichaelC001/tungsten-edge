@@ -141,7 +141,6 @@ final class DockThemeTests: XCTestCase {
     func testShadowsFitInsideShadowPaddingBudget() {
         XCTAssertLessThanOrEqual(theme.stripShadow.verticalExtent, shadowPadding)
         XCTAssertLessThanOrEqual(theme.popupShadow.verticalExtent, shadowPadding)
-        XCTAssertLessThanOrEqual(theme.carrierShadow.verticalExtent, shadowPadding)
         XCTAssertLessThanOrEqual(theme.labelHalo.verticalExtent, shadowPadding)
     }
 
@@ -231,13 +230,11 @@ private extension DockThemeTokens {
          chipPillRimTop.normal, chipPillRimTop.emphasized, chipPillRimBottom,
          labelActive, labelInactive, labelHover, labelSubtitle, labelHalo.tint,
          runningDot, zoneDivider,
-         iconShadow.tint,
          shelfDropGlow,
          capsuleGlyph, capsuleStashGlow,
          folderDropRing, folderThumbHairline,
          popupCellLabel, popupCellHover, popupPrimaryText, popupSecondaryText,
          backChipFill, backChipRim, backChipGlyph,
-         tooltipRim, tooltipText, tooltipShadow.tint,
-         carrierShadow.tint]
+         tooltipRim, tooltipText, tooltipShadow.tint]
     }
 }

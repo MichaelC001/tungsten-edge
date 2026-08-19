@@ -104,7 +104,6 @@ struct LauncherChip: View {
                 .aspectRatio(contentMode: .fit)
                 .frame(width: hover.bareIconSize, height: hover.bareIconSize)
                 .clipShape(RoundedRectangle(cornerRadius: hover.bareIconSize / 4, style: .continuous))
-                .dockShadow(theme.iconShadow)
                 .offset(y: bounceUp ? -6 : 0)
                 .animation(.easeInOut(duration: 0.25), value: bounceUp)
             // 槽位高度 = **静息**图标尺寸。槽位小于图标就会整块往下溢出（.top 对齐），

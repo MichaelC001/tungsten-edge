@@ -253,11 +253,6 @@ struct DockThemeTokens: Equatable {
     /// 任务条分区之间的竖分隔线。
     let zoneDivider: DockTint
 
-    // MARK: 图标
-
-    /// 所有 app 图标 / 文件夹封面 / 中转格底板共用的投影。
-    let iconShadow: DockShadow
-
     // MARK: 中转格
 
     /// 中转格瓷砖的配色。**必须不透明**——它是条上唯一一个不是应用图标的 chip，
@@ -312,10 +307,6 @@ struct DockThemeTokens: Equatable {
     let tooltipRim: DockTint
     let tooltipText: DockTint
     let tooltipShadow: DockShadow
-
-    // MARK: 拖动浮动副本
-
-    let carrierShadow: DockShadow
 
     /// 这一套值到底画不画厚度层。**深色必须是 `false`**——不是"画一层全透明的"，而是
     /// 整层根本不进视图树。`.blur(radius: 0)` 在 SwiftUI 里仍可能触发离屏渲染，
@@ -381,8 +372,6 @@ extension DockThemeTokens {
         runningDot: .black(0.5),
         zoneDivider: .black(0.12),
 
-        iconShadow: DockShadow(tint: .black(0.12), radius: 2, y: 1),
-
         shelfTile: .tray,
         shelfDropGlow: .black(0.1),
 
@@ -412,8 +401,6 @@ extension DockThemeTokens {
         // 起始值，待实测标定（见字段注释里的三个目标点）。
         tooltipRim: .white(0.45),
         tooltipText: .black(0.85),
-        tooltipShadow: DockShadow(tint: .black(0.14), radius: 5, y: 2),
-
-        carrierShadow: DockShadow(tint: .black(0.16), radius: 6, y: 3)
+        tooltipShadow: DockShadow(tint: .black(0.14), radius: 5, y: 2)
     )
 }

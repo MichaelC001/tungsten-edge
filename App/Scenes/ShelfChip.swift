@@ -93,7 +93,8 @@ struct ShelfChip: View {
         // 槽位仍是 40pt，与所有图标卡一致——只有画出来的方块缩到 32.5。
         .frame(width: ChipPillMetrics.bareIconSlot * scale,
                height: ChipPillMetrics.bareIconSlot * scale)
-        .dockShadow(theme.iconShadow)
+        // 和图标一样不带外投影（owner 2026-08-19）。这块比图标更容易让人想「加点投影托一下」——
+        // 它本来就靠不透明 + 自绘底板站住（见 `DockThemeTokens.shelfTile`），不靠投影。
         .dockGlow(theme.shelfDropGlow, radius: 3, active: isDropTargeted)
     }
 

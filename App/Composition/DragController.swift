@@ -319,7 +319,7 @@ final class DragController: ObservableObject {
         // 略往前估（`grabFreezeLead`）：两次抽帧实测冻结点比屏幕最后一帧落后 2–3pt（约 0.25 帧）。
         // 往前多走一两 pt 看着是「又动了一下停住」，往回退才是肉眼可见的抖。
         let pose = landingPose(at: CACurrentMediaTime() + Self.grabFreezeLead)
-            ?? LayerPose(position: layer.position, scale: Self.scale(of: layer.transform), shadow: layer.shadowOpacity)
+            ?? LayerPose(position: layer.position, scale: Self.scale(of: layer.transform))
         landingTimer?.invalidate(); landingTimer = nil
         landingAnimation &+= 1          // CA 完成回调按代次丢弃
         endLandingGrabWatch()
@@ -327,7 +327,6 @@ final class DragController: ObservableObject {
             layer.removeAllAnimations()
             layer.position = self.alignedCenter(pose.position, on: layer)
             layer.transform = Self.scaleTransform(pose.scale)
-            layer.shadowOpacity = pose.shadow
             layer.opacity = 1
         }
         grabOffset = DragCarrierGeometry.grabOffset(pointer: screenPoint, carriedCenter: pose.position,
@@ -351,7 +350,7 @@ final class DragController: ObservableObject {
         installMonitors()
         startPoll()
         flightTimeline = nil
-        applyCarrierVisualState(animated: true)   // 投影从 0 回到拎着的样子；按住期缩放 0.93
+        applyCarrierVisualState(animated: true)   // 按住期缩放 0.93
         HoverTrace.dragHandoff("regrab", msSinceBegin: elapsedMs)
         return true
     }
@@ -694,7 +693,6 @@ final class DragController: ObservableObject {
                 DragCarrierGeometry.panelCenter(ofScreenRect: sourceScreenRect, panelFrame: frame), on: layer)
             layer.transform = CATransform3DIdentity
             layer.opacity = DragLandingPlan.candidateOpacity
-            self.applyShadow(nil, to: layer)   // 无投影，且把半径/偏移复位（上次飞行收小过）
         }
         orderCarrierFrontIfNeeded(panel)
         HoverTrace.dragHandoff("candidatePrepared", msSinceBegin: 0)
@@ -1266,7 +1264,6 @@ final class DragController: ObservableObject {
             layer.position = self.alignedCenter(center, on: layer)
             layer.transform = Self.scaleTransform(pose.scale)
             layer.opacity = 1
-            self.applyShadow(nil, to: layer)   // 卡槽本身没有投影，所以起手也不能有；顺带复位半径/偏移
         }
         orderCarrierFrontIfNeeded(panel)
     }
@@ -1343,7 +1340,7 @@ final class DragController: ObservableObject {
     /// 缩放 + 透明度（进/出投放区、转正、文件夹拖出条外）统一走这一个出口，
     /// 免得几处各写各的、状态叠在一起时互相覆盖。
     private func applyCarrierVisualState(animated: Bool) {
-        // 同 `moveCarrier`：抬起之前载体保持「卡槽原样」（0.93、无投影），
+        // 同 `moveCarrier`：抬起之前载体保持「卡槽原样」（0.93），
         // 否则起拖当轮一次投放区判定就能把它提前放大到 1.05，抬起动画就成了半截。
         guard carrierLifted, let layer = carrierLayer, draggingPayload != nil else { return }
         let scale = regrabPressed ? ChipPressDecision.pressedScale : carrierVisualScale
@@ -1357,9 +1354,6 @@ final class DragController: ObservableObject {
         }
         layer.transform = Self.scaleTransform(scale)
         layer.opacity = opacity
-        // 拎在手里就是大投影。**重抓正在飞的图标时这一步是必需的**：那时投影已经收成了
-        // 落地形状（小半径），不还原的话接着拖会一直是贴着卡的小影子。
-        applyShadow(Self.carrierShadow, to: layer)
         CATransaction.commit()
     }
 
@@ -1439,7 +1433,7 @@ final class DragController: ObservableObject {
         // 起点：还在飞（纠偏重发）就用时间线算出的此刻位置，否则就是拎着时的 model 值。
         let now = CACurrentMediaTime()
         let start = landingPose(at: now)
-            ?? LayerPose(position: layer.position, scale: Self.scale(of: layer.transform), shadow: layer.shadowOpacity)
+            ?? LayerPose(position: layer.position, scale: Self.scale(of: layer.transform))
         landingAnimation &+= 1
         let generation = landingAnimation
         let c = flight.curve   // 每次飞行自带曲线（近缓远快），和 duration 一样不许分开算
@@ -1462,23 +1456,20 @@ final class DragController: ObservableObject {
         layer.position = destination
         layer.transform = Self.scaleTransform(flight.toScale)
         layer.opacity = flight.toOpacity        // 飞回卡槽 = 1（文件夹拖出条外的淡出要还原）；吸进胶囊 = 0
-        // 投影收成条上那张卡的图标投影（吸进胶囊那支整体淡到 0，投影跟着没意义，一并归零）。
-        applyShadow(flight.toOpacity > 0 ? Self.landedShadow : nil, to: layer)
         CATransaction.commit()
         // 时间线：起飞时刻取事务开始前那一刻（`now`）。commit 本身是一次到 WindowServer 的往返，
         // 取 commit 之后会比屏幕慢几 ms（抽帧实测重抓时往回退 3pt）；宁可估得略靠前——
         // 冻结点比屏幕多走一两 pt 看着就是「又动了一下停住」，往回退才是跳。
         flightTimeline = FlightTimeline(beganAt: now, start: start,
-                                        destination: LayerPose(position: destination, scale: flight.toScale, shadow: 0),
+                                        destination: LayerPose(position: destination, scale: flight.toScale),
                                         duration: flight.duration, curve: flight.curve)
         scheduleLandingFinish(token: token)
     }
 
-    /// 图层的一组呈现值：位置（面板坐标）、缩放、投影。
+    /// 图层的一组呈现值：位置（面板坐标）+ 缩放。载体不带投影，所以这里没有投影项。
     private struct LayerPose {
         var position: CGPoint
         var scale: CGFloat
-        var shadow: Float
     }
 
     /// 这一段飞行的时间线。**「图标此刻在哪」按它算，不读 `presentation()`**：后者比屏幕落后约两帧
@@ -1494,8 +1485,7 @@ final class DragController: ObservableObject {
             let p = CGFloat(curve.progress(at: (time - beganAt) / duration))
             return LayerPose(position: CGPoint(x: start.position.x + (destination.position.x - start.position.x) * p,
                                                y: start.position.y + (destination.position.y - start.position.y) * p),
-                             scale: start.scale + (destination.scale - start.scale) * p,
-                             shadow: start.shadow + (destination.shadow - start.shadow) * Float(p))
+                             scale: start.scale + (destination.scale - start.scale) * p)
         }
     }
     private var flightTimeline: FlightTimeline?
@@ -1518,14 +1508,6 @@ final class DragController: ObservableObject {
         HoverTrace.landingDelta(dx: got.x - want.x, dy: got.y - want.y)
     }
 
-    /// 给载体图层套一组投影值（`nil` = 不画）。**三个属性要一起动**——只动不透明度的话，
-    /// 落地时投影的半径还是拎着时的 6，形状对不上条上那张卡。
-    private func applyShadow(_ shadow: DockShadow?, to layer: CALayer) {
-        layer.shadowRadius = shadow?.radius ?? Self.carrierShadow.radius
-        layer.shadowOffset = CGSize(width: 0, height: -(shadow?.y ?? Self.carrierShadow.y))
-        layer.shadowOpacity = Float(shadow?.tint.opacity ?? 0)
-    }
-
     private static func scaleTransform(_ scale: CGFloat) -> CATransform3D {
         CATransform3DMakeScale(scale, scale, 1)
     }
@@ -1544,18 +1526,6 @@ final class DragController: ObservableObject {
                                          size: layer.bounds.size,
                                          scale: carrierSnapshot?.scale ?? 2)
     }
-
-    private static let carrierShadow = DockThemeTokens.standard.carrierShadow
-    /// 落地时载体图层该有的投影 = **条上那张卡的图标投影**。
-    ///
-    /// 以前是动到 0，于是交接前后差了整整一层投影：位图里不烘投影（AGENTS 早有这条），
-    /// 卡显形时它自己的图标投影才补上来——owner 2026-08-19 报的「落位瞬间阴影变强闪一下」。
-    /// 让图层投影在飞行末正好收成同一组数（0.12 / r2 / y1），交接两边就一样了。
-    ///
-    /// **半径照抄 `iconShadow` 的 2，不要自作聪明放大。** 试过 4（想补偿 `CALayer.shadowRadius`
-    /// 与 SwiftUI `.shadow(radius:)` 刻度不同），落位台阶反而从 +2.85 涨到 +6.15——半径越大
-    /// 阴影摊得越薄，落在图标近旁那一圈的反而更浅。
-    private static let landedShadow = DockThemeTokens.standard.iconShadow
 
     private func makeCarrierSurface(frame: CGRect) -> CarrierSurface {
         // NonConstrainingPanel: 载体铺满**一块屏**（不是并集，见 `DragCarrierGeometry.screenFrame`），
@@ -1594,12 +1564,9 @@ final class DragController: ObservableObject {
         // **不要在这里 `layer.actions = […NSNull]` 一刀切关掉隐式动作**：归位飞行与进出投放区的缩放
         // 走的正是「事务里设时长 + 直接赋值」的隐式动画，全关掉它们就变成瞬移（2026-08-19 踩过一次：
         // 松手后图标一帧跳回卡槽，飞行没了）。瞬时赋值统一包在 `instantly` 里关动画即可。
-        // 投影是图层属性、不烘进位图：卡槽本身没有投影，落地那一帧要逐像素一致。
-        let shadow = Self.carrierShadow
-        layer.shadowColor = CGColor(gray: shadow.tint.base == .white ? 1 : 0, alpha: 1)
-        layer.shadowRadius = shadow.radius
-        layer.shadowOffset = CGSize(width: 0, height: -shadow.y)   // 图层 y 向上，往下投要反号
-        layer.shadowOpacity = 0
+        // **载体一路都不带投影**（owner 2026-08-19：条上的图标不投影，拎起来的这份也不投影）。
+        // `CALayer` 默认就不画，所以这里一个 shadow 属性都不设——一旦有人设了半个，
+        // 落位交接就又会出现「位图的投影比卡的淡」那种台阶（那正是上一轮 +2.85 的成因）。
         container.layer?.addSublayer(layer)
         // 飞行可打断：图标当前帧就是命中区，按下 = 从此刻位置接着拖（见 `regrabLanding`）。
         container.grabRegion = { [weak self] in self?.landingIconPanelFrame() }

@@ -1920,7 +1920,9 @@ struct ChipView: View {
             .aspectRatio(contentMode: .fit)
             .frame(width: size, height: size)
             .clipShape(RoundedRectangle(cornerRadius: size / 4, style: .continuous))
-            .dockShadow(theme.iconShadow)
+            // 图标**不带外投影**（owner 2026-08-19，对齐原生 Dock）。别加回来：实测 macOS 的
+            // 图标资源自己不投影（画在全透明画布上，主体下方 alpha 恰好 0），我们加的那层是
+            // 净多出来的，条上量到图标正下方比两侧空隙暗 18–24。中转格方块、文件夹封面同此。
     }
 
     // MARK: - Context Menu

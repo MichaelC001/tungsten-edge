@@ -53,7 +53,6 @@ struct PinnedFolderChip: View {
         VStack(spacing: 2 * scale) {
             Spacer(minLength: 0)
             coverImage(size: coverSize)
-                .dockShadow(theme.iconShadow)
                 .overlay {
                     RoundedRectangle(cornerRadius: 7 * scale, style: .continuous)
                         .strokeBorder(theme.folderDropRing.color(active: isDropTarget), lineWidth: 1.5)
