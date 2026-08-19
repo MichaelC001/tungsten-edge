@@ -694,7 +694,7 @@ final class DragController: ObservableObject {
                 DragCarrierGeometry.panelCenter(ofScreenRect: sourceScreenRect, panelFrame: frame), on: layer)
             layer.transform = CATransform3DIdentity
             layer.opacity = DragLandingPlan.candidateOpacity
-            layer.shadowOpacity = 0
+            self.applyShadow(nil, to: layer)   // 无投影，且把半径/偏移复位（上次飞行收小过）
         }
         orderCarrierFrontIfNeeded(panel)
         HoverTrace.dragHandoff("candidatePrepared", msSinceBegin: 0)
@@ -1266,7 +1266,7 @@ final class DragController: ObservableObject {
             layer.position = self.alignedCenter(center, on: layer)
             layer.transform = Self.scaleTransform(pose.scale)
             layer.opacity = 1
-            layer.shadowOpacity = 0     // 卡槽本身没有投影，所以起手也不能有
+            self.applyShadow(nil, to: layer)   // 卡槽本身没有投影，所以起手也不能有；顺带复位半径/偏移
         }
         orderCarrierFrontIfNeeded(panel)
     }
@@ -1357,7 +1357,9 @@ final class DragController: ObservableObject {
         }
         layer.transform = Self.scaleTransform(scale)
         layer.opacity = opacity
-        layer.shadowOpacity = Float(Self.carrierShadow.tint.opacity)
+        // 拎在手里就是大投影。**重抓正在飞的图标时这一步是必需的**：那时投影已经收成了
+        // 落地形状（小半径），不还原的话接着拖会一直是贴着卡的小影子。
+        applyShadow(Self.carrierShadow, to: layer)
         CATransaction.commit()
     }
 
@@ -1460,7 +1462,8 @@ final class DragController: ObservableObject {
         layer.position = destination
         layer.transform = Self.scaleTransform(flight.toScale)
         layer.opacity = flight.toOpacity        // 飞回卡槽 = 1（文件夹拖出条外的淡出要还原）；吸进胶囊 = 0
-        layer.shadowOpacity = 0                 // 落地一帧必须和卡槽一样：没有投影
+        // 投影收成条上那张卡的图标投影（吸进胶囊那支整体淡到 0，投影跟着没意义，一并归零）。
+        applyShadow(flight.toOpacity > 0 ? Self.landedShadow : nil, to: layer)
         CATransaction.commit()
         // 时间线：起飞时刻取事务开始前那一刻（`now`）。commit 本身是一次到 WindowServer 的往返，
         // 取 commit 之后会比屏幕慢几 ms（抽帧实测重抓时往回退 3pt）；宁可估得略靠前——
@@ -1515,6 +1518,14 @@ final class DragController: ObservableObject {
         HoverTrace.landingDelta(dx: got.x - want.x, dy: got.y - want.y)
     }
 
+    /// 给载体图层套一组投影值（`nil` = 不画）。**三个属性要一起动**——只动不透明度的话，
+    /// 落地时投影的半径还是拎着时的 6，形状对不上条上那张卡。
+    private func applyShadow(_ shadow: DockShadow?, to layer: CALayer) {
+        layer.shadowRadius = shadow?.radius ?? Self.carrierShadow.radius
+        layer.shadowOffset = CGSize(width: 0, height: -(shadow?.y ?? Self.carrierShadow.y))
+        layer.shadowOpacity = Float(shadow?.tint.opacity ?? 0)
+    }
+
     private static func scaleTransform(_ scale: CGFloat) -> CATransform3D {
         CATransform3DMakeScale(scale, scale, 1)
     }
@@ -1535,6 +1546,16 @@ final class DragController: ObservableObject {
     }
 
     private static let carrierShadow = DockThemeTokens.standard.carrierShadow
+    /// 落地时载体图层该有的投影 = **条上那张卡的图标投影**。
+    ///
+    /// 以前是动到 0，于是交接前后差了整整一层投影：位图里不烘投影（AGENTS 早有这条），
+    /// 卡显形时它自己的图标投影才补上来——owner 2026-08-19 报的「落位瞬间阴影变强闪一下」。
+    /// 让图层投影在飞行末正好收成同一组数（0.12 / r2 / y1），交接两边就一样了。
+    ///
+    /// **半径照抄 `iconShadow` 的 2，不要自作聪明放大。** 试过 4（想补偿 `CALayer.shadowRadius`
+    /// 与 SwiftUI `.shadow(radius:)` 刻度不同），落位台阶反而从 +2.85 涨到 +6.15——半径越大
+    /// 阴影摊得越薄，落在图标近旁那一圈的反而更浅。
+    private static let landedShadow = DockThemeTokens.standard.iconShadow
 
     private func makeCarrierSurface(frame: CGRect) -> CarrierSurface {
         // NonConstrainingPanel: 载体铺满**一块屏**（不是并集，见 `DragCarrierGeometry.screenFrame`），

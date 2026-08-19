@@ -201,5 +201,13 @@ struct SnapshotRoot: View {
 
     var body: some View {
         ZStack { if let content { content } }
+            // **拖动副本的开关只在这一处置位。** 四个快照调用点分别经由
+            // `stripEntryContent` / `drawerChipContent`，而那两个 helper 同时也在渲染真正的卡；
+            // 要是靠传参，就得给它们加带默认值的形参——「漏传照样编译」正是这仓库栽过两次的地方
+            //（`ChipView.scale` 静默按中档、消息区整个没有名字气泡）。放在这里，现有四处和将来
+            // 任何新增的快照都自动覆盖，忘不掉。
+            //
+            // AGENTS 里「环境值刷不动长命 hosting root」那条不适用：快照宿主每次现建现拆。
+            .environment(\.isDragCarrierSnapshot, true)
     }
 }

@@ -1659,6 +1659,8 @@ struct ChipView: View {
     let isHovered: Bool
     var iconOnly: Bool = false
     var showRunningDot: Bool = false
+    /// 见 `EnvironmentValues.isDragCarrierSnapshot`：拍副本时不画圆点、不烘投影。
+    @Environment(\.isDragCarrierSnapshot) private var isDragCarrierSnapshot
     var drawerTap: (() -> Void)? = nil
     /// 外部手势（重击/中键预览）触发的脉冲信号：nonce 变化即触发一次 fireTapPulse，
     /// 给活访达窗口预览那 ~200ms 反查延迟一个"点到了"的即时确认。默认 0 = 不脉冲。
@@ -1778,8 +1780,10 @@ struct ChipView: View {
         }
         .frame(width: ChipPillMetrics.cardWidth * scale,
                height: ChipPillMetrics.chipHeight * scale)
+        // 拖起来的副本不画圆点（原生 Dock 同款：拖动时圆点消失，落位才回来）。
+        // 位图在圆点那块因此是**透明**的，交接那一轮条上卡的圆点直接透出来——不会闪也不会晚。
         .overlay(alignment: .bottom) {
-            if showRunningDot {
+            if showRunningDot && !isDragCarrierSnapshot {
                 Circle()
                     .fill(theme.runningDot.color)
                     .frame(width: 4, height: 4)

@@ -52,6 +52,8 @@ struct LauncherChip: View {
     var onPrimaryAction: (() -> Void)? = nil
 
     private let theme = DockThemeTokens.standard
+    /// 见 `EnvironmentValues.isDragCarrierSnapshot`：拍副本时不画圆点、不烘投影。
+    @Environment(\.isDragCarrierSnapshot) private var isDragCarrierSnapshot
 
     /// `.selfTracked` 时才用得上（抽屉）。任务条走 `.resolved(…)`，这份状态原地不动。
     @State private var selfHovering = false
@@ -115,8 +117,9 @@ struct LauncherChip: View {
         }
         .frame(width: ChipPillMetrics.cardWidth * scale,
                height: ChipPillMetrics.chipHeight * scale)
+        // 同 `ChipView`：拖起来的副本不画圆点（原生 Dock 同款）。
         .overlay(alignment: .bottom) {
-            if visual.showsRunningDot {
+            if visual.showsRunningDot && !isDragCarrierSnapshot {
                 Circle()
                     .fill(theme.runningDot.color)
                     .frame(width: 4, height: 4)

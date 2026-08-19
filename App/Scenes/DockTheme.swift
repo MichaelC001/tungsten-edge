@@ -257,13 +257,49 @@ extension View {
         if amount == 1.0 { self } else { self.saturation(amount) }
     }
 
-    /// 应用一个 `DockShadow`（x 恒为 0）。
+    /// 应用一个 `DockShadow`（x 恒为 0）。**拍拖动副本时一律不画**——投影是载体图层的属性，
+    /// 不烘进位图（理由与实测见 `EnvironmentValues.isDragCarrierSnapshot`）。
     func dockShadow(_ shadow: DockShadow) -> some View {
-        self.shadow(color: shadow.tint.color, radius: shadow.radius, x: 0, y: shadow.y)
+        modifier(DockShadowModifier(shadow: shadow))
     }
 
     /// 条件式光晕：`active` 为假时半径与不透明度都归零（等价于不画）。
+    /// 光晕不在「不烘投影」的范围内：它是卡自己的一部分（拖动中也该跟着走），不是落地要交接的投影。
     func dockGlow(_ tint: DockTint, radius: CGFloat, active: Bool) -> some View {
         self.shadow(color: tint.color(active: active), radius: active ? radius : 0)
+    }
+}
+
+struct DragCarrierSnapshotKey: EnvironmentKey {
+    static let defaultValue = false
+}
+
+extension EnvironmentValues {
+    /// 这一棵视图树是不是正被拍成拖动副本的位图。
+    ///
+    /// 拍出来的位图与屏幕上那张卡有**两处刻意的不同**，都由它控制：
+    /// - **不画运行小圆点**：原生 Dock 拖起有圆点的图标时圆点是消失的，落位才回来（owner 2026-08-19）。
+    /// - **不烘任何投影**：投影必须是载体图层的属性（AGENTS 早有这条），而 `cacheDisplay` 抓
+    ///   SwiftUI 的 `.shadow` 只抓到约四分之一强度——实测同一块白板 0.6 的投影只捕到 alpha 23（
+    ///   `ImageRenderer` 同一张是 99）。于是飞行中的副本几乎没有图标投影，卡一显形投影就补上来，
+    ///   看着就是「落位时阴影闪一下变强」。改成不烘、由图层投影在飞行末收成图标投影的形状，
+    ///   交接两边就一致了（见 `DragController.flyCarrier`）。
+    var isDragCarrierSnapshot: Bool {
+        get { self[DragCarrierSnapshotKey.self] }
+        set { self[DragCarrierSnapshotKey.self] = newValue }
+    }
+}
+
+/// `dockShadow` 的实现体。做成 `ViewModifier` 只是为了能读环境——`View` 的扩展方法里读不到。
+private struct DockShadowModifier: ViewModifier {
+    let shadow: DockShadow
+    @Environment(\.isDragCarrierSnapshot) private var isSnapshot
+
+    func body(content: Content) -> some View {
+        if isSnapshot {
+            content
+        } else {
+            content.shadow(color: shadow.tint.color, radius: shadow.radius, x: 0, y: shadow.y)
+        }
     }
 }
