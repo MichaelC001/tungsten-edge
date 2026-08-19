@@ -78,7 +78,11 @@ codesign -dvvv "$APP" 2>&1 | grep -E "^Authority=|^Identifier=|^TeamIdentifier=|
 SIGNED_ENTS="$(codesign -d --entitlements - --xml "$APP" 2>/dev/null || true)"
 grep -q 'com.apple.security.automation.apple-events' <<<"$SIGNED_ENTS" \
   || { echo "error: 签名后的 app 里没有 Apple Events entitlement（Finder 目录预览会失效）" >&2; exit 1; }
-codesign -dvvv "$APP" 2>&1 | grep -q 'flags=.*runtime' \
+# 先落进变量再判，**不要写成 `codesign … | grep -q`**：`grep -q` 命中就立刻关掉管道，
+# codesign 吃到 SIGPIPE 退出码非零，在 `set -o pipefail` 下整条管道被判失败——签名明明
+# 是对的，脚本却报「没有 hardened runtime 标志」（2026-08-19 实际撞上）。
+SIGNED_INFO="$(codesign -dvvv "$APP" 2>&1 || true)"
+grep -q 'flags=.*runtime' <<<"$SIGNED_INFO" \
   || { echo "error: 签名后的 app 没有 hardened runtime 标志" >&2; exit 1; }
 
 echo "==> 退出正在运行的实例…"
