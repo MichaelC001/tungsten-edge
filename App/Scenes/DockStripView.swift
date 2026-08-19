@@ -486,19 +486,27 @@ struct DockStripView: View {
             updateDrawerToMessagingRelease(projection: projection)
             updateDrawerToStripConvert(projection: projection)
             updateStripBlockReorder(projection: projection)
+            updateLiveReorder(projection: projection)
             updateMessagingReorder(messagingIDs: projection.messagingIDs)
+            updateFolderReorder()
             syncConvertedCarrier(projection: projection)
             updateFolderDragZone()
             updateLandingAnchor()
+        }
+        // 归位飞行途中点了一下图标 = 点了这张卡（owner 2026-08-19：「落地前点它没反应」）。
+        // 按 entry 分派、逐字镜像 `stripEntryContent` 各分支的 tap；用**此刻**的投影，不用载荷里起拖时那份。
+        .onReceive(dragController.carrierClicks) { payload in
+            performCarrierClick(payload, projection: freshProjection())
         }
         // 转正那一刻上面那个闭包手里的 projection 还是**旧的**（app 还在抽屉里），代表卡/让位卡都算不出来。
         // 光靠鼠标驱动就意味着「光标停在边界不动 = 一直双影」。store 一变就再算一次，把那一帧补上。
         .onChange(of: projection.liveOrderIDs) { _ in
             syncConvertedCarrier(projection: freshProjection())
         }
-        // 归位飞行结束、手里空了 → 立刻重判一次悬停。没有这条的话，指针不动就一直是"无人悬停"，
-        // 松手之后要晃一下鼠标名字气泡才回来。
-        .onChange(of: dragController.isCarrying) { _ in
+        // 悬停压制的开关翻转时重判一次：起拖藏卡那一刻清掉旧悬停；落地按住期结束（指针动了）
+        // 那一刻按当前指针位置补上悬停。**不再在「手里空了」那一刻重判**——那正是落地一停稳
+        // 就往上长一截的来源（见 `refreshHoveredEntry`）。
+        .onChange(of: dragController.hoverSuppressed) { _ in
             refreshHoveredEntry(frames: stripHoverFrames, origin: stripRootScreenRect)
         }
         // 拖动中消息 chip 的 app 从消息区消失（退出/外部 unmark/快照丢）→ 取消拖动，免得空位卡死。
@@ -728,6 +736,26 @@ struct DockStripView: View {
                                 after: point.x > hit.value.midX, current: current)
     }
 
+    /// live 区（窗口卡 / 保留占位）重排的**唯一**驱动：指针位置，不是 chip 自己的手势
+    ///（2026-08-19 起与消息区 / 抽屉 / 转正块同一条规矩）。归位飞行中被重新抓住的拖动
+    /// 没有 SwiftUI 手势（`DragController.regrabLanding`），只有这条路能让它重排。
+    /// 悬在投放区（胶囊 / 抽屉）时不重排——手指抬向胶囊时 y 已离开条内行，
+    /// `contains` 也不会命中（Codex 二审第 4 条的两道闸都保留）。
+    private func updateLiveReorder(projection: StripProjection) {
+        let dc = dragController
+        guard let p = dc.draggingPayload, p.source == .strip, !dc.isOverDropZone,
+              let pt = stripPoint(from: dc.globalLocation) else { return }
+        reorderTarget(at: pt, dragging: p.id, current: projection.liveOrderIDs)
+    }
+
+    /// 文件夹区内重排的唯一驱动，同上。
+    private func updateFolderReorder() {
+        let dc = dragController
+        guard let p = dc.draggingPayload, p.source == .folder,
+              let pt = stripPoint(from: dc.globalLocation) else { return }
+        folderReorderTarget(at: pt, dragging: p.id)
+    }
+
     // MARK: - 抽屉图标拖回任务条·精确落点（运行中应用，全局鼠标驱动，镜像 DrawerView）
 
     /// 抽屉拖出模式（判定是纯函数 `DragConversionPlan.drawerDragOutMode`，单测覆盖；这里只喂当前事实）。
@@ -755,9 +783,46 @@ struct DockStripView: View {
         guard dc.isConvertedToStrip, let p = dc.draggingPayload, p.source == .drawer else { return }
         let rep = projection.liveChipIDs(bundleID: p.bundleID).first
             .flatMap { projection.liveOrderIDs.contains($0) ? projection.item(forID: $0) : nil }
+        let changed = dc.convertedRepresentative != rep
         dc.setConvertedRepresentative(rep, chipID: projection.liveEntryIDs(bundleID: p.bundleID).first)
+        // 载体改画代表卡（与条内拖动同款）。`rep` 变回 nil = 回滚，传 nil 让载体换回起拖时那张图。
+        guard changed else { return }
+        dc.setCarrierSnapshot(rep.flatMap { carrierSnapshot(for: .window($0), projection: projection) })
     }
 
+
+    /// 飞行途中被点了一下的那张卡该干什么：和它在条上被点一下**完全一样**。
+    /// 窗口卡 → 切换那个窗口；保留应用 / 无主窗的消息应用 → 运行中唤主窗、未运行启动、启动中不动。
+    /// 文件夹 chip 不做（弹窗锚在还空着的格上，图标半秒后才到）；找不到 entry（已经不在条上）不做。
+    private func performCarrierClick(_ payload: DragPayload, projection: StripProjection) {
+        let entryID: String
+        switch payload.source {
+        case .strip: entryID = payload.id
+        case .messaging: entryID = "msg-app-\(payload.bundleID)"
+        case .drawer, .folder: return
+        }
+        guard let entry = projection.entries.first(where: { $0.id == entryID }) else { return }
+        switch entry {
+        case let .window(item):
+            runtime.toggle(windowID: item.actionWindowID)
+        case let .messagingApp(bid, main):
+            if let main { runtime.toggle(windowID: main.actionWindowID) } else { launcherTap(bid) }
+        case let .keptApp(bid):
+            launcherTap(bid)
+        case .pinnedFolder, .shelf, .divider:
+            return
+        }
+    }
+
+    /// `LauncherChip` 在条上的两条 tap 路径（`onTap: reopen` / `onLaunch`），加上它自己的「启动中不动」闸。
+    private func launcherTap(_ bid: String) {
+        guard !runtime.launchingBundleIDs.contains(bid) else { return }
+        if runningApplicationStore.isRunning(bid) {
+            Self.reopenMainWindow(bundleID: bid)
+        } else {
+            _ = runtime.beginLaunch(bid)
+        }
+    }
 
     /// 松手时浮动副本该飞回哪一格（屏幕坐标）。**每次光标更新都写，包括写 nil**——
     /// 抽屉侧也在写它自己那一份，靠 owner 标签互不覆盖；不写 nil 的话，抽屉图标转正进任务条之后，
@@ -781,6 +846,65 @@ struct DockStripView: View {
         dragController.setLandingAnchor(anchor, owner: .strip)
     }
 
+    /// 拍一张载体位图。**画的就是 `stripEntryContent` 那一份**——渲染卡槽和渲染载体是
+    /// 同一个函数、同一批参数，只把「悬停」和「入场动画」按 false 传。所以「载体和卡槽同款」
+    /// 是构造上成立的，不靠一张要人工维持的对照表（那种表这个仓库已经漏过两次：
+    /// `ChipView.scale` 静默按中档渲染、消息区整个没有名字气泡）。
+    ///
+    /// 环境对象要在这里重新注入：`ChipView` 有五个 `@EnvironmentObject`，少一个就崩。
+    private func carrierSnapshot(for entry: StripEntry, projection: StripProjection) -> CarrierSnapshot? {
+        ChipSnapshotter.snapshot(
+            of: stripEntryContent(entry, projection: projection, hovered: false, entrance: false)
+                .environmentObject(runtime)
+                .environmentObject(drawerStore)
+                .environmentObject(messagingStore)
+                .environmentObject(keptAppStore)
+                .environmentObject(runningApplicationStore)
+                .environmentObject(appMembershipController)
+                .environmentObject(settingsStore)
+                .environmentObject(badgeStore)
+                .environmentObject(pinnedFolderStore)
+                .environmentObject(folderCoverStore),
+            screenPoint: CGPoint(x: stripRootScreenRect.midX, y: stripRootScreenRect.midY)
+        )
+    }
+
+    /// 卡槽**此刻**的姿态：悬停放大（安静档底锚 1.10 / 文件夹 chip 底锚 1.12）× 按压 0.93（中心）。
+    /// 载体第一帧按它摆才和卡槽逐像素重合——推导与数值见 `DragCarrierGeometry.pickUpPose`。
+    /// 悬停放大的倍数用渲染卡片的**同一个** `ChipPillMetrics.quietHoverScale(forCardWidth:scale:)` 算，
+    /// 卡宽取量到的帧宽（宽标题卡的封顶规则才对得上）。
+    private func pickUpPose(for entry: StripEntry, slot: CGRect?) -> DragCarrierGeometry.PickUpPose {
+        let hovered = hoveredEntryID == entry.id
+        let height = slot?.height ?? ChipPillMetrics.chipHeight * dockScale
+        switch entry {
+        case .window, .messagingApp, .keptApp:
+            let width = slot?.width ?? ChipPillMetrics.cardWidth * dockScale
+            let hoverScale: CGFloat? = hoverStyle.showsQuietHoverFeedback(isHovering: hovered)
+                ? ChipPillMetrics.quietHoverScale(forCardWidth: width, scale: dockScale)
+                : nil
+            return DragCarrierGeometry.pickUpPose(
+                chipHeight: height,
+                pressedScale: ChipPressSwitches.pressDownEnabled ? ChipPressDecision.pressedScale : nil,
+                hoverScale: hoverScale)
+        case .pinnedFolder:
+            // 文件夹 chip 两档都是 1.12 底锚放大，且没有按压反馈（AGENTS《Taskbar Size Tiers》）。
+            return DragCarrierGeometry.pickUpPose(chipHeight: height, pressedScale: nil,
+                                                  hoverScale: hovered ? PinnedFolderChip.hoverScale : nil)
+        case .shelf, .divider:
+            return .resting
+        }
+    }
+
+    /// 按下那一刻给 `DragController` 预备候选（位图 + 卡槽帧）。帧还没量到就不预备，
+    /// 起拖时会退回「先压着卡等两个显示帧」那条路。
+    private func prepareDragCandidate(_ entry: StripEntry, id: String, slot: CGRect?,
+                                      projection: StripProjection) {
+        guard let slot, stripRootScreenRect != .zero else { return }
+        dragController.prepareCandidate(payloadID: id,
+                                        sourceScreenRect: stripFrameToScreen(slot),
+                                        snapshot: carrierSnapshot(for: entry, projection: projection))
+    }
+
     /// 屏幕坐标（bottom-left）→ "strip" 空间点（top-left, y-down）。
     private func stripPoint(from global: CGPoint) -> CGPoint? {
         guard stripRootScreenRect != .zero else { return nil }
@@ -796,14 +920,19 @@ struct DockStripView: View {
     /// 帧和原点显式传进来而不是读 `self`：它俩自己也是 `@State`，在 `onChange` /
     /// `onPreferenceChange` 闭包里读到的是旧值。
     private func refreshHoveredEntry(frames: [String: CGRect], origin: CGRect) {
+        // 起拖那一两帧**原地冻结**：载体正按卡槽此刻的「悬停 × 按压」姿态压在卡上，
+        // 这时候把悬停清掉、卡开始回落，两者就对不上了（owner 2026-08-19「上下残影」）。
+        guard !dragController.hoverFrozen else { return }
         let resolved: String? = {
-            // 手里拎着东西时不判悬停。两个理由，第二个是 owner 2026-08-18 点名的「落地一瞬间别抖」：
+            // 手里拎着东西时不判悬停，落地之后也**先按住、等指针真动了再判**。三个理由：
             // ① 拖动途中指针扫过谁就给谁点亮、还弹名字气泡，本来就不对；
             // ② 松手位置必然压在刚落定的那张卡上——载体画的是**非悬停**态，
             //    卡一显形却已经是悬停态（安静档还要放大 1.10），两者尺寸不一样，
-            //    交接那一帧就"啵"地跳一下。关掉之后卡先按非悬停显形，
-            //    再由它自己那条 0.12~0.18s 的悬停动画平滑长起来。
-            guard !dragController.isCarrying else { return nil }
+            //    交接那一帧就"啵"地跳一下；
+            // ③ 卡以 1.0 停稳后立刻重判悬停，安静档会当场往上长 1.10——图标刚停稳又动一下，
+            //    就是 owner 2026-08-19 报的「落位抖动」。AppKit 自己对拖放结束后的悬停也是
+            //    等鼠标动了才发 mouseEntered。按住期由 `DragController.hoverHoldPayload` 管。
+            guard !dragController.hoverSuppressed else { return nil }
             guard let pointer = pointerBox.value, origin != .zero else { return nil }
             let point = CGPoint(x: pointer.x - origin.minX, y: origin.maxY - pointer.y)
             return StripHoverResolution.chip(
@@ -1036,14 +1165,25 @@ struct DockStripView: View {
                 )
                 // simultaneousGesture so the chip's own onTapGesture / contextMenu stay intact.
                 // minimumDistance: 8 → a click never starts a drag (no misfire).
-                // 起拖交给 DragController（载体面板 + 监视器全程接管跟手/落点/收尾）；本手势只负责：
-                // ① 起拖一次（算 grabOffset，取屏幕坐标起点）；② 条内重排（进投放区即停，Codex 二审第 4 条 —
-                // 实测手势离开面板后不会自停，必须显式 gate）。onEnded 是监视器 mouseUp 之外的幂等兜底。
+                // 起拖交给 DragController（载体面板 + 监视器全程接管跟手/落点/收尾）；本手势只负责
+                // **起拖一次**（算 grabOffset，取屏幕坐标起点）。条内重排自 2026-08-19 起也由指针驱动
+                //（`updateLiveReorder`，同消息区 / 抽屉 / 转正块）：归位飞行中被重新抓住的拖动没有手势。
+                // onEnded 是监视器 mouseUp 之外的幂等兜底。
+                // **按下即预备**（`DragController.prepareCandidate`）：mouse-down 那一刻就把这张卡的位图
+                // 挂上载体图层预热纹理，起拖当轮才能「点亮 + 藏卡」同帧。松手没起拖就撤掉。
+                .simultaneousGesture(
+                    DragGesture(minimumDistance: 0, coordinateSpace: .named("strip"))
+                        .onChanged { _ in
+                            prepareDragCandidate(entry, id: item.id, slot: chipFrames[item.id], projection: projection)
+                        }
+                        .onEnded { _ in dragController.clearCandidate(payloadID: item.id) }
+                )
                 .simultaneousGesture(
                     DragGesture(minimumDistance: 8, coordinateSpace: .named("strip"))
                         .onChanged { value in
                             if dragController.draggingPayload == nil {
-                                let grab: CGSize = chipFrames[item.id].map {
+                                let slot = chipFrames[item.id]
+                                let grab: CGSize = slot.map {
                                     CGSize(width: $0.midX - value.startLocation.x,
                                            height: $0.midY - value.startLocation.y)
                                 } ?? .zero
@@ -1053,12 +1193,13 @@ struct DockStripView: View {
                                                           canExternalDrop: DragController.canStash(item))
                                 dragController.beginDrag(payload: payload,
                                                          startScreenLocation: NSEvent.mouseLocation,
-                                                         grabOffset: grab)
+                                                         grabOffset: grab,
+                                                         sourceScreenRect: slot.map(stripFrameToScreen) ?? .zero,
+                                                         pose: pickUpPose(for: entry, slot: slot),
+                                                         snapshot: carrierSnapshot(for: entry, projection: projection))
                             }
-                            if !dragController.isOverDropZone {
-                                reorderTarget(at: value.location, dragging: item.id,
-                                              current: projection.liveOrderIDs)
-                            }
+                            // 条内重排**不在这里**：由 `updateLiveReorder`（指针驱动）统一做——
+                            // 归位飞行中被重新抓住的拖动没有这个手势（见 `DragController.regrabLanding`）。
                         }
                         .onEnded { _ in dragController.endDrag() }
                 )
@@ -1075,11 +1216,21 @@ struct DockStripView: View {
                                                value: [bid: geo.frame(in: .named("strip"))])
                     }
                 )
+                // **按下即预备**（`DragController.prepareCandidate`）：mouse-down 那一刻就把这张卡的位图
+                // 挂上载体图层预热纹理，起拖当轮才能「点亮 + 藏卡」同帧。松手没起拖就撤掉。
+                .simultaneousGesture(
+                    DragGesture(minimumDistance: 0, coordinateSpace: .named("strip"))
+                        .onChanged { _ in
+                            prepareDragCandidate(entry, id: bid, slot: messagingChipFrames[bid], projection: projection)
+                        }
+                        .onEnded { _ in dragController.clearCandidate(payloadID: bid) }
+                )
                 .simultaneousGesture(
                     DragGesture(minimumDistance: 8, coordinateSpace: .named("strip"))
                         .onChanged { value in
                             guard dragController.draggingPayload == nil else { return }
-                            let grab: CGSize = messagingChipFrames[bid].map {
+                            let slot = messagingChipFrames[bid]
+                            let grab: CGSize = slot.map {
                                 CGSize(width: $0.midX - value.startLocation.x,
                                        height: $0.midY - value.startLocation.y)
                             } ?? .zero
@@ -1089,7 +1240,10 @@ struct DockStripView: View {
                                                       canExternalDrop: true)
                             dragController.beginDrag(payload: payload,
                                                      startScreenLocation: NSEvent.mouseLocation,
-                                                     grabOffset: grab)
+                                                     grabOffset: grab,
+                                                     sourceScreenRect: slot.map(stripFrameToScreen) ?? .zero,
+                                                     pose: pickUpPose(for: entry, slot: slot),
+                                                     snapshot: carrierSnapshot(for: entry, projection: projection))
                         }
                         .onEnded { _ in dragController.endDrag() }
                 )
@@ -1104,11 +1258,21 @@ struct DockStripView: View {
                                                value: [chipID: geo.frame(in: .named("strip"))])
                     }
                 )
+                // **按下即预备**（`DragController.prepareCandidate`）：mouse-down 那一刻就把这张卡的位图
+                // 挂上载体图层预热纹理，起拖当轮才能「点亮 + 藏卡」同帧。松手没起拖就撤掉。
+                .simultaneousGesture(
+                    DragGesture(minimumDistance: 0, coordinateSpace: .named("strip"))
+                        .onChanged { _ in
+                            prepareDragCandidate(entry, id: chipID, slot: chipFrames[chipID], projection: projection)
+                        }
+                        .onEnded { _ in dragController.clearCandidate(payloadID: chipID) }
+                )
                 .simultaneousGesture(
                     DragGesture(minimumDistance: 8, coordinateSpace: .named("strip"))
                         .onChanged { value in
                             if dragController.draggingPayload == nil {
-                                let grab: CGSize = chipFrames[chipID].map {
+                                let slot = chipFrames[chipID]
+                                let grab: CGSize = slot.map {
                                     CGSize(width: $0.midX - value.startLocation.x,
                                            height: $0.midY - value.startLocation.y)
                                 } ?? .zero
@@ -1118,12 +1282,12 @@ struct DockStripView: View {
                                                           canExternalDrop: true)
                                 dragController.beginDrag(payload: payload,
                                                          startScreenLocation: NSEvent.mouseLocation,
-                                                         grabOffset: grab)
+                                                         grabOffset: grab,
+                                                         sourceScreenRect: slot.map(stripFrameToScreen) ?? .zero,
+                                                         pose: pickUpPose(for: entry, slot: slot),
+                                                         snapshot: carrierSnapshot(for: entry, projection: projection))
                             }
-                            if !dragController.isOverDropZone {
-                                reorderTarget(at: value.location, dragging: chipID,
-                                              current: projection.liveOrderIDs)
-                            }
+                            // 条内重排见 `updateLiveReorder`（指针驱动，同 .window 分支）。
                         }
                         .onEnded { _ in dragController.endDrag() }
                 )
@@ -1131,8 +1295,8 @@ struct DockStripView: View {
             // 文件夹 chip：区内拖拽重排 + 拖出移除 + 拖回窗口区打开（owner 2026-07-06 反馈落地）。
             // 帧上报进**独立**的 FolderChipFramePreferenceKey（弹窗锚点 + 外部 pin 路由 + 本区重排
             // hit-test）,绝不混入 live 重排的 chipFrames（评审 P1）。手势镜像 .window 卡:起拖交
-            // DragController（.folder 来源,与 strip/drawer 收纳语义隔离）,onChanged 驱动区内重排,
-            // 并写入 FolderChipDropGeometry；最终移除/打开由 DragController.endDrag 的兜底收尾触发。
+            // DragController（.folder 来源,与 strip/drawer 收纳语义隔离）；区内重排与
+            // FolderChipDropGeometry 由指针驱动；最终移除/打开由 DragController.endDrag 的兜底收尾触发。
             stripEntryView(entry, projection: projection)
                 .opacity(draggingFolderPath == path ? 0 : 1)
                 .background(
@@ -1141,11 +1305,21 @@ struct DockStripView: View {
                                                value: [entry.id: geo.frame(in: .named("strip"))])
                     }
                 )
+                // **按下即预备**（`DragController.prepareCandidate`）：mouse-down 那一刻就把这张卡的位图
+                // 挂上载体图层预热纹理，起拖当轮才能「点亮 + 藏卡」同帧。松手没起拖就撤掉。
+                .simultaneousGesture(
+                    DragGesture(minimumDistance: 0, coordinateSpace: .named("strip"))
+                        .onChanged { _ in
+                            prepareDragCandidate(entry, id: path, slot: folderChipFrames[entry.id], projection: projection)
+                        }
+                        .onEnded { _ in dragController.clearCandidate(payloadID: path) }
+                )
                 .simultaneousGesture(
                     DragGesture(minimumDistance: 8, coordinateSpace: .named("strip"))
                         .onChanged { value in
                             if dragController.draggingPayload == nil {
-                                let grab: CGSize = folderChipFrames[entry.id].map {
+                                let slot = folderChipFrames[entry.id]
+                                let grab: CGSize = slot.map {
                                     CGSize(width: $0.midX - value.startLocation.x,
                                            height: $0.midY - value.startLocation.y)
                                 } ?? .zero
@@ -1155,10 +1329,13 @@ struct DockStripView: View {
                                                           canExternalDrop: false)
                                 dragController.beginDrag(payload: payload,
                                                          startScreenLocation: NSEvent.mouseLocation,
-                                                         grabOffset: grab)
+                                                         grabOffset: grab,
+                                                         sourceScreenRect: slot.map(stripFrameToScreen) ?? .zero,
+                                                         pose: pickUpPose(for: entry, slot: slot),
+                                                         snapshot: carrierSnapshot(for: entry, projection: projection))
                             }
-                            folderReorderTarget(at: value.location, dragging: path)
-                            updateFolderDragZone()
+                            // 区内重排 + 落点分类都由指针驱动（`updateFolderReorder` / `updateFolderDragZone`
+                            // 在 `.onReceive(pointerMoves)` 里）——重抓出来的拖动没有这个手势。
                         }
                         .onEnded { _ in dragController.endDrag() }
                 )
@@ -1182,7 +1359,8 @@ struct DockStripView: View {
     /// 于是宽缝天然是"什么都不弹"，两边的卡也不会隔着它抢。
     @ViewBuilder
     private func stripEntryView(_ entry: StripEntry, projection: StripProjection) -> some View {
-        stripEntryContent(entry, projection: projection)
+        stripEntryContent(entry, projection: projection,
+                          hovered: hoveredEntryID == entry.id, entrance: true)
             .background(
                 GeometryReader { geo in
                     Color.clear.preference(key: StripHoverFramePreferenceKey.self,
@@ -1191,9 +1369,18 @@ struct DockStripView: View {
             )
     }
 
+    /// 四个区唯一的渲染漏斗。**载体位图也从这里出**（`carrierSnapshot(for:projection:)`），
+    /// 所以「载体画的必须是卡槽同款视图」是构造上成立的，不需要另维护一张对照表。
+    ///
+    /// - Parameters:
+    ///   - hovered: 指针在不在这张卡上。以前是在这里读 `hoveredEntryID`，改成显式传入，
+    ///     快照路径才传得进 `false`（载体不可命中，画的必须是非悬停态）。
+    ///   - entrance: 要不要走入场动画（`stripEntrance`）。**快照必须传 `false`**：
+    ///     那个修饰器的 `@State` 从 `opacity 0 / offset 8` 起步，靠 `onAppear` 才翻正，
+    ///     而快照是同步拍的——拍出来会是一张半透明、偏上 8pt 的图。
     @ViewBuilder
-    private func stripEntryContent(_ entry: StripEntry, projection: StripProjection) -> some View {
-        let hovered = hoveredEntryID == entry.id
+    private func stripEntryContent(_ entry: StripEntry, projection: StripProjection,
+                                   hovered: Bool, entrance: Bool) -> some View {
         switch entry {
         case let .window(item):
             ChipView(item: item,
@@ -1201,7 +1388,8 @@ struct DockStripView: View {
                      hoverStyle: hoverStyle,
                      isHovered: hovered,
                      showRunningDot: true,
-                     pulseNonce: chipPulseNonces[item.id] ?? 0)
+                     pulseNonce: chipPulseNonces[item.id] ?? 0,
+                     slotHidden: projection.draggingID == item.id)
         case .divider:
             Rectangle()
                 .fill(theme.zoneDivider.color)
@@ -1226,7 +1414,8 @@ struct DockStripView: View {
                 hoverStyle: hoverStyle,
                 isHovered: hovered
             )
-            .stripEntrance(id: entry.id, delay: delay, animatedEntryIDs: $animatedEntryIDs)
+            .stripEntrance(id: entrance ? entry.id : nil, delay: delay,
+                           animatedEntryIDs: $animatedEntryIDs)
         case .shelf:
             ShelfChip(
                 itemCount: shelfStore.itemPaths.count,
@@ -1238,7 +1427,8 @@ struct DockStripView: View {
                 onClear: { shelfStore.clear() },
                 onAddFolder: onAddFolder
             )
-            .stripEntrance(id: entry.id, delay: 0, animatedEntryIDs: $animatedEntryIDs)
+            .stripEntrance(id: entrance ? entry.id : nil, delay: 0,
+                           animatedEntryIDs: $animatedEntryIDs)
         case let .messagingApp(bid, main):
             // 未读角标交给 chip 自己画（`badgeText:`），不再由这里套一层 ZStack 叠上去。
             // 叠在外面时它落在 chip 的缩放**之外**：悬停放大 / 按下回缩，红点纹丝不动
@@ -1250,7 +1440,8 @@ struct DockStripView: View {
                     // 定宽图标行，运行点标记它是 app 入口。
                     ChipView(item: main, scale: dockScale, hoverStyle: hoverStyle,
                              isHovered: hovered, iconOnly: true, showRunningDot: true,
-                             badgeText: badge)
+                             badgeText: badge,
+                             slotHidden: draggingMessagingBundleID == bid)
                 } else {
                     // 无主窗两态：运行中（关窗/常驻）→ 点击 reopen 主窗；未运行（图标下方无运行点）→ 点击启动。
                     // 统一模型下消息应用也有「在程序坞中保留」勾选（与「取消标记」并存），由纯投影决定。
@@ -1270,6 +1461,7 @@ struct DockStripView: View {
                                     controller: appMembershipController
                                  ),
                                  badgeText: badge,
+                                 slotHidden: draggingMessagingBundleID == bid,
                                  onTap: running ? { Self.reopenMainWindow(bundleID: bid) } : nil,
                                  onLaunch: { runtime.beginLaunch(bid) })
                 }
@@ -1289,6 +1481,7 @@ struct DockStripView: View {
                 hoverStyle: hoverStyle,
                 hoverInput: .resolved(hovered),
                 membershipItems: keptAppMembershipItems(bundleID: bid),
+                slotHidden: projection.draggingID == "app-\(bid)",
                 onTap: reopen,
                 onLaunch: { runtime.beginLaunch(bid) }
             )
@@ -1464,6 +1657,12 @@ struct ChipView: View {
     /// `hoverStyle` 那种"漏传即静默渲染错"的性质不同。
     /// 画在 chip 内部而不是由调用方叠 ZStack，理由见 `ChipBadgeView`。
     var badgeText: String? = nil
+    /// 这张卡的卡槽此刻是不是因为**正被拎在手里**而空着（`DragController.hiddenSlotPayload`）。
+    /// 一变 true 就把按压缩放清掉：条内重排会挪动这张卡、SwiftUI 随即取消按压手势，
+    /// `isTapPressed` 只能靠 1s 看门狗复位——落地显形那一刻它可能还是 0.93 或正在弹回，
+    /// 和以 1.0 停稳的载体差一截（owner 2026-08-19「落位抖动」的成分之一）。卡藏着时清，
+    /// 显形时必是 1.0。默认 `false` 是正确的省略语义（不拖动的卡不需要它），同 `badgeText`。
+    var slotHidden: Bool = false
     /// 点击确认脉冲：与状态无关的按压回弹。激活「已可见」窗口在亮/暗轴上零变化,
     /// 没有它就"毫无反应"（owner 2026-07-06）。纯视图层信号,永不喂 planner/frontmost 轴（AGENTS）。
     /// 声明式 .animation(value:) 驱动（LauncherChip 僵尸动画教训:禁 repeatForever+复位）。
@@ -1528,6 +1727,10 @@ struct ChipView: View {
             }
         }
         .animation(.easeInOut(duration: 0.2), value: item.showsTitle)
+        // 卡槽一空就清按压（理由见 `slotHidden`）。卡此刻透明，这次回弹没人看得见。
+        .onChange(of: slotHidden) { hidden in
+            if hidden, isTapPressed { isTapPressed = false }
+        }
     }
 
     // MARK: - Icon-only chip
@@ -2259,13 +2462,25 @@ extension View {
 // MARK: - Strip Entrance Modifier
 
 struct StripEntranceModifier: ViewModifier {
-    let id: String
+    /// `nil` = 这一次不播入场。**载体快照走的就是这条**：入场的 `@State` 从
+    /// `opacity 0 / offset 8` 起步、靠 `onAppear` 才翻正，而快照是同步拍的——
+    /// 不关掉的话拍出来会是一张半透明、往上偏 8pt 的图。
+    let id: String?
     let delay: Double
     @Binding var animatedEntryIDs: Set<String>
 
     @State private var isAppeared = false
 
+    @ViewBuilder
     func body(content: Content) -> some View {
+        if let id {
+            animated(content, id: id)
+        } else {
+            content
+        }
+    }
+
+    private func animated(_ content: Content, id: String) -> some View {
         content
             .offset(y: isAppeared ? 0 : 8)
             .opacity(isAppeared ? 1 : 0)
@@ -2286,7 +2501,7 @@ struct StripEntranceModifier: ViewModifier {
 }
 
 extension View {
-    func stripEntrance(id: String, delay: Double, animatedEntryIDs: Binding<Set<String>>) -> some View {
+    func stripEntrance(id: String?, delay: Double, animatedEntryIDs: Binding<Set<String>>) -> some View {
         self.modifier(StripEntranceModifier(id: id, delay: delay, animatedEntryIDs: animatedEntryIDs))
     }
 }

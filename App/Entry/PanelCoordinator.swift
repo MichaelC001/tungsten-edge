@@ -403,8 +403,9 @@ final class PanelCoordinator: NSObject {
         fullscreenSpaceHold = nil
         clearFullscreenSpaceArrowIntent()
 
-        // 先回滚未提交的跨面板拖拽事务，再拆监视器。
+        // 先回滚未提交的跨面板拖拽事务，再拆监视器；常驻的载体面板也要显式收掉。
         dragController?.cancelDrag()
+        dragController?.closeCarrierSurfaces()
         closeDrawer()
         closeFolderPopup(immediately: true)
         dismissWindowTitleTooltip()
@@ -961,25 +962,11 @@ final class PanelCoordinator: NSObject {
             messagingStore: messagingStore,
             keptAppStore: keptAppStore,
             dropZonesProvider: { [weak self] source in self?.dragDropZones(for: source) ?? [] },
-            screenProvider: { [weak self] in self?.carrierTargetScreen() ?? (NSScreen.main ?? NSScreen.screens[0]) },
-            carrierFactory: { [runtime = self.runtime,
-                               drawerStore = self.drawerStore,
-                               messagingStore = self.messagingStore,
-                               folderCoverStore = self.folderCoverStore,
-                               keptAppStore = self.keptAppStore,
-                               runningApplicationStore = self.runningApplicationStore,
-                               appMembershipController = self.appMembershipController,
-                               settingsStore = self.settingsStore] controller in
-                NSHostingView(rootView: DragCarrierView(controller: controller)
-                    .environmentObject(runtime)
-                    .environmentObject(drawerStore)
-                    .environmentObject(messagingStore)
-                    .environmentObject(folderCoverStore)
-                    .environmentObject(keptAppStore)
-                    .environmentObject(runningApplicationStore)
-                    .environmentObject(appMembershipController)
-                    .environmentObject(settingsStore))
-            }
+            // 一块屏一套载体面板（`DragController.CarrierSurface`），按指针所在屏切换——
+            // 「显示器具有单独的空间」下一个窗口只属于一块屏，铺并集反而在另一块屏上画不出来。
+            screensProvider: { NSScreen.screens },
+            // 松在胶囊上收纳时图标吸进这里（胶囊可视帧，去掉投影边距）。
+            stashTargetProvider: { [weak self] in self?.capsuleVisibleFrame }
         )
         // 文件夹 chip 拖动落定：几何由 DockStripView 写入 DragController，最终 mouseUp/轮询兜底在
         // endDrag 里回调到这里执行副作用。保持 .folder 与 strip/drawer 收纳语义隔离。
@@ -1020,6 +1007,12 @@ final class PanelCoordinator: NSObject {
     ///   shadowPadding=20 透明边，减 20 得 52×52 可见区，再外扩 8 容错，不能更宽——胶囊紧挨任务条，太宽会
     ///   "拖到附近就被收走"）；抽屉打开时叠加抽屉可见内容区。任务条本身不是它们的投放区。
     /// - `.drawer`（抽屉图标找移回目标）= 任务条 dock 面板可见内容区（减 shadowPadding）。
+    /// 胶囊的可视帧（屏幕坐标，目标帧优先）。给 `DragController` 的「吸进胶囊」飞行当终点。
+    private var capsuleVisibleFrame: CGRect? {
+        let frame = lastCapsuleTargetFrame != .zero ? lastCapsuleTargetFrame : capsulePanel?.frame
+        return frame?.insetBy(dx: Self.shadowPadding, dy: Self.shadowPadding)
+    }
+
     private func dragDropZones(for source: DragSource) -> [CGRect] {
         // 读**目标** frame：动画中 live frame 是中途值,会和视觉/落点短暂错位（Codex 二审 P2）。目标未初始化时退回 live。
         func target(_ stored: NSRect, _ live: NSRect?) -> NSRect? { stored != .zero ? stored : live }
@@ -1047,11 +1040,6 @@ final class PanelCoordinator: NSObject {
             // 全在 DockStripView 用 FolderChipDropZone 判定）。与 strip/drawer 收纳语义隔离（评审拍板）。
             return []
         }
-    }
-
-    private func carrierTargetScreen() -> NSScreen {
-        if let dock = dockPanel { return panelCurrentScreen(panel: dock) }
-        return NSScreen.main ?? NSScreen.screens[0]
     }
 
     // MARK: - 弹簧文件夹：拖卡悬停胶囊自动弹开抽屉

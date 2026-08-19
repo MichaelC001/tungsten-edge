@@ -40,6 +40,9 @@ struct PinnedFolderChip: View {
     /// 和这里既有的做法撞在一起，那就用同一条，不必为安静档另叠一个缩放。
     /// 幅度也不分档——分了反而要解释「为什么关掉名字之后放大得少一点」。
     private var showsHoverScale: Bool { showsHover || hoverStyle.showsQuietHoverFeedback(isHovering: isHovered) }
+    /// 悬停整块放大的倍数（底锚）。**起拖姿态也读它**（`DockStripView.pickUpPose`）：
+    /// 载体第一帧要按卡槽此刻的放大摆，写成两份数字就会漂。
+    static let hoverScale: CGFloat = 1.12
 
     private var folderName: String {
         FileManager.default.displayName(atPath: path)
@@ -73,7 +76,7 @@ struct PinnedFolderChip: View {
         .contentShape(Rectangle())
         // 悬停：整个 chip 放大上顶（原生 Dock 手感）。anchor .bottom 让底部名称基本不动、封面往上顶起。
         // scaleEffect 只是渲染变换，不改布局 frame——拖放命中读的是 .background GeometryReader 上报的未缩放 frame，不受影响。
-        .scaleEffect(showsHoverScale ? 1.12 : 1, anchor: .bottom)
+        .scaleEffect(showsHoverScale ? Self.hoverScale : 1, anchor: .bottom)
         .onTapGesture { onTap() }
         .nativeContextMenu { buildMenu() }
         .help(folderName)

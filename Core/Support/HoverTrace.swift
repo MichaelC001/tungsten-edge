@@ -141,17 +141,35 @@ enum HoverTrace {
     /// 起拖那一帧各步花了多久（owner 2026-08-18 报「选中图标拖动的第一帧有卡顿」）。
     /// `carrierCreated` = 这次是不是现建的载体面板——建面板要连带起一棵 SwiftUI 宿主树，
     /// 只有整个会话的第一次拖动会付这笔钱，靠它才分得清「每次都卡」还是「只有第一次卡」。
-    static func dragStart(totalMs: Double, carrierMs: Double, carrierCreated: Bool) {
+    /// `prepared` = 按下那一刻就预备好了候选（纹理已上传，起拖当轮放行）；false = 走的是
+    /// 「先压着卡等两个显示帧」那条退路——常规拖动里它应该几乎不出现。
+    static func dragStart(totalMs: Double, carrierMs: Double, carrierCreated: Bool, prepared: Bool) {
         guard isEnabled else { return }
         Writer.shared.append(
             "{\"t\":\(stamp()),\"kind\":\"dragStart\",\"ms\":\(round(totalMs * 10) / 10)," +
-            "\"carrierMs\":\(round(carrierMs * 10) / 10),\"created\":\(carrierCreated)}"
+            "\"carrierMs\":\(round(carrierMs * 10) / 10),\"created\":\(carrierCreated)," +
+            "\"prepared\":\(prepared)}"
         )
     }
 
-    /// 起拖之后的三个时刻，用来定位「图标凭空消失」那段空档到底卡在哪一步。
-    /// `what` 取值：`beginDrag` / `slotHidden`（条上那张卡真的藏了）/ `carrierDrawn`（副本真的画了第一帧）。
-    /// **空档 = slotHidden 早于 carrierDrawn**，两者之差就是屏幕上什么都没有的时长。
+    /// 拍一张载体位图花了多久、拍出多大。
+    ///
+    /// 起拖那一刻是在主线程上同步拍的，所以它直接算进「第一帧卡不卡」。spike 实测中位 0.59ms、
+    /// P95 0.87ms（预算 8ms），真机上要是超了，就把快照挪到 `chipPressGesture` 的 mouse-down
+    /// 时机预拍。`w`/`h` 是含外扩的逻辑尺寸；`ok:false` = 渲染失败，那次拖动会被直接拒掉。
+    static func carrierSnapshot(ms: Double, width: CGFloat, height: CGFloat, ok: Bool) {
+        guard isEnabled else { return }
+        Writer.shared.append(
+            "{\"t\":\(stamp()),\"kind\":\"snapshot\",\"ms\":\(round(ms * 10) / 10)," +
+            "\"w\":\(r1(width)),\"h\":\(r1(height)),\"ok\":\(ok)}"
+        )
+    }
+
+    /// 起拖路径上的异常时刻。
+    ///
+    /// 载体改成位图之后，「条上那张卡什么时候藏」不再是一场赛跑（`beginDrag` 同步把位图摆在
+    /// 卡槽原位），所以原来的 `slotHidden` / `carrierDrawn` 两个时刻没有了。现在只剩一个取值：
+    /// `noSnapshot` —— 位图没拍出来，那次拖动被直接拒掉（宁可不拖，也不能拎着空气）。
     static func dragHandoff(_ what: String, msSinceBegin: Double) {
         guard isEnabled else { return }
         Writer.shared.append(
@@ -160,16 +178,14 @@ enum HoverTrace {
         )
     }
 
-    /// 载体宿主视图摆到哪了：想要的原点、设完立刻读回的、下一轮再读回的、以及它是不是还在自动布局手里。
-    /// **`deferred` 和 `wanted` 对不上就说明有人把它挪走了**（自动布局在下一次 layout 覆盖 frame 是头号嫌疑）。
-    static func carrierPlacement(wanted: CGPoint, immediate: CGPoint, deferred: CGPoint,
-                                 size: CGSize, autolayout: Bool) {
-        guard isEnabled else { return }
+    /// 落地精度：载体最终停的位置与卡槽锚点差多少（载体面板内坐标，pt）。
+    ///
+    /// **这是「落位重影」有没有真被治好唯一的量化依据。** 上一版靠肉眼看不出「差 5pt」和
+    /// 「动态模糊」的区别，只能反复猜；这条把它变成日志里能数的事实。只记 > 0.5pt 的。
+    static func landingDelta(dx: CGFloat, dy: CGFloat) {
+        guard isEnabled, hypot(dx, dy) > 0.5 else { return }
         Writer.shared.append(
-            "{\"t\":\(stamp()),\"kind\":\"place\",\"wx\":\(r1(wanted.x)),\"wy\":\(r1(wanted.y))," +
-            "\"ix\":\(r1(immediate.x)),\"iy\":\(r1(immediate.y))," +
-            "\"dx\":\(r1(deferred.x)),\"dy\":\(r1(deferred.y))," +
-            "\"w\":\(r1(size.width)),\"h\":\(r1(size.height)),\"al\":\(autolayout)}"
+            "{\"t\":\(stamp()),\"kind\":\"landingDelta\",\"dx\":\(r1(dx)),\"dy\":\(r1(dy))}"
         )
     }
 

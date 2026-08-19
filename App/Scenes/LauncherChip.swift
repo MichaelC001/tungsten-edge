@@ -31,6 +31,15 @@ struct LauncherChip: View {
     /// 未读角标文本（消息区专用），`nil` = 不画。画在 chip 内部而不是由调用方叠 ZStack，
     /// 这样悬停放大、按压回缩、档位缩放它全都跟着走——理由见 `ChipBadgeView`。
     var badgeText: String? = nil
+    /// 这张图标的格子此刻是不是因为**正被拎在手里**而空着（`DragController.hiddenSlotPayload`）。
+    /// 一变 true 就清按压缩放：重排会挪动它、SwiftUI 取消按压手势，`isTapPressed` 只能靠 1s
+    /// 看门狗复位，落地显形时可能还是 0.93——和以 1.0 停稳的载体差一截。理由同 `ChipView.slotHidden`。
+    var slotHidden: Bool = false
+    /// 悬停反馈按住（只有 `.selfTracked` 的抽屉需要）：刚落定、指针还没动的那一格
+    /// （`DragController.hoverHoldPayload`）以及正被拎着的那一格。`.onHover` 在格子透明期间照样
+    /// 为 true，不按住的话落地显形那一刻就直接是 1.10——安静档「落位抖动」在抽屉里的形态。
+    /// 任务条走 `.resolved(…)`，悬停由整条跟踪区在源头压住，这里传默认 false。
+    var hoverSuppressed: Bool = false
     /// When set, replaces the default tap behavior (drawer show/hide toggle). Used by
     /// app-level strip entries that must reopen a missing main window.
     var onTap: (() -> Void)? = nil
@@ -56,6 +65,7 @@ struct LauncherChip: View {
         ProcessInfo.processInfo.environment["DOCK_LAUNCH_TRACE"] == "1"
 
     private var isHovering: Bool {
+        guard !hoverSuppressed else { return false }
         switch hoverInput {
         case let .resolved(value): return value
         case .selfTracked: return selfHovering
@@ -157,6 +167,10 @@ struct LauncherChip: View {
         )
         .nativeContextMenu { buildLauncherMenu() }
         .help(displayName)
+        // 格子一空就清按压（理由见 `slotHidden`）。图标此刻透明，这次回弹没人看得见。
+        .onChange(of: slotHidden) { hidden in
+            if hidden, isTapPressed { isTapPressed = false }
+        }
         .onAppear {
             trace("appear isLaunching=\(isLaunching)")
             if isLaunching { startBounce() }
@@ -243,8 +257,20 @@ struct LauncherChip: View {
     }
 
     private func handleTap() {
+        Self.performDefaultTap(bundleID: bundleID, isRunning: isRunning,
+                               launch: { launch() }, onOpen: onPrimaryAction)
+    }
+
+    /// 没有注入 `onTap` 时的默认左键行为（抽屉图标就是这一套）。抽成静态、供 `DrawerView` 复用的
+    /// 唯一理由：归位飞行途中点一下载体（`DragController.carrierClicks`）也得走**同一份**逻辑，
+    /// 不能在别处再抄一遍「前台就收起、否则唤出」。
+    /// - Parameters:
+    ///   - launch: 未运行时怎么启动（调用方自己决定要不要顺带 `onOpen`）。
+    ///   - onOpen: 唤出（unhide + open）时的附带动作——抽屉传「关抽屉」。
+    static func performDefaultTap(bundleID: String, isRunning: Bool,
+                                  launch: () -> Void, onOpen: (() -> Void)?) {
         if isRunning {
-            let runningApps = Self.regularRunningApplications(bundleID: bundleID)
+            let runningApps = regularRunningApplications(bundleID: bundleID)
             if runningApps.contains(where: \.isActive) {
                 // 在前台 → 收起（最小化）：抽屉保持打开
                 for app in runningApps { _ = app.hide() }
@@ -253,7 +279,7 @@ struct LauncherChip: View {
                 guard let appURL = NSWorkspace.shared.urlForApplication(withBundleIdentifier: bundleID) else { return }
                 for app in runningApps { _ = app.unhide() }
                 NSWorkspace.shared.openApplication(at: appURL, configuration: .init(), completionHandler: nil)
-                onPrimaryAction?()
+                onOpen?()
             }
         } else {
             launch()

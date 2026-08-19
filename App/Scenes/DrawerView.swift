@@ -155,7 +155,19 @@ struct DrawerView: View {
         .onReceive(dragController.pointerMoves) { _ in
             updateStripDropPreview(); updateDrawerReorder(); updateLandingAnchor()
         }
-        .onChange(of: dragController.draggingPayload?.id) { _ in updateStripDropPreview() }
+        .onChange(of: dragController.draggingPayload?.id) { id in
+            if id == nil { convertedCarrierID = nil }   // 拖动结束：下一次同一应用再进来要重新换图
+            updateStripDropPreview()
+        }
+        // 归位飞行途中点了一下抽屉图标 = 点了这个格子：走格子自己的默认左键行为（同一份静态逻辑）。
+        .onReceive(dragController.carrierClicks) { payload in
+            guard payload.source == .drawer, !runtime.launchingBundleIDs.contains(payload.id) else { return }
+            LauncherChip.performDefaultTap(
+                bundleID: payload.id,
+                isRunning: isRunning(payload.id),
+                launch: { if runtime.beginLaunch(payload.id) { onPrimaryAction() } },
+                onOpen: onPrimaryAction)
+        }
     }
 
     /// 两区网格本体。`.background` 量自然高度喂滚动判定；每区按各自 ID 列表做动画——增删/换行/重排都平滑。
@@ -231,9 +243,7 @@ struct DrawerView: View {
                   !dragController.isConvertedToStrip,
                   drawerRootScreenRect != .zero,
                   let frame = drawerFrames[p.id] else { return nil }
-            return CGRect(x: drawerRootScreenRect.minX + frame.minX,
-                          y: drawerRootScreenRect.maxY - frame.maxY,
-                          width: frame.width, height: frame.height)
+            return drawerFrameToScreen(frame)
         }()
         dragController.setLandingAnchor(anchor, owner: .drawer)
     }
@@ -250,9 +260,10 @@ struct DrawerView: View {
 
     /// `running` 按**区**传（运行区 true / 启动区 false），保证外观、点击与菜单都服从当前显示区。
     /// 启动后的进程在真窗口出现前仍留在启动区；runtime 的启动会话直接驱动弹跳。
-    @ViewBuilder
-    private func drawerChip(_ id: String, index: Int, zone: [String], running: Bool) -> some View {
-        let delay = Double(min(index, 6)) * 0.018
+    /// 抽屉格子里**画什么**。拆出来的唯一理由：载体位图要从这里出
+    /// （`ChipSnapshotter`），渲染格子和渲染载体必须是同一份代码、同一批参数。
+    /// 外面那层入场动画 / 拖动时置 0 的透明度 / 手势都不能进快照，所以留在 `drawerChip` 里。
+    private func drawerChipContent(_ id: String, running: Bool) -> some View {
         LauncherChip(bundleID: id,
                      isRunning: running,
                      isHidden: running ? isHiddenInSnapshot(id) : false,
@@ -271,8 +282,51 @@ struct DrawerView: View {
                      // 格子 30.8pt、指针在里面停留的时间远长于条上横扫，漏格不成问题。
                      hoverInput: .selfTracked,
                      membershipItems: membershipItems(for: id),
+                     slotHidden: isDragging(id),
+                     hoverSuppressed: isHoverSuppressed(id),
                      onLaunch: { runtime.beginLaunch(id) },
                      onPrimaryAction: onPrimaryAction)
+    }
+
+    /// 这一格的悬停反馈是不是该按住：正被拎着（`.onHover` 在透明期间照样为 true）、
+    /// 或刚落定而指针还没动（`DragController.hoverHoldPayload`）。任务条那边由整条跟踪区在源头压住，
+    /// 抽屉的 `LauncherChip` 各自挂 `.onHover`，只能在这里按格子压。
+    private func isHoverSuppressed(_ id: String) -> Bool {
+        if let p = dragController.hoverHoldPayload, p.source == .drawer, p.id == id { return true }
+        return isDragging(id)
+    }
+
+    /// 抽屉格子起拖那一刻的姿态：抽屉恒安静档、指针必在格子上（mouse-down 就发生在它上面），
+    /// 所以是 1.10 底锚放大 × 0.93 按压——除非悬停正被按住。倍数用渲染格子的同一个函数算。
+    private func pickUpPose(for id: String, slot: CGRect?) -> DragCarrierGeometry.PickUpPose {
+        let height = slot?.height ?? ChipPillMetrics.chipHeight * 0.7
+        let width = slot?.width ?? ChipPillMetrics.cardWidth * 0.7
+        let hoverScale: CGFloat? = isHoverSuppressed(id)
+            ? nil
+            : ChipPillMetrics.quietHoverScale(forCardWidth: width, scale: 0.7)
+        return DragCarrierGeometry.pickUpPose(
+            chipHeight: height,
+            pressedScale: ChipPressSwitches.pressDownEnabled ? ChipPressDecision.pressedScale : nil,
+            hoverScale: hoverScale)
+    }
+
+    /// 屏幕坐标的格子帧；抽屉根帧还没量到就给 nil（起拖时会退回「摆在指针下」）。
+    private func slotScreenRect(_ id: String) -> CGRect? {
+        guard drawerRootScreenRect != .zero, let slot = drawerFrames[id] else { return nil }
+        return drawerFrameToScreen(slot)
+    }
+
+    /// 松手时浮动副本该飞回抽屉哪一格 / 起拖时载体从哪一格接手：`"drawer"` 空间帧 → 屏幕坐标。
+    private func drawerFrameToScreen(_ frame: CGRect) -> CGRect {
+        CGRect(x: drawerRootScreenRect.minX + frame.minX,
+               y: drawerRootScreenRect.maxY - frame.maxY,
+               width: frame.width, height: frame.height)
+    }
+
+    @ViewBuilder
+    private func drawerChip(_ id: String, index: Int, zone: [String], running: Bool) -> some View {
+        let delay = Double(min(index, 6)) * 0.018
+        drawerChipContent(id, running: running)
             .offset(y: isPresented ? 0 : 20)
             .opacity(isPresented ? 1 : 0)
             .animation(.spring(response: 0.3, dampingFraction: 0.8).delay(delay), value: isPresented)
@@ -288,19 +342,39 @@ struct DrawerView: View {
             // 重排**不在这里做**——第一次重排会把被拖图标在网格里挪位,SwiftUI 随即取消这个手势、
             // onChanged 不再触发 → "挤一下就卡住"（owner 2026-06-22）。重排改由 updateDrawerReorder()
             // 按 DragController 的全局鼠标位置驱动（见 onChange(globalLocation)），图标怎么换位都不受影响。
+            // **按下即预备**（`DragController.prepareCandidate`）：mouse-down 那一刻就把这格的位图
+            // 挂上载体图层预热纹理，起拖当轮才能「点亮 + 藏格」同帧。松手没起拖就撤掉。
+            .simultaneousGesture(
+                DragGesture(minimumDistance: 0, coordinateSpace: .named("drawer"))
+                    .onChanged { _ in
+                        guard let rect = slotScreenRect(id) else { return }
+                        dragController.prepareCandidate(
+                            payloadID: id,
+                            sourceScreenRect: rect,
+                            snapshot: ChipSnapshotter.snapshot(of: drawerChipContent(id, running: running),
+                                                             screenPoint: CGPoint(x: drawerRootScreenRect.midX, y: drawerRootScreenRect.midY)))
+                    }
+                    .onEnded { _ in dragController.clearCandidate(payloadID: id) }
+            )
             .simultaneousGesture(
                 DragGesture(minimumDistance: 8, coordinateSpace: .named("drawer"))
                     .onChanged { value in
                         guard dragController.draggingPayload == nil else { return }
-                        let grab: CGSize = drawerFrames[id].map {
+                        let slot = drawerFrames[id]
+                        let grab: CGSize = slot.map {
                             CGSize(width: $0.midX - value.startLocation.x,
                                    height: $0.midY - value.startLocation.y)
                         } ?? .zero
                         let payload = DragPayload(source: .drawer, id: id, bundleID: id, item: nil,
                                                   visualKind: .drawerIcon, canExternalDrop: true)
-                        dragController.beginDrag(payload: payload,
-                                                 startScreenLocation: NSEvent.mouseLocation,
-                                                 grabOffset: grab)
+                        dragController.beginDrag(
+                            payload: payload,
+                            startScreenLocation: NSEvent.mouseLocation,
+                            grabOffset: grab,
+                            sourceScreenRect: slotScreenRect(id) ?? .zero,
+                            pose: pickUpPose(for: id, slot: slot),
+                            snapshot: ChipSnapshotter.snapshot(of: drawerChipContent(id, running: running),
+                                                             screenPoint: CGPoint(x: drawerRootScreenRect.midX, y: drawerRootScreenRect.midY)))
                     }
             )
     }
@@ -348,12 +422,38 @@ struct DrawerView: View {
             case .messaging: dc.convertMessagingToDrawer()  // 消息 chip 同一套收纳预览手感
             case .drawer, .folder: break
             }
+            syncConvertedCarrier()
         } else if clearlyOut {
             if dc.isConvertedFromStrip {
                 dc.revertStripFromDrawer()          // 拖出抽屉体 → 撤销还原(抽屉缩回最初样子)
             } else if dc.isConvertedFromMessaging {
                 dc.revertMessagingFromDrawer()      // 消息 chip 拖出 → 还原回消息区原位
             }
+            syncConvertedCarrier()
+        }
+    }
+
+    /// 任务条卡 / 消息 chip 一进抽屉体，载体就换成**抽屉格子的位图**（`drawerChipContent` 同款、0.7 倍、
+    /// 无角标），并按尺寸比例把抓取点重新锚到指针上；拖出抽屉体还原成起拖那张。
+    /// 反方向（抽屉图标转正进任务条）早就换图（`DockStripView.syncConvertedCarrier`），这个方向之前漏了：
+    /// 载体一直是 40pt 图标甚至 168pt 标题卡，压在抽屉边上（owner 2026-08-19 截图）。
+    /// 落进格子那一帧才能逐像素一致——位图必须由渲染格子的同一份代码出。
+    @State private var convertedCarrierID: String?
+    private func syncConvertedCarrier() {
+        let dc = dragController
+        let converted = dc.isConvertedFromStrip || dc.isConvertedFromMessaging
+        if converted, let p = dc.draggingPayload, p.source == .drawer {
+            guard convertedCarrierID != p.id else { return }
+            convertedCarrierID = p.id
+            // 刚 add 进成员的那一轮两个区列表可能还没算上它：不在启动区就按进程状态判。
+            let running = runningZoneIDs.contains(p.id) || (!launchZoneIDs.contains(p.id) && isRunning(p.id))
+            dc.setCarrierSnapshot(
+                ChipSnapshotter.snapshot(of: drawerChipContent(p.id, running: running),
+                                         screenPoint: CGPoint(x: drawerRootScreenRect.midX, y: drawerRootScreenRect.midY)),
+                reanchor: true)
+        } else if !converted, convertedCarrierID != nil {
+            convertedCarrierID = nil
+            dc.setCarrierSnapshot(nil, reanchor: true)   // 换回起拖那张；拖动已结束时里面直接不动
         }
     }
 }

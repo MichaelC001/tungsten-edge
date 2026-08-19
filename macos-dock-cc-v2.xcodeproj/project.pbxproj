@@ -7,6 +7,12 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		D20000000000000000000000 /* CarrierSnapshot.swift in Sources */ = {isa = PBXBuildFile; fileRef = D10000000000000000000000 /* CarrierSnapshot.swift */; };
+		D20000000000000000000005 /* CarrierSnapshot.swift in Sources */ = {isa = PBXBuildFile; fileRef = D10000000000000000000000 /* CarrierSnapshot.swift */; };
+		D20000000000000000000007 /* DragCarrierGeometry.swift in Sources */ = {isa = PBXBuildFile; fileRef = D10000000000000000000005 /* DragCarrierGeometry.swift */; };
+		D20000000000000000000008 /* DragCarrierGeometry.swift in Sources */ = {isa = PBXBuildFile; fileRef = D10000000000000000000005 /* DragCarrierGeometry.swift */; };
+		D20000000000000000000009 /* ChipSnapshotter.swift in Sources */ = {isa = PBXBuildFile; fileRef = D10000000000000000000008 /* ChipSnapshotter.swift */; };
+		D2000000000000000000000A /* DragCarrierGeometryTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = D1000000000000000000000A /* DragCarrierGeometryTests.swift */; };
 		F20000000000000000000001 /* FullscreenIntentDecision.swift in Sources */ = {isa = PBXBuildFile; fileRef = F10000000000000000000010 /* FullscreenIntentDecision.swift */; };
 		F20000000000000000000002 /* FullscreenIntentMonitor.swift in Sources */ = {isa = PBXBuildFile; fileRef = F10000000000000000000011 /* FullscreenIntentMonitor.swift */; };
 		F20000000000000000000003 /* FullscreenIntentDecision.swift in Sources */ = {isa = PBXBuildFile; fileRef = F10000000000000000000010 /* FullscreenIntentDecision.swift */; };
@@ -249,7 +255,6 @@
 		A00000000000000000000B201 /* AppNameRegistryTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A00000000000000000000B200 /* AppNameRegistryTests.swift */; };
 		A00000000000000000000B211 /* InstallationRecordTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A00000000000000000000B210 /* InstallationRecordTests.swift */; };
 		A00000000000000000006012 /* DragController.swift in Sources */ = {isa = PBXBuildFile; fileRef = A00000000000000000006010 /* DragController.swift */; };
-		A00000000000000000009741 /* DragCarrierView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A00000000000000000009740 /* DragCarrierView.swift */; };
 		A00000000000000000009751 /* NonConstrainingPanel.swift in Sources */ = {isa = PBXBuildFile; fileRef = A00000000000000000009750 /* NonConstrainingPanel.swift */; };
 		A00000000000000000009752 /* NonConstrainingPanel.swift in Sources */ = {isa = PBXBuildFile; fileRef = A00000000000000000009750 /* NonConstrainingPanel.swift */; };
 		A00000000000000000000C01 /* ManualPanelHostTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A00000000000000000000C00 /* ManualPanelHostTests.swift */; };
@@ -299,6 +304,10 @@
 /* End PBXContainerItemProxy section */
 
 /* Begin PBXFileReference section */
+		D10000000000000000000000 /* CarrierSnapshot.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CarrierSnapshot.swift; sourceTree = "<group>"; };
+		D10000000000000000000005 /* DragCarrierGeometry.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DragCarrierGeometry.swift; sourceTree = "<group>"; };
+		D10000000000000000000008 /* ChipSnapshotter.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChipSnapshotter.swift; sourceTree = "<group>"; };
+		D1000000000000000000000A /* DragCarrierGeometryTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DragCarrierGeometryTests.swift; sourceTree = "<group>"; };
 		F10000000000000000000010 /* FullscreenIntentDecision.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FullscreenIntentDecision.swift; sourceTree = "<group>"; };
 		F10000000000000000000011 /* FullscreenIntentMonitor.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FullscreenIntentMonitor.swift; sourceTree = "<group>"; };
 		F10000000000000000000012 /* FullscreenIntentDecisionTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FullscreenIntentDecisionTests.swift; sourceTree = "<group>"; };
@@ -346,7 +355,6 @@
 		A00000000000000000009800 /* CGWindowSnapshot.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CGWindowSnapshot.swift; sourceTree = "<group>"; };
 		A00000000000000000009801 /* CGWindowSnapshotTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CGWindowSnapshotTests.swift; sourceTree = "<group>"; };
 		A00000000000000000009700 /* DragConversionPlan.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DragConversionPlan.swift; sourceTree = "<group>"; };
-		A00000000000000000009740 /* DragCarrierView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DragCarrierView.swift; sourceTree = "<group>"; };
 		A00000000000000000009750 /* NonConstrainingPanel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NonConstrainingPanel.swift; sourceTree = "<group>"; };
 		A00000000000000000000C00 /* ManualPanelHostTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ManualPanelHostTests.swift; sourceTree = "<group>"; };
 		A00000000000000000009710 /* DragConversionPlanTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DragConversionPlanTests.swift; sourceTree = "<group>"; };
@@ -565,7 +573,7 @@
 				A000000000000000000019B0 /* MessagingAppStore.swift */,
 				A00000000000000000005010 /* StripOrderStore.swift */,
 				A00000000000000000006010 /* DragController.swift */,
-				A00000000000000000009740 /* DragCarrierView.swift */,
+				D10000000000000000000008 /* ChipSnapshotter.swift */,
 				A00000000000000000007010 /* DrawerOrderStore.swift */,
 				A00000000000000000008010 /* AppSettingsStore.swift */,
 				D10000000000000000000003 /* SettingsCoordinator.swift */,
@@ -684,6 +692,8 @@
 				D10000000000000000000041 /* StripContextMenuZone.swift */,
 				D10000000000000000000061 /* StripHoverResolution.swift */,
 				D10000000000000000000063 /* DragLandingPlan.swift */,
+				D10000000000000000000000 /* CarrierSnapshot.swift */,
+				D10000000000000000000005 /* DragCarrierGeometry.swift */,
 				D10000000000000000000065 /* StripBlockLanding.swift */,
 			);
 			path = Support;
@@ -906,6 +916,7 @@
 				D10000000000000000000042 /* StripContextMenuZoneTests.swift */,
 				D10000000000000000000062 /* StripHoverResolutionTests.swift */,
 				D10000000000000000000064 /* DragLandingPlanTests.swift */,
+				D1000000000000000000000A /* DragCarrierGeometryTests.swift */,
 				D10000000000000000000066 /* StripBlockLandingTests.swift */,
 				A00000000000000000009F10 /* GlobalHotKeyMonitorTests.swift */,
 				A000000000000000000090A0 /* PanelGeometryTests.swift */,
@@ -1093,6 +1104,9 @@
 					D20000000000000000000041 /* StripContextMenuZone.swift in Sources */,
 					D20000000000000000000061 /* StripHoverResolution.swift in Sources */,
 					D20000000000000000000064 /* DragLandingPlan.swift in Sources */,
+					D20000000000000000000000 /* CarrierSnapshot.swift in Sources */,
+					D20000000000000000000007 /* DragCarrierGeometry.swift in Sources */,
+					D20000000000000000000009 /* ChipSnapshotter.swift in Sources */,
 					D20000000000000000000068 /* StripBlockLanding.swift in Sources */,
 					A00000000000000000001046 /* PanelCoordinator.swift in Sources */,
 					A00000000000000000001041 /* DockStripView.swift in Sources */,
@@ -1110,7 +1124,6 @@
 					A000000000000000000019A0 /* MessagingAppStore.swift in Sources */,
 					A00000000000000000005011 /* StripOrderStore.swift in Sources */,
 					A00000000000000000006011 /* DragController.swift in Sources */,
-					A00000000000000000009741 /* DragCarrierView.swift in Sources */,
 					A00000000000000000009751 /* NonConstrainingPanel.swift in Sources */,
 					A00000000000000000007011 /* DrawerOrderStore.swift in Sources */,
 					A00000000000000000008011 /* AppSettingsStore.swift in Sources */,
@@ -1262,6 +1275,9 @@
 				D20000000000000000000042 /* StripContextMenuZone.swift in Sources */,
 				D20000000000000000000062 /* StripHoverResolution.swift in Sources */,
 				D20000000000000000000065 /* DragLandingPlan.swift in Sources */,
+				D20000000000000000000005 /* CarrierSnapshot.swift in Sources */,
+				D20000000000000000000008 /* DragCarrierGeometry.swift in Sources */,
+				D2000000000000000000000A /* DragCarrierGeometryTests.swift in Sources */,
 				D20000000000000000000069 /* StripBlockLanding.swift in Sources */,
 				D20000000000000000000067 /* HoverTrace.swift in Sources */,
 				D20000000000000000000017 /* SettingsCoordinatorTests.swift in Sources */,
