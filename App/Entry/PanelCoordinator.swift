@@ -287,7 +287,8 @@ final class PanelCoordinator: NSObject {
     private var fullscreenSpaceHoldGeneration: UInt64 = 0
     private var fullscreenSpaceHold: FullscreenSpaceHold?
     private var fullscreenSpaceHoldTimer: Timer?
-    /// Control+←/→ 预测隐藏实验（`DOCK_SPACE_INTENT_EXPERIMENT=1`）。与窗口级意图事务共用
+    /// Control+←/→ 预测隐藏。**默认开**，关掉用 `DOCK_SPACE_INTENT=0`
+    ///（判定在 `FullscreenIntentMonitor` 的 `spaceSwitchEnabled`）。与窗口级意图事务共用
     /// `visibilityState` 的 `.fullscreenTransitionPending` 槽位，因此两者互斥、同时只能有一个。
     private var fullscreenSpaceIntentGeneration: UInt64?
     private var fullscreenSpaceIntentTimer: Timer?
