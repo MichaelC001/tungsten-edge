@@ -69,6 +69,10 @@ final class AppSettingsStore: ObservableObject {
     /// 免得已经留过邮箱的人被同一段话反复看见。**不是**「是否为原始用户」的凭据——
     /// 那个凭据是 `InstallationRecord` 的首装时间戳，以及服务端那份名单。
     @Published private(set) var hasSubscribed: Bool
+    /// 这台机器已经看过首次运行的欢迎引导（建议隐藏系统 Dock 那一屏）。
+    /// 一次性显示状态，和「有没有真的去隐藏」无关——用户点了「以后再说」也算看过，
+    /// 不再骚扰；想改的人走状态栏菜单里那条系统 Dock 滑杆。
+    @Published private(set) var hasSeenWelcome: Bool
     @Published private(set) var nativeDockAutoHideDelay: Double
     @Published private(set) var edgeAutoHideDelay: Double
     /// 「自动隐藏」切换（菜单/全局快捷键）从常驻恢复时要回到的延迟值。
@@ -111,6 +115,8 @@ final class AppSettingsStore: ObservableObject {
         windowLiftEnabled = defaults.bool(forKey: Keys.windowLiftEnabled)
         // 同样有意不进 register：缺键即 false = 还没订阅过。
         hasSubscribed = defaults.bool(forKey: Keys.hasSubscribed)
+        // 同上：缺键即 false = 还没看过欢迎引导。
+        hasSeenWelcome = defaults.bool(forKey: Keys.hasSeenWelcome)
         fullscreenIntentEnabled = defaults.bool(forKey: Keys.fullscreenIntentEnabled)
         // 坏值（手改过、旧版本残留、类型不对）一律回退中档并**立刻重写**，
         // 否则每次启动都要重新走一遍回退，且 UI 上勾选的档位和存的值对不上。
@@ -178,6 +184,12 @@ final class AppSettingsStore: ObservableObject {
         guard hasSubscribed != value else { return }
         hasSubscribed = value
         defaults.set(value, forKey: Keys.hasSubscribed)
+    }
+
+    func setHasSeenWelcome(_ value: Bool) {
+        guard hasSeenWelcome != value else { return }
+        hasSeenWelcome = value
+        defaults.set(value, forKey: Keys.hasSeenWelcome)
     }
 
     func setFullscreenIntentEnabled(_ value: Bool) {
@@ -311,6 +323,8 @@ private enum Keys {
     static let fullscreenIntentEnabled = "com.tungsten.edge.fullscreenIntentEnabled"
     /// ⚠️ 这个键名进了用户磁盘。改名 = 所有已订阅的人重新看到订阅区块。
     static let hasSubscribed = "com.tungsten.edge.hasSubscribed"
+    /// ⚠️ 同上：改名 = 所有老用户下次启动被欢迎引导再拦一次。
+    static let hasSeenWelcome = "com.tungsten.edge.hasSeenWelcome"
     static let nativeDockAutoHideEnabled = "com.tungsten.edge.autoHide.nativeDock.enabled"
     static let nativeDockAutoHideDelay = "com.tungsten.edge.autoHide.nativeDock.delay"
     static let nativeDockAutoHideLastEnabledDelay = "com.tungsten.edge.autoHide.nativeDock.lastEnabledDelay"

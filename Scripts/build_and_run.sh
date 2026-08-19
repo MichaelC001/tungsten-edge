@@ -32,8 +32,20 @@ sign_app() {
   # （我们的 entitlements 文件会整个替换掉 Xcode 给 Debug 自动注入的 get-task-allow），
   # --debug 模式下的 lldb 就废了。TCC 认的是证书链 + bundle id，跟 runtime 标志无关，
   # 所以只要证书一致，授权就和日常包共用。
-  # 不加 --deep：bundle 里只有一个可执行文件，且该参数已被苹果废弃。
-  /usr/bin/codesign --force --sign "$identity" "$APP_BUNDLE" >/tmp/macos-dock-cc-v2-codesign.log 2>&1
+  #
+  # 自 Sparkle 落地起 bundle 里**不再只有一个可执行文件**：Sparkle.framework 里还有
+  # Updater.app 和 Autoupdate。Xcode 在 Debug 构建时用的是项目里配的本地证书，
+  # 这里若只重签外层，框架和外层就会挂着两张不同的证书——Sparkle 会因为更新器与宿主
+  # 签名不一致而拒绝启动它。所以嵌套代码也要跟着重签一遍，顺序同样由内向外。
+  # 依旧不加 --deep：该参数已被苹果废弃，且会把外层的签名选项错误地套到嵌套代码上。
+  local framework="$APP_BUNDLE/Contents/Frameworks/Sparkle.framework"
+  if [[ -d "$framework" ]]; then
+    for nested in "$framework/Versions/B/Updater.app" "$framework/Versions/B/Autoupdate"; do
+      [[ -e "$nested" ]] && /usr/bin/codesign --force --sign "$identity" "$nested" >>/tmp/macos-dock-cc-v2-codesign.log 2>&1
+    done
+    /usr/bin/codesign --force --sign "$identity" "$framework" >>/tmp/macos-dock-cc-v2-codesign.log 2>&1
+  fi
+  /usr/bin/codesign --force --sign "$identity" "$APP_BUNDLE" >>/tmp/macos-dock-cc-v2-codesign.log 2>&1
 }
 
 run_cli() {

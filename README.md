@@ -132,7 +132,7 @@ Preferences live in two places, and the split is deliberate: the **status menu**
 - **The Dock (⌥⌘D to show/hide)** — likewise a section header. `⌥⌘D` belongs to macOS, so it is named here as plain text rather than claimed as a shortcut. Its slider sets the **native Dock's** wake delay (`Always Visible`, `0.1s`–`3.0s`, `Never Wake` — drag to `Never Wake` and the Dock stops popping up at the screen edge entirely). Moving it stages a draft and reveals a confirm row; nothing is written until you press it, because every write restarts the Dock and flashes the screen.
 - **Dock Settings…** — opens Desktop & Dock on Ventura and later, or Dock & Menu Bar on macOS 12. It only opens System Settings; it never writes Dock preferences or restarts Dock.
 - **Settings…** — opens the settings window described below.
-- **Check for Updates…** — manually checks for the latest stable version. When an update is available, Tungsten Edge opens the official website for you to download and install it.
+- **Check for Updates…** — manually checks for the latest stable version. When an update is available you get an update window: one click downloads, installs and relaunches it for you — no more downloading a disk image and dragging it across by hand.
 
 ### Settings window
 
@@ -145,11 +145,16 @@ Open it from **Settings…** in the status menu, or by **right-clicking the draw
   - **Keep maximized windows above the taskbar** — lifts the bottom edge of a screen-filling window above the taskbar. This resizes other apps' windows, so it is off by default.
   - **Taskbar Size** — four tiers (Small / Medium / Large / Extra Large) that scale the taskbar and its capsule together: icons, labels, spacing, corner radius and bar height all follow. Medium is the default and matches the real Dock's height. Switching applies instantly; an open drawer closes so it can be re-measured. The drawer's own contents and the folder / shelf popups keep their current size.
 - **Advanced** — **Predict full-screen transitions to prevent taskbar flicker** (on by default; see [Global input observation](#global-input-observation) for exactly what it watches).
-- **About** — version, update check, and the founding-user mailing list.
+- **About** — version, update check, **Check for updates automatically** (on by default; turn it off and Tungsten Edge stops contacting the network on a schedule, checking only when you click *Check for Updates…*), and the founding-user mailing list.
 
 Writing native Dock preferences requires a non-sandboxed build, because sandboxed apps cannot write Dock preferences or restart Dock. Opening the settings pane works in either environment.
 
 ## Recommended setup (align the minimize animation to the bottom)
+
+> On first run, if the Dock is not already set to hide itself, Tungsten Edge offers to do it for
+> you — one click. You will not see that prompt if you have already hidden the Dock. The rest of
+> this section is the manual route, plus the suggestions the prompt does not cover.
+
 
 If your native Dock lives on the **side or top** of the screen, minimizing a window flies the animation toward the native Dock — out of sync with this bottom taskbar. Move the native Dock back to the **bottom** and set it to auto-hide; the minimize animation will then shrink toward the bottom, matching Tungsten Edge:
 

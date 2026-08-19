@@ -4,6 +4,11 @@ import SwiftUI
 struct SettingsWindowView: View {
     static let contentWidth: CGFloat = 560
 
+    /// 公开仓库主页。**只给「求 Star」用**——用户可见的「去下载」永远指向官网
+    /// （2026-08-13 起 GitHub release 页不再附安装包，指过去是个空页面），
+    /// 别顺手把下载入口也改到 GitHub 来。
+    static let repositoryURL = URL(string: "https://github.com/moonbai-studio/tungsten-edge")!
+
     @ObservedObject var store: AppSettingsStore
     @ObservedObject var coordinator: SettingsCoordinator
 
@@ -88,6 +93,7 @@ struct SettingsWindowContent: View {
             settingsSection(String(localized: "About")) {
                 aboutRow
                 subscriptionRow
+                githubStarRow
             }
         }
         .padding(28)
@@ -145,24 +151,30 @@ struct SettingsWindowContent: View {
 
     @ViewBuilder
     private var aboutRow: some View {
-        let updatePresentation = coordinator.updateCheckState.presentation
         HStack(spacing: 12) {
             if let versionTitle = coordinator.versionTitle {
                 Text(versionTitle)
                     .foregroundStyle(.secondary)
             }
             Spacer()
-            Button(updatePresentation.title) {
-                // 在飞守卫在共享层：菜单里那条「检查更新」用的是同一个。
-                guard coordinator.beginUpdateCheck() else { return }
-                Task {
-                    let content = await coordinator.performUpdateCheck()
-                    coordinator.finishUpdateCheck()
-                    presentedAlert = SettingsAlert(content)
-                }
+            // Sparkle 自带结果界面（有新版 / 已是最新 / 查不到），所以这里不再接
+            // `SettingsAlert`——原来那条「去官网手动下载」的提示随之删掉了。
+            Button("Check for Updates…") {
+                coordinator.checkForUpdates()
             }
-            .disabled(!updatePresentation.isEnabled)
+            .disabled(!coordinator.canCheckForUpdates)
         }
+
+        // 自动检查默认是开的（`SUEnableAutomaticChecks`）。**必须给关的入口**：
+        // 一个用户关不掉的后台定期联网检查，比多一个勾选项糟糕得多。
+        // 真值在 Sparkle 那边，这里不做镜像。
+        Toggle(
+            "Check for updates automatically",
+            isOn: Binding(
+                get: { coordinator.automaticallyChecksForUpdates },
+                set: { coordinator.automaticallyChecksForUpdates = $0 }
+            )
+        )
     }
 
     /// 「原始用户，永久免费」的留邮箱入口。
@@ -213,6 +225,32 @@ struct SettingsWindowContent: View {
                     .fixedSize(horizontal: false, vertical: true)
             }
         }
+    }
+
+    /// GitHub 的 Star 请求。**常驻**，和有没有订阅过无关——所以它是 `subscriptionRow` 的
+    /// 同级兄弟，不塞进那个 if/else 里。
+    ///
+    /// ⚠️ 调子沿用官网 tungstenedge.app 订阅区那段（`index.html` 里的 `.sub-star`）已经定死的
+    /// 三条规矩，别在这里重新发挥：
+    /// 1. **常驻**，不是订阅成功之后才冒出来——用户得先在视野里见过它，回头点起来才顺理成章。
+    /// 2. **比订阅正文更淡**。它是"顺手帮个忙"，不能压过留邮箱的真实理由。官网用
+    ///    `opacity .5 / font-weight 300 / 12.5px`；这里对应 `.caption`，而订阅正文是 `.callout`。
+    /// 3. **只说这一次**。订阅结果的 `SettingsAlert` 里不要再提 Star——它一直在视野里，
+    ///    重复只会变吵，还会跟"去邮箱点确认"抢注意力（那一步不点就进不了名单，是承重的）。
+    ///
+    /// ⚠️ 链接用 `Button` 而不是 SwiftUI 的 `Link`：`Scripts/check_localization.py` 的正则
+    /// 不扫 `Link(...)`，改成 `Link` 会让这条文案悄悄绕过本地化检查、在中文系统上露出英文。
+    ///
+    /// ⚠️ 整句是**一个**本地化条目，不要拆成「前半句 + GitHub 按钮 + 后半句」：
+    /// 中英文里 GitHub 出现的位置不一样，拆开就没法翻译了。
+    private var githubStarRow: some View {
+        Button {
+            NSWorkspace.shared.open(SettingsWindowView.repositoryURL)
+        } label: {
+            Text("Star Tungsten Edge on GitHub — a free way to help it get better.")
+        }
+        .buttonStyle(.link)
+        .font(.caption)
     }
 
     private func submitSubscription() {
@@ -275,15 +313,6 @@ private struct SettingsAlert: Identifiable {
         self.message = message
         self.openButtonTitle = openButtonTitle
         self.openURL = openURL
-    }
-
-    init(_ content: UpdateCheckAlertContent) {
-        self.init(
-            title: content.title,
-            message: content.message,
-            openButtonTitle: content.openButtonTitle,
-            openURL: content.openURL
-        )
     }
 
     init(_ content: SubscriptionAlertContent) {

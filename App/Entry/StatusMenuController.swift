@@ -389,10 +389,9 @@ final class StatusMenuController: NSObject, NSMenuDelegate {
     }
 
     private func refreshUpdateCheckItem() {
-        // 在飞守卫在共享层：设置窗口里也有一个「检查更新」，各自守卫会同时发两次请求。
-        let presentation = settingsCoordinator.updateCheckState.presentation
-        checkForUpdatesItem.title = presentation.title
-        checkForUpdatesItem.isEnabled = presentation.isEnabled
+        // 可用态归 Sparkle：正在检查 / 正在下载时它自己会报 false，
+        // 不需要我们再维护一个"在飞"标志。
+        checkForUpdatesItem.isEnabled = settingsCoordinator.canCheckForUpdates
     }
 
     @objc private func toggleLaunchAtLogin() {
@@ -407,40 +406,11 @@ final class StatusMenuController: NSObject, NSMenuDelegate {
         settingsCoordinator.openLoginItemsSettings()
     }
 
+    /// Sparkle 自带全套结果界面，而且用户主动发起的检查它保证会置前，
+    /// 所以这里既不用 `NSAlert`、也不用 `runModalInForeground`。
     @objc private func checkForUpdates() {
-        guard settingsCoordinator.beginUpdateCheck() else { return }
-        refreshUpdateCheckItem()
         menu.cancelTrackingWithoutAnimation()
-
-        Task { [weak self] in
-            guard let self else { return }
-            let content = await self.settingsCoordinator.performUpdateCheck()
-            self.finishUpdateCheck()
-            self.presentUpdateCheckResult(content)
-        }
-    }
-
-    private func finishUpdateCheck() {
-        settingsCoordinator.finishUpdateCheck()
-        refreshUpdateCheckItem()
-    }
-
-    /// 文案来自共享的 `UpdateCheckAlertContent`——设置窗口那边渲染同一份内容。
-    private func presentUpdateCheckResult(_ content: UpdateCheckAlertContent) {
-        let alert = NSAlert()
-        alert.alertStyle = content.isWarning ? .warning : .informational
-        alert.messageText = content.title
-        alert.informativeText = content.message
-        if let openButtonTitle = content.openButtonTitle, let openURL = content.openURL {
-            alert.addButton(withTitle: openButtonTitle)
-            alert.addButton(withTitle: String(localized: "Later"))
-            if Self.runModalInForeground(alert) == .alertFirstButtonReturn {
-                NSWorkspace.shared.open(openURL)
-            }
-            return
-        }
-        alert.addButton(withTitle: String(localized: "OK"))
-        Self.runModalInForeground(alert)
+        settingsCoordinator.checkForUpdates()
     }
 
     @objc private func openAccessibilitySettings() {

@@ -7,6 +7,8 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		B77000000000000000000001 /* SparkleUpdateService.swift in Sources */ = {isa = PBXBuildFile; fileRef = B77000000000000000000003 /* SparkleUpdateService.swift */; };
+		B76000000000000000000003 /* Sparkle in Frameworks */ = {isa = PBXBuildFile; productRef = B76000000000000000000002 /* Sparkle */; };
 		D20000000000000000000000 /* CarrierSnapshot.swift in Sources */ = {isa = PBXBuildFile; fileRef = D10000000000000000000000 /* CarrierSnapshot.swift */; };
 		D20000000000000000000005 /* CarrierSnapshot.swift in Sources */ = {isa = PBXBuildFile; fileRef = D10000000000000000000000 /* CarrierSnapshot.swift */; };
 		D20000000000000000000007 /* DragCarrierGeometry.swift in Sources */ = {isa = PBXBuildFile; fileRef = D10000000000000000000005 /* DragCarrierGeometry.swift */; };
@@ -126,12 +128,13 @@
 		A00000000000000000009051 /* PanelVisibilityState.swift in Sources */ = {isa = PBXBuildFile; fileRef = A00000000000000000009030 /* PanelVisibilityState.swift */; };
 		A00000000000000000009061 /* LaunchAtLoginService.swift in Sources */ = {isa = PBXBuildFile; fileRef = A00000000000000000009010 /* LaunchAtLoginService.swift */; };
 		A00000000000000000009071 /* StatusMenuController.swift in Sources */ = {isa = PBXBuildFile; fileRef = A00000000000000000008020 /* StatusMenuController.swift */; };
-		A00000000000000000009C01 /* UpdateChecker.swift in Sources */ = {isa = PBXBuildFile; fileRef = A00000000000000000009C00 /* UpdateChecker.swift */; };
-		A00000000000000000009C02 /* UpdateChecker.swift in Sources */ = {isa = PBXBuildFile; fileRef = A00000000000000000009C00 /* UpdateChecker.swift */; };
-		A00000000000000000009C03 /* UpdateCheckerTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A00000000000000000009C10 /* UpdateCheckerTests.swift */; };
 		B74000000000000000000001 /* SubscriptionSubmitter.swift in Sources */ = {isa = PBXBuildFile; fileRef = B74000000000000000000003 /* SubscriptionSubmitter.swift */; };
 		B74000000000000000000002 /* SubscriptionSubmitter.swift in Sources */ = {isa = PBXBuildFile; fileRef = B74000000000000000000003 /* SubscriptionSubmitter.swift */; };
 		B74000000000000000000011 /* SubscriptionSubmitterTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = B74000000000000000000013 /* SubscriptionSubmitterTests.swift */; };
+		B75000000000000000000001 /* WelcomeGuideDecision.swift in Sources */ = {isa = PBXBuildFile; fileRef = B75000000000000000000003 /* WelcomeGuideDecision.swift */; };
+		B75000000000000000000002 /* WelcomeGuideDecision.swift in Sources */ = {isa = PBXBuildFile; fileRef = B75000000000000000000003 /* WelcomeGuideDecision.swift */; };
+		B75000000000000000000011 /* WelcomeGuideView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B75000000000000000000013 /* WelcomeGuideView.swift */; };
+		B75000000000000000000021 /* WelcomeGuideDecisionTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = B75000000000000000000023 /* WelcomeGuideDecisionTests.swift */; };
 		A00000000000000000009D01 /* WindowTitleTooltip.swift in Sources */ = {isa = PBXBuildFile; fileRef = A00000000000000000009D00 /* WindowTitleTooltip.swift */; };
 		A00000000000000000009D02 /* WindowTitleTooltip.swift in Sources */ = {isa = PBXBuildFile; fileRef = A00000000000000000009D00 /* WindowTitleTooltip.swift */; };
 		A00000000000000000009D03 /* WindowTitleTooltipTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A00000000000000000009D10 /* WindowTitleTooltipTests.swift */; };
@@ -304,6 +307,7 @@
 /* End PBXContainerItemProxy section */
 
 /* Begin PBXFileReference section */
+		B77000000000000000000003 /* SparkleUpdateService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SparkleUpdateService.swift; sourceTree = "<group>"; };
 		D10000000000000000000000 /* CarrierSnapshot.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CarrierSnapshot.swift; sourceTree = "<group>"; };
 		D10000000000000000000005 /* DragCarrierGeometry.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DragCarrierGeometry.swift; sourceTree = "<group>"; };
 		D10000000000000000000008 /* ChipSnapshotter.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChipSnapshotter.swift; sourceTree = "<group>"; };
@@ -495,10 +499,11 @@
 		A00000000000000000009250 /* PinnedFolderChip.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PinnedFolderChip.swift; sourceTree = "<group>"; };
 		A00000000000000000009280 /* FolderContentsLoaderTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FolderContentsLoaderTests.swift; sourceTree = "<group>"; };
 		A000000000000000000090B0 /* FullscreenClassificationTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FullscreenClassificationTests.swift; sourceTree = "<group>"; };
-		A00000000000000000009C00 /* UpdateChecker.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UpdateChecker.swift; sourceTree = "<group>"; };
-		A00000000000000000009C10 /* UpdateCheckerTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UpdateCheckerTests.swift; sourceTree = "<group>"; };
 		B74000000000000000000003 /* SubscriptionSubmitter.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SubscriptionSubmitter.swift; sourceTree = "<group>"; };
 		B74000000000000000000013 /* SubscriptionSubmitterTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SubscriptionSubmitterTests.swift; sourceTree = "<group>"; };
+		B75000000000000000000003 /* WelcomeGuideDecision.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WelcomeGuideDecision.swift; sourceTree = "<group>"; };
+		B75000000000000000000013 /* WelcomeGuideView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WelcomeGuideView.swift; sourceTree = "<group>"; };
+		B75000000000000000000023 /* WelcomeGuideDecisionTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WelcomeGuideDecisionTests.swift; sourceTree = "<group>"; };
 		A00000000000000000000059 /* macos-dock-cc-v2Tests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = "macos-dock-cc-v2Tests.xctest"; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
 
@@ -507,6 +512,7 @@
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				B76000000000000000000003 /* Sparkle in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -581,8 +587,8 @@
 				A00000000000000000009F00 /* GlobalHotKeyMonitor.swift */,
 				A00000000000000000009010 /* LaunchAtLoginService.swift */,
 				A00000000000000000009020 /* NativeDockPreferencesService.swift */,
-				A00000000000000000009C00 /* UpdateChecker.swift */,
 				B74000000000000000000003 /* SubscriptionSubmitter.swift */,
+				B77000000000000000000003 /* SparkleUpdateService.swift */,
 				A00000000000000000009030 /* PanelVisibilityState.swift */,
 				A00000000000000000009080 /* PanelGeometry.swift */,
 				A00000000000000000009A10 /* WindowLiftAvoidanceController.swift */,
@@ -625,6 +631,7 @@
 			children = (
 				A00000000000000000000002 /* ContentView.swift */,
 				A000000000000000000000F1 /* PermissionOnboardingView.swift */,
+				B75000000000000000000013 /* WelcomeGuideView.swift */,
 				D10000000000000000000002 /* SettingsWindowView.swift */,
 				A00000000000000000000067 /* DockStripView.swift */,
 				A00000000000000000009D00 /* WindowTitleTooltip.swift */,
@@ -678,6 +685,7 @@
 				A0000000000000000000FF20 /* AppLaunchTargetDecision.swift */,
 				B72000000000000000000003 /* AppDisplayNameCache.swift */,
 				B72000000000000000000013 /* InstallationRecord.swift */,
+				B75000000000000000000003 /* WelcomeGuideDecision.swift */,
 				C90000000000000000000005 /* ClickLatencyTrace.swift */,
 				A00000000000000000009AB0 /* HoverTrace.swift */,
 				A0000000000000000000FB00 /* DockThemeTokens.swift */,
@@ -922,8 +930,8 @@
 				A000000000000000000090A0 /* PanelGeometryTests.swift */,
 				A00000000000000000009D10 /* WindowTitleTooltipTests.swift */,
 				A000000000000000000090B0 /* FullscreenClassificationTests.swift */,
-				A00000000000000000009C10 /* UpdateCheckerTests.swift */,
 				B74000000000000000000013 /* SubscriptionSubmitterTests.swift */,
+				B75000000000000000000023 /* WelcomeGuideDecisionTests.swift */,
 				A00000000000000000009280 /* FolderContentsLoaderTests.swift */,
 				A00000000000000000009290 /* FolderSortTests.swift */,
 				A00000000000000000009340 /* StripDropRoutingTests.swift */,
@@ -993,6 +1001,9 @@
 			dependencies = (
 			);
 			name = "macos-dock-cc-v2";
+			packageProductDependencies = (
+				B76000000000000000000002 /* Sparkle */,
+			);
 			productName = "macos-dock-cc-v2";
 			productReference = A00000000000000000000018 /* macos-dock-cc-v2.app */;
 			productType = "com.apple.product-type.application";
@@ -1062,6 +1073,9 @@
 			);
 			mainGroup = A0000000000000000000001C;
 			productRefGroup = A00000000000000000000023 /* Products */;
+			packageReferences = (
+				B76000000000000000000001 /* XCRemoteSwiftPackageReference "Sparkle" */,
+			);
 			projectDirPath = "";
 			projectRoot = "";
 			targets = (
@@ -1137,8 +1151,8 @@
 					A00000000000000000009A01 /* WindowLiftAvoidance.swift in Sources */,
 				A00000000000000000009E1C /* BuildProvenance.swift in Sources */,
 					A00000000000000000008021 /* StatusMenuController.swift in Sources */,
-					A00000000000000000009C01 /* UpdateChecker.swift in Sources */,
 					B74000000000000000000001 /* SubscriptionSubmitter.swift in Sources */,
+					B77000000000000000000001 /* SparkleUpdateService.swift in Sources */,
 					A000000000000000000019A1 /* LauncherChip.swift in Sources */,
 					C90000000000000000000002 /* ChipPressFeedback.swift in Sources */,
 					A000000000000000000019D4 /* LauncherMembershipItem.swift in Sources */,
@@ -1158,6 +1172,8 @@
 					A0000000000000000000FF21 /* AppLaunchTargetDecision.swift in Sources */,
 					B72000000000000000000001 /* AppDisplayNameCache.swift in Sources */,
 					B72000000000000000000011 /* InstallationRecord.swift in Sources */,
+					B75000000000000000000001 /* WelcomeGuideDecision.swift in Sources */,
+					B75000000000000000000011 /* WelcomeGuideView.swift in Sources */,
 					C90000000000000000000006 /* ClickLatencyTrace.swift in Sources */,
 				A00000000000000000009AB1 /* HoverTrace.swift in Sources */,
 					A0000000000000000000FB01 /* DockThemeTokens.swift in Sources */,
@@ -1290,10 +1306,9 @@
 				A00000000000000000009F02 /* GlobalHotKeyMonitor.swift in Sources */,
 				A00000000000000000009F11 /* GlobalHotKeyMonitorTests.swift in Sources */,
 				A00000000000000000009071 /* StatusMenuController.swift in Sources */,
-				A00000000000000000009C02 /* UpdateChecker.swift in Sources */,
-				A00000000000000000009C03 /* UpdateCheckerTests.swift in Sources */,
 				B74000000000000000000002 /* SubscriptionSubmitter.swift in Sources */,
 				B74000000000000000000011 /* SubscriptionSubmitterTests.swift in Sources */,
+				B75000000000000000000021 /* WelcomeGuideDecisionTests.swift in Sources */,
 				A00000000000000000009061 /* LaunchAtLoginService.swift in Sources */,
 				A00000000000000000009041 /* NativeDockPreferencesService.swift in Sources */,
 				A00000000000000000009051 /* PanelVisibilityState.swift in Sources */,
@@ -1314,6 +1329,7 @@
 				A0000000000000000000FF22 /* AppLaunchTargetDecision.swift in Sources */,
 				B72000000000000000000002 /* AppDisplayNameCache.swift in Sources */,
 				B72000000000000000000012 /* InstallationRecord.swift in Sources */,
+				B75000000000000000000002 /* WelcomeGuideDecision.swift in Sources */,
 				A0000000000000000000FB02 /* DockThemeTokens.swift in Sources */,
 				E20000000000000000000002 /* DockLiquidGlassConfiguration.swift in Sources */,
 				A0000000000000000000FC02 /* DockTheme.swift in Sources */,
@@ -1625,6 +1641,25 @@
 			defaultConfigurationName = Release;
 		};
 /* End XCConfigurationList section */
+
+/* Begin XCRemoteSwiftPackageReference section */
+		B76000000000000000000001 /* XCRemoteSwiftPackageReference "Sparkle" */ = {
+			isa = XCRemoteSwiftPackageReference;
+			repositoryURL = "https://github.com/sparkle-project/Sparkle";
+			requirement = {
+				kind = upToNextMajorVersion;
+				minimumVersion = 2.9.6;
+			};
+		};
+/* End XCRemoteSwiftPackageReference section */
+
+/* Begin XCSwiftPackageProductDependency section */
+		B76000000000000000000002 /* Sparkle */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = B76000000000000000000001 /* XCRemoteSwiftPackageReference "Sparkle" */;
+			productName = Sparkle;
+		};
+/* End XCSwiftPackageProductDependency section */
 	};
 	rootObject = A0000000000000000000003F /* Project object */;
 }

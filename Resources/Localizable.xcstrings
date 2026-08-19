@@ -246,22 +246,6 @@
         }
       }
     },
-    "Can’t Check for Updates Right Now": {
-      "localizations": {
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "暂时无法检查更新"
-          }
-        },
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Can’t Check for Updates Right Now"
-          }
-        }
-      }
-    },
     "Can’t Open Dock Settings": {
       "localizations": {
         "zh-Hans": {
@@ -359,6 +343,23 @@
         }
       }
     },
+    "Check for updates automatically": {
+      "comment": "设置窗口「关于」区。自动检查默认开（SUEnableAutomaticChecks），这个开关是它唯一的关闭入口——不给关的后台联网检查比多一个勾选项糟糕得多。",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Check for updates automatically"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "自动检查更新"
+          }
+        }
+      }
+    },
     "Check whether there is a typo.": {
       "localizations": {
         "zh-Hans": {
@@ -403,38 +404,6 @@
           "stringUnit": {
             "state": "translated",
             "value": "Check your network connection and try again, or leave your address on tungstenedge.app."
-          }
-        }
-      }
-    },
-    "Check your network connection and try again, or open the download page directly.": {
-      "localizations": {
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "请检查网络连接后重试，也可以直接打开官网下载页。"
-          }
-        },
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Check your network connection and try again, or open the download page directly."
-          }
-        }
-      }
-    },
-    "Checking for Updates…": {
-      "localizations": {
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "正在检查更新…"
-          }
-        },
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Checking for Updates…"
           }
         }
       }
@@ -547,22 +516,6 @@
           "stringUnit": {
             "state": "translated",
             "value": "Couldn’t Change Open at Login"
-          }
-        }
-      }
-    },
-    "Couldn’t read the current version number.": {
-      "localizations": {
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "无法读取当前版本号。"
-          }
-        },
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Couldn’t read the current version number."
           }
         }
       }
@@ -694,22 +647,6 @@
           "stringUnit": {
             "state": "translated",
             "value": "Dock wake delay"
-          }
-        }
-      }
-    },
-    "Download": {
-      "localizations": {
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "前往下载"
-          }
-        },
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Download"
           }
         }
       }
@@ -888,6 +825,38 @@
           "stringUnit": {
             "state": "translated",
             "value": "Hide App"
+          }
+        }
+      }
+    },
+    "Hide the Dock": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Hide the Dock"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "帮我隐藏"
+          }
+        }
+      }
+    },
+    "Hide the Dock First": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Hide the Dock First"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "先把系统 Dock 收起来"
           }
         }
       }
@@ -1214,6 +1183,22 @@
         }
       }
     },
+    "Not Now": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Not Now"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "以后再说"
+          }
+        }
+      }
+    },
     "Nothing to do here — just a moment.": {
       "localizations": {
         "zh-Hans": {
@@ -1359,22 +1344,6 @@
         }
       }
     },
-    "Open Website": {
-      "localizations": {
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "打开官网"
-          }
-        },
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Open Website"
-          }
-        }
-      }
-    },
     "Open With": {
       "localizations": {
         "zh-Hans": {
@@ -1516,6 +1485,23 @@
           "stringUnit": {
             "state": "translated",
             "value": "Predict full-screen transitions to prevent taskbar flicker"
+          }
+        }
+      }
+    },
+    "Press ⌥⌘D at any time — that’s macOS’s own shortcut for showing and hiding the Dock. You can also change this later from the Tungsten Edge menu bar item.": {
+      "comment": "⚠️ ⌥⌘D 归 macOS 所有，钨极只把它当纯文字写、绝不注册成 keyEquivalent（会抢掉系统的）。钨极自己的全局热键是 ⌥⇧⌘D，别写混。",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Press ⌥⌘D at any time — that’s macOS’s own shortcut for showing and hiding the Dock. You can also change this later from the Tungsten Edge menu bar item."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "随时按 ⌥⌘D 就能唤回来——这是 macOS 自带的 Dock 显隐快捷键。也可以之后从钨极的状态栏菜单里改。"
           }
         }
       }
@@ -1939,6 +1925,23 @@
         }
       }
     },
+    "Star Tungsten Edge on GitHub — a free way to help it get better.": {
+      "comment": "⚠️ 中文与官网 tungstenedge.app 订阅区下面那句 Star 请求逐字同源，改这里就要同步改官网。调子必须比上面订阅正文更淡——它是顺手帮个忙，不能压过留邮箱的真实理由。",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Star Tungsten Edge on GitHub — a free way to help it get better."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "在 GitHub 点个免费的 Star，支持钨极变得更好。"
+          }
+        }
+      }
+    },
     "Submitting…": {
       "localizations": {
         "zh-Hans": {
@@ -2118,22 +2121,6 @@
         }
       }
     },
-    "The latest version number is not in a valid format.": {
-      "localizations": {
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "最新版本号格式无效。"
-          }
-        },
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "The latest version number is not in a valid format."
-          }
-        }
-      }
-    },
     "The subscription server returned an invalid response.": {
       "localizations": {
         "zh-Hans": {
@@ -2162,38 +2149,6 @@
           "stringUnit": {
             "state": "translated",
             "value": "The subscription server returned status code %d."
-          }
-        }
-      }
-    },
-    "The update server returned an invalid response.": {
-      "localizations": {
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "更新服务器返回了无效响应。"
-          }
-        },
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "The update server returned an invalid response."
-          }
-        }
-      }
-    },
-    "The update server returned status code %d.": {
-      "localizations": {
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "更新服务器返回状态码 %d。"
-          }
-        },
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "The update server returned status code %d."
           }
         }
       }
@@ -2258,6 +2213,23 @@
           "stringUnit": {
             "state": "translated",
             "value": "This folder is empty"
+          }
+        }
+      }
+    },
+    "This sets the Dock to hide itself and stay hidden, so it won’t pop up when you move the pointer to the bottom edge. The Dock restarts, so the screen will flash once.": {
+      "comment": "「不唤醒」是 owner 2026-08-20 定的推荐档位（对应 AppSettingsStore.neverWakeDelay）。文案要把「会闪一下」说在前面——用户没预期的闪烁会被当成 bug。",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "This sets the Dock to hide itself and stay hidden, so it won’t pop up when you move the pointer to the bottom edge. The Dock restarts, so the screen will flash once."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "点下面的按钮，钨极会把系统 Dock 设成自动隐藏，而且鼠标碰到底边也不会把它唤出来。写入时系统 Dock 会重启一下，屏幕会闪一次。"
           }
         }
       }
@@ -2356,6 +2328,38 @@
           "stringUnit": {
             "state": "translated",
             "value": "Tungsten Edge Settings"
+          }
+        }
+      }
+    },
+    "Tungsten Edge and the Dock both live along the bottom edge of the screen, so they cover each other up.": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Tungsten Edge and the Dock both live along the bottom edge of the screen, so they cover each other up."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "钨极和系统 Dock 都住在屏幕底边，会互相遮挡。"
+          }
+        }
+      }
+    },
+    "Tungsten Edge is ready. One suggestion before you start.": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Tungsten Edge is ready. One suggestion before you start."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "钨极已经就位。开始用之前，有一条建议。"
           }
         }
       }
@@ -2507,22 +2511,6 @@
         }
       }
     },
-    "Version %@ Is Available": {
-      "localizations": {
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "发现新版本 %@"
-          }
-        },
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Version %@ Is Available"
-          }
-        }
-      }
-    },
     "Version (%@)": {
       "localizations": {
         "zh-Hans": {
@@ -2535,6 +2523,22 @@
           "stringUnit": {
             "state": "translated",
             "value": "Version (%@)"
+          }
+        }
+      }
+    },
+    "Want the Dock back?": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Want the Dock back?"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "想让系统 Dock 回来？"
           }
         }
       }
@@ -2572,39 +2576,6 @@
         }
       }
     },
-    "You have %@. Tungsten Edge still has to be downloaded and installed manually.": {
-      "localizations": {
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "当前版本 %@。钨极目前仍需手动下载安装。"
-          }
-        },
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "You have %@. Tungsten Edge still has to be downloaded and installed manually."
-          }
-        }
-      }
-    },
-    "You have %@; the latest release is %@.": {
-      "comment": "%@ 依次是当前版本、最新版本",
-      "localizations": {
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "当前版本 %@，最新正式版为 %@。"
-          }
-        },
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "You have %@; the latest release is %@."
-          }
-        }
-      }
-    },
     "You’re Already Subscribed": {
       "localizations": {
         "zh-Hans": {
@@ -2617,22 +2588,6 @@
           "stringUnit": {
             "state": "translated",
             "value": "You’re Already Subscribed"
-          }
-        }
-      }
-    },
-    "You’re Up to Date": {
-      "localizations": {
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "当前已是最新版本"
-          }
-        },
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "You’re Up to Date"
           }
         }
       }

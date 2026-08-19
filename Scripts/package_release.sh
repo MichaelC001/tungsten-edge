@@ -131,6 +131,27 @@ verify_developer_id_signature() {
   printf '    %s: TeamIdentifier=%s, flags=%s, secure timestamp present\n' "$label" "$team_id" "$flags"
 }
 
+# Read the Sparkle keys back OUT of the signed app, the same way the entitlements check
+# does. A missing feed URL or public key does not fail the build, it ships an app that
+# silently never updates - and every user who installs it is stuck until they notice.
+verify_sparkle_configuration() {
+  local app="$1"
+  local plist="$app/Contents/Info.plist"
+  local feed key
+
+  feed="$(/usr/libexec/PlistBuddy -c 'Print :SUFeedURL' "$plist" 2>/dev/null || true)"
+  key="$(/usr/libexec/PlistBuddy -c 'Print :SUPublicEDKey' "$plist" 2>/dev/null || true)"
+  [[ "$feed" == https://* ]] || die "signed app has no https SUFeedURL (got: ${feed:-<missing>})"
+  [[ -n "$key" ]] || die "signed app has no SUPublicEDKey"
+
+  # The updater must be signed by us too, or Sparkle refuses to launch it.
+  local updater="$app/Contents/Frameworks/Sparkle.framework/Versions/B/Updater.app"
+  [[ -d "$updater" ]] || die "signed app is missing Sparkle's Updater.app"
+  verify_developer_id_signature "$updater" "Sparkle Updater.app" yes
+
+  printf '    Sparkle: feed=%s, public key present\n' "$feed"
+}
+
 verify_app() {
   local app="$1"
   local bundle_version bundle_build archs
@@ -248,6 +269,39 @@ ditto "$BUILT_APP" "$APP"
 # before signing because modifying a signed bundle invalidates its signature.
 cp "$LICENSE_FILE" "$APP/Contents/Resources/LICENSE"
 
+# Sparkle ships nested code inside its framework. A single codesign of the outer app
+# does NOT reach it, and notarization rejects unsigned nested Mach-O outright, so the
+# framework has to be signed from the inside out before the app itself.
+SPARKLE_FRAMEWORK="$APP/Contents/Frameworks/Sparkle.framework"
+if [[ -d "$SPARKLE_FRAMEWORK" ]]; then
+  # The two XPC services only exist for sandboxed hosts (SUEnableDownloaderService /
+  # SUEnableInstallerLauncherService). This app is not sandboxed, so they are dead weight
+  # and two more things to sign and notarize. Removing them must happen BEFORE the
+  # framework is signed, or the seal no longer matches its own contents.
+  rm -rf "$SPARKLE_FRAMEWORK/Versions/B/XPCServices"
+
+  echo "==> Signing Sparkle's nested code (inside out)"
+  # Order matters: every nested bundle first, the framework last. Do not use --deep;
+  # it is deprecated and applies the wrong entitlements to nested code.
+  for nested in \
+    "$SPARKLE_FRAMEWORK/Versions/B/Updater.app" \
+    "$SPARKLE_FRAMEWORK/Versions/B/Autoupdate"; do
+    [[ -e "$nested" ]] || die "Sparkle is missing expected nested code: $nested"
+    codesign --force \
+      --sign "$DEVELOPER_ID_APPLICATION" \
+      --options runtime \
+      --timestamp \
+      "$nested"
+  done
+  codesign --force \
+    --sign "$DEVELOPER_ID_APPLICATION" \
+    --options runtime \
+    --timestamp \
+    "$SPARKLE_FRAMEWORK"
+else
+  die "Sparkle.framework is not embedded in the built app"
+fi
+
 echo "==> Signing app with hardened runtime and secure timestamp"
 codesign --force \
   --sign "$DEVELOPER_ID_APPLICATION" \
@@ -256,6 +310,7 @@ codesign --force \
   --entitlements "$ENTITLEMENTS" \
   "$APP"
 verify_app "$APP"
+verify_sparkle_configuration "$APP"
 
 NOTARY_ZIP="$TEMP_ROOT/Tungsten-Edge-$VERSION-notarization.zip"
 ditto -c -k --keepParent "$APP" "$NOTARY_ZIP"
@@ -289,6 +344,15 @@ verify_dmg "$DMG"
 
 echo "==> Checksums"
 (cd "$NEW_DIST" && shasum -a 256 ./*.dmg ./*.zip)
+
+# The appcast entry needs an EdDSA signature over the exact zip we just produced.
+# The private key lives only in the login keychain of whoever runs this script; if it is
+# gone, every already-installed copy loses auto-update permanently (a new key means a new
+# SUPublicEDKey, which only reaches users through a manual reinstall). See Docs/29.
+echo "==> Sparkle update signature (paste into appcast.xml)"
+SIGN_UPDATE="$(find "$DD/SourcePackages/artifacts" -name sign_update -type f 2>/dev/null | head -n 1)"
+[[ -x "$SIGN_UPDATE" ]] || die "sign_update not found under $DD/SourcePackages/artifacts (was the Sparkle package resolved?)"
+"$SIGN_UPDATE" "$ZIP" || die "sign_update failed - is the Sparkle EdDSA private key in this keychain?"
 
 # Replace published artifacts only after every verification has passed.
 rm -rf "$DIST"

@@ -40,11 +40,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var windowLiftAvoidanceController: WindowLiftAvoidanceController?
     private lazy var launchAtLoginService = LaunchAtLoginService()
     private lazy var nativeDockPreferencesService = NativeDockPreferencesService()
+    private let updateService = SparkleUpdateService()
     private lazy var settingsCoordinator = SettingsCoordinator(
         store: settingsStore,
         launchAtLoginService: launchAtLoginService,
         nativeDockPreferencesService: nativeDockPreferencesService,
-        updateChecker: GitHubUpdateChecker(),
+        updateService: updateService,
         subscriptionSubmitter: WebsiteSubscriptionSubmitter()
     )
     private lazy var settingsWindowController = SettingsWindowController(
@@ -60,6 +61,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var mainLoopStallProbe: Timer?
     private var permissionWindow: NSWindow?
     private var permissionHostingView: NSHostingView<PermissionOnboardingWindowContent>?
+    private var welcomeWindow: NSWindow?
     private var workspaceObservers: [NSObjectProtocol] = []
     private var messagingAutoRegisterSubscription: AnyCancellable?
     private var windowLiftSettingSubscription: AnyCancellable?
@@ -141,6 +143,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             }
 
             _ = statusMenuController
+
+            // 自动更新只在正常安装的副本上跑。挂载在 DMG 里的临时副本更新自己毫无意义
+            // ——它卸载就没了——和上面不给它注册全局热键、不向系统申请权限是同一条理由。
+            updateService.start()
         }
 
         let coordinator = PermissionRecoveryCoordinator(
@@ -232,6 +238,132 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         permissionCoordinator?.terminationRequested()
         windowLiftAvoidanceController?.stop()
         runtime.stop()
+    }
+
+    // MARK: - 首次运行欢迎引导
+
+    /// 首次运行的一次性引导：建议把系统 Dock 收起来。
+    ///
+    /// 只在 `startTaskbarRuntime()` 末尾调一次，也就是「权限已授、面板已建、任务条真的在跑」
+    /// 的那一刻。临时副本（DMG 里双击运行的那份）永远走不到这里——它在
+    /// `PermissionRecoveryMachine` 里只有 `showGuide` 一条效果——这是对的，那份副本
+    /// 卸载就没了，不该教它配置系统。
+    private func presentWelcomeGuideIfNeeded() {
+        // 先用不需要 I/O 的两个条件挡一道，省掉绝大多数启动的那次异步读。
+        guard !settingsStore.hasSeenWelcome else { return }
+
+        let canWrite = nativeDockPreferencesService.isAvailable
+        guard canWrite else {
+            _ = WelcomeGuideDecision.evaluate(
+                hasSeenWelcome: false,
+                canWriteDockPreferences: false,
+                dockAutohideEnabled: nil
+            )
+            settingsStore.setHasSeenWelcome(true)
+            return
+        }
+
+        Task { @MainActor [weak self] in
+            guard let self else { return }
+            let state = await self.nativeDockPreferencesService.currentAutohideState()
+            // 这一轮 await 期间用户可能已经从别处看过/改过了，所以重新读一遍标记。
+            switch WelcomeGuideDecision.evaluate(
+                hasSeenWelcome: self.settingsStore.hasSeenWelcome,
+                canWriteDockPreferences: true,
+                dockAutohideEnabled: state?.enabled
+            ) {
+            case .present:
+                self.showWelcomeWindow()
+            case .skipAndMarkSeen:
+                self.settingsStore.setHasSeenWelcome(true)
+            case .skipWithoutMarking:
+                break
+            }
+        }
+    }
+
+    private func showWelcomeWindow() {
+        if let welcomeWindow {
+            welcomeWindow.makeKeyAndOrderFront(nil)
+            NSApp.activate(ignoringOtherApps: true)
+            return
+        }
+
+        let content = WelcomeGuideWindowContent(
+            onHideDock: { [weak self] in self?.applyRecommendedDockSetting() },
+            onDismiss: { [weak self] in self?.dismissWelcomeGuide() }
+        )
+        let hosting = NSHostingView(rootView: content)
+        let window = NSWindow(
+            contentRect: NSRect(x: 0, y: 0, width: WelcomeGuideView.contentWidth, height: 320),
+            // 和权限引导不同，这一扇**可关**：权限没授时 app 根本不能用，那扇窗关掉没有意义；
+            // 这一扇只是个建议，用户有权直接叉掉（叉掉等同「以后再说」，见 windowWillClose）。
+            styleMask: [.titled, .closable],
+            backing: .buffered,
+            defer: false
+        )
+        window.title = "Tungsten Edge 钨极"
+        window.isReleasedWhenClosed = false
+        window.contentView = hosting
+        window.delegate = self
+        welcomeWindow = window
+
+        // 高度量法同权限引导：根视图外面套了 ScrollView，得用一次性探针量不加滚动时的自然高度。
+        let probe = NSHostingView(rootView: WelcomeGuideView(onHideDock: {}, onDismiss: {}))
+        probe.setFrameSize(NSSize(width: WelcomeGuideView.contentWidth, height: 0))
+        probe.layoutSubtreeIfNeeded()
+        let available = (window.screen ?? NSScreen.main)?.visibleFrame.height ?? 900
+        window.setContentSize(NSSize(
+            width: WelcomeGuideView.contentWidth,
+            height: max(200, min(probe.fittingSize.height, available - 80))
+        ))
+
+        window.center()
+        window.makeKeyAndOrderFront(nil)
+        // 钨极此刻是 accessory app，不主动 activate 的话这扇窗会被压在前台应用后面，
+        // 和 2026-07-29 那次「检查更新看起来失效」是同一个坑。
+        // 注意**不要**顺手改成 .regular——那会让程序坞里冒出一个钨极图标，
+        // 正好和这扇窗要讲的事情自相矛盾。
+        NSApp.activate(ignoringOtherApps: true)
+    }
+
+    /// 「帮我隐藏」：把系统 Dock 设成自动隐藏 + 不唤醒（owner 2026-08-20 定的推荐档位）。
+    ///
+    /// 走 `applyNativeDock(target:)` 这个唯一写入口，四象限回读和镜像同步都是白拿的；
+    /// 别在这里另起一条 defaults 写入。
+    private func applyRecommendedDockSetting() {
+        settingsStore.setHasSeenWelcome(true)
+        closeWelcomeWindow()
+
+        Task { @MainActor [weak self] in
+            guard let self else { return }
+            let outcome = await self.settingsCoordinator.applyNativeDock(
+                target: AppSettingsStore.neverWakeDelay
+            )
+            guard let error = outcome.error else { return }
+            let alert = NSAlert()
+            alert.alertStyle = .warning
+            alert.messageText = String(localized: "Couldn’t Change Dock Settings")
+            alert.informativeText = error.localizedDescription
+            alert.addButton(withTitle: String(localized: "OK"))
+            NSApp.activate(ignoringOtherApps: true)
+            alert.runModal()
+        }
+    }
+
+    /// 「以后再说」，以及直接叉掉窗口。**照样记成已看过**——不再骚扰；
+    /// 想改的人走状态栏菜单里那条系统 Dock 滑杆。
+    private func dismissWelcomeGuide() {
+        settingsStore.setHasSeenWelcome(true)
+        closeWelcomeWindow()
+    }
+
+    private func closeWelcomeWindow() {
+        guard let window = welcomeWindow else { return }
+        welcomeWindow = nil
+        window.delegate = nil
+        window.orderOut(nil)
+        window.close()
     }
 
     /// 引导窗口。文案长度随状态变化很大（排障区展开时几乎翻倍），
@@ -371,6 +503,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 self?.windowLiftAvoidanceController?.setEnabledBySetting(enabled)
             }
         badgeStore.start()
+        // 任务条真的起来了才谈得上「建议怎么配」。放在这里而不是启动那一刻，是因为
+        // 用户得先看见任务条长什么样，那句「它俩都在屏幕底边会互相遮挡」才有所指。
+        presentWelcomeGuideIfNeeded()
         // 探针结论（2026-07-06,阶段0探针3）：访达窗口 AX 属性表虽列有 AXDocument 但恒无值
         // （kAXErrorNoValue），AXProxy/AXTitleUIElement 也只有文件夹名无路径——「拖任务条访达
         // 窗口图标固定文件夹」不可行,已按预案砍掉,拖入固定区只走真实文件 URL（系统拖放）。
@@ -542,6 +677,8 @@ extension AppDelegate: PermissionEffectHandler {
         // 设置窗口也要一起收：权限一丢任务条整条被拆掉，留着一扇改任务条外观的窗
         // 既没有意义，也会挡住紧接着弹出的恢复引导。
         settingsWindowController.close()
+        // 欢迎引导同理，而且更刺眼：任务条已经没了，屏幕上还留着一扇教你怎么配置它的窗。
+        closeWelcomeWindow()
         messagingAutoRegisterSubscription?.cancel()
         messagingAutoRegisterSubscription = nil
         runtime.onToggleDrawer = nil
@@ -578,5 +715,20 @@ extension AppDelegate: PermissionEffectHandler {
                 }
             }
         }
+    }
+}
+
+extension AppDelegate: NSWindowDelegate {
+    /// 用户直接叉掉欢迎引导，等同「以后再说」——**照样要记成已看过**，
+    /// 否则叉一次、下次启动又弹一次。
+    ///
+    /// 程序主动关窗那条路（`closeWelcomeWindow()`）不会走到这里：它先把 `welcomeWindow`
+    /// 置 nil、把 delegate 摘掉，然后才 `close()`。所以这个回调只代表「用户自己关的」，
+    /// 不会和 `applyRecommendedDockSetting()` / `dismissWelcomeGuide()` 重复标记。
+    func windowWillClose(_ notification: Notification) {
+        guard let window = notification.object as? NSWindow, window === welcomeWindow else { return }
+        welcomeWindow = nil
+        window.delegate = nil
+        settingsStore.setHasSeenWelcome(true)
     }
 }
