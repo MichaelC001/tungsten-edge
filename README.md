@@ -81,7 +81,7 @@ macOS suppresses key events from global event taps while Secure Input is active,
 
 1. Download the latest `.dmg` from the [official website](https://tungstenedge.app).
 2. Open it and drag **Tungsten Edge** into your **Applications** folder.
-3. **First launch needs to be allowed once** (this is an early, unsigned build, so macOS blocks it by default — it's not malware) — follow [First launch](#first-launch) below, then grant Accessibility permission.
+3. Double-click to open it. On first run, grant **Accessibility** permission when prompted (see [Grant Accessibility permission](#grant-accessibility-permission) below).
 
 ### Option 2 — Homebrew (for technical users)
 
@@ -91,35 +91,23 @@ brew trust moonbai-studio/tungsten-edge
 brew install --cask tungsten-edge
 ```
 
-> The `brew trust` step is required for any third-party tap. If the first launch is blocked by macOS, allow it as described in [First launch](#first-launch) below.
+> The `brew trust` step is required for any third-party tap.
 
-## First launch
+## Grant Accessibility permission
 
-Because this is an early build that isn't Apple-notarized yet, macOS blocks it the first time with a message like "cannot be opened because it is from an unidentified developer". **This isn't malware — it's macOS's default block for any unsigned app.** Allow it once and double-clicking works normally afterward. Pick the method for your macOS version:
+As of **v0.9.0 Tungsten Edge is signed and notarized by Apple**, so it opens with a plain
+double-click — no right-click workaround needed.
 
-### Method A — right-click to open (macOS 14 and earlier)
-
-1. Open your **Applications** folder and find **Tungsten Edge**.
-2. **Right-click its icon** (or Control-click it) and choose **Open** from the menu.
-3. The dialog this time has an extra **Open** button — click it.
-4. Done. Double-click works from now on.
-
-> The trick is to go through **right-click → Open**, not a plain double-click — a plain double-click only gets blocked, with no allow button.
-
-### Method B — allow it in System Settings (macOS 15 Sequoia and newer)
-
-Newer macOS removed right-click-to-open, so do this instead:
-
-1. **Double-click** Tungsten Edge once; when it's blocked, **click "Done"** to dismiss the prompt (this lets the system record the attempt).
-2. Open **System Settings → Privacy & Security** and scroll down to the **Security** section.
-3. You'll see a line saying "Tungsten Edge was blocked…" with an **"Open Anyway"** button next to it — click it.
-4. Confirm once more (you may need your login password or Touch ID). Done — double-click works from now on.
-
-### One more step after opening: grant Accessibility permission
-
-Tungsten Edge needs **Accessibility** permission to read and manage your windows; it guides you through this on first run:
+One step remains: Tungsten Edge needs **Accessibility** permission to read and manage your
+windows, and it guides you through this on first run:
 
 - Open **System Settings → Privacy & Security → Accessibility**, find **Tungsten Edge**, and **turn on its switch**.
+
+> **Upgrading from v0.8.0 or earlier:** v0.9.0 switched to a proper Developer ID signature, so
+> macOS treats it as a *different* app and your old Accessibility grant no longer applies.
+> **Quit Tungsten Edge**, select the old **Tungsten Edge** entry in the Accessibility list and
+> remove it with the **−** button, then reopen Tungsten Edge and grant it again. One time only;
+> future updates will not need this.
 
 ## Status menu and Settings
 
@@ -166,7 +154,7 @@ To keep the native Dock from ever reappearing, drag the Dock slider in the statu
 
 This is an early public build (v0.3). Known limitations and what's next:
 
-- **Not yet signed/notarized** → first launch needs right-click → Open (above). A signed build is planned.
+- **Signed and notarized** since v0.9.0 → opens with a plain double-click.
 - **Localization** → English and Simplified Chinese are both shipped and follow the system language. A Chinese version of this README is at [README.zh-CN.md](README.zh-CN.md).
 - Feedback and issues are very welcome.
 
