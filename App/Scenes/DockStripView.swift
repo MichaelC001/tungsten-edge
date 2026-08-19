@@ -506,7 +506,7 @@ struct DockStripView: View {
         // 悬停压制的开关翻转时重判一次：起拖藏卡那一刻清掉旧悬停；落地按住期结束（指针动了）
         // 那一刻按当前指针位置补上悬停。**不再在「手里空了」那一刻重判**——那正是落地一停稳
         // 就往上长一截的来源（见 `refreshHoveredEntry`）。
-        .onChange(of: dragController.hoverSuppressed) { _ in
+        .onChange(of: dragController.hoverGate) { _ in
             refreshHoveredEntry(frames: stripHoverFrames, origin: stripRootScreenRect)
         }
         // 拖动中消息 chip 的 app 从消息区消失（退出/外部 unmark/快照丢）→ 取消拖动，免得空位卡死。
@@ -795,13 +795,8 @@ struct DockStripView: View {
     /// 窗口卡 → 切换那个窗口；保留应用 / 无主窗的消息应用 → 运行中唤主窗、未运行启动、启动中不动。
     /// 文件夹 chip 不做（弹窗锚在还空着的格上，图标半秒后才到）；找不到 entry（已经不在条上）不做。
     private func performCarrierClick(_ payload: DragPayload, projection: StripProjection) {
-        let entryID: String
-        switch payload.source {
-        case .strip: entryID = payload.id
-        case .messaging: entryID = "msg-app-\(payload.bundleID)"
-        case .drawer, .folder: return
-        }
-        guard let entry = projection.entries.first(where: { $0.id == entryID }) else { return }
+        guard let entryID = Self.stripEntryID(for: payload),
+              let entry = projection.entries.first(where: { $0.id == entryID }) else { return }
         switch entry {
         case let .window(item):
             runtime.toggle(windowID: item.actionWindowID)
@@ -811,6 +806,16 @@ struct DockStripView: View {
             launcherTap(bid)
         case .pinnedFolder, .shelf, .divider:
             return
+        }
+    }
+
+    /// 载荷 → 条上那张卡的 entry id。`nil` = 这份载荷不属于任务条（抽屉图标 / 文件夹 chip）。
+    /// **两处共用**：飞行中点一下要找到它做动作、飞行中悬停要豁免它——两边算法必须是同一份。
+    static func stripEntryID(for payload: DragPayload) -> String? {
+        switch payload.source {
+        case .strip: return payload.id                       // 窗口卡 = chip token；保留占位 = "app-<bid>"
+        case .messaging: return "msg-app-\(payload.bundleID)"
+        case .drawer, .folder: return nil
         }
     }
 
@@ -935,11 +940,17 @@ struct DockStripView: View {
             guard !dragController.hoverSuppressed else { return nil }
             guard let pointer = pointerBox.value, origin != .zero else { return nil }
             let point = CGPoint(x: pointer.x - origin.minX, y: origin.maxY - pointer.y)
-            return StripHoverResolution.chip(
+            let hit = StripHoverResolution.chip(
                 at: point,
                 frames: frames,
                 gapBridge: StripHoverResolution.defaultGapBridge * dockScale
             )
+            // 正在飞回去的 / 刚落定还没等到指针移动的那**一张**不给悬停，别的卡照常
+            //（owner 2026-08-19：「图标飞行时鼠标划到其他图标上没有悬停效果」）。理由见
+            // `DragController.hoverExemptPayload`。
+            if let exempt = dragController.hoverExemptPayload,
+               Self.stripEntryID(for: exempt) == hit { return nil }
+            return hit
         }()
         if resolved != hoveredEntryID { hoveredEntryID = resolved }
     }

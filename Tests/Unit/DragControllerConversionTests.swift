@@ -150,22 +150,39 @@ final class DragControllerConversionTests: XCTestCase {
         XCTAssertTrue(controller.isCarrying, "但载体还没撤，悬停仍要压着")
     }
 
-    /// **落地之后悬停要按住**，直到指针真的动了：卡刚以 1.0 停稳就重判悬停，安静档会当场
-    /// 往上长 1.10（owner 2026-08-19「落位抖动」）。这里指针不动，按住期就一直在。
+    /// **落地之后那一张卡的悬停要按住**，直到指针真的动了：卡刚以 1.0 停稳就重判悬停，
+    /// 安静档会当场往上长 1.10（owner 2026-08-19「落位抖动」）。这里指针不动，按住期就一直在。
+    ///
+    /// 按住的是**它一张**，不是整条任务条——见下一条用例。
     func testHoverStaysHeldAfterLandingUntilThePointerMoves() {
         begin(.strip, "app", at: outsideZone)
         waitUntil { controller.hiddenSlotPayload != nil }
         controller.endDrag()
         XCTAssertEqual(controller.hoverHoldPayload?.bundleID, "app")
-        XCTAssertTrue(controller.hoverSuppressed)
+        XCTAssertEqual(controller.hoverExemptPayload?.bundleID, "app")
         // 载体撤掉那一轮之后仍然按着（`carrierRetiring` 已经 false，靠的是 hold）。
         waitUntil { !controller.isCarrying }
         XCTAssertFalse(controller.isCarrying, "载体已经撤了")
-        XCTAssertTrue(controller.hoverSuppressed, "但指针没动，悬停仍按住")
+        XCTAssertEqual(controller.hoverExemptPayload?.bundleID, "app", "但指针没动，它自己仍按住")
         // 兜底上限一到就放开（测试里没法真动指针）。
         waitUntil(DragLandingPlan.hoverHoldMaximum + 1) { controller.hoverHoldPayload == nil }
         XCTAssertNil(controller.hoverHoldPayload)
-        XCTAssertFalse(controller.hoverSuppressed)
+        XCTAssertNil(controller.hoverExemptPayload)
+    }
+
+    /// **整条压制只在「手里真拎着东西」时**；松手之后的归位飞行期，别的卡照常悬停
+    ///（owner 2026-08-19：「图标飞行时鼠标划到其他图标上没有悬停效果，要完全落地才有」）。
+    func testOnlyTheFlyingCardIsExemptDuringTheReturnFlight() {
+        begin(.strip, "app", at: outsideZone)
+        waitUntil { controller.hiddenSlotPayload != nil }
+        XCTAssertTrue(controller.hoverSuppressed, "拎着的时候整条不判悬停")
+
+        controller.setLandingAnchor(CGRect(x: outsideZone.x + 200, y: outsideZone.y, width: 40, height: 54),
+                                    owner: .strip)
+        controller.endDrag()
+        XCTAssertNotNil(controller.landing, "起飞了")
+        XCTAssertFalse(controller.hoverSuppressed, "飞行期不再整条压制——别的卡要能悬停")
+        XCTAssertEqual(controller.hoverExemptPayload?.bundleID, "app", "只豁免正在飞的那一张")
     }
 
     // MARK: - 归位飞行可打断（owner 2026-08-19：「原生和 bestdock 都能打断」）

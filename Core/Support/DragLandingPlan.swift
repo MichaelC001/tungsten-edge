@@ -60,9 +60,17 @@ enum DragLandingPlan {
     /// 定长的毛病在于：同一个 0.26 秒，20pt 的小归位显得急促、200pt 的长途显得赶。
     /// 原生那种「从容」很大程度来自距离越远走得越久。开根号收敛而不是线性：
     /// 近距离不至于短到看不见，远距离也不会拖沓。
-    /// owner 逐轮定的：0.16/0.34 → 0.22/0.46 → 0.30/0.62 → **0.60/0.90**（2026-08-18 第四轮点名的数）。
-    static let minimumDuration: TimeInterval = 0.60
-    static let maximumFlightDuration: TimeInterval = 0.90
+    /// owner 逐轮定的：0.16/0.34 → 0.22/0.46 → 0.30/0.62 → 0.60/0.90（2026-08-18）
+    /// → **0.32/0.50**（2026-08-19：「比原生的要慢挺多」）。
+    ///
+    /// **这不是回归，是前提变了。** 0.60/0.90 是在「载体还是半透明 SwiftUI 副本、曲线还是长途那条
+    /// 快出缓停」的时候定的：那条曲线 17% 的时间就走完 61%，后面大半段肉眼几乎看不出在动，
+    /// 所以 0.6 秒当时读起来是「从容」。2026-08-19 把短途曲线换成标准 ease-out 之后，同样的时长
+    /// 「看得见的位移」变长了一大截，于是显得拖沓。曲线不动、只把时长按比例收回来。
+    ///
+    /// 调这两个数不用重装：`DOCK_DRAG_FLIGHT_MS=320,500`（见 `DragLandingSwitches.flightDurations`）。
+    static let minimumDuration: TimeInterval = DragLandingSwitches.flightDurations?.minimum ?? 0.32
+    static let maximumFlightDuration: TimeInterval = DragLandingSwitches.flightDurations?.maximum ?? 0.50
     /// 到这个位移就用满时长；再远也不加了。
     static let referenceTravel: CGFloat = 300
 
@@ -111,6 +119,16 @@ enum DragLandingPlan {
 
     /// 短途那一端的曲线（Penner easeOutQuad）。仍是快出缓停、仍在 `duration` 处准时结束。
     static let shortCurve = DragLandingCurve(c0x: 0.25, c0y: 0.46, c1x: 0.45, c1y: 0.94)
+
+    /// `DOCK_DRAG_FLIGHT_MS` 的解析（纯函数，单测覆盖）。`"320,500"` → 0.32s / 0.50s。
+    /// 不合法一律 `nil`：**半套生效比不生效更糟**——只认下界的话，曲线两端会反过来。
+    static func parseFlightDurations(_ raw: String) -> (minimum: TimeInterval, maximum: TimeInterval)? {
+        let parts = raw.split(separator: ",", omittingEmptySubsequences: false)
+            .map { Double($0.trimmingCharacters(in: .whitespaces)) }
+        guard parts.count == 2, let lo = parts[0], let hi = parts[1],
+              lo > 0, hi > 0, lo <= hi else { return nil }
+        return (lo / 1000, hi / 1000)
+    }
 
     /// 载体到点之后再等一小会儿才真的收掉，给最后一帧提交留余量。
     static let settleMargin: TimeInterval = 0.03
@@ -239,4 +257,15 @@ enum DragLandingPlan {
 /// 跨面板收纳打架，owner 能立刻退回瞬时收尾，不用等重新打包。
 enum DragLandingSwitches {
     static let enabled = ProcessInfo.processInfo.environment["DOCK_DRAG_LANDING"] != "0"
+
+    /// 归位飞行时长的现场调速旋钮：`DOCK_DRAG_FLIGHT_MS=<最短>,<最长>`（毫秒，例 `320,500`）。
+    ///
+    /// 存在的理由很实在：这两个数 owner 已经来回定过五轮，每轮都要「改常量 → 重新构建 → 重装 →
+    /// 再体感一次」，一轮两分多钟。有了它改环境变量重启就行，秒级收敛（同 `DOCK_PANEL_MATERIAL`
+    /// 的先例）。**默认值仍写在 `DragLandingPlan` 里**，不设这个变量时行为与写死常量完全一致。
+    ///
+    /// 解析不合法（缺一半、非数、非正、最短 > 最长）一律当没设，绝不半套生效。
+    static let flightDurations: (minimum: TimeInterval, maximum: TimeInterval)? =
+        ProcessInfo.processInfo.environment["DOCK_DRAG_FLIGHT_MS"]
+            .flatMap(DragLandingPlan.parseFlightDurations)
 }

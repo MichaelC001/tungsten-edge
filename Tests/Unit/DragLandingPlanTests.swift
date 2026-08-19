@@ -252,9 +252,35 @@ final class DragLandingPlanTests: XCTestCase {
 
 
     /// 抬起（从卡槽滑到指针下）要明显比归位飞行短：它是起拖的**接手**动作，
-    /// 长了就变成"起拖要等一下"，反而是要治的那种迟滞。
+    /// 长了就变成「起拖要等一下」，反而是要治的那种迟滞。
+    ///
+    /// 闸原来写 `/ 3`，2026-08-19 归位从 0.60 收到 0.32 后放宽到 `/ 2`——**意图没变**
+    /// （抬起明显短于归位），变的是归位本身。真要再收就得连抬起一起重新定，别只改这个数。
     func testLiftIsMuchShorterThanTheReturnFlight() {
-        XCTAssertLessThan(DragLandingPlan.liftDuration, DragLandingPlan.minimumDuration / 3)
+        XCTAssertLessThan(DragLandingPlan.liftDuration, DragLandingPlan.minimumDuration / 2)
         XCTAssertGreaterThan(DragLandingPlan.liftDuration, 0)
+    }
+
+    // MARK: - 调速旋钮（owner 2026-08-19：「归位飞行能不能调快一些」）
+
+    /// 时长表本身要在「原生量级」上：最短一段不该长到读起来是拖沓，也不能短到看不见动画。
+    func testDurationTableStaysInTheNativeBallpark() {
+        XCTAssertGreaterThan(DragLandingPlan.minimumDuration, 0.15)
+        XCTAssertLessThan(DragLandingPlan.minimumDuration, 0.45)
+        XCTAssertGreaterThan(DragLandingPlan.maximumFlightDuration, DragLandingPlan.minimumDuration)
+        XCTAssertLessThan(DragLandingPlan.maximumFlightDuration, 0.70)
+    }
+
+    /// `DOCK_DRAG_FLIGHT_MS` 只接受「两个正数且最短 ≤ 最长」，其余一律当没设——
+    /// **半套生效比不生效更糟**（只改了下界的话曲线两端会反过来）。
+    func testFlightDurationOverrideRejectsAnythingMalformed() {
+        for bad in ["", "320", "320,", ",500", "abc,500", "320,abc", "0,500", "-320,500", "500,320", "320,500,700"] {
+            XCTAssertNil(DragLandingPlan.parseFlightDurations(bad), "「\(bad)」不该被接受")
+        }
+        let good = DragLandingPlan.parseFlightDurations("320,500")
+        XCTAssertEqual(good?.minimum ?? 0, 0.32, accuracy: 0.0001)
+        XCTAssertEqual(good?.maximum ?? 0, 0.50, accuracy: 0.0001)
+        // 两端相等是合法的（定长飞行），空格也要容忍
+        XCTAssertNotNil(DragLandingPlan.parseFlightDurations(" 400 , 400 "))
     }
 }

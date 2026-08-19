@@ -152,15 +152,38 @@ final class DragController: ObservableObject {
     /// 第一版正是这么露出「上下残影」的。所以起拖那一刻**什么都别动**：`hoveredEntryID` 保持原样。
     var hoverFrozen: Bool { draggingPayload != nil && !carrierArmed }
 
-    /// 悬停判定该判成「无人悬停」的时段：卡已藏 / 归位飞行中 / 载体最后一轮交叠 / 落地后的按住期。
+    /// **整条任务条都不判悬停**的时段：只在「手里真的拎着东西」时。
     ///
-    /// 最后一项是 owner 2026-08-19 报「落位抖动」的成因：卡刚以 1.0 显形，`isCarrying` 一变 false
-    /// 就重判悬停，指针必然压在刚落定的那张卡上，安静档于是当场往上长 1.10——图标刚停稳就
-    /// 再动一下。改成**落地后不主动重判，等指针真的动了再说**（`hoverHoldPayload`），
-    /// 这也是 AppKit 自己对拖放结束后悬停的行为（mouseEntered 要等鼠标动了才发）。
-    var hoverSuppressed: Bool {
-        (draggingPayload != nil && carrierArmed) || landing != nil || carrierRetiring
-            || hoverHoldPayload != nil
+    /// 拖动途中指针扫过谁就给谁点亮、还弹名字气泡，本来就不对——原生 Dock 拖动时别的图标也不亮。
+    ///
+    /// **归位飞行期不在此列**（owner 2026-08-19 报「图标飞行时划到其他图标上没有悬停效果」）：
+    /// 松手之后鼠标已经自由了，原生这时候划过别的图标照样出名字。飞行期改成只豁免**正在飞的
+    /// 那一张**，见 `hoverExemptPayload`。
+    var hoverSuppressed: Bool { draggingPayload != nil && carrierArmed }
+
+    /// **单独豁免**的那一张卡：正在飞回去的 / 刚落定还没等到指针移动的。别的卡照常悬停。
+    ///
+    /// 两个理由都只针对这一张，与别的卡无关：
+    /// - 飞行中它的卡槽是空的，这时候把悬停判给它，等它落地显形就已经是悬停态（安静档还要
+    ///   放大 1.10），而载体最后一帧画的是**非悬停**态，交接那一帧就「啵」地跳一下；
+    /// - 落地后指针必然压在它身上，卡刚以 1.0 停稳就重判悬停会当场往上长一截——owner
+    ///   2026-08-19 报的「落位抖动」。AppKit 自己对拖放结束后的悬停也是等鼠标动了才发
+    ///   mouseEntered（按住期由 `hoverHoldPayload` 管，指针一动就解除）。
+    ///
+    /// 撤载体那一轮（卡已显形、位图还没撤）不用单独处理：`finishLanding` 与 `teardown` 的不飞分支
+    /// 都在 `retireCarrierAfterHandoff()` **之前**先 `beginHoverHold(for:)`，那一轮由 hold 覆盖。
+    var hoverExemptPayload: DragPayload? { landing?.payload ?? hoverHoldPayload }
+
+    /// 悬停闸的组合值。视图用它做重判触发——光看 `hoverSuppressed` 的话，
+    /// 「豁免对象换人了」不会触发重判（飞行结束那一刻正是换人）。
+    var hoverGate: HoverGate {
+        HoverGate(suppressed: hoverSuppressed, exemptID: hoverExemptPayload?.id,
+                  exemptSource: hoverExemptPayload?.source)
+    }
+    struct HoverGate: Equatable {
+        let suppressed: Bool
+        let exemptID: String?
+        let exemptSource: DragSource?
     }
 
     /// 刚落定、指针还没动过的那张卡。非空期间悬停一律压着；指针一动（或 3 秒兜底）就清。
@@ -302,7 +325,7 @@ final class DragController: ObservableObject {
         endLandingGrabWatch()
         Self.instantly {
             layer.removeAllAnimations()
-            layer.position = pose.position
+            layer.position = self.alignedCenter(pose.position, on: layer)
             layer.transform = Self.scaleTransform(pose.scale)
             layer.shadowOpacity = pose.shadow
             layer.opacity = 1
@@ -667,7 +690,8 @@ final class DragController: ObservableObject {
         Self.instantly {
             layer.removeAllAnimations()
             self.apply(snapshot, to: layer)
-            layer.position = DragCarrierGeometry.panelCenter(ofScreenRect: sourceScreenRect, panelFrame: frame)
+            layer.position = self.alignedCenter(
+                DragCarrierGeometry.panelCenter(ofScreenRect: sourceScreenRect, panelFrame: frame), on: layer)
             layer.transform = CATransform3DIdentity
             layer.opacity = DragLandingPlan.candidateOpacity
             layer.shadowOpacity = 0
@@ -1238,8 +1262,8 @@ final class DragController: ObservableObject {
         center.y += pose.dy
         Self.instantly {
             layer.removeAllAnimations()
-            self.apply(snapshot, to: layer)
-            layer.position = center
+            self.apply(snapshot, to: layer)          // 先换图：`alignedCenter` 要用新 bounds
+            layer.position = self.alignedCenter(center, on: layer)
             layer.transform = Self.scaleTransform(pose.scale)
             layer.opacity = 1
             layer.shadowOpacity = 0     // 卡槽本身没有投影，所以起手也不能有
@@ -1277,9 +1301,10 @@ final class DragController: ObservableObject {
         guard let layer = carrierLayer else { return }
         carrierLifted = true
         HoverTrace.dragHandoff("lift", msSinceBegin: (CACurrentMediaTime() - dragBeganAt) * 1000)
-        let target = DragCarrierGeometry.carriedCenter(pointer: globalLocation,
+        let rawTarget = DragCarrierGeometry.carriedCenter(pointer: globalLocation,
                                                        grabOffset: grabOffset,
                                                        panelFrame: carrierScreenFrame)
+        let target = alignedCenter(rawTarget, on: layer)
         let from = layer.position
         // model 值直接到位（跟手每帧改的就是它），位移用**叠加式**动画补上那段差。
         // 不这样的话，抬起途中每一次跟手写位置都会和一条绝对值动画打架，副本会先飞向旧目标再瞬移。
@@ -1311,7 +1336,8 @@ final class DragController: ObservableObject {
         let center = DragCarrierGeometry.carriedCenter(pointer: globalLocation,
                                                        grabOffset: grabOffset,
                                                        panelFrame: carrierScreenFrame)
-        Self.instantly { layer.position = center }
+        let aligned = alignedCenter(center, on: layer)   // 不对齐就是整段拖动都糊，见 `alignedCenter`
+        Self.instantly { layer.position = aligned }
     }
 
     /// 缩放 + 透明度（进/出投放区、转正、文件夹拖出条外）统一走这一个出口，
@@ -1373,7 +1399,7 @@ final class DragController: ObservableObject {
         grabOffset = CGSize(width: grabOffset.width * next.size.width / previousSize.width,
                             height: grabOffset.height * next.size.height / previousSize.height)
         let from = layer.position
-        let target = DragCarrierGeometry.carriedCenter(pointer: globalLocation, grabOffset: grabOffset,
+        let rawTarget = DragCarrierGeometry.carriedCenter(pointer: globalLocation, grabOffset: grabOffset,
                                                        panelFrame: carrierScreenFrame)
         // bounds 隐式动画 + contents 交叉淡：位图在同一段时间里换样子、换尺寸。
         CATransaction.begin()
@@ -1382,6 +1408,7 @@ final class DragController: ObservableObject {
         apply(next, to: layer)
         CATransaction.commit()
         // 位置：model 直接到位 + 叠加式滑动（同 `liftCarrier`），跟手照常、不和绝对值动画打架。
+        let target = alignedCenter(rawTarget, on: layer)
         Self.instantly {
             layer.position = target
             if hypot(target.x - from.x, target.y - from.y) > 0.5 {
@@ -1415,10 +1442,8 @@ final class DragController: ObservableObject {
         let generation = landingAnimation
         let c = flight.curve   // 每次飞行自带曲线（近缓远快），和 duration 一样不许分开算
         let timing = CAMediaTimingFunction(controlPoints: Float(c.c0x), Float(c.c0y), Float(c.c1x), Float(c.c1y))
-        let destination = DragCarrierGeometry.pixelAligned(
-            center: DragCarrierGeometry.panelPoint(fromTopLeft: flight.to, panelFrame: carrierScreenFrame),
-            size: layer.bounds.size,
-            scale: carrierSnapshot?.scale ?? 2)
+        let destination = alignedCenter(
+            DragCarrierGeometry.panelPoint(fromTopLeft: flight.to, panelFrame: carrierScreenFrame), on: layer)
         CATransaction.begin()
         CATransaction.setAnimationDuration(flight.duration)
         CATransaction.setAnimationTimingFunction(timing)
@@ -1492,6 +1517,21 @@ final class DragController: ObservableObject {
 
     private static func scaleTransform(_ scale: CGFloat) -> CATransform3D {
         CATransform3DMakeScale(scale, scale, 1)
+    }
+
+    /// **载体停在哪儿，都要落在设备像素格上。**
+    ///
+    /// 位图落在半个像素上会被系统重采样，看起来就是「图标比条上那张卡糊一点」
+    ///（owner 2026-08-19：「拖动图标时图标有一个微弱的模糊，落地后才消失」）。
+    /// 之前只有归位飞行的**终点**对齐过，所以整段跟手都是糊的、一落地就清晰——同一个病的两半。
+    ///
+    /// 量化步长是一个设备像素（2x 屏 0.5pt），肉眼看不出来，而这正是原生拖动清晰的原因。
+    /// 缩放态（悬在投放区的 0.82、起拖姿态的 1.023）本来就要重采样，对齐它无害也无益，
+    /// 但统一走这里省得两份算法漂移。
+    private func alignedCenter(_ center: CGPoint, on layer: CALayer) -> CGPoint {
+        DragCarrierGeometry.pixelAligned(center: center,
+                                         size: layer.bounds.size,
+                                         scale: carrierSnapshot?.scale ?? 2)
     }
 
     private static let carrierShadow = DockThemeTokens.standard.carrierShadow
