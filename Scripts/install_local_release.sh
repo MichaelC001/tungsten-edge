@@ -42,11 +42,11 @@ if grep -Fq "\"$DEVELOPER_ID\"" <<<"$IDENTITIES"; then
   IDENTITY="$DEVELOPER_ID"
 elif grep -Fq "\"$FALLBACK_IDENTITY\"" <<<"$IDENTITIES"; then
   IDENTITY="$FALLBACK_IDENTITY"
-  echo "warning: 没找到 Developer ID 证书，回退到「$FALLBACK_IDENTITY」。" >&2
+  echo "warning: 没找到 Developer ID 证书，回退到「${FALLBACK_IDENTITY}」。" >&2
   echo "         装出来的包与发布包身份不同，辅助功能授权会和发布包互相作废。" >&2
 else
   echo "error: 找不到任何可用的签名证书。" >&2
-  echo "       期望「$DEVELOPER_ID」或「$FALLBACK_IDENTITY」。" >&2
+  echo "       期望「${DEVELOPER_ID}」或「${FALLBACK_IDENTITY}」。" >&2
   echo "       没有它就只能 ad-hoc 签名，每次安装都会让辅助功能授权失效。" >&2
   exit 1
 fi
@@ -65,7 +65,7 @@ cp "$ROOT/LICENSE" "$APP/Contents/Resources/LICENSE"   # 与发布包保持一�
 # 不加 --deep：bundle 里只有一个可执行文件，没有嵌套代码，而且该参数已被苹果废弃。
 # --timestamp 要联网（约 1 秒）。它对运行期行为没有影响，留着是为了让本机包与发布包
 # 的签名配置完全一致 —— 万一以后离线场景嫌它碍事，删掉它是安全的。
-echo "==> 用「$IDENTITY」签名（hardened runtime + entitlements）…"
+echo "==> 用「${IDENTITY}」签名（hardened runtime + entitlements）…"
 codesign --force \
   --sign "$IDENTITY" \
   --options runtime \
