@@ -10,6 +10,9 @@ import Foundation
 /// 必须不带 DragController 的 AppKit 依赖就能编译。
 enum DragSource { case strip, drawer, folder, messaging }
 
+/// 跨面板转换的方向：从任务条**拿走**东西，还是往任务条上**放**东西。
+enum CrossPanelDirection { case intoDrawer, ontoStrip }
+
 /// 抽屉图标拖到任务条时的行为模式（纯决策，DockStripView 喂事实）。
 enum DrawerDragOutMode: Equatable {
     case reject             // 未运行的消息应用 → 不接受（留在抽屉）
@@ -45,6 +48,20 @@ enum DragConversionPlan {
         if hasRealWindow { return .unstash }
         // app-* fallback while running, or a kept placeholder while stopped.
         return isInSnapshot || isKept ? .keepPlacement : .reject
+    }
+
+    /// 跨面板转换期间，要不要把任务条宽度钳在拖动前的值。
+    ///
+    /// **只钳「从条上拿走」的方向**（收进抽屉 / 消息 chip 收进抽屉）：不钳的话，卡一离开条就塌缩，
+    /// 而用户还没决定要不要真收进去，条会在光标底下缩一下再弹回来。
+    ///
+    /// **「往条上放」的方向不钳**（owner 2026-08-20，反转 2026-06-22 定的「四向对称都钳住」）：
+    /// 钳住的代价是卡片现身后条装不下、被边缘渐隐切掉，而且**松手那一刻才解钳**——
+    /// 于是整条在 0.22s 里重新居中，正好压在归位飞行的落点上。今天两次「飞行先偏右再回位」
+    /// 都是它造成的。改成卡片一现身条就张开：之后拖动和松手都发生在一个不动的布局里，
+    /// 和条内拖动一样。代价是进条那一下条会张一下（owner 接受）。
+    static func freezesStripWidth(_ direction: CrossPanelDirection) -> Bool {
+        direction == .intoDrawer
     }
 
     /// `endDrag` 松手收尾动作（`.messaging` / `.drawer` 来源；`.strip`/`.folder` 不经这里）。

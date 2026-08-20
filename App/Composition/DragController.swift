@@ -194,12 +194,21 @@ final class DragController: ObservableObject {
     private var hoverHoldStartedAt: CFTimeInterval = 0
 
     /// 拎在手里时的缩放。载体和飞行起点共用这一个表达式——分开写过就会漂。
+    ///
+    /// 缩到 `dropZoneScale` 表达的是「松手就会被收进抽屉」，所以**只对从条上拿走的来源生效**。
+    /// 抽屉来源不缩（owner 2026-08-20）：它的「投放区」就是整条任务条，缩了等于一进条就变小，
+    /// 而条内拖动从不会在条上缩；普通情况下还会在同一轮里先缩到 0.82 再被转正弹回 1.0，
+    /// 两个 0.12s 动画打架；`.reject` / `.releaseToMessaging` 两种模式下更是一直缩着。
     var carriedScale: CGFloat {
-        isOverDropZone && !isConvertedToStrip ? DragLandingPlan.dropZoneScale : DragLandingPlan.carriedScale
+        guard let source = draggingPayload?.source, source != .drawer else {
+            return DragLandingPlan.carriedScale
+        }
+        return isOverDropZone && !isConvertedToStrip
+            ? DragLandingPlan.dropZoneScale : DragLandingPlan.carriedScale
     }
 
     /// 载体这一刻该有的缩放。文件夹 chip 拖出任务条可见范围时再叠一档放大
-    /// （`.folder` 永远 `canExternalDrop == false`，`carriedScale` 那支恒为 1.05，两者不冲突）。
+    /// （`.folder` 永远 `canExternalDrop == false`，`carriedScale` 那支恒为常态值，两者不冲突）。
     private var carrierVisualScale: CGFloat {
         guard draggingPayload?.source == .folder, folderDragZone == .outsideStrip else { return carriedScale }
         return carriedScale * DragLandingPlan.folderRemovalScale
@@ -253,16 +262,32 @@ final class DragController: ObservableObject {
     /// 门槛 0.5pt：亚像素抖动不值得为它重发一次（`DockStripView` 观察着本对象，
     /// 每发一次都要重算整条 body）。
     private func retargetLandingIfNeeded() {
-        // 吸进胶囊的飞行不纠偏：收纳后一两帧里任务条还会把那格的旧帧报上来，跟着它就又被拉回条上。
-        guard var current = landing, current.kind == .returnToSlot,
+        guard var current = landing,
               DragLandingPlan.allowsRetarget(
                 remainingBeforeDeadline: landingDeadline - CACurrentMediaTime(),
-                flightDuration: current.flight.duration),
-              let rect = landingAnchor?.rect,
-              let updated = DragLandingPlan.flight(from: current.flight.from,
+                flightDuration: current.flight.duration)
+        else { return }
+        // **两种飞行跟的是两个不同的终点，绝不能混。**
+        // `.returnToSlot` 跟卡槽锚点；`.stash` 跟**胶囊**（重新取一次 `stashTargetProvider`）。
+        // 原来 `.stash` 整个被排除在纠偏之外，注释写的理由是「收纳后一两帧里任务条还会把那格的
+        // 旧帧报上来，跟着它就又被拉回条上」——那说的是卡槽锚点，不是胶囊，所以按终点来源分开就行。
+        // 排除它的代价是 owner 2026-08-20 报的「拖到胶囊上，图标偶发飞到抽屉外面」：
+        // 松手先算好终点、之后才 `drawerStore.add`，卡一离开条，条变窄、整条重新居中，
+        // 胶囊跟着往左滑 0.22s，而飞行还朝着胶囊的旧位置去。
+        let updatedFlight: DragLandingFlight?
+        switch current.kind {
+        case .returnToSlot:
+            updatedFlight = DragLandingPlan.flight(from: current.flight.from,
                                                    fromScale: current.flight.fromScale,
-                                                   anchorScreenRect: rect,
-                                                   carrierScreenFrame: carrierScreenFrame),
+                                                   anchorScreenRect: landingAnchor?.rect,
+                                                   carrierScreenFrame: carrierScreenFrame)
+        case .stash:
+            updatedFlight = DragLandingPlan.stashFlight(from: current.flight.from,
+                                                        fromScale: current.flight.fromScale,
+                                                        targetScreenRect: stashTargetProvider(),
+                                                        carrierScreenFrame: carrierScreenFrame)
+        }
+        guard let updated = updatedFlight,
               hypot(updated.to.x - current.flight.to.x, updated.to.y - current.flight.to.y) > 0.5
         else { return }
         HoverTrace.landingRetarget(from: updated.from, to: updated.to, previous: current.flight.to)
@@ -290,6 +315,7 @@ final class DragController: ObservableObject {
         recordLandingDelta()
         beginHoverHold(for: current.payload)   // 先按住悬停，再让卡显形——顺序反了就抖一下
         landing = nil            // ← 条 / 抽屉在本轮 SwiftUI 提交里让卡显形
+        convertedChipID = nil    // 转正那张卡的空槽撑到这里为止，和 `landing` 同一轮放开
         retireCarrierAfterHandoff()
     }
 
@@ -494,6 +520,7 @@ final class DragController: ObservableObject {
         endLandingGrabWatch()
         flightTimeline = nil
         carrierRetiring = false
+        convertedChipID = nil
         guard landing != nil else { return }
         landing = nil
         retireCarrier()
@@ -520,6 +547,14 @@ final class DragController: ObservableObject {
         case messagingToDrawer(original: DragPayload)
         /// 抽屉里运行中的消息应用已临时释放回消息区。回滚 = drawer.add + 还原 `.drawer` 载荷。
         case drawerToMessaging(original: DragPayload)
+
+        /// 从条上拿走，还是往条上放。任务条宽度钳不钳由它决定（`DragConversionPlan.freezesStripWidth`）。
+        var direction: CrossPanelDirection {
+            switch self {
+            case .stripToDrawer, .messagingToDrawer: return .intoDrawer
+            case .drawerToStrip, .drawerToMessaging: return .ontoStrip
+            }
+        }
     }
     @Published private(set) var conversion: CrossPanelConversion?
 
@@ -881,7 +916,7 @@ final class DragController: ObservableObject {
         guard let p = draggingPayload, p.source == .drawer, p.canExternalDrop, conversion == nil else { return }
         conversion = .drawerToStrip(bundleID: p.bundleID)  // 先置（宽度冻结），再动 drawerStore
         drawerStore.remove(p.bundleID)
-        applyCarrierVisualState(animated: true)   // 转正后不再缩到 0.82，保持拎着的 1.05
+        applyCarrierVisualState(animated: true)   // 转正后不再缩到 0.82，保持拎着的常态尺寸
     }
 
     /// 撤销转正：拖出任务条区 → `drawerStore.add(bid)` 还原 placement；kept 始终不变。
@@ -967,7 +1002,7 @@ final class DragController: ObservableObject {
         }()
         guard isOverDropZone != next else { return }
         isOverDropZone = next
-        applyCarrierVisualState(animated: true)   // 进/出投放区 → 0.82 ↔ 1.05
+        applyCarrierVisualState(animated: true)   // 进/出投放区 → 0.82 ↔ 常态
     }
 
     // MARK: - 收尾（幂等，先清后提交）
@@ -1128,7 +1163,9 @@ final class DragController: ObservableObject {
         let released = draggingPayload
         conversion = nil                  // 落定路径：清转换态不回滚（commit）；解冻任务条宽度
         convertedRepresentative = nil
-        convertedChipID = nil
+        // **转正那张卡的空槽要撑到落地**，与条内拖动同口径（那边由 `hiddenSlotPayload` 撑着整段飞行）。
+        // 当场清掉的话，卡片立刻全不透明显形、而载体还在飞 = 双影。由 `finishLanding` / `abortLanding` 清。
+        if flight == nil { convertedChipID = nil }
         folderDragZone = nil
         folderDropGeometry = nil
         draggingPayload = nil
@@ -1327,7 +1364,7 @@ final class DragController: ObservableObject {
         panel.orderFrontRegardless()
     }
 
-    /// 抬起：从卡槽滑到指针下，同时长到 1.05、渐出投影。
+    /// 抬起：从卡槽滑到指针下，同时长到常态尺寸。
     private func liftCarrier() {
         guard let layer = carrierLayer else { return }
         carrierLifted = true
@@ -1375,7 +1412,7 @@ final class DragController: ObservableObject {
     /// 免得几处各写各的、状态叠在一起时互相覆盖。
     private func applyCarrierVisualState(animated: Bool) {
         // 同 `moveCarrier`：抬起之前载体保持「卡槽原样」（0.93），
-        // 否则起拖当轮一次投放区判定就能把它提前放大到 1.05，抬起动画就成了半截。
+        // 否则起拖当轮一次投放区判定就能把它提前拉到常态尺寸，抬起动画就成了半截。
         guard carrierLifted, let layer = carrierLayer, draggingPayload != nil else { return }
         let scale = regrabPressed ? ChipPressDecision.pressedScale : carrierVisualScale
         let opacity = carrierVisualOpacity
@@ -1416,7 +1453,10 @@ final class DragController: ObservableObject {
     ///   抓取偏移按尺寸比例缩放——指针停在图标上**同一个相对位置**，否则标题卡抓在右端、换成小图标后
     ///   会浮在指针几十 pt 以外（owner 2026-08-19 截图：进抽屉后图标压在抽屉边上）；位置滑过去、
     ///   bounds 与 contents 用同一段 0.12s 动画过渡（大卡缩成小图标、同时贴到指针边上）。
-    ///   `false` = 瞬时换图、偏移不动（抽屉图标转正进任务条那个方向现在的样子，owner 已验收，不动）。
+    ///   `false` = 瞬时换图、偏移不动。**两个方向现在都用 `true`**（owner 2026-08-20 要求
+    ///   「抽屉拖进任务条和条内拖动完全一致」，反转了此前对 `false` 那版观感的签收）：
+    ///   瞬时换图意味着 30.8pt 的抽屉图标在一帧里绕自身中心炸成一张 40–168pt 的卡，
+    ///   指针的相对握持点也跟着跳。
     func setCarrierSnapshot(_ snapshot: CarrierSnapshot?, reanchor: Bool = false) {
         guard let layer = carrierLayer, draggingPayload != nil,
               let next = snapshot ?? originSnapshot else { return }
@@ -1460,7 +1500,7 @@ final class DragController: ObservableObject {
         layer.bounds = CGRect(origin: .zero, size: snapshot.size)
     }
 
-    /// 归位飞行：位移、缩放、投影**在同一个事务里**，所以不存在「淡出计时器没跟着纠偏一起重排」
+    /// 归位飞行：位移与缩放**在同一个事务里**，所以不存在「淡出计时器没跟着纠偏一起重排」
     /// 那种漏排（上一版正是这么把载体在半路淡到 0 的）。
     private func flyCarrier(along flight: DragLandingFlight, token: Int) {
         guard let layer = carrierLayer else { return }

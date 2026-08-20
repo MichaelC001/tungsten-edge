@@ -157,6 +157,8 @@ struct DockStripView: View {
     /// 消息区 chip 帧（bundleID → "strip" 空间 frame）。**独立字典,同文件夹 chip 的理由绝不混入
     /// chipFrames**——喂消息区内重排 hit-test + 抽屉拖出的"消息区范围"释放判定。
     @State private var messagingChipFrames: [String: CGRect] = [:]
+    /// 载体此刻画的是哪张消息区图标（释放回消息区那条路的换图去重）。见 `syncReleasedMessagingCarrier`。
+    @State private var carriedMessagingChipID: String?
 
     /// 中转格 frame（"strip" 空间）。**独立上报,不塞进 folderChipFrames**（评审：那个字典专属
     /// 文件夹 chip,后续还喂文件夹重排 hit-test,不能混 sentinel）。喂中转弹窗锚点 + drop 路由。
@@ -508,6 +510,7 @@ struct DockStripView: View {
             updateMessagingReorder(messagingIDs: projection.messagingIDs)
             updateFolderReorder()
             syncConvertedCarrier(projection: projection)
+            syncReleasedMessagingCarrier(projection: projection)
             updateFolderDragZone()
             updateLandingAnchor()
         }
@@ -520,6 +523,10 @@ struct DockStripView: View {
         // 光靠鼠标驱动就意味着「光标停在边界不动 = 一直双影」。store 一变就再算一次，把那一帧补上。
         .onChange(of: projection.liveOrderIDs) { _ in
             syncConvertedCarrier(projection: freshProjection())
+        }
+        // 同上，消息区那一侧：释放那一刻手里的 projection 里还没有这张 chip。
+        .onChange(of: projection.messagingIDs) { _ in
+            syncReleasedMessagingCarrier(projection: freshProjection())
         }
         // 悬停压制的开关翻转时重判一次：起拖藏卡那一刻清掉旧悬停；落地按住期结束（指针动了）
         // 那一刻按当前指针位置补上悬停。**不再在「手里空了」那一刻重判**——那正是落地一停稳
@@ -813,11 +820,17 @@ struct DockStripView: View {
         guard dc.isConvertedToStrip, let p = dc.draggingPayload, p.source == .drawer else { return }
         let rep = projection.liveChipIDs(bundleID: p.bundleID).first
             .flatMap { projection.liveOrderIDs.contains($0) ? projection.item(forID: $0) : nil }
-        let changed = dc.convertedRepresentative != rep
-        dc.setConvertedRepresentative(rep, chipID: projection.liveEntryIDs(bundleID: p.bundleID).first)
-        // 载体改画代表卡（与条内拖动同款）。`rep` 变回 nil = 回滚，传 nil 让载体换回起拖时那张图。
+        let chipID = projection.liveEntryIDs(bundleID: p.bundleID).first
+        // **按 chip id 判有没有变，不按代表卡**：`keepPlacement` 路径物化的是 `.keptApp` 占位或
+        // app 级兜底卡，代表卡恒为 nil，按它判就永远「没变」——于是那条路全程拎着一个 0.7 倍的
+        // 抽屉小图标在 54pt 的卡片之间走，从来不变成卡片（owner 2026-08-20）。
+        let changed = dc.convertedChipID != chipID
+        dc.setConvertedRepresentative(rep, chipID: chipID)
         guard changed else { return }
-        dc.setCarrierSnapshot(rep.flatMap { carrierSnapshot(for: .window($0), projection: projection) })
+        // 载体改画条上那张卡（与条内拖动同款）；`chipID` 变回 nil = 回滚，传 nil 让载体换回起拖那张图。
+        let entry = chipID.flatMap { id in projection.entries.first { $0.id == id } }
+        dc.setCarrierSnapshot(entry.flatMap { carrierSnapshot(for: $0, projection: projection) },
+                              reanchor: true)
     }
 
 
@@ -825,7 +838,7 @@ struct DockStripView: View {
     /// 窗口卡 → 切换那个窗口；保留应用 / 无主窗的消息应用 → 运行中唤主窗、未运行启动、启动中不动。
     /// 文件夹 chip 不做（弹窗锚在还空着的格上，图标半秒后才到）；找不到 entry（已经不在条上）不做。
     private func performCarrierClick(_ payload: DragPayload, projection: StripProjection) {
-        guard let entryID = Self.stripEntryID(for: payload),
+        guard let entryID = carriedStripEntryID(for: payload),
               let entry = projection.entries.first(where: { $0.id == entryID }) else { return }
         switch entry {
         case let .window(item):
@@ -841,6 +854,15 @@ struct DockStripView: View {
 
     /// 载荷 → 条上那张卡的 entry id。`nil` = 这份载荷不属于任务条（抽屉图标 / 文件夹 chip）。
     /// **两处共用**：飞行中点一下要找到它做动作、飞行中悬停要豁免它——两边算法必须是同一份。
+    /// 同上，但先认「转正进任务条」的那张卡。转正的载荷来源**一直是 `.drawer`**
+    /// （`convertDrawerToStrip` 有意不翻 source），静态那份对 `.drawer` 返回 nil——
+    /// 于是落地那一刻悬停豁免失效，指针正压在刚显形的卡上、安静档当场放大到 1.10，
+    /// 就是当年治过的「落位抖动」在这条路径上的形态（owner 2026-08-20）。
+    private func carriedStripEntryID(for payload: DragPayload) -> String? {
+        if payload.source == .drawer, let cid = dragController.convertedChipID { return cid }
+        return Self.stripEntryID(for: payload)
+    }
+
     static func stripEntryID(for payload: DragPayload) -> String? {
         switch payload.source {
         case .strip: return payload.id                       // 窗口卡 = chip token；保留占位 = "app-<bid>"
@@ -869,13 +891,22 @@ struct DockStripView: View {
     private func updateLandingAnchor() {
         let anchor: CGRect? = {
             // `carriedPayload`：飞行途中也要继续报，卡槽落定后 `DragController` 才纠得了偏。
-            guard let p = dragController.carriedPayload, !dragController.isConvertedToStrip,
-                  stripRootScreenRect != .zero else { return nil }
+            guard let p = dragController.carriedPayload, stripRootScreenRect != .zero else { return nil }
+            // 已转正进任务条：锚点就是条上那张卡（`convertedChipID` 同时覆盖真窗口卡和
+            // `keepPlacement` 物化出来的 `app-<bid>` 占位，两者都上报进 `chipFrames`）。
+            // **2026-08-20 之前这里返回 nil，于是抽屉拖进任务条根本没有归位飞行**，图标从光标
+            // 瞬移到槽位——当时的理由是「松手会解冻条宽、整条重新居中，落点在飞行途中会漂」，
+            // 而那个漂已经不存在了：往条上放的方向不再钳宽度（`freezesStripWidth`）。
+            // 认 `convertedChipID` 而不是 `isConvertedToStrip`：后者读的是 `conversion`，
+            // 而 `conversion` 在 `teardown` 就清了，飞行途中会失去锚点、纠不了偏。
+            if let cid = dragController.convertedChipID {
+                return chipFrames[cid].map(stripFrameToScreen)
+            }
             switch p.source {
             case .strip:  return chipFrames[p.id].map(stripFrameToScreen)
             case .folder: return folderChipFrames[p.id].map(stripFrameToScreen)
             case .messaging: return messagingChipFrames[p.bundleID].map(stripFrameToScreen)
-            case .drawer: return nil   // 抽屉侧自己写
+            case .drawer: return nil   // 还没转正 → 落点在抽屉里，抽屉侧自己写
             }
         }()
         dragController.setLandingAnchor(anchor, owner: .strip)
@@ -979,7 +1010,7 @@ struct DockStripView: View {
             //（owner 2026-08-19：「图标飞行时鼠标划到其他图标上没有悬停效果」）。理由见
             // `DragController.hoverExemptPayload`。
             if let exempt = dragController.hoverExemptPayload,
-               Self.stripEntryID(for: exempt) == hit { return nil }
+               carriedStripEntryID(for: exempt) == hit { return nil }
             return hit
         }()
         if resolved != hoveredEntryID { hoveredEntryID = resolved }
@@ -1185,6 +1216,26 @@ struct DockStripView: View {
             running: runningApplicationStore.isRunning(p.bundleID),
             inZone: true, released: true, stop: "ok")
         dc.convertDrawerToMessaging()
+    }
+
+    /// 释放回消息区之后，把载体从抽屉小图标换成**消息区那张图标**，与转正进任务条那条同款。
+    ///
+    /// 漏了这一步的症状：全程拎着 30.8pt 的抽屉小图标，松手交接那一刻条上冒出 44pt 的消息区图标，
+    /// 中间没有任何过渡 ——「从很小突然变大，大小过渡生硬」（owner 2026-08-20 报，微信）。
+    ///
+    /// **不能在 `convertDrawerToMessaging()` 当轮换**：那一刻 chip 还没物化进投影（手里是上一帧的），
+    /// 所以和 `syncConvertedCarrier` 一样挂两处驱动（指针 + `messagingIDs` 变化）。
+    private func syncReleasedMessagingCarrier(projection: StripProjection) {
+        let dc = dragController
+        let entry: StripEntry? = {
+            guard dc.isReleasedToMessaging, let p = dc.draggingPayload, p.source == .messaging else { return nil }
+            return projection.messaging.first { $0.id == "msg-app-\(p.bundleID)" }
+        }()
+        guard entry?.id != carriedMessagingChipID else { return }
+        carriedMessagingChipID = entry?.id
+        // entry 变回 nil = 回滚回抽屉，传 nil 让载体换回起拖时那张抽屉图。
+        dc.setCarrierSnapshot(entry.flatMap { carrierSnapshot(for: $0, projection: projection) },
+                              reanchor: true)
     }
 
     /// 转正后整块连续重排：本组窗口卡都进了 live 区（已实体化）才动；初次落点由暂存在 sync 内完成。
@@ -1985,9 +2036,15 @@ struct ChipView: View {
             .aspectRatio(contentMode: .fit)
             .frame(width: size, height: size)
             .clipShape(RoundedRectangle(cornerRadius: size / 4, style: .continuous))
-            // 图标**不带外投影**（owner 2026-08-19，对齐原生 Dock）。别加回来：实测 macOS 的
-            // 图标资源自己不投影（画在全透明画布上，主体下方 alpha 恰好 0），我们加的那层是
-            // 净多出来的，条上量到图标正下方比两侧空隙暗 18–24。中转格方块、文件夹封面同此。
+            // 我们**不额外加**外投影（owner 2026-08-19）：加过的那层是净多出来的，
+            // 条上量到图标正下方比两侧空隙暗 18–24。中转格方块、文件夹封面同此。
+            //
+            // ⚠️ 这里原先还写着「实测 macOS 图标资源自己不投影，主体下方 alpha 恰好 0」——
+            // **那条是错的，2026-08-20 已证伪**：它只量了图标正下方一条线，而素材自带的那圈
+            // 阴影在**四周**。逐像素实测（预览的图标，32pt）：本体外侧约 5px 是半透明纯黑，
+            // alpha 从 0.004 一路升到 0.102，亮度恒为 0。数据与教训见
+            // `Docs/Archive/Engineering/24-guardrail-provenance.md`。
+            // 所以静息时图标四周那圈暗边是**苹果画在素材里的**，不是我们画的。
     }
 
     // MARK: - Context Menu

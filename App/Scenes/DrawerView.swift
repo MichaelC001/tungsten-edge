@@ -394,6 +394,9 @@ struct DrawerView: View {
                             snapshot: ChipSnapshotter.snapshot(of: drawerChipContent(id, running: running),
                                                              screenPoint: CGPoint(x: drawerRootScreenRect.midX, y: drawerRootScreenRect.midY)))
                     }
+                    // 松手兜底，与条内那侧对齐：平时收尾靠 DragController 的全局监视器 + 轮询，
+                    // 这条是监视器万一没收到 mouseUp 时的第二条路（条内拖动一直有，抽屉这侧原本没有）。
+                    .onEnded { _ in dragController.endDrag() }
             )
     }
 

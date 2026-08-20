@@ -1625,14 +1625,17 @@ final class PanelCoordinator: NSObject {
             }
     }
 
-    /// 跨面板拖动·"松手才变任务条长度"（owner 2026-06-22，各方向对称）：任一跨面板转换进行中
-    /// （`DragController.conversion != nil`——进抽屉/出抽屉/消息区收纳/释放回消息区四向都算），把任务条
-    /// 宽度**钳在拖动前的值**（`frozenDockContentWidth`，relayout 内部生效）——窗口卡照常出现/移出、
-    /// 实时让位，但只是溢出或留空，面板**全程不变宽**。转换态结束（松手落定 / 拖出还原 → conversion 归 nil）
-    /// 才解钳 + relayout，这一刻任务条才动画到最终长度。若全程没真正转换，结束时宽度=拖动前值，relayout 即无变化。
+    /// 跨面板拖动期间的任务条宽度。**只钳「从条上拿走」的两个方向**，判据是纯函数
+    /// `DragConversionPlan.freezesStripWidth`（理由与 2026-08-20 的反转都写在那里）。
+    ///
+    /// 钳住时：窗口卡照常出现/移出、实时让位，但只是溢出或留空，面板全程不变宽；转换态结束
+    /// （松手落定 / 拖出还原）才解钳 + relayout，这一刻才动画到最终长度。
+    ///
+    /// **不钳的两个方向不需要这里做任何事**：卡片现身/消失本身就会经 `drawerStore` / 快照那几条
+    /// 订阅触发一次 relayout，条在进条那一刻就张开了。
     private func subscribeConvertRelease() {
         convertReleaseSubscription = dragController.$conversion
-            .map { $0 != nil }
+            .map { $0.map { DragConversionPlan.freezesStripWidth($0.direction) } ?? false }
             .removeDuplicates()
             .sink { [weak self] converted in
                 guard let self else { return }
