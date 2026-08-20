@@ -877,6 +877,40 @@
         }
       }
     },
+    "Install %@ — update available": {
+      "comment": "菜单项的辅助功能描述：红点 VoiceOver 念不出来，用这句代替",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "安装 %@ — 有可用更新"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Install %@ — update available"
+          }
+        }
+      }
+    },
+    "Install %@…": {
+      "comment": "状态栏菜单项：定时检查发现新版后，「检查更新…」那行换成这句",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "安装 %@…"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Install %@…"
+          }
+        }
+      }
+    },
     "Invalid Email Address": {
       "localizations": {
         "zh-Hans": {
@@ -2441,6 +2475,23 @@
           "stringUnit": {
             "state": "translated",
             "value": "Tungsten Edge will restart itself once you grant it again."
+          }
+        }
+      }
+    },
+    "Tungsten Edge — update available": {
+      "comment": "菜单栏图标带小圆点时的辅助功能描述",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "钨极 — 有新版本"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Tungsten Edge — update available"
           }
         }
       }

@@ -255,12 +255,15 @@
 		A00000000000000000000A101 /* MessagingZoneAdmission.swift in Sources */ = {isa = PBXBuildFile; fileRef = A00000000000000000000A100 /* MessagingZoneAdmission.swift */; };
 		A00000000000000000000B101 /* FinderTaskbarPolicy.swift in Sources */ = {isa = PBXBuildFile; fileRef = A00000000000000000000B100 /* FinderTaskbarPolicy.swift */; };
 		A00000000000000000000B121 /* DockPanelRimPlan.swift in Sources */ = {isa = PBXBuildFile; fileRef = A00000000000000000000B120 /* DockPanelRimPlan.swift */; };
+		A00000000000000000000C101 /* ScheduledUpdatePresentation.swift in Sources */ = {isa = PBXBuildFile; fileRef = A00000000000000000000C100 /* ScheduledUpdatePresentation.swift */; };
 		A00000000000000000000A102 /* MessagingZoneAdmission.swift in Sources */ = {isa = PBXBuildFile; fileRef = A00000000000000000000A100 /* MessagingZoneAdmission.swift */; };
 		A00000000000000000000B102 /* FinderTaskbarPolicy.swift in Sources */ = {isa = PBXBuildFile; fileRef = A00000000000000000000B100 /* FinderTaskbarPolicy.swift */; };
 		A00000000000000000000B122 /* DockPanelRimPlan.swift in Sources */ = {isa = PBXBuildFile; fileRef = A00000000000000000000B120 /* DockPanelRimPlan.swift */; };
+		A00000000000000000000C102 /* ScheduledUpdatePresentation.swift in Sources */ = {isa = PBXBuildFile; fileRef = A00000000000000000000C100 /* ScheduledUpdatePresentation.swift */; };
 		A00000000000000000000A111 /* MessagingZoneAdmissionTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A00000000000000000000A110 /* MessagingZoneAdmissionTests.swift */; };
 		A00000000000000000000B111 /* FinderTaskbarPolicyTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A00000000000000000000B110 /* FinderTaskbarPolicyTests.swift */; };
 		A00000000000000000000B131 /* DockPanelRimPlanTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A00000000000000000000B130 /* DockPanelRimPlanTests.swift */; };
+		A00000000000000000000C111 /* ScheduledUpdatePresentationTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A00000000000000000000C110 /* ScheduledUpdatePresentationTests.swift */; };
 		A00000000000000000000B201 /* AppNameRegistryTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A00000000000000000000B200 /* AppNameRegistryTests.swift */; };
 		A00000000000000000000B211 /* InstallationRecordTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A00000000000000000000B210 /* InstallationRecordTests.swift */; };
 		A00000000000000000006012 /* DragController.swift in Sources */ = {isa = PBXBuildFile; fileRef = A00000000000000000006010 /* DragController.swift */; };
@@ -371,9 +374,11 @@
 		A00000000000000000000A100 /* MessagingZoneAdmission.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MessagingZoneAdmission.swift; sourceTree = "<group>"; };
 		A00000000000000000000B100 /* FinderTaskbarPolicy.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FinderTaskbarPolicy.swift; sourceTree = "<group>"; };
 		A00000000000000000000B120 /* DockPanelRimPlan.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DockPanelRimPlan.swift; sourceTree = "<group>"; };
+		A00000000000000000000C100 /* ScheduledUpdatePresentation.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ScheduledUpdatePresentation.swift; sourceTree = "<group>"; };
 		A00000000000000000000A110 /* MessagingZoneAdmissionTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MessagingZoneAdmissionTests.swift; sourceTree = "<group>"; };
 		A00000000000000000000B110 /* FinderTaskbarPolicyTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FinderTaskbarPolicyTests.swift; sourceTree = "<group>"; };
 		A00000000000000000000B130 /* DockPanelRimPlanTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DockPanelRimPlanTests.swift; sourceTree = "<group>"; };
+		A00000000000000000000C110 /* ScheduledUpdatePresentationTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ScheduledUpdatePresentationTests.swift; sourceTree = "<group>"; };
 		A00000000000000000000B200 /* AppNameRegistryTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppNameRegistryTests.swift; sourceTree = "<group>"; };
 		A00000000000000000000B210 /* InstallationRecordTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = InstallationRecordTests.swift; sourceTree = "<group>"; };
 		A00000000000000000009720 /* MessagingAppStoreTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MessagingAppStoreTests.swift; sourceTree = "<group>"; };
@@ -705,6 +710,7 @@
 				A00000000000000000000A100 /* MessagingZoneAdmission.swift */,
 				A00000000000000000000B100 /* FinderTaskbarPolicy.swift */,
 				A00000000000000000000B120 /* DockPanelRimPlan.swift */,
+				A00000000000000000000C100 /* ScheduledUpdatePresentation.swift */,
 				A00000000000000000009A00 /* WindowLiftAvoidance.swift */,
 				A00000000000000000009360 /* FolderChipDropZone.swift */,
 				A00000000000000000009E07 /* BuildProvenance.swift */,
@@ -980,6 +986,7 @@
 				A00000000000000000000A110 /* MessagingZoneAdmissionTests.swift */,
 				A00000000000000000000B110 /* FinderTaskbarPolicyTests.swift */,
 				A00000000000000000000B130 /* DockPanelRimPlanTests.swift */,
+				A00000000000000000000C110 /* ScheduledUpdatePresentationTests.swift */,
 				A00000000000000000000B200 /* AppNameRegistryTests.swift */,
 				A00000000000000000000B210 /* InstallationRecordTests.swift */,
 				A00000000000000000009720 /* MessagingAppStoreTests.swift */,
@@ -1200,6 +1207,7 @@
 					A00000000000000000000A101 /* MessagingZoneAdmission.swift in Sources */,
 					A00000000000000000000B101 /* FinderTaskbarPolicy.swift in Sources */,
 					A00000000000000000000B121 /* DockPanelRimPlan.swift in Sources */,
+					A00000000000000000000C101 /* ScheduledUpdatePresentation.swift in Sources */,
 					A00000000000000000009361 /* FolderChipDropZone.swift in Sources */,
 					A00000000000000000009311 /* ShelfStore.swift in Sources */,
 					A00000000000000000009501 /* KeptAppStore.swift in Sources */,
@@ -1422,12 +1430,14 @@
 					A00000000000000000000A102 /* MessagingZoneAdmission.swift in Sources */,
 					A00000000000000000000B102 /* FinderTaskbarPolicy.swift in Sources */,
 					A00000000000000000000B122 /* DockPanelRimPlan.swift in Sources */,
+					A00000000000000000000C102 /* ScheduledUpdatePresentation.swift in Sources */,
 					A00000000000000000006012 /* DragController.swift in Sources */,
 					A00000000000000000009752 /* NonConstrainingPanel.swift in Sources */,
 					A00000000000000000009711 /* DragConversionPlanTests.swift in Sources */,
 					A00000000000000000000A111 /* MessagingZoneAdmissionTests.swift in Sources */,
 					A00000000000000000000B111 /* FinderTaskbarPolicyTests.swift in Sources */,
 					A00000000000000000000B131 /* DockPanelRimPlanTests.swift in Sources */,
+					A00000000000000000000C111 /* ScheduledUpdatePresentationTests.swift in Sources */,
 					A00000000000000000000B201 /* AppNameRegistryTests.swift in Sources */,
 					A00000000000000000000B211 /* InstallationRecordTests.swift in Sources */,
 					A00000000000000000009721 /* MessagingAppStoreTests.swift in Sources */,

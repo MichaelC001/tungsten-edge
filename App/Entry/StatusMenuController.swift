@@ -56,6 +56,8 @@ final class StatusMenuController: NSObject, NSMenuDelegate {
     // 闭包注入：注册状态归 AppDelegate 持有的 GlobalHotKeyMonitor，菜单每次刷新时现查。
     private let isToggleHotKeyRegistered: () -> Bool
     private var edgeDelaySubscription: AnyCancellable?
+    /// 待装新版的提示：图标上那个点要在菜单关着时也能亮起来，所以单独订阅。
+    private var pendingUpdateSubscription: AnyCancellable?
     private var systemTruthRefreshTask: Task<Void, Never>?
     private var isMenuOpen = false
     private var isPreparedForTaskbarPresentation = false
@@ -126,15 +128,20 @@ final class StatusMenuController: NSObject, NSMenuDelegate {
             .sink { [weak self] delay in
                 self?.edgeSliderView.sync(delay: delay)
             }
+        // 更新提示要在**菜单关着**的时候就出现在图标上——那是它存在的全部意义，
+        // 所以不能等 `menuWillOpen`。`objectWillChange` 在赋值完成前发出，
+        // 隔一轮再读才拿得到新值（同上面那条注释的理由）。
+        pendingUpdateSubscription = settingsCoordinator.objectWillChange
+            .receive(on: RunLoop.main)
+            .sink { [weak self] _ in
+                self?.refreshStatusItemBadge()
+            }
+        refreshStatusItemBadge()
         refreshSystemTruth()
     }
 
     private func configureStatusItem() {
-        let image = NSImage(named: "MenuBarIcon")
-            ?? NSImage(systemSymbolName: "rectangle.3.offgrid.fill", accessibilityDescription: "Tungsten Edge")
-        image?.isTemplate = true
-        image?.accessibilityDescription = "Tungsten Edge"
-        statusItem.button?.image = image
+        statusItem.button?.image = Self.statusItemImage(badged: false)
         statusItem.menu = menu
     }
 
@@ -392,6 +399,99 @@ final class StatusMenuController: NSObject, NSMenuDelegate {
         // 可用态归 Sparkle：正在检查 / 正在下载时它自己会报 false，
         // 不需要我们再维护一个"在飞"标志。
         checkForUpdatesItem.isEnabled = settingsCoordinator.canCheckForUpdates
+        // 有一版在等着装的时候，这行直接写出版本号并挂一个红点（owner 2026-08-20 画的样子）——
+        // 「检查更新…」是个动作，「安装 0.9.2…」加个红点才是一条消息。
+        if let version = settingsCoordinator.pendingUpdateVersion {
+            let title = String(format: String(localized: "Install %@…"), version)
+            checkForUpdatesItem.title = title
+            checkForUpdatesItem.attributedTitle = Self.pendingUpdateTitle(title)
+            // 那个「●」在 VoiceOver 里会被念成「实心圆」，所以另给一句人话。
+            checkForUpdatesItem.setAccessibilityLabel(
+                String(format: String(localized: "Install %@ — update available"), version)
+            )
+        } else {
+            // ⚠️ 必须清回 nil。attributedTitle 一旦留着，`title` 再怎么改都不生效，
+            // 这行会永远卡在上一次那个版本号上。
+            checkForUpdatesItem.attributedTitle = nil
+            checkForUpdatesItem.title = String(localized: "Check for Updates…")
+            checkForUpdatesItem.setAccessibilityLabel(nil)
+        }
+    }
+
+    /// 「安装 X.Y.Z…」+ 右上角一个红点。
+    ///
+    /// ⚠️ **标题部分必须显式给颜色和字体**：`attributedTitle` 不给就是死黑 + 系统默认字号，
+    /// 深色菜单下直接看不见。红点这里可以是真红色——菜单背景不是菜单栏，
+    /// 没有菜单栏图标那条 template 反色的约束（那一条见 `statusItemImage(badged:)`）。
+    private static func pendingUpdateTitle(_ title: String) -> NSAttributedString {
+        let text = NSMutableAttributedString(
+            string: title,
+            attributes: [
+                .font: NSFont.menuFont(ofSize: 0),
+                .foregroundColor: NSColor.labelColor
+            ]
+        )
+        text.append(NSAttributedString(
+            string: "●",
+            attributes: [
+                .font: NSFont.systemFont(ofSize: 7),
+                .foregroundColor: NSColor.systemRed,
+                // 抬到文字右上角，贴着最后一个字符——owner 画的就是这个位置。
+                .baselineOffset: 5
+            ]
+        ))
+        return text
+    }
+
+    /// 菜单栏图标：有待装的新版时点一个小圆点。
+    ///
+    /// **必须和菜单项分开刷**——菜单项只在菜单将开时同步，而这个点的全部意义就是
+    /// 「菜单没打开时也看得见」。所以它挂在 `settingsCoordinator` 的变更订阅上。
+    private func refreshStatusItemBadge() {
+        statusItem.button?.image = Self.statusItemImage(
+            badged: settingsCoordinator.pendingUpdateVersion != nil
+        )
+    }
+
+    /// 状态栏图标。`badged` 时在右上角画一个小圆点。
+    ///
+    /// ⚠️ **整张图仍然是 template**（单色，由系统按明暗和高亮自动反色）。圆点做不成红色：
+    /// 红点要求 `isTemplate = false`，那会一并丢掉系统的自动反色，深色菜单栏和菜单展开时
+    /// 的高亮底上图标都会糊掉。所以用「先挖空一圈、再填实心点」的画法让它和图形本体分开，
+    /// 靠形状而不是颜色让人看见。
+    private static func statusItemImage(badged: Bool) -> NSImage? {
+        let base = NSImage(named: "MenuBarIcon")
+            ?? NSImage(systemSymbolName: "rectangle.3.offgrid.fill", accessibilityDescription: "Tungsten Edge")
+        guard let base else { return nil }
+        base.isTemplate = true
+        guard badged else {
+            base.accessibilityDescription = "Tungsten Edge"
+            return base
+        }
+
+        let size = base.size
+        let image = NSImage(size: size, flipped: false) { rect in
+            base.draw(in: rect)
+
+            let diameter = max(3.5, size.width * 0.24)
+            let dot = NSRect(
+                x: rect.maxX - diameter,
+                y: rect.maxY - diameter,
+                width: diameter,
+                height: diameter
+            )
+            // 先把点周围掏空一圈，再填实心——否则单色的点贴在同样单色的图形上会连成一片。
+            let moat = dot.insetBy(dx: -1.2, dy: -1.2)
+            NSGraphicsContext.current?.compositingOperation = .clear
+            NSBezierPath(ovalIn: moat).fill()
+            NSGraphicsContext.current?.compositingOperation = .sourceOver
+            NSColor.black.setFill()
+            NSBezierPath(ovalIn: dot).fill()
+            return true
+        }
+        image.isTemplate = true
+        image.accessibilityDescription = String(localized: "Tungsten Edge — update available")
+        return image
     }
 
     @objc private func toggleLaunchAtLogin() {

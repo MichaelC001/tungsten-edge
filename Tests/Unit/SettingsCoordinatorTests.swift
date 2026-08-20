@@ -362,6 +362,7 @@ private final class SubscriptionSubmitterStub: SubscriptionSubmitting, @unchecke
 @MainActor
 private final class UpdateControlStub: UpdateControlling {
     var canCheckForUpdates = true
+    var pendingUpdateVersion: String?
     var automaticallyChecksForUpdates = true
     private(set) var checkCount = 0
 

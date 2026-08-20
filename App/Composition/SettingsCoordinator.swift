@@ -16,6 +16,8 @@ struct NativeDockApplyOutcome {
 protocol UpdateControlling: AnyObject {
     /// 现在能不能发起检查（正在检查 / 正在下载时为 false）。
     var canCheckForUpdates: Bool { get }
+    /// 定时检查发现的、还等着用户处理的版本号（`nil` = 没有）。状态栏用它显示提示。
+    var pendingUpdateVersion: String? { get }
     var automaticallyChecksForUpdates: Bool { get set }
     func checkForUpdates()
     /// 上面那些值变了就发一下，供上层转给界面。
@@ -229,6 +231,12 @@ final class SettingsCoordinator: ObservableObject {
     /// 两套界面的「检查更新」按钮共用的可用态。
     var canCheckForUpdates: Bool {
         updateService.canCheckForUpdates
+    }
+
+    /// 定时检查发现的、还等着用户处理的版本号。状态栏据此点亮图标上的小圆点，
+    /// 并把「检查更新…」那行换成「安装 X.Y.Z…」。
+    var pendingUpdateVersion: String? {
+        updateService.pendingUpdateVersion
     }
 
     /// 设置窗口那个「自动检查更新」勾选项。
