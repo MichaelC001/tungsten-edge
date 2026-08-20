@@ -218,6 +218,10 @@ final class DragController: ObservableObject {
     enum LandingAnchorOwner { case strip, drawer }
     private var landingAnchor: (owner: LandingAnchorOwner, rect: CGRect)?
     private var landingTimer: Timer?
+    /// 这次归位飞行的 CA 动画发出去没有。按住期（`DragLandingPlan.landingSettle`）里为 false，
+    /// 纠偏只改终点不重发；起飞后为 true，纠偏才真的重发动画。
+    private var landingLaunched = false
+    private var landingLaunchTask: DispatchWorkItem?
     /// 每次（重新）发出飞行动画 +1。CA 的完成回调在动画被**替换**时也会触发，
     /// 光靠 `landing.token` 认不出来（纠偏不换令牌），所以另记一个代次。
     private var landingAnimation = 0
@@ -231,6 +235,9 @@ final class DragController: ObservableObject {
             landingAnchor = (owner, rect)
         } else if landingAnchor?.owner == owner {
             landingAnchor = nil
+        }
+        if landing != nil {
+            HoverTrace.landingAnchor(owner: "\(owner)", rect: landingAnchor?.rect)
         }
         retargetLandingIfNeeded()
     }
@@ -258,8 +265,12 @@ final class DragController: ObservableObject {
                                                    carrierScreenFrame: carrierScreenFrame),
               hypot(updated.to.x - current.flight.to.x, updated.to.y - current.flight.to.y) > 0.5
         else { return }
+        HoverTrace.landingRetarget(from: updated.from, to: updated.to, previous: current.flight.to)
         current.flight = updated
         landing = current
+        // 还在按住期（`DragLandingPlan.landingSettle`）就只改终点、不起飞：这一下改的多半正是
+        // 「投放提交后网格换了一格」，当场起飞就等于先朝旧格子飞一段再拽回来，那条折线就是要治的。
+        guard landingLaunched else { return }
         // 重发同一组动画（位移 / 缩放 / 阴影在一个事务里），CA 会从当前插值位置平滑接到新终点。
         // 改了终点就等于重新起飞一段，**兜底计时器必须跟着往后推**——否则载体在半路被撤掉，
         // 那正是要治的那一下跳。上限 `landingDeadline` 保证卡槽万一一直动也不会挂着不放。
@@ -272,6 +283,7 @@ final class DragController: ObservableObject {
     func finishLanding(token: Int) {
         guard let current = landing, current.token == token else { return }
         landingTimer?.invalidate(); landingTimer = nil
+        landingLaunchTask?.cancel(); landingLaunchTask = nil
         landingAnimation &+= 1
         endLandingGrabWatch()
         flightTimeline = nil
@@ -477,6 +489,7 @@ final class DragController: ObservableObject {
     /// 这些路径下卡槽可能压根不存在了，所以不延后收载体。
     func abortLanding() {
         landingTimer?.invalidate(); landingTimer = nil
+        landingLaunchTask?.cancel(); landingLaunchTask = nil
         landingAnimation &+= 1
         endLandingGrabWatch()
         flightTimeline = nil
@@ -486,12 +499,13 @@ final class DragController: ObservableObject {
         retireCarrier()
     }
 
-    /// 胶囊高亮只在「任务条卡/消息 chip 正悬在收纳区」时亮；任务条移回高亮只在「抽屉图标正悬在任务条」时亮。
+    /// 胶囊高亮只在「任务条卡/消息 chip 正悬在收纳区」时亮。
+    /// 反方向**没有**对称的整条高亮：抽屉图标拖回任务条靠卡片让位表达（owner 2026-08-20 对齐原生，
+    /// 见 `DockStripView.stripHighlighted`）。
     var isOverStashZone: Bool {
         guard isOverDropZone, let s = draggingPayload?.source else { return false }
         return s == .strip || s == .messaging
     }
-    var isOverUnstashZone: Bool { isOverDropZone && draggingPayload?.source == .drawer }
 
     /// 跨面板**临时转换**状态——显式"原始来源 + 回滚快照"，同一时刻至多一个转换在进行
     /// （Codex 评审 2026-07-11：不再叠布尔标志）。commit = `teardown()` 清状态不回滚；
@@ -862,7 +876,7 @@ final class DragController: ObservableObject {
 
     /// 抽屉图标拖进**任务条面板区** → 即时"转正"：`drawerStore.remove(bid)`，该 app 的窗口卡随即进 live 区。
     /// 落点排序（暂存 + sync 内落子）归 DockStripView，本方法只管成员变更 + 记 bundleID。**不翻 source**——保
-    /// `.drawer` 让 `isOverUnstashZone` 高亮与 `endDrag` 的 `.drawer` 分支继续成立。`guard` 保幂等。
+    /// `.drawer` 让 `endDrag` 的 `.drawer` 分支与落点锚点的 owner 归属继续成立。`guard` 保幂等。
     func convertDrawerToStrip() {
         guard let p = draggingPayload, p.source == .drawer, p.canExternalDrop, conversion == nil else { return }
         conversion = .drawerToStrip(bundleID: p.bundleID)  // 先置（宽度冻结），再动 drawerStore
@@ -1130,6 +1144,7 @@ final class DragController: ObservableObject {
         removeMonitors()
         pollTimer?.invalidate(); pollTimer = nil
         landingTimer?.invalidate(); landingTimer = nil
+        landingLaunchTask?.cancel(); landingLaunchTask = nil
         landing = flight
         guard let flight else {
             // **不飞也要「先显后撤」。** `draggingPayload` 刚清空，条上那张卡要等 SwiftUI
@@ -1142,8 +1157,28 @@ final class DragController: ObservableObject {
             return
         }
         landingDeadline = CACurrentMediaTime() + DragLandingPlan.maximumDuration
-        flyCarrier(along: flight.flight, token: flight.token)
-        if flight.kind == .returnToSlot { beginLandingGrabWatch() }
+        guard flight.kind == .returnToSlot else {
+            // 吸进胶囊：终点是胶囊，不随布局变，没什么好等的。
+            landingLaunched = true
+            flyCarrier(along: flight.flight, token: flight.token)
+            return
+        }
+        // 飞回卡槽/格子：先按住两个显示帧等落点锚点落定（`DragLandingPlan.landingSettle`），
+        // 期间 `retargetLandingIfNeeded` 只更新终点、不起飞——否则第一段就朝旧格子飞出去了。
+        landingLaunched = false
+        let token = flight.token
+        let task = DispatchWorkItem { [weak self] in self?.launchLanding(token: token) }
+        landingLaunchTask?.cancel()
+        landingLaunchTask = task
+        DispatchQueue.main.asyncAfter(deadline: .now() + DragLandingPlan.landingSettle, execute: task)
+        beginLandingGrabWatch()
+    }
+
+    /// 按住期结束：拿此刻最新的终点起飞。幂等（令牌对不上或已起飞就不做）。
+    private func launchLanding(token: Int) {
+        guard !landingLaunched, let current = landing, current.token == token else { return }
+        landingLaunched = true
+        flyCarrier(along: current.flight, token: token)
     }
 
     /// 排（或重排）「飞完了就收载体」那一下。
@@ -1164,11 +1199,10 @@ final class DragController: ObservableObject {
         landingTimer = timer
     }
 
-    /// 任务条卡能否收纳：只拦无 bundleID 与 Finder（Finder 永远保留任务条入口）。
+    /// 任务条卡能否收纳：只拦无 bundleID（访达 2026-08-20 起也可收纳）。
     /// 不拦 app-level fallback —— 抽屉运行区本就显示应用级图标。
     static func canStash(_ item: StripItem) -> Bool {
         guard let bid = item.bundleIdentifier, !bid.isEmpty else { return false }
-        if bid == "com.apple.finder" { return false }
         return true
     }
 

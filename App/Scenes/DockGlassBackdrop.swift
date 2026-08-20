@@ -70,7 +70,8 @@ struct DockPanelBackdrop: View {
 
 extension View {
     /// 面板描边。两条路径各画各的：毛玻璃走 `DockThemeTokens` 的那圈，玻璃走实测对齐
-    /// 原生 Dock 的均匀白色高光。拖放命中的整框高亮（`keepsVisible`）两条路径共用主题那圈。
+    /// 原生 Dock 的均匀白色高光。拖放命中的整框高亮（`highlighted`）**叠在**两者之上，
+    /// 不替换任何一层——判定见 `DockPanelRimPlan`，那里写着这条规则是怎么来的。
     ///
     /// **玻璃的高光必须画在这里，不能画进 `DockLiquidGlassPlate` 内部。** 底板视图外面套着
     /// 历史遗留的 `.padding(-2)`（毛玻璃需要外扩 2pt 避免边缘缝隙），玻璃视图的 frame 因此
@@ -82,16 +83,18 @@ extension View {
         style: S,
         lineWidth: CGFloat,
         usesLiquidGlass: Bool,
-        keepsVisible: Bool = false
+        highlighted: Bool = false
     ) -> some View {
-        let glassRim = usesLiquidGlass && !keepsVisible
         let configuration = DockGlassPresentation.configuration
+        let strokeWidth = DockPanelRimPlan.themeStrokeWidth(usesLiquidGlass: usesLiquidGlass,
+                                                            highlighted: highlighted,
+                                                            lineWidth: lineWidth)
         return overlay {
             RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
-                .strokeBorder(style, lineWidth: glassRim ? 0 : lineWidth)
+                .strokeBorder(style, lineWidth: strokeWidth)
         }
         .overlay {
-            if glassRim {
+            if DockPanelRimPlan.glassRimVisible(usesLiquidGlass: usesLiquidGlass) {
                 DockGlassRim(cornerRadius: cornerRadius, configuration: configuration)
             }
         }

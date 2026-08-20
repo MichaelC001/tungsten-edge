@@ -3,8 +3,9 @@ import Foundation
 /// Single mutation boundary for app membership conversions.
 ///
 /// Drawer membership is placement; kept membership means an entry survives app
-/// exit. Kept, drawer, and messaging identity may all coexist; only Finder is
-/// excluded from every membership.
+/// exit. Kept, drawer, and messaging identity may all coexist. Finder joins kept
+/// and drawer like any other app (owner 2026-08-20) but is still barred from the
+/// messaging zone — see `FinderTaskbarPolicy`.
 @MainActor
 final class AppMembershipController: ObservableObject {
     private let keptAppStore: KeptAppStore
@@ -39,13 +40,13 @@ final class AppMembershipController: ObservableObject {
     /// So do not restate it here, and note this method has no production caller today
     /// (menus offer no drawer placement action; drag is the only way in).
     func moveToDrawer(_ bundleID: String) {
-        guard canChangeMembership(bundleID) else { return }
+        guard !bundleID.isEmpty else { return }
         drawerStore.add(bundleID)
     }
 
     /// 「标记为消息应用」：mark + 首次加入补 kept（默认保留）。不改 drawer——位置只能拖动改。
     func markMessaging(_ bundleID: String) {
-        guard canChangeMembership(bundleID) else { return }
+        guard FinderTaskbarPolicy.canMarkMessaging(bundleID) else { return }
         if messagingStore.mark(bundleID) {
             keptAppStore.add(bundleID)
         }
@@ -70,21 +71,16 @@ final class AppMembershipController: ObservableObject {
         messagingStore.unmark(bundleID)
     }
 
-    /// Startup repair. Only Finder's illegal memberships are cleared — Finder keeps
-    /// its dedicated slot and must never sit in drawer/messaging. Kept and messaging
-    /// deliberately coexist now, so there is no kept/messaging reconciliation.
+    /// Startup repair. The only illegal membership left is Finder in the messaging
+    /// zone — since 2026-08-20 Finder may be kept and may sit in the drawer, and this
+    /// runs on every launch, so clearing drawer placement here would wipe the user's
+    /// own stash. Kept and messaging deliberately coexist, so there is no
+    /// kept/messaging reconciliation.
     func reconcileInvalidMemberships() {
-        let finder = KeptAppStore.forbiddenBundleID
-        if drawerStore.contains(finder) {
-            drawerStore.remove(finder)
-        }
+        let finder = FinderTaskbarPolicy.bundleID
         if messagingStore.contains(finder) {
             messagingStore.unmark(finder)
         }
-    }
-
-    private func canChangeMembership(_ bundleID: String) -> Bool {
-        !bundleID.isEmpty && bundleID != KeptAppStore.forbiddenBundleID
     }
 }
 

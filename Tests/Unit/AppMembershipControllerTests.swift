@@ -45,10 +45,20 @@ final class AppMembershipControllerTests: XCTestCase {
         XCTAssertTrue(messaging.contains("com.example.app"))
     }
 
-    func testSetKeptRejectsFinder() {
-        let finder = KeptAppStore.forbiddenBundleID
-        controller.setKept(finder, enabled: true)
+    /// 2026-08-20 反转：访达也走统一的「在程序坞中保留」，默认已由播种勾上，可以取消再勾回。
+    func testSetKeptAcceptsFinderBothWays() {
+        let finder = FinderTaskbarPolicy.bundleID
+        XCTAssertTrue(kept.contains(finder), "新建 store 应已把访达播种为已保留")
+        controller.setKept(finder, enabled: false)
         XCTAssertFalse(kept.contains(finder))
+        controller.setKept(finder, enabled: true)
+        XCTAssertTrue(kept.contains(finder))
+    }
+
+    func testMoveToDrawerAcceptsFinder() {
+        let finder = FinderTaskbarPolicy.bundleID
+        controller.moveToDrawer(finder)
+        XCTAssertTrue(drawer.contains(finder))
     }
 
     func testUnsetKeptLeavesDrawerPlacementAndMessagingUntouched() {
@@ -86,11 +96,11 @@ final class AppMembershipControllerTests: XCTestCase {
         XCTAssertFalse(kept.contains("com.example.app"))
     }
 
+    /// 访达可 kept、可进抽屉，但消息区仍然进不去。
     func testMarkMessagingRejectsFinder() {
-        let finder = KeptAppStore.forbiddenBundleID
+        let finder = FinderTaskbarPolicy.bundleID
         controller.markMessaging(finder)
         XCTAssertFalse(messaging.contains(finder))
-        XCTAssertFalse(kept.contains(finder))
     }
 
     // MARK: - autoRegisterMessaging (首次识别补 kept，扫描不重开)
@@ -169,14 +179,15 @@ final class AppMembershipControllerTests: XCTestCase {
         XCTAssertTrue(drawer.contains(bundleID), "取消标记不改变 drawer placement")
     }
 
-    // MARK: - reconcileInvalidMemberships (只清 Finder)
+    // MARK: - reconcileInvalidMemberships (只清访达的消息身份)
 
-    func testReconcileClearsFinderFromDrawerAndMessaging() {
-        let finder = KeptAppStore.forbiddenBundleID
+    /// 每次启动都会跑：只能清消息身份。清抽屉会把用户自己拖进去的访达抹掉（2026-08-20）。
+    func testReconcileClearsOnlyFinderMessagingAndKeepsDrawerPlacement() {
+        let finder = FinderTaskbarPolicy.bundleID
         drawer.add(finder)
         messaging.mark(finder)
         controller.reconcileInvalidMemberships()
-        XCTAssertFalse(drawer.contains(finder))
+        XCTAssertTrue(drawer.contains(finder))
         XCTAssertFalse(messaging.contains(finder))
     }
 

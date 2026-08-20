@@ -231,7 +231,17 @@ struct DockStripView: View {
             runningIDs: runningIDs
         )
         let msgSet = Set(msg)
-        let items = snapshotItems.filter { !drawerStore.contains($0.bundleIdentifier ?? "") }
+        // 访达的应用级入口（无窗口时那张卡）只在勾了「在程序坞中保留」时显示（owner 2026-08-20）。
+        // 跟踪层照旧永远跟着访达，所以取消勾选后一开窗口，窗口卡瞬时回来。
+        let showsFinderEntry = FinderTaskbarPolicy.showsAppLevelEntry(
+            isKept: keptAppStore.contains(FinderTaskbarPolicy.bundleID)
+        )
+        let items = snapshotItems.filter { item in
+            let bid = item.bundleIdentifier ?? ""
+            if drawerStore.contains(bid) { return false }
+            if item.isAppLevelFallback, FinderTaskbarPolicy.isFinder(bid), !showsFinderEntry { return false }
+            return true
+        }
 
         var messaging: [StripEntry] = []
         var absorbedWindowIDs = Set<String>()
@@ -264,6 +274,10 @@ struct DockStripView: View {
         for bid in keptIDs {
             guard !drawerStore.contains(bid),
                   !msgSet.contains(bid) else { continue }
+            // 访达有意留在 `.window` 兜底卡这条路径上：它带着专属菜单（最近使用的文件夹 /
+            // 新建窗口）和「点击开主目录」，换成 .keptApp 的 LauncherChip 会把这些全丢掉。
+            // kept 对访达只是上面那道可见性闸门。
+            if FinderTaskbarPolicy.isFinder(bid) { continue }
             let appItems = snapshotByBundle[bid] ?? []
             let hasRealWindow = appItems.contains { !$0.isAppLevelFallback }
             if hasRealWindow { continue }  // Real windows render normally, no placeholder
@@ -426,14 +440,14 @@ struct DockStripView: View {
                 shouldClaim: { taskbarMenuZoneClaims(atScreen: $0) }
             ))
         }
-        // 抽屉图标拖到任务条上方 = 移出抽屉的投放反馈：整条任务条高亮描边（对称于胶囊的收纳高亮）。
-        // 外部拖目录悬停文件夹区（pin 落点）复用同一条高亮。
+        // 外部拖目录悬停文件夹区（pin 落点）时整条高亮：在平时那圈边**之上**再叠一圈更亮的，
+        // 不再把玻璃亮边换掉（那正是「一圈黑边」的成因，见 `DockPanelRimPlan`）。
         .dockPanelRim(
             cornerRadius: taskbarCornerRadius,
             style: theme.panelRimStyle(highlighted: stripHighlighted),
             lineWidth: theme.panelRimLineWidth(highlighted: stripHighlighted),
             usesLiquidGlass: usesLiquidGlass,
-            keepsVisible: stripHighlighted
+            highlighted: stripHighlighted
         )
         .animation(.easeOut(duration: 0.15), value: stripHighlighted)
         // 跨面板后，被拖的卡片改由 DragController 的全屏载体面板绘制（不再画在任务条 overlay 上 —
@@ -457,10 +471,14 @@ struct DockStripView: View {
             onCommit: { target, urls in handleExternalDrop(target, urls: urls) }
         ))
         // 与 "strip" 命名空间同一视图 → 屏幕 frame 即 "strip" 空间原点，供抽屉拖回任务条做坐标映射 + 进出判定。
+        // **面板自己挪了也要重报落点锚点**：所有锚点都是 `stripFrameToScreen` 拿这个 rect 换算的。
+        // 松手时 `teardown` 清掉 `conversion` → 条宽解冻 → 整条重新居中，消息区（在最左端）
+        // 整体左移 0.22s；不接这一条，归位飞行就一直朝面板挪走**之前**那个位置飞。
         .background(ScreenRectReader { rect in
             guard rect != stripRootScreenRect else { return }
             stripRootScreenRect = rect
             refreshHoveredEntry(frames: stripHoverFrames, origin: rect)
+            updateLandingAnchor()
         })
         // **整条一块跟踪区**：指针每动一次就上报一次屏幕坐标，落在谁身上由纯判定
         // `StripHoverResolution` 算。每张卡各自挂 `.onHover` 的老做法漏格又带方向性，
@@ -550,8 +568,16 @@ struct DockStripView: View {
             stripHoverFrames = frames
             refreshHoveredEntry(frames: frames, origin: stripRootScreenRect)
         }
-        .onPreferenceChange(FolderChipFramePreferenceKey.self) { folderChipFrames = $0 }
-        .onPreferenceChange(MessagingChipFramePreferenceKey.self) { messagingChipFrames = $0 }
+        // 这两处的帧同样是落点锚点的输入源（`.folder` / `.messaging` 载荷各取一份），
+        // 变了就得回报——理由同上面的 `ChipFramePreferenceKey`。
+        .onPreferenceChange(FolderChipFramePreferenceKey.self) { frames in
+            folderChipFrames = frames
+            updateLandingAnchor()
+        }
+        .onPreferenceChange(MessagingChipFramePreferenceKey.self) { frames in
+            messagingChipFrames = frames
+            updateLandingAnchor()
+        }
         .onPreferenceChange(ShelfFramePreferenceKey.self) { shelfFrame = $0 }
         .onChange(of: pinnedFolderStore.folderPaths) { currentPaths in
             let validIDs = Set(["shelf"] + currentPaths.map { "folder-\($0)" })
@@ -615,12 +641,14 @@ struct DockStripView: View {
         dragController.setFolderDragZone(geometry.classify(screenPoint: dragController.globalLocation))
     }
 
-    /// 任务条整条高亮：抽屉图标拖回（unstash/keepPlacement）或外部拖目录悬停文件夹区（pin）。
-    /// 消息成员的抽屉图标不点亮——它的落点只有消息区范围（释放时 chip 物化就是反馈），
-    /// 整条高亮会暗示"哪里都能放"（Codex 评审 P1-3 的落点边界）。
+    /// 任务条整条高亮：**只**服务「外部拖目录悬停文件夹区（pin）」。
+    ///
+    /// **抽屉图标拖回任务条不再点亮**（owner 2026-08-20，对齐原生程序坞）：原生拖图标进 Dock 时
+    /// Dock 本身不描边也不发光，反馈全部由图标让位表达——而我们已经有让位了
+    /// （`updateDrawerToStripConvert` 一进任务条就把卡转正、邻居实时让开），而且它的判定框比
+    /// 这圈高亮的判定框（正好是可见条矩形）还大一圈，两者信息完全重复。
+    /// 外部拖目录那条路径没有让位反馈，整条高亮是它唯一的「能放这儿」信号，所以留着。
     private var stripHighlighted: Bool {
-        if dragController.isOverUnstashZone,
-           let p = dragController.draggingPayload, !messagingStore.contains(p.bundleID) { return true }
         if case .pin = externalDropTarget { return true }
         return false
     }
@@ -764,6 +792,8 @@ struct DockStripView: View {
             bundleID: bid,
             isMessagingMember: messagingStore.contains(bid),
             isInSnapshot: projection.snapshotBundleIDs.contains(bid),
+            // 与消息区可见性同源（NSWorkspace 进程投影），**不是**窗口清单——理由见 `drawerDragOutMode`。
+            isRunningProcess: runningApplicationStore.isRunning(bid),
             hasRealWindow: projection.hasRealWindow(bundleID: bid),
             isKept: keptAppStore.contains(bid)
         )
@@ -1117,12 +1147,43 @@ struct DockStripView: View {
             }
             return
         }
-        guard let p = dc.draggingPayload, p.source == .drawer, p.canExternalDrop,
-              !dc.isConvertedToStrip,
-              currentDrawerDragOutMode(p.bundleID, projection: projection) == .releaseToMessaging,
-              let pt = stripPoint(from: dc.globalLocation),
-              let zone = messagingReleaseZone(messagingIDs: projection.messagingIDs),
-              zone.insetBy(dx: -8, dy: -8).contains(pt) else { return }
+        // 这条路径以前一条日志都没有，所以「拖过去完全没反应」无从定因（对照：unstash 那条
+        // 每 tick 都记 `d2s`，上一轮正是靠它一次定因）。逐条 guard 记下卡在哪里。
+        guard let p = dc.draggingPayload, p.source == .drawer, p.canExternalDrop else { return }
+        // 只有消息成员才记：普通应用每 tick 都记会把日志淹掉（它们本来就该走 unstash，有 `d2s`）。
+        let isMessagingMember = messagingStore.contains(p.bundleID)
+        func trace(_ stop: String, pt: CGPoint? = nil, zone: CGRect? = nil,
+                   fallback: Bool = false, mode: String = "-", inZone: Bool = false) {
+            HoverTrace.drawerToMessaging(
+                bid: p.bundleID, x: pt?.x ?? -1, y: pt?.y ?? -1, zone: zone,
+                fallback: fallback, mode: mode,
+                inSnapshot: projection.snapshotBundleIDs.contains(p.bundleID),
+                running: runningApplicationStore.isRunning(p.bundleID),
+                inZone: inZone, released: false, stop: stop)
+        }
+        guard !dc.isConvertedToStrip else {
+            if isMessagingMember { trace("convertedToStrip") }
+            return
+        }
+        let mode = currentDrawerDragOutMode(p.bundleID, projection: projection)
+        guard mode == .releaseToMessaging else {
+            if isMessagingMember { trace("mode", mode: "\(mode)") }
+            return
+        }
+        guard let pt = stripPoint(from: dc.globalLocation) else { return trace("noStripRect", mode: "\(mode)") }
+        let fallback = projection.messagingIDs.compactMap { messagingChipFrames[$0] }.isEmpty
+        guard let zone = messagingReleaseZone(messagingIDs: projection.messagingIDs) else {
+            return trace("noZone", pt: pt, mode: "\(mode)")
+        }
+        let inZone = zone.insetBy(dx: -8, dy: -8).contains(pt)
+        guard inZone else {
+            return trace("outsideZone", pt: pt, zone: zone, fallback: fallback, mode: "\(mode)")
+        }
+        HoverTrace.drawerToMessaging(
+            bid: p.bundleID, x: pt.x, y: pt.y, zone: zone, fallback: fallback, mode: "\(mode)",
+            inSnapshot: projection.snapshotBundleIDs.contains(p.bundleID),
+            running: runningApplicationStore.isRunning(p.bundleID),
+            inZone: true, released: true, stop: "ok")
         dc.convertDrawerToMessaging()
     }
 
@@ -1460,6 +1521,8 @@ struct DockStripView: View {
                     LauncherChip(bundleID: bid,
                                  isRunning: running,
                                  isHidden: running && projection.hiddenBundleIDs.contains(bid),
+                                 finderHasRealWindow: false,   // 访达进不了消息区
+
                                  isLaunching: runtime.launchingBundleIDs.contains(bid),
                                  scale: dockScale,
                                  hoverStyle: hoverStyle,
@@ -1487,6 +1550,8 @@ struct DockStripView: View {
                 bundleID: bid,
                 isRunning: isRunning,
                 isHidden: runningApplicationStore.isHidden(bid),
+                finderHasRealWindow: false,   // 访达有意不走 .keptApp 投影
+
                 isLaunching: runtime.launchingBundleIDs.contains(bid),
                 scale: dockScale,
                 hoverStyle: hoverStyle,
@@ -1559,7 +1624,7 @@ struct DockStripView: View {
         }
         for (cid, frame) in chipFrames where frame.contains(p) {
             guard let item = StripItem.items(from: runtime.snapshot).first(where: { $0.id == cid }),
-                  item.bundleIdentifier == "com.apple.finder", item.isAppLevelFallback == false else { return }
+                  FinderTaskbarPolicy.isFinder(item.bundleIdentifier), item.isAppLevelFallback == false else { return }
             chipPulseNonces[cid, default: 0] += 1   // 立刻"点到了"反馈，兜住反查那 ~200ms
             previewFinderWindow(item, anchor: stripFrameToScreen(frame))
             return
@@ -1930,7 +1995,7 @@ struct ChipView: View {
     // 可打断（2026-06-13）：菜单项不再按 pending 置灰；显隐类动作随时可点
     //（乐观 overlay 保证一致性），close / quit 的防重入由 runtime.trigger 兜底。
     // 状态分支读 effectiveStatus，刚点过最小化立刻右键也能看到「还原」。
-    private var isFinderChip: Bool { item.bundleIdentifier == "com.apple.finder" }
+    private var isFinderChip: Bool { FinderTaskbarPolicy.isFinder(item.bundleIdentifier) }
 
     /// Native AppKit menu rebuilt fresh on each right-click (captures live runtime
     /// + store + optimistic state). See AppMenuFragments for why this isn't SwiftUI.

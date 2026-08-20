@@ -189,6 +189,48 @@ enum HoverTrace {
         )
     }
 
+    /// 落点锚点被写入（`DragController.setLandingAnchor`）。**松手之后指针不再有事件，
+    /// 这条是唯一能看出「锚点还在动没有、动去了哪」的东西**——而它恰恰是会动的：解冻条宽后
+    /// 整条重新居中，抽屉面板跟着往左滑 0.22s。`owner` 区分是任务条还是抽屉写的。
+    static func landingAnchor(owner: String, rect: CGRect?) {
+        guard isEnabled else { return }
+        let r = rect.map { "[\(r1($0.minX)),\(r1($0.minY)),\(r1($0.width)),\(r1($0.height))]" } ?? "null"
+        Writer.shared.append(
+            "{\"t\":\(stamp()),\"kind\":\"landingAnchor\",\"owner\":\"\(owner)\",\"rect\":\(r)}"
+        )
+    }
+
+    /// 抽屉里的消息应用往消息区拖：**每 tick 记一条**，对照 `d2s`。
+    /// `stop` 是卡在了哪一条 guard（`ok` = 这一 tick 真的释放了），`zone` 是算出来的消息区范围
+    /// （`fallback` 表示消息区当时是空的、退回了条头 56pt 那个兜底框）。
+    /// `inSnapshot` / `running` **必须同时记**：授权释放看的是窗口清单（`runtime.snapshot`），
+    /// 而消息区可见性和图标下面那个运行点看的是 `RunningApplicationStore`（NSWorkspace 进程投影）。
+    /// 两者不是同一个真相源，分歧正是「图标明明有运行点、却拖不进消息区」的嫌疑所在。
+    static func drawerToMessaging(bid: String, x: CGFloat, y: CGFloat, zone: CGRect?, fallback: Bool,
+                                  mode: String, inSnapshot: Bool, running: Bool,
+                                  inZone: Bool, released: Bool, stop: String) {
+        guard isEnabled else { return }
+        let z = zone.map { "[\(r1($0.minX)),\(r1($0.minY)),\(r1($0.width)),\(r1($0.height))]" } ?? "null"
+        Writer.shared.append(
+            "{\"t\":\(stamp()),\"kind\":\"d2m\",\"bid\":\"\(bid)\",\"x\":\(r1(x)),\"y\":\(r1(y)),\"zone\":\(z),"
+            + "\"fallback\":\(fallback),\"mode\":\"\(mode)\",\"snap\":\(inSnapshot),\"run\":\(running),"
+            + "\"inZone\":\(inZone),\"released\":\(released),\"stop\":\"\(stop)\"}"
+        )
+    }
+
+    /// 飞行途中的**改终点**。落点锚点在飞行期间还会继续更新（卡槽/网格的让位动画没跑完），
+    /// `retargetLandingIfNeeded` 会跟着改终点重发动画。改得太远，用户看到的就是一条折线
+    /// （owner 2026-08-20：「先飘到目标位置偏右，再去到目标位置」）。
+    /// 只有这条能把「飞了几次、每次差多少」变成日志里数得出来的事实——`landing` 只在起飞时记一次。
+    static func landingRetarget(from: CGPoint, to: CGPoint, previous: CGPoint) {
+        guard isEnabled else { return }
+        Writer.shared.append(
+            "{\"t\":\(stamp()),\"kind\":\"landingRetarget\",\"from\":[\(r1(from.x)),\(r1(from.y))],"
+            + "\"to\":[\(r1(to.x)),\(r1(to.y))],\"prev\":[\(r1(previous.x)),\(r1(previous.y))],"
+            + "\"shift\":\(r1(hypot(to.x - previous.x, to.y - previous.y)))}"
+        )
+    }
+
     /// **不变量自检**：条上那格已经空了，副本却不在屏幕上 —— 这一刻用户看到的就是「图标凭空消失」。
     /// 把「偶尔会出现」变成一条可以事后统计的记录，不用再靠截图猜。
     static func carrierGap(reason: String, alpha: Double, hostX: CGFloat, hostY: CGFloat) {

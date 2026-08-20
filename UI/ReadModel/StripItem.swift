@@ -272,7 +272,9 @@ enum StripOrdering {
     }
 
     /// 落盘子集：保留 `tabgrp-*`（真实窗口座位键）+ `app-*` 中属于 kept 应用的（保留图标位置抗本 app 重启）。
-    /// 普通 app-* 兼容 fallback 与 Finder 的 app-* 仍不落盘。跨重启由 `StripOrderStore` 的 `kern.boottime` 守卫整份丢弃。
+    /// 普通 app-* 兼容 fallback 仍不落盘。访达 2026-08-20 起也是普通 kept 应用，勾着保留时
+    /// `app-com.apple.finder` 跟着落盘（从此也有位置记忆），取消勾选后自然掉出这个子集。
+    /// 跨重启由 `StripOrderStore` 的 `kern.boottime` 守卫整份丢弃。
     static func persistableLiveOrder(_ order: [String], keptIDs: Set<String> = []) -> [String] {
         order.filter { id in
             if id.hasPrefix("tabgrp-") { return true }

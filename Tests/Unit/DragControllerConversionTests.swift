@@ -598,10 +598,11 @@ final class DragControllerConversionTests: XCTestCase {
         XCTAssertTrue(kept.contains("app"), "再次拖入重新打开 kept")
     }
 
-    /// Finder 永不进 kept —— `KeptAppStore.add` 自带拒收，这里锁住拖拽路径也不例外。
-    func testFinderNeverEntersKeptThroughDrop() {
-        begin(.strip, "com.apple.finder", at: insideZone)
+    /// 2026-08-20：访达也能拖进抽屉，落定同样顺手勾上保留（与普通应用一视同仁）。
+    func testFinderEntersKeptThroughDrop() {
+        kept.remove(FinderTaskbarPolicy.bundleID)   // 抵消 store 初始化时的一次性播种
+        begin(.strip, FinderTaskbarPolicy.bundleID, at: insideZone)
         controller.endDrag()
-        XCTAssertFalse(kept.contains("com.apple.finder"))
+        XCTAssertTrue(kept.contains(FinderTaskbarPolicy.bundleID))
     }
 }

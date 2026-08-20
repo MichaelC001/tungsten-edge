@@ -13,6 +13,10 @@ struct LauncherChip: View {
     let bundleID: String
     let isRunning: Bool   // supplied by the displayed zone's runtime/process projection
     let isHidden: Bool    // supplied by the displayed zone's runtime/process projection
+    /// 访达此刻有没有真窗口（非 app-level 兜底）。**只有默认左键行为的访达分支读它**——
+    /// 访达不能隐藏，没窗口时要开主目录——所以名字里带 finder，别拿它当通用的「有没有窗口」用。
+    /// **故意不给默认值**：抽屉漏传就会变成「每次点访达都开一个新主目录窗口」，这种错必须是编译错误。
+    let finderHasRealWindow: Bool
     /// Runtime-owned launch session state. The chip only renders this state; it does
     /// not infer readiness from process state or own a second launch timeout.
     let isLaunching: Bool
@@ -204,7 +208,12 @@ struct LauncherChip: View {
                 // 否则抽屉图标右键打开会顺手关掉抽屉。
                 menu.addItem(ClosureMenuItem(String(localized: "Open")) { launch(firePrimaryAction: false) })
             case .recentDocuments:
-                AppMenuBuilder.appendRecentDocuments(to: menu, bundleID: bundleID)
+                // 访达的「最近」是最近使用的文件夹（FXRecentFolders），与条上的访达卡同口径。
+                if FinderTaskbarPolicy.isFinder(bundleID) {
+                    AppMenuBuilder.appendFinderRecentFolders(to: menu)
+                } else {
+                    AppMenuBuilder.appendRecentDocuments(to: menu, bundleID: bundleID)
+                }
             case .show:
                 if !runningApps.isEmpty {
                     menu.addItem(ClosureMenuItem(String(localized: "Show")) {
@@ -260,19 +269,36 @@ struct LauncherChip: View {
 
     private func handleTap() {
         Self.performDefaultTap(bundleID: bundleID, isRunning: isRunning,
+                               finderHasRealWindow: finderHasRealWindow,
                                launch: { launch() }, onOpen: onPrimaryAction)
     }
 
     /// 没有注入 `onTap` 时的默认左键行为（抽屉图标就是这一套）。抽成静态、供 `DrawerView` 复用的
     /// 唯一理由：归位飞行途中点一下载体（`DragController.carrierClicks`）也得走**同一份**逻辑，
     /// 不能在别处再抄一遍「前台就收起、否则唤出」。
+    ///
+    /// 访达是唯一例外（2026-08-20 放开抽屉后才出现的路径）：它**不能被隐藏**（`hide()` 直接失败），
+    /// 而没有窗口时 `openApplication` 只激活、不开窗——点了像没反应。所以访达永不收起，
+    /// 没有真窗口就开主目录，与条上常驻卡同口径（`LifecycleActionPlanner` + `AccessibilitySource`）。
     /// - Parameters:
+    ///   - finderHasRealWindow: 访达此刻有没有真窗口。只有访达分支用得上，但不给默认值——
+    ///     省略它会静默走错分支。
     ///   - launch: 未运行时怎么启动（调用方自己决定要不要顺带 `onOpen`）。
     ///   - onOpen: 唤出（unhide + open）时的附带动作——抽屉传「关抽屉」。
-    static func performDefaultTap(bundleID: String, isRunning: Bool,
+    static func performDefaultTap(bundleID: String, isRunning: Bool, finderHasRealWindow: Bool,
                                   launch: () -> Void, onOpen: (() -> Void)?) {
         if isRunning {
             let runningApps = regularRunningApplications(bundleID: bundleID)
+            if FinderTaskbarPolicy.isFinder(bundleID) {
+                for app in runningApps { _ = app.unhide() }
+                if finderHasRealWindow {
+                    runningApps.first?.activate(options: .activateIgnoringOtherApps)
+                } else {
+                    NSWorkspace.shared.open(FileManager.default.homeDirectoryForCurrentUser)
+                }
+                onOpen?()
+                return
+            }
             if runningApps.contains(where: \.isActive) {
                 // 在前台 → 收起（最小化）：抽屉保持打开
                 for app in runningApps { _ = app.hide() }

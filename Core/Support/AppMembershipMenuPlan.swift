@@ -9,7 +9,7 @@ import Foundation
 /// - strip 消息：在程序坞中保留 + 标记为消息应用（已勾选）
 /// - drawer 普通：仅在程序坞中保留
 /// - drawer 消息：在程序坞中保留 + 标记为消息应用（已勾选）
-/// - Finder：无成员项
+/// - Finder：仅在程序坞中保留（2026-08-20 起访达纳入统一保留勾选，但仍不能进消息区）
 enum AppMembershipMenuPlan {
     enum Surface: Equatable { case strip, drawer }
 
@@ -23,7 +23,8 @@ enum AppMembershipMenuPlan {
                       isFinder: Bool,
                       isKept: Bool,
                       isMessaging: Bool) -> [Item] {
-        guard !isFinder else { return [] }
+        // 访达只给保留勾选：消息区的图标代表「这个应用的主窗口」，访达没有这种语义。
+        if isFinder { return [.keep(isChecked: isKept)] }
         // 保留勾选恒在前，消息命令在后。
         var items: [Item] = [.keep(isChecked: isKept)]
         if isMessaging {

@@ -23,9 +23,16 @@ final class AppMembershipMenuPlanTests: XCTestCase {
         XCTAssertEqual(items, [.keep(isChecked: true), .messaging(isChecked: true)])
     }
 
-    func testFinderShowsNothing() {
-        XCTAssertTrue(AppMembershipMenuPlan.items(surface: .strip, isFinder: true, isKept: false, isMessaging: false).isEmpty)
-        XCTAssertTrue(AppMembershipMenuPlan.items(surface: .drawer, isFinder: true, isKept: false, isMessaging: false).isEmpty)
+    /// 2026-08-20：访达纳入统一保留勾选，但消息项仍然不给（两个面都是）。
+    func testFinderShowsOnlyKeep() {
+        XCTAssertEqual(
+            AppMembershipMenuPlan.items(surface: .strip, isFinder: true, isKept: true, isMessaging: false),
+            [.keep(isChecked: true)]
+        )
+        XCTAssertEqual(
+            AppMembershipMenuPlan.items(surface: .drawer, isFinder: true, isKept: false, isMessaging: false),
+            [.keep(isChecked: false)]
+        )
     }
 
     func testKeepCheckStateReflectsKept() {

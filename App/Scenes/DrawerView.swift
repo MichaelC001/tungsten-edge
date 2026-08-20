@@ -79,6 +79,13 @@ struct DrawerView: View {
         runtime.launchingBundleIDs.contains(id) && !windowBackedIDs.contains(id)
     }
 
+    /// 只有访达格子读得到真值——`windowBackedIDs` 每次都要重扫一遍快照，而这个值只有
+    /// `performDefaultTap` 的访达分支会用，没必要为每一格都付这笔钱。非访达恒 `false` 是有意的。
+    private func finderHasRealWindow(_ id: String) -> Bool {
+        guard FinderTaskbarPolicy.isFinder(id) else { return false }
+        return windowBackedIDs.contains(id)
+    }
+
     /// 运行判定走 RunningApplicationStore（NSWorkspace 进程投影），与任务条 pinned dot 同口径。
     private func isRunning(_ id: String) -> Bool { runningApplicationStore.isRunning(id) }
 
@@ -122,8 +129,17 @@ struct DrawerView: View {
                       usesLiquidGlass: usesLiquidGlass)
         // 抽屉根视图的屏幕 frame（AppKit 换算,绕开 .global/y 翻转/shadowPadding 的坑,Codex 二审 P1-3）。
         // 与 `"drawer"` 命名空间挂在同一视图上 → 既能判"光标在不在抽屉里",又能把屏幕坐标映回 drawer 空间命中格子。
+        // **抽屉面板自己挪了，也要重报落点锚点。** 松手那一刻 `teardown` 清掉 `conversion`，
+        // 任务条宽度随即解冻、整条重新居中变窄；胶囊右对齐任务条、抽屉又右对齐胶囊，
+        // 于是**整个抽屉面板在 0.22s 里往左滑一段**，而格子在 `"drawer"` 空间里的帧纹丝不动
+        // ——只有这个屏幕 rect 在变。不接这一条的话，归位飞行会一直朝面板挪走**之前**那个
+        // 位置飞（在右边），落地才发现格子已经在左边了，就是 owner 报的
+        // 「先飘到目标位置的偏右，再去到目标位置」。纠偏机制本来就为这种事准备好了，
+        // 缺的只是这里没喂给它。
         .background(ScreenRectReader { rect in
-            if rect != drawerRootScreenRect { drawerRootScreenRect = rect }
+            guard rect != drawerRootScreenRect else { return }
+            drawerRootScreenRect = rect
+            updateLandingAnchor()
         })
         .coordinateSpace(name: "drawer")
         // 入场：从贴胶囊的右下角轻微放大入场（配合面板 alpha 淡入）。scaleEffect 是渲染变换,不改布局/命中。
@@ -165,6 +181,7 @@ struct DrawerView: View {
             LauncherChip.performDefaultTap(
                 bundleID: payload.id,
                 isRunning: isRunning(payload.id),
+                finderHasRealWindow: finderHasRealWindow(payload.id),
                 launch: { if runtime.beginLaunch(payload.id) { onPrimaryAction() } },
                 onOpen: onPrimaryAction)
         }
@@ -267,6 +284,7 @@ struct DrawerView: View {
         LauncherChip(bundleID: id,
                      isRunning: running,
                      isHidden: running ? isHiddenInSnapshot(id) : false,
+                     finderHasRealWindow: finderHasRealWindow(id),
                      isLaunching: runtime.launchingBundleIDs.contains(id),
                      scale: 0.7,
                      // 抽屉有意不受「悬停效果」设置影响（owner 2026-08-02），但**固定成安静档**

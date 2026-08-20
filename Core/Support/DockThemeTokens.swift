@@ -337,7 +337,10 @@ extension DockThemeTokens {
     static let standard = DockThemeTokens(
         panelRimTop: .white(0.6),
         panelRimBottom: .black(0.1),
-        panelRimHighlighted: .black(0.35),
+        // 投放高亮：叠在平时那圈边**之上**的一圈更亮的边（`DockPanelRimPlan`）。
+        // 2026-08-20 从黑 0.35 改成白 0.45——黑色那版是玻璃转正前留下的，叠在玻璃的白色
+        // 镜面亮边上会变成「一圈黑框」。白 0.45 正是被删掉的深色表当年用的值。
+        panelRimHighlighted: .white(0.45),
         panelRimLineWidth: 0.5,
         panelRimHighlightedLineWidth: 1,
         // ⚠️ 下面两组是**候选值，默认不生效**——owner 还没验收，按「未验收一律 opt-in」

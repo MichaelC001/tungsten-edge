@@ -4,10 +4,12 @@ import XCTest
 @MainActor
 final class KeptAppStoreTests: XCTestCase {
 
-    private func makeDefaults() -> UserDefaults {
+    /// 默认把访达播种标记先置真，让迁移用例只考察迁移本身；播种行为由专门的用例覆盖。
+    private func makeDefaults(finderSeeded: Bool = true) -> UserDefaults {
         let suite = "test-kept-\(UUID().uuidString)"
         let defaults = UserDefaults(suiteName: suite)!
         defaults.removePersistentDomain(forName: suite)
+        if finderSeeded { defaults.set(true, forKey: KeptAppStore.finderSeedKey) }
         return defaults
     }
 
@@ -18,6 +20,34 @@ final class KeptAppStoreTests: XCTestCase {
         XCTAssertEqual(defaults.stringArray(forKey: KeptAppStore.defaultsKey), [])
     }
 
+    // MARK: - 访达一次性播种（owner 2026-08-20：默认勾上）
+
+    func testFreshInstallSeedsFinderAsKept() {
+        let defaults = makeDefaults(finderSeeded: false)
+        let store = KeptAppStore(defaults: defaults)
+        XCTAssertEqual(store.bundleIDs, [FinderTaskbarPolicy.bundleID])
+        XCTAssertEqual(defaults.stringArray(forKey: KeptAppStore.defaultsKey),
+                       [FinderTaskbarPolicy.bundleID])
+        XCTAssertTrue(defaults.bool(forKey: KeptAppStore.finderSeedKey))
+    }
+
+    func testExistingUserGetsFinderAppendedAtTail() {
+        // 老用户的 V3 早就写好了，播种必须走独立标记键，且追加到尾部不扰动既有顺序。
+        let defaults = makeDefaults(finderSeeded: false)
+        defaults.set(["com.example.first", "com.example.second"], forKey: KeptAppStore.defaultsKey)
+        let store = KeptAppStore(defaults: defaults)
+        XCTAssertEqual(store.bundleIDs,
+                       ["com.example.first", "com.example.second", FinderTaskbarPolicy.bundleID])
+    }
+
+    func testUncheckedFinderIsNotReseededOnNextLaunch() {
+        let defaults = makeDefaults(finderSeeded: false)
+        let first = KeptAppStore(defaults: defaults)
+        first.remove(FinderTaskbarPolicy.bundleID)     // 用户右键取消勾选
+        let second = KeptAppStore(defaults: defaults)  // 下次启动
+        XCTAssertFalse(second.contains(FinderTaskbarPolicy.bundleID))
+    }
+
     func testLoadsFromV3Key() {
         let defaults = makeDefaults()
         defaults.set(["com.example.app"], forKey: KeptAppStore.defaultsKey)
@@ -25,16 +55,17 @@ final class KeptAppStoreTests: XCTestCase {
         XCTAssertEqual(store.bundleIDs, ["com.example.app"])
     }
 
-    func testCanKeepRejectsFinder() {
+    func testCanKeepAcceptsFinderAndRejectsBlank() {
         let store = KeptAppStore(defaults: makeDefaults())
-        XCTAssertFalse(store.canKeep(KeptAppStore.forbiddenBundleID))
+        XCTAssertTrue(store.canKeep(FinderTaskbarPolicy.bundleID))
+        XCTAssertFalse(store.canKeep("   "))
     }
 
-    func testAddRejectsFinder() {
+    func testAddAcceptsFinder() {
         let defaults = makeDefaults()
         let store = KeptAppStore(defaults: defaults)
-        store.add(KeptAppStore.forbiddenBundleID)
-        XCTAssertTrue(store.bundleIDs.isEmpty)
+        store.add(FinderTaskbarPolicy.bundleID)
+        XCTAssertEqual(store.bundleIDs, [FinderTaskbarPolicy.bundleID])
     }
 
     func testAddAndContains() {
@@ -89,11 +120,11 @@ final class KeptAppStoreTests: XCTestCase {
                        ["com.v1.kept", "com.pin.app", "com.drawer.app", "com.chat.app"])
     }
 
-    func testMigrationExcludesFinderAndDeduplicates() {
+    func testMigrationKeepsFinderAndDeduplicates() {
         let defaults = makeDefaults()
-        defaults.set(["com.dup", "com.dup", KeptAppStore.forbiddenBundleID], forKey: "keptAppBundleIDs")
+        defaults.set(["com.dup", "com.dup", FinderTaskbarPolicy.bundleID], forKey: "keptAppBundleIDs")
         let store = KeptAppStore(defaults: defaults)
-        XCTAssertEqual(store.bundleIDs, ["com.dup"])
+        XCTAssertEqual(store.bundleIDs, ["com.dup", FinderTaskbarPolicy.bundleID])
     }
 
     func testExistingEmptyV3KeyPreventsRemigration() {

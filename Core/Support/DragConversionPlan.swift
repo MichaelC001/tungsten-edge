@@ -12,7 +12,7 @@ enum DragSource { case strip, drawer, folder, messaging }
 
 /// 抽屉图标拖到任务条时的行为模式（纯决策，DockStripView 喂事实）。
 enum DrawerDragOutMode: Equatable {
-    case reject             // Finder / 未运行的消息应用 → 不接受（留在抽屉）
+    case reject             // 未运行的消息应用 → 不接受（留在抽屉）
     case releaseToMessaging // 运行中的消息应用 → 进消息区范围才临时释放回消息区
     case unstash            // 有真窗口 → 现有精确落位路径
     case keepPlacement      // app fallback / kept placeholder → app 级落位，绝不修改 kept
@@ -23,15 +23,24 @@ enum DrawerDragOutMode: Equatable {
 enum DragConversionPlan {
 
     /// 抽屉拖出模式判定。消息判定必须在真窗口判定**之前**——运行中的消息应用有主窗口，
-    /// 否则会误入 unstash。未运行的消息应用拒收：消息区只显示运行中的应用，释放会凭空消失。
+    /// 否则会误入 unstash。
+    ///
+    /// **消息成员这一支判的是「释放过去之后它会不会真的出现在消息区」**，判据必须和消息区
+    /// 自己的可见规则同源（`AppMembershipProjection.visibleMessagingIDs` = 在跑 ∪ 已保留）。
+    /// 这里曾经判的是 `isInSnapshot`（窗口清单），那是**另一个真相源**：微信主窗口关着时
+    /// 进程在跑、图标下面有运行点、消息区也照样显示它，唯独窗口清单里没有它——于是
+    /// 「明明亮着运行点却怎么都拖不回消息区」（owner 2026-08-20 实测，日志实证
+    /// `mode=reject 在窗口清单=False 在跑=True`）。
     static func drawerDragOutMode(bundleID: String,
                                   isMessagingMember: Bool,
                                   isInSnapshot: Bool,
+                                  isRunningProcess: Bool,
                                   hasRealWindow: Bool,
                                   isKept: Bool) -> DrawerDragOutMode {
-        guard !bundleID.isEmpty, bundleID != "com.apple.finder" else { return .reject }
+        guard !bundleID.isEmpty else { return .reject }
         if isMessagingMember {
-            return isInSnapshot ? .releaseToMessaging : .reject
+            // 两者都不成立才拒收——那种情况释放过去确实会凭空消失。
+            return (isRunningProcess || isKept) ? .releaseToMessaging : .reject
         }
         if hasRealWindow { return .unstash }
         // app-* fallback while running, or a kept placeholder while stopped.

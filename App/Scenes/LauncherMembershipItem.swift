@@ -21,7 +21,7 @@ extension LauncherMembershipItem {
     ) -> [LauncherMembershipItem] {
         AppMembershipMenuPlan.items(
             surface: surface,
-            isFinder: bundleID == KeptAppStore.forbiddenBundleID,
+            isFinder: FinderTaskbarPolicy.isFinder(bundleID),
             isKept: isKept,
             isMessaging: isMessaging
         ).map { item in

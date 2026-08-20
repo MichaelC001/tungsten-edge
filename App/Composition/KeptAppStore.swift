@@ -3,17 +3,19 @@ import os
 
 /// 「在程序坞中保留」的 app 列表。运行时照常显示窗口卡片；退出后收敛成一个 app 图标留在原位。
 ///
-/// Finder 永远有独立常驻槽位，不由此 store 管理（`forbiddenBundleID`）。
+/// 访达自 2026-08-20 起也由此 store 管（`FinderTaskbarPolicy`），默认勾上、可取消。
 /// 顺序由 `StripOrderStore` 统一管，此 store 只负责成员身份与持久化。
 @MainActor
 final class KeptAppStore: ObservableObject {
-    static let forbiddenBundleID = "com.apple.finder"
     /// V3 lets a messaging app also be kept (kept alone now decides post-exit
     /// visibility). Key existence is the migration marker, including an explicitly
     /// persisted empty array on a fresh install. Older kept keys stay frozen
     /// read-only so a code rollback still reads the exact pre-upgrade list.
     static let defaultsKey = "keptAppBundleIDsV3"
     static let previousDefaultsKey = "keptAppBundleIDsV2"
+    /// 访达一次性播种标记。**不能复用 V3 键**——V3 键存在本身已经是迁移标记，
+    /// 老用户的 V3 早就写好了，只有一个独立的键能表达「访达那一次补勾做过没有」。
+    static let finderSeedKey = "keptAppFinderSeededV1"
     private static let v1Key = "keptAppBundleIDs"
     private static let legacyKey = "pinnedAppBundleIDs"
     private static let drawerKey = "drawerBundleIDs"
@@ -33,6 +35,7 @@ final class KeptAppStore: ObservableObject {
             let stored = defaults.stringArray(forKey: Self.defaultsKey) ?? []
             bundleIDs = Self.cleaned(stored)
             if bundleIDs != stored { persist() }
+            seedFinderOnce()
             return
         }
 
@@ -54,7 +57,19 @@ final class KeptAppStore: ObservableObject {
         }
         bundleIDs = Self.cleaned(seed)
         persist() // Empty is intentional: V3 key existence is the migration marker.
+        seedFinderOnce()
         logger.info("initialized keptAppBundleIDsV3 with \(self.bundleIDs.count) entries")
+    }
+
+    /// 访达默认勾上，只补一次（owner 2026-08-20）。老用户升级后观感完全不变；
+    /// 之后用户自己取消勾选，标记已为真，不会被下次启动重新打开。
+    /// 追加到**尾部**：既有 kept 顺序与 `StripOrderStore` 的跨机器重启排名都不受扰动。
+    private func seedFinderOnce() {
+        guard !defaults.bool(forKey: Self.finderSeedKey) else { return }
+        defaults.set(true, forKey: Self.finderSeedKey)
+        guard !contains(FinderTaskbarPolicy.bundleID) else { return }
+        add(FinderTaskbarPolicy.bundleID)
+        logger.info("seeded Finder into keptAppBundleIDsV3 (one-shot)")
     }
 
     /// Authoritative messaging names for the kept-V3 seed, independent of store
@@ -67,9 +82,9 @@ final class KeptAppStore: ObservableObject {
         return defaults.stringArray(forKey: messagingV1Key) ?? []
     }
 
+    /// 只剩非空判定：访达 2026-08-20 起也允许 kept，此处不再有例外名单。
     static func canKeep(_ bundleID: String) -> Bool {
-        guard let normalized = normalized(bundleID) else { return false }
-        return normalized != forbiddenBundleID
+        normalized(bundleID) != nil
     }
 
     func canKeep(_ bundleID: String) -> Bool {
