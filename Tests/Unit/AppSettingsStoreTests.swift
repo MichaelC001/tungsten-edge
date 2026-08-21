@@ -317,7 +317,7 @@ final class AppSettingsStoreTests: XCTestCase {
     func testLaunchAtLoginMenuPresentationCoversFourStates() {
         XCTAssertEqual(
             LaunchAtLoginMenuPresentation(state: .unsupported),
-            LaunchAtLoginMenuPresentation(title: String(localized: "Open at Login (macOS 13+)"), isEnabled: false, isChecked: false, showsSettingsItem: false)
+            LaunchAtLoginMenuPresentation(title: String(localized: "Open at Login (Unavailable)"), isEnabled: false, isChecked: false, showsSettingsItem: false)
         )
         XCTAssertEqual(
             LaunchAtLoginMenuPresentation(state: .off),
@@ -864,7 +864,7 @@ final class AppSettingsStoreTests: XCTestCase {
 
     @MainActor
     func testSystemTruthReadersRunOffMainThread() async {
-        let launch = LaunchAtLoginService(stateReader: { Thread.isMainThread ? .off : .on })
+        let launch = LaunchAtLoginService(backend: ThreadProbeLaunchBackend())
         let launchState = await launch.currentState()
         XCTAssertEqual(launchState, .on)
 
@@ -1094,4 +1094,11 @@ final class AppSettingsStoreTests: XCTestCase {
         defaults.removePersistentDomain(forName: suiteName)
         return defaults
     }
+}
+
+/// 只回答「读状态那一刻在不在主线程」：不在 → `.on`。
+private struct ThreadProbeLaunchBackend: LaunchAtLoginBackend {
+    func readState() -> LaunchAtLoginState { Thread.isMainThread ? .off : .on }
+    func setEnabled(_ enabled: Bool) throws {}
+    func openSettings() {}
 }

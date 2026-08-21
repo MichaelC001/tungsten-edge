@@ -293,6 +293,9 @@
 		A00000000000000000009E1C /* BuildProvenance.swift in Sources */ = {isa = PBXBuildFile; fileRef = A00000000000000000009E07 /* BuildProvenance.swift */; };
 		A00000000000000000009E1D /* BuildProvenance.swift in Sources */ = {isa = PBXBuildFile; fileRef = A00000000000000000009E07 /* BuildProvenance.swift */; };
 		A00000000000000000009E1E /* BuildProvenanceTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A00000000000000000009E08 /* BuildProvenanceTests.swift */; };
+		A00000000000000000009E21 /* LegacyLoginItemBackend.swift in Sources */ = {isa = PBXBuildFile; fileRef = A00000000000000000009E20 /* LegacyLoginItemBackend.swift */; };
+		A00000000000000000009E22 /* LegacyLoginItemBackend.swift in Sources */ = {isa = PBXBuildFile; fileRef = A00000000000000000009E20 /* LegacyLoginItemBackend.swift */; };
+		A00000000000000000009E24 /* LaunchAtLoginServiceTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A00000000000000000009E23 /* LaunchAtLoginServiceTests.swift */; };
 		A00000000000000000009E1A /* ScanAdmissionDecision.swift in Sources */ = {isa = PBXBuildFile; fileRef = A00000000000000000009E05 /* ScanAdmissionDecision.swift */; };
 		A00000000000000000009E1B /* ScanAdmissionDecisionTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A00000000000000000009E06 /* ScanAdmissionDecisionTests.swift */; };
 		A00000000000000000009A01 /* WindowLiftAvoidance.swift in Sources */ = {isa = PBXBuildFile; fileRef = A00000000000000000009A00 /* WindowLiftAvoidance.swift */; };
@@ -359,6 +362,8 @@
 		A00000000000000000009E06 /* ScanAdmissionDecisionTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ScanAdmissionDecisionTests.swift; sourceTree = "<group>"; };
 		A00000000000000000009E07 /* BuildProvenance.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BuildProvenance.swift; sourceTree = "<group>"; };
 		A00000000000000000009E08 /* BuildProvenanceTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BuildProvenanceTests.swift; sourceTree = "<group>"; };
+		A00000000000000000009E20 /* LegacyLoginItemBackend.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LegacyLoginItemBackend.swift; sourceTree = "<group>"; };
+		A00000000000000000009E23 /* LaunchAtLoginServiceTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LaunchAtLoginServiceTests.swift; sourceTree = "<group>"; };
 		A00000000000000000009F00 /* GlobalHotKeyMonitor.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GlobalHotKeyMonitor.swift; sourceTree = "<group>"; };
 		A00000000000000000009F10 /* GlobalHotKeyMonitorTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GlobalHotKeyMonitorTests.swift; sourceTree = "<group>"; };
 		A00000000000000000009A00 /* WindowLiftAvoidance.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WindowLiftAvoidance.swift; sourceTree = "<group>"; };
@@ -601,6 +606,7 @@
 				D10000000000000000000004 /* AutoHideToggleMenuModel.swift */,
 				A00000000000000000009F00 /* GlobalHotKeyMonitor.swift */,
 				A00000000000000000009010 /* LaunchAtLoginService.swift */,
+				A00000000000000000009E20 /* LegacyLoginItemBackend.swift */,
 				A00000000000000000009020 /* NativeDockPreferencesService.swift */,
 				B74000000000000000000003 /* SubscriptionSubmitter.swift */,
 				B77000000000000000000003 /* SparkleUpdateService.swift */,
@@ -980,6 +986,7 @@
 				A00000000000000000000B90 /* FeedbackTickPolicyTests.swift */,
 				A00000000000000000009E06 /* ScanAdmissionDecisionTests.swift */,
 				A00000000000000000009E08 /* BuildProvenanceTests.swift */,
+				A00000000000000000009E23 /* LaunchAtLoginServiceTests.swift */,
 				A00000000000000000009A20 /* WindowLiftAvoidanceTests.swift */,
 				A00000000000000000009801 /* CGWindowSnapshotTests.swift */,
 				A00000000000000000009710 /* DragConversionPlanTests.swift */,
@@ -1164,6 +1171,7 @@
 					A00000000000000000008011 /* AppSettingsStore.swift in Sources */,
 					A00000000000000000009F01 /* GlobalHotKeyMonitor.swift in Sources */,
 					A00000000000000000009011 /* LaunchAtLoginService.swift in Sources */,
+					A00000000000000000009E21 /* LegacyLoginItemBackend.swift in Sources */,
 					A00000000000000000009021 /* NativeDockPreferencesService.swift in Sources */,
 					A00000000000000000009031 /* PanelVisibilityState.swift in Sources */,
 					A00000000000000000009081 /* PanelGeometry.swift in Sources */,
@@ -1334,6 +1342,7 @@
 				B74000000000000000000011 /* SubscriptionSubmitterTests.swift in Sources */,
 				B75000000000000000000021 /* WelcomeGuideDecisionTests.swift in Sources */,
 				A00000000000000000009061 /* LaunchAtLoginService.swift in Sources */,
+				A00000000000000000009E22 /* LegacyLoginItemBackend.swift in Sources */,
 				A00000000000000000009041 /* NativeDockPreferencesService.swift in Sources */,
 				A00000000000000000009051 /* PanelVisibilityState.swift in Sources */,
 				A00000000000000000009091 /* PanelGeometry.swift in Sources */,
@@ -1422,6 +1431,7 @@
 					A00000000000000000009E1B /* ScanAdmissionDecisionTests.swift in Sources */,
 					A00000000000000000009E1D /* BuildProvenance.swift in Sources */,
 					A00000000000000000009E1E /* BuildProvenanceTests.swift in Sources */,
+					A00000000000000000009E24 /* LaunchAtLoginServiceTests.swift in Sources */,
 					A00000000000000000009A02 /* WindowLiftAvoidance.swift in Sources */,
 					A00000000000000000009A21 /* WindowLiftAvoidanceTests.swift in Sources */,
 					A00000000000000000009811 /* CGWindowSnapshot.swift in Sources */,

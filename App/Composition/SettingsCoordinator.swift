@@ -71,11 +71,7 @@ final class SettingsCoordinator: ObservableObject {
         // （`.requiresApproval` 也会先显示成 `.on`），一个刷新周期内自愈。**绝不能**因此
         // 把镜像当成长期真值——`launchAtLoginState` 的写入口只有 `refreshLaunchAtLoginState`
         // 与写成功后的乐观更新两处。
-        if #available(macOS 13.0, *) {
-            launchAtLoginState = store.launchAtLogin ? .on : .off
-        } else {
-            launchAtLoginState = .unsupported
-        }
+        launchAtLoginState = store.launchAtLogin ? .on : .off
 
         // `canCheckForUpdates` 住在 `SparkleUpdateService` 里，但两套界面观察的是本对象。
         // 把它的变更转发上来，调用方就不用同时盯两个 ObservableObject。

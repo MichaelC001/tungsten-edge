@@ -1427,34 +1427,50 @@
         }
       }
     },
-    "Open at Login (macOS 13+)": {
+    "Open at Login (Unavailable)": {
       "localizations": {
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "登录时启动（macOS 13+）"
+            "value": "登录时启动（不可用）"
           }
         },
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Open at Login (macOS 13+)"
+            "value": "Open at Login (Unavailable)"
           }
         }
       }
     },
-    "Open at Login requires macOS 13 or later.": {
+    "Open at Login isn’t available on this Mac.": {
       "localizations": {
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "登录时启动需要 macOS 13 或更新系统。"
+            "value": "这台 Mac 上无法使用登录时启动。"
           }
         },
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Open at Login requires macOS 13 or later."
+            "value": "Open at Login isn’t available on this Mac."
+          }
+        }
+      }
+    },
+    "Couldn’t update the Login Items list.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "无法更新登录项列表。"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Couldn’t update the Login Items list."
           }
         }
       }
