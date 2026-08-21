@@ -62,9 +62,26 @@ cp -R "$PRODUCTS/$BUILT_NAME.app" "$APP"
 cp "$ROOT/LICENSE" "$APP/Contents/Resources/LICENSE"   # 与发布包保持一致
 
 # 与 package_release.sh 逐项对齐：hardened runtime + 安全时间戳 + 同一份 entitlements。
-# 不加 --deep：bundle 里只有一个可执行文件，没有嵌套代码，而且该参数已被苹果废弃。
 # --timestamp 要联网（约 1 秒）。它对运行期行为没有影响，留着是为了让本机包与发布包
 # 的签名配置完全一致 —— 万一以后离线场景嫌它碍事，删掉它是安全的。
+#
+# Sparkle 框架里有嵌套代码（Updater.app / Autoupdate），外层 app 签一次**够不着**它们；
+# 而 hardened runtime 下主程序只肯加载同一 Team ID 签过的库——Xcode 构建出来的 Sparkle
+# 还挂着本地构建证书（没有 Team ID），不重签的话 dyld 直接拒载，app 启动即崩
+# （2026-08-21 撞上：Sparkle 是 08-20 嵌进来的，这个脚本当时没跟着改）。
+# 所以和发布脚本一样由内向外签：嵌套代码 → 框架 → app。不加 --deep：已废弃，
+# 而且会把外层 entitlements 错套到嵌套代码上。
+SPARKLE="$APP/Contents/Frameworks/Sparkle.framework"
+[[ -d "$SPARKLE" ]] || { echo "error: 构建产物里没有嵌入 Sparkle.framework" >&2; exit 1; }
+# 两个 XPC 服务只给沙箱宿主用，发布包也不带；必须在签框架**之前**删，否则封印对不上内容。
+rm -rf "$SPARKLE/Versions/B/XPCServices"
+echo "==> 由内向外签 Sparkle 的嵌套代码…"
+for nested in "$SPARKLE/Versions/B/Updater.app" "$SPARKLE/Versions/B/Autoupdate"; do
+  [[ -e "$nested" ]] || { echo "error: Sparkle 缺少预期的嵌套代码：$nested" >&2; exit 1; }
+  codesign --force --sign "$IDENTITY" --options runtime --timestamp "$nested"
+done
+codesign --force --sign "$IDENTITY" --options runtime --timestamp "$SPARKLE"
+
 echo "==> 用「${IDENTITY}」签名（hardened runtime + entitlements）…"
 codesign --force \
   --sign "$IDENTITY" \
@@ -72,6 +89,12 @@ codesign --force \
   --timestamp \
   --entitlements "$ENTITLEMENTS" \
   "$APP"
+
+# 主程序和 Sparkle 的 Team ID 必须一致，否则上面说的拒载会在用户机器上重演。
+APP_TEAM="$(codesign -dvv "$APP" 2>&1 | sed -n 's/^TeamIdentifier=//p')"
+SPARKLE_TEAM="$(codesign -dvv "$SPARKLE" 2>&1 | sed -n 's/^TeamIdentifier=//p')"
+[[ "$APP_TEAM" == "$SPARKLE_TEAM" ]] \
+  || { echo "error: Sparkle 与主程序的 Team ID 不一致（$SPARKLE_TEAM vs $APP_TEAM），hardened runtime 会拒载" >&2; exit 1; }
 
 # 签完立刻回读确认，别等到运行期才发现 entitlement 没进去。
 codesign -dvvv "$APP" 2>&1 | grep -E "^Authority=|^Identifier=|^TeamIdentifier=|flags=" | sed 's/^/    /'
@@ -102,5 +125,6 @@ rm -rf "$STAGE"
 VER="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' "$DEST/Contents/Info.plist")"
 BUILD="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleVersion' "$DEST/Contents/Info.plist")"
 echo "==> 完成：$VER ($BUILD)"
+# 注意 --deep 校验抓不到嵌套代码签错身份（.claude/rules/auto-update.md），真正的闸门是上面的 Team ID 比对。
 codesign --verify --strict "$DEST" && echo "    签名校验通过"
 echo "    启动：open \"$DEST\""
