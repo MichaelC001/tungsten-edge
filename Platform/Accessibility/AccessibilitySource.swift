@@ -421,10 +421,12 @@ struct AccessibilityWindowActionExecutor {
             AXUIElementSetAttributeValue(handle.element, kAXMainAttribute as CFString, kCFBooleanTrue)
         }
 
-        let raised = AXUIElementPerformAction(handle.element, kAXRaiseAction as CFString) == .success
         // Trial focus patch: target the concrete window first so standard app activation
         // does not briefly restore a sibling/previous key window over the requested one.
+        // 顺序固定为「先 SkyLight（前置 + make-key down）后 kAXRaiseAction」——AltTab 同序，
+        // CLI 连续切换实证（2026-08-22）；raise 是连续切换能持续生效的一环，不是可选项。
         let focusedViaSkyLight = focusWindowViaSkyLight(pid: handle.pid, element: handle.element)
+        let raised = AXUIElementPerformAction(handle.element, kAXRaiseAction as CFString) == .success
         if !focusedViaSkyLight, runningApp?.isActive != true {
             _ = runningApp?.activate(options: [.activateIgnoringOtherApps])
         }
@@ -607,9 +609,21 @@ struct AccessibilityWindowActionExecutor {
     private static let skyLightFocusEnabled =
         ProcessInfo.processInfo.environment["DOCK_SKYLIGHT_FOCUS"] != "0"
 
-    /// Shared SkyLight focus core: front-process switch + the two make-key events for a
+    /// Shared SkyLight focus core: front-process switch + one synthetic make-key mouse-down for a
     /// known cgWindowID. Pure event posts — no AX round-trips, so it never blocks on a
     /// napping target app. Byte layout is load-bearing (see AGENTS.md); do not vary it.
+    ///
+    /// 2026-08-22 换布局：旧的成对 0x0d make-key 事件在 macOS 26 (Tahoe) 上被 WindowServer
+    /// 静默忽略（调用全部返回成功、焦点纹丝不动，CLI 探针实证），点标签后 kAXFocusedWindow
+    /// 停在旧窗口 → 快照永远等不到 .active → 同应用切窗失效 + toggle 误最小化。现布局
+    /// 移植自 AltTab（macOS 26.5 实测有效，src/macos/api-wrappers/SkyLight.framework.swift）：
+    /// 按 windowID 投递一枚合成 kCGEventLeftMouseDown（0x08=0x01），只发 down 不发 up——
+    /// down 单独即交付 key，且半次点击永远无法激活任何控件；落点 (300_000, 300_000) 远在
+    /// 任何窗口右下之外（NaN 会被部分 App 消毒成 (0,0) 误点左上控件；贴框点会落进
+    /// resize 抓取区）。缓冲区 0x100 而记录声明长度仍 0xf8：macOS 14.7.4+ 的
+    /// CGSEncodeEventRecord 会越界读到 0xf8 之外，短缓冲会 SIGABRT。
+    /// 事件后必须紧跟 kAXRaiseAction 才能连续切换（本文件 focusWindowViaSkyLight /
+    /// activate() 均保持该顺序；CLI 连续 4 次切换实证）。
     @discardableResult
     fileprivate func postSkyLightWindowFocus(pid: pid_t, windowID: CGWindowID) -> Bool {
         guard Self.skyLightFocusEnabled else { return false }
@@ -627,25 +641,24 @@ struct AccessibilityWindowActionExecutor {
         let kCPSUserGenerated: UInt32 = 0x200
         _ = withUnsafePointer(to: &psn) { focus.slps($0, windowID, kCPSUserGenerated) }
 
-        var firstEvent = [UInt8](repeating: 0, count: 0xf8)
-        var secondEvent = [UInt8](repeating: 0, count: 0xf8)
-        firstEvent[0x04] = 0xf8
-        firstEvent[0x08] = 0x0d
-        firstEvent[0x8a] = 0x02
-        secondEvent[0x04] = 0xf8
-        secondEvent[0x08] = 0x0d
-        secondEvent[0x8a] = 0x01
-
+        var event = [UInt8](repeating: 0, count: 0x100)
+        event[0x04] = 0xf8            // 记录声明长度（不随缓冲区变）
+        event[0x08] = 0x01            // kCGEventLeftMouseDown；只发 down，不发 up
+        event[0x3a] = 0x10            // 用途未知；yabai / Hammerspoon / AltTab 均置 0x10
         var wid = windowID
         withUnsafeBytes(of: &wid) { bytes in
             for index in 0..<4 {
-                firstEvent[0x3c + index] = bytes[index]
-                secondEvent[0x3c + index] = bytes[index]
+                event[0x3c + index] = bytes[index]
+            }
+        }
+        var offContentPoint = CGPoint(x: 300_000, y: 300_000)
+        withUnsafeBytes(of: &offContentPoint) { bytes in
+            for index in 0..<16 {
+                event[0x20 + index] = bytes[index]
             }
         }
         withUnsafePointer(to: &psn) { pointer in
-            firstEvent.withUnsafeBufferPointer { _ = focus.post(pointer, $0.baseAddress!) }
-            secondEvent.withUnsafeBufferPointer { _ = focus.post(pointer, $0.baseAddress!) }
+            event.withUnsafeBufferPointer { _ = focus.post(pointer, $0.baseAddress!) }
         }
         return true
     }

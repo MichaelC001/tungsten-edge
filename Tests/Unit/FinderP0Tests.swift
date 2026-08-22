@@ -1639,6 +1639,53 @@ final class FinderP0Tests: XCTestCase {
         XCTAssertEqual(items.count, 2)
     }
 
+    /// 兄弟顶替即清（2026-08-22）：乐观 .active 落空、同 App 兄弟窗口已被快照证实 .active
+    /// → 该预测必须被清掉，否则残留满 4 秒会把下一次点击误规划成 minimize（macOS 26
+    /// SkyLight make-key 静默失效时的真实症状）。只清 .active 预测，且只认同 pid 的兄弟。
+    func testOptimisticActiveSupersededByActiveSibling() {
+        let w1 = WindowID(rawValue: "cg-sibling-1")
+        let w2 = WindowID(rawValue: "cg-sibling-2")
+
+        func record(_ id: WindowID, pid: Int32, status: WindowStatus) -> WindowRecord {
+            WindowRecord(
+                id: id, appID: AppID(rawValue: "test-app"), pid: pid,
+                bundleIdentifier: nil, title: "Test", bounds: nil, status: status
+            )
+        }
+        func makeSnapshot(_ records: [WindowRecord]) -> DockSnapshot {
+            DockSnapshot(
+                windows: Dictionary(uniqueKeysWithValues: records.map { ($0.id, $0) }),
+                orderedWindowIDs: records.map(\.id)
+            )
+        }
+
+        // 同 pid 兄弟已 .active → 顶替成立
+        XCTAssertTrue(OptimisticWindowState.supersededByActiveSibling(
+            windowID: w1.rawValue, predicted: .active,
+            snapshot: makeSnapshot([record(w1, pid: 1, status: .inactive), record(w2, pid: 1, status: .active)])
+        ))
+        // 兄弟 .active 但属于别的 pid → 不算顶替
+        XCTAssertFalse(OptimisticWindowState.supersededByActiveSibling(
+            windowID: w1.rawValue, predicted: .active,
+            snapshot: makeSnapshot([record(w1, pid: 1, status: .inactive), record(w2, pid: 2, status: .active)])
+        ))
+        // 没有任何兄弟 .active → 预测继续等兑现/超时
+        XCTAssertFalse(OptimisticWindowState.supersededByActiveSibling(
+            windowID: w1.rawValue, predicted: .active,
+            snapshot: makeSnapshot([record(w1, pid: 1, status: .inactive), record(w2, pid: 1, status: .inactive)])
+        ))
+        // 预测不是 .active（minimize 类）→ 与兄弟状态无关，永不因顶替被清
+        XCTAssertFalse(OptimisticWindowState.supersededByActiveSibling(
+            windowID: w1.rawValue, predicted: .minimized,
+            snapshot: makeSnapshot([record(w1, pid: 1, status: .inactive), record(w2, pid: 1, status: .active)])
+        ))
+        // 自己 .active 不算「兄弟」——兑现路径由 optimisticConfirmed 负责
+        XCTAssertFalse(OptimisticWindowState.supersededByActiveSibling(
+            windowID: w1.rawValue, predicted: .active,
+            snapshot: makeSnapshot([record(w1, pid: 1, status: .active)])
+        ))
+    }
+
     private func snapshot(windowID: WindowID, status: WindowStatus) -> DockSnapshot {
         DockSnapshot(
             windows: [

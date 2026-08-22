@@ -702,7 +702,11 @@ final class AppRuntime: ObservableObject {
         let next = optimisticStatesByWindowID.filter { windowID, state in
             if now.timeIntervalSince(state.createdAt) > Self.optimisticTimeout { return false }
             guard let record = snapshot.windows[WindowID(rawValue: windowID)] else { return false }
-            return !Self.optimisticConfirmed(predicted: state.status, actual: record.status)
+            if Self.optimisticConfirmed(predicted: state.status, actual: record.status) { return false }
+            if OptimisticWindowState.supersededByActiveSibling(
+                windowID: windowID, predicted: state.status, snapshot: snapshot
+            ) { return false }
+            return true
         }
         if next != optimisticStatesByWindowID {
             optimisticStatesByWindowID = next

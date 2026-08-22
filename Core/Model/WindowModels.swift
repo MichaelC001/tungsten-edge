@@ -63,3 +63,22 @@ struct OptimisticWindowState: Hashable, Sendable {
     let status: WindowStatus
     let createdAt: Date
 }
+
+extension OptimisticWindowState {
+    /// 兄弟顶替即清（2026-08-22）：预测 .active 尚未兑现、而同 App 另一窗口已被快照证实
+    /// .active —— 焦点已被兄弟拿走，这份预测再挂满 4 秒只会把下一次点击误规划成 minimize。
+    /// macOS 26 曾把 SkyLight make-key 静默废掉，误最小化正是靠这类残留发作；留这层防御，
+    /// 未来焦点通道再静默失效时症状降级为「多余的 activate」而不是「误 minimize」。
+    /// 只清 .active 预测：minimize / hidden 的兑现语义（含 disappeared）与兄弟状态无关。
+    static func supersededByActiveSibling(
+        windowID: String,
+        predicted: WindowStatus,
+        snapshot: DockSnapshot
+    ) -> Bool {
+        guard predicted == .active else { return false }
+        guard let record = snapshot.windows[WindowID(rawValue: windowID)] else { return false }
+        return snapshot.windows.values.contains {
+            $0.pid == record.pid && $0.id != record.id && $0.status == .active
+        }
+    }
+}
