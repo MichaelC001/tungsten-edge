@@ -92,7 +92,9 @@
 		A0000000000000000000FA02 /* LauncherChipVisualPlan.swift in Sources */ = {isa = PBXBuildFile; fileRef = A0000000000000000000FA00 /* LauncherChipVisualPlan.swift */; };
 		A0000000000000000000FA11 /* LauncherChipVisualPlanTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A0000000000000000000FA10 /* LauncherChipVisualPlanTests.swift */; };
 		A0000000000000000000FF01 /* LaunchGateDecision.swift in Sources */ = {isa = PBXBuildFile; fileRef = A0000000000000000000FF00 /* LaunchGateDecision.swift */; };
+		B10000000000000000000008 /* BadgeReadPlan.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10000000000000000000106 /* BadgeReadPlan.swift */; };
 		A0000000000000000000FF02 /* LaunchGateDecision.swift in Sources */ = {isa = PBXBuildFile; fileRef = A0000000000000000000FF00 /* LaunchGateDecision.swift */; };
+		B10000000000000000000009 /* BadgeReadPlan.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10000000000000000000106 /* BadgeReadPlan.swift */; };
 		A0000000000000000000FF11 /* LaunchGateDecisionTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A0000000000000000000FF10 /* LaunchGateDecisionTests.swift */; };
 		A0000000000000000000FF21 /* AppLaunchTargetDecision.swift in Sources */ = {isa = PBXBuildFile; fileRef = A0000000000000000000FF20 /* AppLaunchTargetDecision.swift */; };
 		A0000000000000000000FF22 /* AppLaunchTargetDecision.swift in Sources */ = {isa = PBXBuildFile; fileRef = A0000000000000000000FF20 /* AppLaunchTargetDecision.swift */; };
@@ -160,6 +162,8 @@
 		A000000000000000000019D5 /* LauncherMembershipItem.swift in Sources */ = {isa = PBXBuildFile; fileRef = A000000000000000000019D3 /* LauncherMembershipItem.swift */; };
 		A000000000000000000019A2 /* BadgeStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = A000000000000000000019B2 /* BadgeStore.swift */; };
 		A000000000000000000019A3 /* DockBadgeReader.swift in Sources */ = {isa = PBXBuildFile; fileRef = A000000000000000000019B3 /* DockBadgeReader.swift */; };
+		B1000000000000000000000D /* DockBadgeReader.swift in Sources */ = {isa = PBXBuildFile; fileRef = A000000000000000000019B3 /* DockBadgeReader.swift */; };
+		B1000000000000000000000C /* BadgeStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = A000000000000000000019B2 /* BadgeStore.swift */; };
 		A00000000000000000009501 /* KeptAppStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = A00000000000000000009500 /* KeptAppStore.swift */; };
 		A00000000000000000009511 /* RunningApplicationStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = A00000000000000000009510 /* RunningApplicationStore.swift */; };
 		A00000000000000000009521 /* AppMembershipController.swift in Sources */ = {isa = PBXBuildFile; fileRef = A00000000000000000009520 /* AppMembershipController.swift */; };
@@ -313,6 +317,8 @@
 		B10000000000000000000001 /* AppTrackerPeriodicBatchTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10000000000000000000101 /* AppTrackerPeriodicBatchTests.swift */; };
 		B10000000000000000000002 /* PeriodicReconcileSkipDecisionTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10000000000000000000102 /* PeriodicReconcileSkipDecisionTests.swift */; };
 		B10000000000000000000007 /* ScanProbeGateDecisionTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10000000000000000000105 /* ScanProbeGateDecisionTests.swift */; };
+		B1000000000000000000000B /* BadgeStoreTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10000000000000000000108 /* BadgeStoreTests.swift */; };
+		B1000000000000000000000A /* BadgeReadPlanTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10000000000000000000107 /* BadgeReadPlanTests.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -384,6 +390,8 @@
 		B10000000000000000000101 /* AppTrackerPeriodicBatchTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppTrackerPeriodicBatchTests.swift; sourceTree = "<group>"; };
 		B10000000000000000000102 /* PeriodicReconcileSkipDecisionTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PeriodicReconcileSkipDecisionTests.swift; sourceTree = "<group>"; };
 		B10000000000000000000105 /* ScanProbeGateDecisionTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ScanProbeGateDecisionTests.swift; sourceTree = "<group>"; };
+		B10000000000000000000108 /* BadgeStoreTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BadgeStoreTests.swift; sourceTree = "<group>"; };
+		B10000000000000000000107 /* BadgeReadPlanTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BadgeReadPlanTests.swift; sourceTree = "<group>"; };
 		A00000000000000000009700 /* DragConversionPlan.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DragConversionPlan.swift; sourceTree = "<group>"; };
 		A00000000000000000009750 /* NonConstrainingPanel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NonConstrainingPanel.swift; sourceTree = "<group>"; };
 		A00000000000000000000C00 /* ManualPanelHostTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ManualPanelHostTests.swift; sourceTree = "<group>"; };
@@ -493,6 +501,7 @@
 		A00000000000000000009400 /* LauncherMenuPlan.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LauncherMenuPlan.swift; sourceTree = "<group>"; };
 		A0000000000000000000FA00 /* LauncherChipVisualPlan.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LauncherChipVisualPlan.swift; sourceTree = "<group>"; };
 		A0000000000000000000FF00 /* LaunchGateDecision.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LaunchGateDecision.swift; sourceTree = "<group>"; };
+		B10000000000000000000106 /* BadgeReadPlan.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BadgeReadPlan.swift; sourceTree = "<group>"; };
 		A0000000000000000000FF20 /* AppLaunchTargetDecision.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppLaunchTargetDecision.swift; sourceTree = "<group>"; };
 		A00000000000000000009580 /* AppMembershipMenuPlan.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppMembershipMenuPlan.swift; sourceTree = "<group>"; };
 		A00000000000000000009410 /* LauncherMenuPlanTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LauncherMenuPlanTests.swift; sourceTree = "<group>"; };
@@ -715,6 +724,7 @@
 				A00000000000000000009400 /* LauncherMenuPlan.swift */,
 				A0000000000000000000FA00 /* LauncherChipVisualPlan.swift */,
 				A0000000000000000000FF00 /* LaunchGateDecision.swift */,
+				B10000000000000000000106 /* BadgeReadPlan.swift */,
 				A0000000000000000000FF20 /* AppLaunchTargetDecision.swift */,
 				B72000000000000000000003 /* AppDisplayNameCache.swift */,
 				B72000000000000000000013 /* InstallationRecord.swift */,
@@ -1006,6 +1016,8 @@
 				B10000000000000000000101 /* AppTrackerPeriodicBatchTests.swift */,
 				B10000000000000000000102 /* PeriodicReconcileSkipDecisionTests.swift */,
 				B10000000000000000000105 /* ScanProbeGateDecisionTests.swift */,
+				B10000000000000000000108 /* BadgeStoreTests.swift */,
+				B10000000000000000000107 /* BadgeReadPlanTests.swift */,
 				A00000000000000000009710 /* DragConversionPlanTests.swift */,
 				A00000000000000000000A110 /* MessagingZoneAdmissionTests.swift */,
 				A00000000000000000000B110 /* FinderTaskbarPolicyTests.swift */,
@@ -1215,6 +1227,7 @@
 					A00000000000000000009401 /* LauncherMenuPlan.swift in Sources */,
 					A0000000000000000000FA01 /* LauncherChipVisualPlan.swift in Sources */,
 					A0000000000000000000FF01 /* LaunchGateDecision.swift in Sources */,
+					B10000000000000000000008 /* BadgeReadPlan.swift in Sources */,
 					A0000000000000000000FF21 /* AppLaunchTargetDecision.swift in Sources */,
 					B72000000000000000000001 /* AppDisplayNameCache.swift in Sources */,
 					B72000000000000000000011 /* InstallationRecord.swift in Sources */,
@@ -1378,6 +1391,7 @@
 				A00000000000000000009402 /* LauncherMenuPlan.swift in Sources */,
 				A0000000000000000000FA02 /* LauncherChipVisualPlan.swift in Sources */,
 				A0000000000000000000FF02 /* LaunchGateDecision.swift in Sources */,
+				B10000000000000000000009 /* BadgeReadPlan.swift in Sources */,
 				A0000000000000000000FF22 /* AppLaunchTargetDecision.swift in Sources */,
 				B72000000000000000000002 /* AppDisplayNameCache.swift in Sources */,
 				B72000000000000000000012 /* InstallationRecord.swift in Sources */,
@@ -1449,6 +1463,8 @@
 					A00000000000000000009E1A /* ScanAdmissionDecision.swift in Sources */,
 					B10000000000000000000004 /* PeriodicReconcileSkipDecision.swift in Sources */,
 					B10000000000000000000006 /* ScanProbeGateDecision.swift in Sources */,
+					B1000000000000000000000D /* DockBadgeReader.swift in Sources */,
+					B1000000000000000000000C /* BadgeStore.swift in Sources */,
 					A00000000000000000009E1B /* ScanAdmissionDecisionTests.swift in Sources */,
 					A00000000000000000009E1D /* BuildProvenance.swift in Sources */,
 					A00000000000000000009E1E /* BuildProvenanceTests.swift in Sources */,
@@ -1460,6 +1476,8 @@
 					B10000000000000000000001 /* AppTrackerPeriodicBatchTests.swift in Sources */,
 					B10000000000000000000002 /* PeriodicReconcileSkipDecisionTests.swift in Sources */,
 					B10000000000000000000007 /* ScanProbeGateDecisionTests.swift in Sources */,
+					B1000000000000000000000B /* BadgeStoreTests.swift in Sources */,
+					B1000000000000000000000A /* BadgeReadPlanTests.swift in Sources */,
 					A00000000000000000009702 /* DragConversionPlan.swift in Sources */,
 					A00000000000000000000A102 /* MessagingZoneAdmission.swift in Sources */,
 					A00000000000000000000B102 /* FinderTaskbarPolicy.swift in Sources */,

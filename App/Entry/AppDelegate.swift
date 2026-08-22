@@ -64,6 +64,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var welcomeWindow: NSWindow?
     private var workspaceObservers: [NSObjectProtocol] = []
     private var messagingAutoRegisterSubscription: AnyCancellable?
+    private var badgeContextSubscription: AnyCancellable?
     private var windowLiftSettingSubscription: AnyCancellable?
     private let permissionService = PermissionService()
     private var installLocation: AppInstallLocation = .other
@@ -463,6 +464,29 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 )
             }
 
+        // 角标读取范围 = 消息区可见 ∩ 在跑（与任务条渲染同一条可见规则）。名单或在跑集合一变
+        // 就推给 BadgeStore：可读集为空时它每 tick 零 AX 流量；集合变化触发重走 Dock 树，
+        // 「消息应用刚启动、新磁贴上出角标」靠这条在 ~1s 内补上。订阅先于 badgeStore.start()，
+        // 首次读取前上下文已就位（四个 @Published 订阅即发当前值）。
+        badgeContextSubscription = Publishers.CombineLatest4(
+            messagingStore.$bundleIDs,
+            drawerStore.$bundleIDs,
+            keptAppStore.$bundleIDs,
+            runningApplicationStore.$runningBundleIDs
+        )
+        .receive(on: DispatchQueue.main)
+        .sink { [weak self] messaging, drawer, kept, running in
+            self?.badgeStore.updateMessagingContext(
+                visibleMessagingIDs: AppMembershipProjection.visibleMessagingIDs(
+                    messagingIDs: messaging,
+                    drawerIDs: drawer,
+                    keptIDs: kept,
+                    runningIDs: running
+                ),
+                runningBundleIDs: running
+            )
+        }
+
         let coordinator = PanelCoordinator(
             runtime: runtime,
             drawerStore: drawerStore,
@@ -681,6 +705,8 @@ extension AppDelegate: PermissionEffectHandler {
         closeWelcomeWindow()
         messagingAutoRegisterSubscription?.cancel()
         messagingAutoRegisterSubscription = nil
+        badgeContextSubscription?.cancel()
+        badgeContextSubscription = nil
         runtime.onToggleDrawer = nil
         panelCoordinator?.suspendAndRelease()
         panelCoordinator = nil
