@@ -64,6 +64,26 @@ final class CGWindowSnapshotTests: XCTestCase {
         XCTAssertEqual(AppTrackerCGWindowSnapshot.parse([]), empty)
     }
 
+    func testParseNeverMarksCaptureFailed() {
+        XCTAssertFalse(AppTrackerCGWindowSnapshot.parse([]).captureFailed)
+        XCTAssertFalse(AppTrackerCGWindowSnapshot.parse([
+            windowInfo(id: 11, layer: 0, isOnScreen: true, pid: 100),
+        ]).captureFailed)
+    }
+
+    func testFailedFactoryIsEmptyAndMarksCaptureFailed() {
+        let failed = AppTrackerCGWindowSnapshot.failed
+        XCTAssertTrue(failed.captureFailed)
+        XCTAssertTrue(failed.allWindowIDs.isEmpty)
+        XCTAssertTrue(failed.onScreenWindowIDs.isEmpty)
+        XCTAssertTrue(failed.windowIDsByPID.isEmpty)
+        XCTAssertTrue(failed.alphaByWindowID.isEmpty)
+    }
+
+    func testFailedDiffersFromGenuinelyEmptyCapture() {
+        XCTAssertNotEqual(AppTrackerCGWindowSnapshot.failed, AppTrackerCGWindowSnapshot.parse([]))
+    }
+
     private func windowInfo(
         id: Int,
         layer: Int,

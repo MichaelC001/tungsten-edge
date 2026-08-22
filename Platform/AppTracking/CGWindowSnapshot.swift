@@ -8,15 +8,38 @@ struct AppTrackerCGWindowSnapshot: Equatable {
     let windowIDsByPID: [pid_t: Set<CGWindowID>]
     /// AX inventory 没有透明度属性；按同轮 CG window id 补齐，供 admission 的 alpha=0 过滤使用。
     let alphaByWindowID: [CGWindowID: Double]
+    /// CG 查询本身失败（返回 nil）。与「真的没有 layer-0 窗口」是两回事：任何拿本快照当
+    /// 「没变化」判据的门控（周期跳读、补扫门控）见此标志必须放弃跳过、走全量路径。
+    /// 既有消费方不读它，失败时的下游行为与从前逐位一致。
+    let captureFailed: Bool
+
+    init(
+        allWindowIDs: Set<CGWindowID>,
+        onScreenWindowIDs: Set<CGWindowID>,
+        windowIDsByPID: [pid_t: Set<CGWindowID>],
+        alphaByWindowID: [CGWindowID: Double],
+        captureFailed: Bool = false
+    ) {
+        self.allWindowIDs = allWindowIDs
+        self.onScreenWindowIDs = onScreenWindowIDs
+        self.windowIDsByPID = windowIDsByPID
+        self.alphaByWindowID = alphaByWindowID
+        self.captureFailed = captureFailed
+    }
+
+    static var failed: AppTrackerCGWindowSnapshot {
+        AppTrackerCGWindowSnapshot(
+            allWindowIDs: [],
+            onScreenWindowIDs: [],
+            windowIDsByPID: [:],
+            alphaByWindowID: [:],
+            captureFailed: true
+        )
+    }
 
     static func capture() -> AppTrackerCGWindowSnapshot {
         guard let windowInfo = CGWindowListCopyWindowInfo([.optionAll], kCGNullWindowID) as? [[String: Any]] else {
-            return AppTrackerCGWindowSnapshot(
-                allWindowIDs: [],
-                onScreenWindowIDs: [],
-                windowIDsByPID: [:],
-                alphaByWindowID: [:]
-            )
+            return .failed
         }
         return parse(windowInfo)
     }
