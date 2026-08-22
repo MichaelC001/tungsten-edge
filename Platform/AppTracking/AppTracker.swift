@@ -143,6 +143,13 @@ final class AppTracker: ObservableObject {
     }
 
     private var gateStates: [pid_t: ReconcileGateState] = [:]
+
+    /// 补扫探测门控（DOCK_SCAN_GATE=0 关闭）状态。memo 只记「无合格窗口」的结论；
+    /// dirty 由 workspace 启动通知置位；慢速全扫每 60s 兜一次门控漏洞。
+    private let scanGateEnabled: Bool
+    private var scanMemos: [pid_t: ScanProbeGateDecision.Memo] = [:]
+    private var scanDirtyPIDs: Set<pid_t> = []
+    private var lastFullScanUptime: TimeInterval?
     #if DEBUG
     /// 测试专用：fixture pid 建不出真 AXObserver，跳读门控的 observerActive 判据用它覆盖。
     private var observerActiveOverridesForTesting: [pid_t: Bool] = [:]
@@ -164,6 +171,7 @@ final class AppTracker: ObservableObject {
         eventAXAsyncEnabled: Bool = ProcessInfo.processInfo.environment["DOCK_EVENT_AX_ASYNC"] != "0",
         periodicAXTimeoutMS: Int = Int(ProcessInfo.processInfo.environment["DOCK_RECONCILE_AX_TIMEOUT_MS"] ?? "") ?? 100,
         reconcileSkipEnabled: Bool = ProcessInfo.processInfo.environment["DOCK_RECONCILE_SKIP"] != "0",
+        scanGateEnabled: Bool = ProcessInfo.processInfo.environment["DOCK_SCAN_GATE"] != "0",
         uptimeProvider: @escaping () -> TimeInterval = { ProcessInfo.processInfo.systemUptime }
     ) {
         self.inventoryLog = inventoryLog
@@ -174,6 +182,7 @@ final class AppTracker: ObservableObject {
         self.eventAXAsyncEnabled = eventAXAsyncEnabled
         self.periodicReconcileTimeout = periodicAXTimeoutMS > 0 ? TimeInterval(periodicAXTimeoutMS) / 1000.0 : nil
         self.reconcileSkipEnabled = reconcileSkipEnabled
+        self.scanGateEnabled = scanGateEnabled
         self.uptimeProvider = uptimeProvider
     }
 
@@ -222,6 +231,9 @@ final class AppTracker: ObservableObject {
         trailingEventSources.removeAll()
         mutationGenerations.removeAll()
         gateStates.removeAll()
+        scanMemos.removeAll()
+        scanDirtyPIDs.removeAll()
+        lastFullScanUptime = nil
         snapshot = .empty
         inventoryLog.flush()
     }
@@ -977,6 +989,7 @@ final class AppTracker: ObservableObject {
 
     private func handleAppLaunched(_ app: NSRunningApplication) {
         guard isRegularNonSelf(app) else { return }
+        scanDirtyPIDs.insert(app.processIdentifier)
         if FinderWindowRules.isFinder(bundleIdentifier: app.bundleIdentifier) {
             // Remove any stale Finder entry left over from a quit/relaunch cycle,
             // then add the fresh entry with the new pid.
@@ -1017,6 +1030,8 @@ final class AppTracker: ObservableObject {
         if let app = apps[pid] { recordProcessGoneSeats(app: app) }
         clearInventoryDiagnostics(pid: pid)
         gateStates.removeValue(forKey: pid)
+        scanMemos.removeValue(forKey: pid)
+        scanDirtyPIDs.remove(pid)
 
         // Finder relaunches immediately via launchd. Keep the entry (no windows) so the chip
         // stays visible during the gap. handleAppLaunched will replace this stale entry with
@@ -1068,6 +1083,8 @@ final class AppTracker: ObservableObject {
         )
         appOrder.append(pid)
         mutationGenerations[pid, default: 0] &+= 1
+        scanMemos.removeValue(forKey: pid)
+        scanDirtyPIDs.remove(pid)
 
         if AXIsProcessTrusted() {
             let obs = AppWindowObserver(pid: pid)
@@ -1428,7 +1445,7 @@ final class AppTracker: ObservableObject {
             }
             if changed { rebuildSnapshot(onScreenCGIDs: cgSnapshot.onScreenWindowIDs) }
         }
-        scanNonAdmittedApps()
+        scanNonAdmittedApps(cgSnapshot: cgSnapshot)
     }
 
     /// 周期对账的批量后台读：已有在途读的 pid 跳过（其落地自带更新数据），其余批量注册
@@ -1522,14 +1539,38 @@ final class AppTracker: ObservableObject {
         for pid in landedPIDs { consumeTrailingEventRead(pid: pid) }
     }
 
-    private func scanNonAdmittedApps() {
+    /// `cgSnapshot`：reconcile tick 把当轮 CG 捕获传进来 → 走探测门控（CG 在场判据 + 记忆）并
+    /// 复用该捕获做收编；传 nil（启动后的四轮补扫）→ 完全绕过门控与记忆，收编时自拍快照——
+    /// 与改造前逐位一致。
+    private func scanNonAdmittedApps(cgSnapshot: AppTrackerCGWindowSnapshot? = nil) {
         guard !isScanningCandidates else { return }
+        var slowFullScanDue = false
+        if cgSnapshot != nil, scanGateEnabled {
+            let uptime = uptimeProvider()
+            slowFullScanDue = lastFullScanUptime.map {
+                uptime - $0 >= ScanProbeGateDecision.defaultFullScanInterval
+            } ?? true
+            if slowFullScanDue { lastFullScanUptime = uptime }
+        }
         // 候选连同**探测时刻的进程代际**一起带走：后台探测期间 pid 可能被复用，回调必须能认出换人。
         let candidates: [(pid: pid_t, identity: ScanAdmissionDecision.ProcessIdentity)] =
             NSWorkspace.shared.runningApplications.compactMap { app in
                 let pid = app.processIdentifier
                 guard isRegularNonSelf(app), !app.isTerminated, apps[pid] == nil else { return nil }
-                return (pid, processIdentity(pid: pid, bundleID: app.bundleIdentifier))
+                let identity = processIdentity(pid: pid, bundleID: app.bundleIdentifier)
+                if let cgSnapshot, scanGateEnabled {
+                    let verdict = ScanProbeGateDecision.verdict(.init(
+                        captureFailed: cgSnapshot.captureFailed,
+                        cgWindowIDs: cgSnapshot.windowIDsByPID[pid] ?? [],
+                        memo: scanMemos[pid],
+                        currentIdentity: identity,
+                        workspaceDirty: scanDirtyPIDs.contains(pid),
+                        slowFullScanDue: slowFullScanDue
+                    ))
+                    guard case .probe = verdict else { return nil }
+                }
+                scanDirtyPIDs.remove(pid)
+                return (pid, identity)
             }
         guard !candidates.isEmpty else { return }
 
@@ -1539,6 +1580,7 @@ final class AppTracker: ObservableObject {
         Task.detached { [weak self] in
             // 后台只做 AX 读（限时 100ms，挂死 App 不拖主线程）。eligible 过滤放主线程：它依赖
             // 实例属性 eligibilityPolicy，且只是对已读字段的纯计算，零 AX 往返。
+            let probeStart = DispatchTime.now().uptimeNanoseconds
             var probed: [(pid: pid_t, identity: ScanAdmissionDecision.ProcessIdentity, result: AXWindowReadResult)] = []
             for candidate in candidates {
                 probed.append((
@@ -1548,11 +1590,12 @@ final class AppTracker: ObservableObject {
                 ))
             }
             let results = probed
+            let probeElapsed = TimeInterval(DispatchTime.now().uptimeNanoseconds - probeStart) / 1_000_000_000
 
             await MainActor.run { [weak self] in
                 guard let self else { return }
                 self.isScanningCandidates = false
-                self.admitScannedApps(results)
+                self.admitScannedApps(results, tickSnapshot: cgSnapshot, probeElapsed: probeElapsed)
             }
         }
     }
@@ -1562,14 +1605,25 @@ final class AppTracker: ObservableObject {
     /// `app-*` 卡）；探测结果**必须复用**（禁止再来一次无超时 AX 读，那正是 100ms 限时探测要
     /// 避开的主线程阻塞）；进程态与进程代际在主线程回调里**重查**（pid 可能已被复用）。
     private func admitScannedApps(
-        _ probed: [(pid: pid_t, identity: ScanAdmissionDecision.ProcessIdentity, result: AXWindowReadResult)]
+        _ probed: [(pid: pid_t, identity: ScanAdmissionDecision.ProcessIdentity, result: AXWindowReadResult)],
+        tickSnapshot: AppTrackerCGWindowSnapshot? = nil,
+        probeElapsed: TimeInterval = .infinity
     ) {
         guard !probed.isEmpty else { return }
-        let cgSnapshot = cgSnapshotProvider()
+        // 复用 reconcile tick 的 CG 捕获（省掉每 5 秒的第二张全表）。探测拖太久（>1s，挂死 app
+        // 排队超时）或没带快照（启动补扫轮）时现拍一张；代际重查（ScanAdmissionDecision.verdict）
+        // 继续兜「快照瞬间陈旧」的正确性——与 seed 用同一张快照探测+收编是同一个既有先例。
+        let cgSnapshot: AppTrackerCGWindowSnapshot
+        if let tickSnapshot, probeElapsed <= 1.0 {
+            cgSnapshot = tickSnapshot
+        } else {
+            cgSnapshot = cgSnapshotProvider()
+        }
         var admitted = false
 
         for entry in probed {
             guard let app = NSRunningApplication(processIdentifier: entry.pid) else {
+                scanMemos.removeValue(forKey: entry.pid)
                 recordAdmissionProbe(
                     source: .scan,
                     identity: entry.identity,
@@ -1617,6 +1671,17 @@ final class AppTracker: ObservableObject {
                 eligibleWindowCount: prepared.readFailed ? nil : prepared.eligible.count,
                 verdict: inventoryAdmissionVerdict(verdict)
             )
+            // 记忆只收「确认无合格窗口」的结论（.unread 永不记忆，挂死 app 保持 5s 重试）；
+            // 其它结论一律清掉旧记忆。
+            if verdict == .skipNoEligible {
+                scanMemos[entry.pid] = ScanProbeGateDecision.Memo(
+                    identity: entry.identity,
+                    lastCGIDs: cgSnapshot.windowIDsByPID[entry.pid] ?? [],
+                    verdictWasNoEligible: true
+                )
+            } else {
+                scanMemos.removeValue(forKey: entry.pid)
+            }
             guard verdict == .admit else { continue }
 
             admit(app: app, prepared: prepared, readOutcome: readOutcome, cgSnapshot: cgSnapshot)
