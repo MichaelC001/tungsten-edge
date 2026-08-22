@@ -150,6 +150,12 @@ final class AppTracker: ObservableObject {
     private var scanMemos: [pid_t: ScanProbeGateDecision.Memo] = [:]
     private var scanDirtyPIDs: Set<pid_t> = []
     private var lastFullScanUptime: TimeInterval?
+    /// 补扫候选名单缓存（pid + bundleID）。`NSWorkspace.runningApplications` 的属性访问
+    /// （processIdentifier / bundleIdentifier / isTerminated…）**每个 app 都是一次同步
+    /// LaunchServices XPC**——2026-08-22 真空闲归因里它是补扫成本的大头（118/142 样本），
+    /// 应用越多越贵。名单只在成员可能变化时重建（启动/退出/收编置脏 + 60s 慢扫兜底），
+    /// 安静 tick 完全不碰 NSWorkspace；候选活性用 ProcessLiveness、身份用探测时代际重查兜底。
+    private var scanCandidateCache: [(pid: pid_t, bundleID: String?)]?
     #if DEBUG
     /// 测试专用：fixture pid 建不出真 AXObserver，跳读门控的 observerActive 判据用它覆盖。
     private var observerActiveOverridesForTesting: [pid_t: Bool] = [:]
@@ -234,6 +240,7 @@ final class AppTracker: ObservableObject {
         scanMemos.removeAll()
         scanDirtyPIDs.removeAll()
         lastFullScanUptime = nil
+        scanCandidateCache = nil
         snapshot = .empty
         inventoryLog.flush()
     }
@@ -990,6 +997,7 @@ final class AppTracker: ObservableObject {
     private func handleAppLaunched(_ app: NSRunningApplication) {
         guard isRegularNonSelf(app) else { return }
         scanDirtyPIDs.insert(app.processIdentifier)
+        scanCandidateCache = nil
         if FinderWindowRules.isFinder(bundleIdentifier: app.bundleIdentifier) {
             // Remove any stale Finder entry left over from a quit/relaunch cycle,
             // then add the fresh entry with the new pid.
@@ -1032,6 +1040,7 @@ final class AppTracker: ObservableObject {
         gateStates.removeValue(forKey: pid)
         scanMemos.removeValue(forKey: pid)
         scanDirtyPIDs.remove(pid)
+        scanCandidateCache = nil
 
         // Finder relaunches immediately via launchd. Keep the entry (no windows) so the chip
         // stays visible during the gap. handleAppLaunched will replace this stale entry with
@@ -1085,6 +1094,7 @@ final class AppTracker: ObservableObject {
         mutationGenerations[pid, default: 0] &+= 1
         scanMemos.removeValue(forKey: pid)
         scanDirtyPIDs.remove(pid)
+        scanCandidateCache = nil
 
         if AXIsProcessTrusted() {
             let obs = AppWindowObserver(pid: pid)
@@ -1553,25 +1563,37 @@ final class AppTracker: ObservableObject {
             if slowFullScanDue { lastFullScanUptime = uptime }
         }
         // 候选连同**探测时刻的进程代际**一起带走：后台探测期间 pid 可能被复用，回调必须能认出换人。
-        let candidates: [(pid: pid_t, identity: ScanAdmissionDecision.ProcessIdentity)] =
-            NSWorkspace.shared.runningApplications.compactMap { app in
+        let candidates: [(pid: pid_t, identity: ScanAdmissionDecision.ProcessIdentity)]
+        if let cgSnapshot, scanGateEnabled {
+            // 门控路径：候选名单走缓存（见 scanCandidateCache 注释），失效或慢扫到期才重新
+            // 枚举 NSWorkspace。缓存里的过期项（已收编 / 已死）逐 tick 廉价过滤掉。
+            if scanCandidateCache == nil || slowFullScanDue {
+                scanCandidateCache = enumerateScanCandidates()
+            }
+            candidates = (scanCandidateCache ?? []).compactMap { entry in
+                guard apps[entry.pid] == nil, processProvider.isAlive(pid: entry.pid) else { return nil }
+                let identity = processIdentity(pid: entry.pid, bundleID: entry.bundleID)
+                let verdict = ScanProbeGateDecision.verdict(.init(
+                    captureFailed: cgSnapshot.captureFailed,
+                    cgWindowIDs: cgSnapshot.windowIDsByPID[entry.pid] ?? [],
+                    memo: scanMemos[entry.pid],
+                    currentIdentity: identity,
+                    workspaceDirty: scanDirtyPIDs.contains(entry.pid),
+                    slowFullScanDue: slowFullScanDue
+                ))
+                guard case .probe = verdict else { return nil }
+                scanDirtyPIDs.remove(entry.pid)
+                return (entry.pid, identity)
+            }
+        } else {
+            // 旁路（启动补扫轮 / DOCK_SCAN_GATE=0）：与改造前逐位一致，现场全量枚举。
+            candidates = NSWorkspace.shared.runningApplications.compactMap { app in
                 let pid = app.processIdentifier
                 guard isRegularNonSelf(app), !app.isTerminated, apps[pid] == nil else { return nil }
-                let identity = processIdentity(pid: pid, bundleID: app.bundleIdentifier)
-                if let cgSnapshot, scanGateEnabled {
-                    let verdict = ScanProbeGateDecision.verdict(.init(
-                        captureFailed: cgSnapshot.captureFailed,
-                        cgWindowIDs: cgSnapshot.windowIDsByPID[pid] ?? [],
-                        memo: scanMemos[pid],
-                        currentIdentity: identity,
-                        workspaceDirty: scanDirtyPIDs.contains(pid),
-                        slowFullScanDue: slowFullScanDue
-                    ))
-                    guard case .probe = verdict else { return nil }
-                }
                 scanDirtyPIDs.remove(pid)
-                return (pid, identity)
+                return (pid, processIdentity(pid: pid, bundleID: app.bundleIdentifier))
             }
+        }
         guard !candidates.isEmpty else { return }
 
         isScanningCandidates = true
@@ -1597,6 +1619,15 @@ final class AppTracker: ObservableObject {
                 self.isScanningCandidates = false
                 self.admitScannedApps(results, tickSnapshot: cgSnapshot, probeElapsed: probeElapsed)
             }
+        }
+    }
+
+    /// 一次真实的 NSWorkspace 枚举（每 app 属性访问都是同步 LS XPC，别在安静 tick 调它）。
+    private func enumerateScanCandidates() -> [(pid: pid_t, bundleID: String?)] {
+        NSWorkspace.shared.runningApplications.compactMap { app in
+            let pid = app.processIdentifier
+            guard isRegularNonSelf(app), !app.isTerminated, apps[pid] == nil else { return nil }
+            return (pid, app.bundleIdentifier)
         }
     }
 
