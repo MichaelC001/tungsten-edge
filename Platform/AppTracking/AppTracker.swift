@@ -125,6 +125,9 @@ final class AppTracker: ObservableObject {
     private let cgSnapshotProvider: @Sendable () -> AppTrackerCGWindowSnapshot
     private let onScreenWindowIDsProvider: @Sendable () -> Set<CGWindowID>
     private let eventAXAsyncEnabled: Bool
+    /// 周期对账（5s tick）的 AX 读超时。默认 100ms、限时后台批量读；nil（DOCK_RECONCILE_AX_TIMEOUT_MS=0）
+    /// 回退旧路径：主线程逐 pid 不限时同步读。DOCK_EVENT_AX_ASYNC=0 的同步兼容路径同样走旧路径。
+    private let periodicReconcileTimeout: TimeInterval?
     private let windowEligibility = AppTrackerWindowEligibility()
     private let logger = Logger(subsystem: "com.caye.macosdockcc.v2", category: "app-tracker")
     private let inventoryLog: WindowInventoryAnomalyLog
@@ -139,7 +142,8 @@ final class AppTracker: ObservableObject {
         onScreenWindowIDsProvider: @escaping @Sendable () -> Set<CGWindowID> = {
             AppTrackerCGWindowSnapshot.captureOnScreenWindowIDs()
         },
-        eventAXAsyncEnabled: Bool = ProcessInfo.processInfo.environment["DOCK_EVENT_AX_ASYNC"] != "0"
+        eventAXAsyncEnabled: Bool = ProcessInfo.processInfo.environment["DOCK_EVENT_AX_ASYNC"] != "0",
+        periodicAXTimeoutMS: Int = Int(ProcessInfo.processInfo.environment["DOCK_RECONCILE_AX_TIMEOUT_MS"] ?? "") ?? 100
     ) {
         self.inventoryLog = inventoryLog
         self.reader = reader
@@ -147,6 +151,7 @@ final class AppTracker: ObservableObject {
         self.cgSnapshotProvider = cgSnapshotProvider
         self.onScreenWindowIDsProvider = onScreenWindowIDsProvider
         self.eventAXAsyncEnabled = eventAXAsyncEnabled
+        self.periodicReconcileTimeout = periodicAXTimeoutMS > 0 ? TimeInterval(periodicAXTimeoutMS) / 1000.0 : nil
     }
 
     func start() {
@@ -1198,52 +1203,80 @@ final class AppTracker: ObservableObject {
         }
     }
 
+    private enum EventReadLanding {
+        case staleToken                  // token 已被 invalidate/顶替：整次落地作废（trailing 由新在途读负责）
+        case skipped                     // token 吻合已消费，但代际/进程身份不符 → 不动任何状态
+        case reconciled(seatsChanged: Bool)
+    }
+
+    /// 落地一次后台限时读的公共核心：校验并消费 pending token，过 mutation 代际与进程身份检查后
+    /// 跑 reconcileSeats。**不**重建快照、**不**消费 trailing——单发路径（事件/前台轮询）要叠加
+    /// on-screen 强刷，批量路径（周期对账）整批只重建一次，各自在外面收尾。
+    private func landEventRead(
+        pid: pid_t,
+        request: PendingEventRead,
+        result: AXWindowReadResult,
+        cgSnapshot: AppTrackerCGWindowSnapshot
+    ) -> EventReadLanding {
+        guard pendingEventReads[pid]?.token == request.token else { return .staleToken }
+        pendingEventReads.removeValue(forKey: pid)
+
+        let currentIdentity = apps[pid].map {
+            processIdentity(pid: pid, bundleID: $0.bundleIdentifier)
+        }
+        guard mutationGenerations[pid, default: 0] == request.mutationGeneration,
+              currentIdentity.map({
+                  ScanAdmissionDecision.ProcessIdentity.matches(probed: request.identity, current: $0)
+              }) == true,
+              let app = apps[pid] else { return .skipped }
+
+        let readOutcome: InventoryAXReadOutcome
+        let eligible: [AXWindowSnapshot]
+        switch result {
+        case .success(let windows):
+            readOutcome = .success(count: windows.count)
+            let application = eligibilityApplication(for: app)
+            eligible = windows.filter {
+                isEligible($0, application: application, cgSnapshot: cgSnapshot)
+            }
+        case .unread(let error):
+            readOutcome = .unread(errorCode: error.rawValue)
+            eligible = []
+        }
+        let seatsChanged = reconcileSeats(
+            pid: pid,
+            cgSnapshot: cgSnapshot,
+            now: Date(),
+            source: request.source,
+            preloadedEligible: eligible,
+            preloadedReadOutcome: readOutcome,
+            preloadedReadMode: .timed
+        )
+        return .reconciled(seatsChanged: seatsChanged)
+    }
+
     private func completeEventRead(
         pid: pid_t,
         request: PendingEventRead,
         result: AXWindowReadResult,
         cgSnapshot: AppTrackerCGWindowSnapshot
     ) {
-        guard pendingEventReads[pid]?.token == request.token else { return }
-        pendingEventReads.removeValue(forKey: pid)
-
-        let currentIdentity = apps[pid].map {
-            processIdentity(pid: pid, bundleID: $0.bundleIdentifier)
-        }
-        if mutationGenerations[pid, default: 0] == request.mutationGeneration,
-           currentIdentity.map({
-               ScanAdmissionDecision.ProcessIdentity.matches(probed: request.identity, current: $0)
-           }) == true,
-           let app = apps[pid] {
-            let readOutcome: InventoryAXReadOutcome
-            let eligible: [AXWindowSnapshot]
-            switch result {
-            case .success(let windows):
-                readOutcome = .success(count: windows.count)
-                let application = eligibilityApplication(for: app)
-                eligible = windows.filter {
-                    isEligible($0, application: application, cgSnapshot: cgSnapshot)
-                }
-            case .unread(let error):
-                readOutcome = .unread(errorCode: error.rawValue)
-                eligible = []
-            }
+        switch landEventRead(pid: pid, request: request, result: result, cgSnapshot: cgSnapshot) {
+        case .staleToken:
+            return
+        case .skipped:
+            break
+        case .reconciled(let seatsChanged):
             let onScreenChanged = request.source == .frontmostPoll
                 && cgSnapshot.onScreenWindowIDs != lastOnScreenCGIDs
-            let seatsChanged = reconcileSeats(
-                pid: pid,
-                cgSnapshot: cgSnapshot,
-                now: Date(),
-                source: request.source,
-                preloadedEligible: eligible,
-                preloadedReadOutcome: readOutcome,
-                preloadedReadMode: .timed
-            )
             if seatsChanged || onScreenChanged {
                 rebuildSnapshot(onScreenCGIDs: cgSnapshot.onScreenWindowIDs)
             }
         }
+        consumeTrailingEventRead(pid: pid)
+    }
 
+    private func consumeTrailingEventRead(pid: pid_t) {
         if let trailingSource = trailingEventSources.removeValue(forKey: pid), apps[pid] != nil {
             scheduleEventRead(pid: pid, source: trailingSource)
         }
@@ -1335,12 +1368,76 @@ final class AppTracker: ObservableObject {
         // Snapshot CG window state once for the entire reconcile pass.
         let cgSnapshot = cgSnapshotProvider()
 
-        for pid in appOrder {
-            if reconcileSeats(pid: pid, cgSnapshot: cgSnapshot, now: now, source: .periodicReconcile) { changed = true }
+        if let timeout = periodicReconcileTimeout, eventAXAsyncEnabled {
+            // 死进程清扫的删除立即上屏，不等批读落地。
+            if changed { rebuildSnapshot(onScreenCGIDs: cgSnapshot.onScreenWindowIDs) }
+            schedulePeriodicBatchRead(cgSnapshot: cgSnapshot, timeout: timeout)
+        } else {
+            // 旧路径（DOCK_RECONCILE_AX_TIMEOUT_MS=0 或 DOCK_EVENT_AX_ASYNC=0）：主线程逐 pid 不限时同步读。
+            for pid in appOrder {
+                if reconcileSeats(pid: pid, cgSnapshot: cgSnapshot, now: now, source: .periodicReconcile) { changed = true }
+            }
+            if changed { rebuildSnapshot(onScreenCGIDs: cgSnapshot.onScreenWindowIDs) }
         }
-
-        if changed { rebuildSnapshot(onScreenCGIDs: cgSnapshot.onScreenWindowIDs) }
         scanNonAdmittedApps()
+    }
+
+    /// 周期对账的批量后台读：已有在途读的 pid 跳过（其落地自带更新数据），其余批量注册
+    /// pending token 后在**一个** detached task 里串行限时读，整批一次落地、至多一次重建。
+    /// 批读在途期间到达的 AX 事件照常并入 trailing（单 pid 单在途不变）；下一 tick 里
+    /// 尚未落地的 pid 因 pending 存在被跳过，天然不堆积。
+    private func schedulePeriodicBatchRead(cgSnapshot: AppTrackerCGWindowSnapshot, timeout: TimeInterval) {
+        var batch: [(pid: pid_t, request: PendingEventRead)] = []
+        for pid in appOrder {
+            guard pendingEventReads[pid] == nil, let app = apps[pid] else { continue }
+            nextEventReadToken &+= 1
+            let request = PendingEventRead(
+                token: nextEventReadToken,
+                mutationGeneration: mutationGenerations[pid, default: 0],
+                identity: processIdentity(pid: pid, bundleID: app.bundleIdentifier),
+                source: .periodicReconcile
+            )
+            pendingEventReads[pid] = request
+            batch.append((pid, request))
+        }
+        guard !batch.isEmpty else { return }
+        let reader = self.reader
+
+        Task.detached { [weak self] in
+            var results: [(pid: pid_t, request: PendingEventRead, result: AXWindowReadResult)] = []
+            for entry in batch {
+                results.append((
+                    entry.pid,
+                    entry.request,
+                    reader.inventoryWindows(forPID: entry.pid, messagingTimeout: timeout)
+                ))
+            }
+            let landed = results
+            await MainActor.run { [weak self] in
+                self?.completePeriodicBatch(landed, cgSnapshot: cgSnapshot)
+            }
+        }
+    }
+
+    private func completePeriodicBatch(
+        _ results: [(pid: pid_t, request: PendingEventRead, result: AXWindowReadResult)],
+        cgSnapshot: AppTrackerCGWindowSnapshot
+    ) {
+        var changed = false
+        var landedPIDs: [pid_t] = []
+        for entry in results {
+            switch landEventRead(pid: entry.pid, request: entry.request, result: entry.result, cgSnapshot: cgSnapshot) {
+            case .staleToken:
+                continue
+            case .skipped:
+                landedPIDs.append(entry.pid)
+            case .reconciled(let seatsChanged):
+                if seatsChanged { changed = true }
+                landedPIDs.append(entry.pid)
+            }
+        }
+        if changed { rebuildSnapshot(onScreenCGIDs: cgSnapshot.onScreenWindowIDs) }
+        for pid in landedPIDs { consumeTrailingEventRead(pid: pid) }
     }
 
     private func scanNonAdmittedApps() {
@@ -1665,6 +1762,16 @@ final class AppTracker: ObservableObject {
 
     func hasPendingEventReadForTesting(pid: pid_t) -> Bool {
         pendingEventReads[pid] != nil || trailingEventSources[pid] != nil
+    }
+
+    func runPeriodicBatchForTesting(
+        cgSnapshot: AppTrackerCGWindowSnapshot,
+        timeoutOverride: TimeInterval? = nil
+    ) {
+        schedulePeriodicBatchRead(
+            cgSnapshot: cgSnapshot,
+            timeout: timeoutOverride ?? periodicReconcileTimeout ?? 0.1
+        )
     }
     #endif
 }

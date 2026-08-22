@@ -306,6 +306,7 @@
 		A00000000000000000009810 /* CGWindowSnapshot.swift in Sources */ = {isa = PBXBuildFile; fileRef = A00000000000000000009800 /* CGWindowSnapshot.swift */; };
 		A00000000000000000009811 /* CGWindowSnapshot.swift in Sources */ = {isa = PBXBuildFile; fileRef = A00000000000000000009800 /* CGWindowSnapshot.swift */; };
 		A00000000000000000009812 /* CGWindowSnapshotTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A00000000000000000009801 /* CGWindowSnapshotTests.swift */; };
+		B10000000000000000000001 /* AppTrackerPeriodicBatchTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10000000000000000000101 /* AppTrackerPeriodicBatchTests.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -372,6 +373,7 @@
 		A00000000000000000009A30 /* FrontmostWindowGeometryObserver.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FrontmostWindowGeometryObserver.swift; sourceTree = "<group>"; };
 		A00000000000000000009800 /* CGWindowSnapshot.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CGWindowSnapshot.swift; sourceTree = "<group>"; };
 		A00000000000000000009801 /* CGWindowSnapshotTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CGWindowSnapshotTests.swift; sourceTree = "<group>"; };
+		B10000000000000000000101 /* AppTrackerPeriodicBatchTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppTrackerPeriodicBatchTests.swift; sourceTree = "<group>"; };
 		A00000000000000000009700 /* DragConversionPlan.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DragConversionPlan.swift; sourceTree = "<group>"; };
 		A00000000000000000009750 /* NonConstrainingPanel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NonConstrainingPanel.swift; sourceTree = "<group>"; };
 		A00000000000000000000C00 /* ManualPanelHostTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ManualPanelHostTests.swift; sourceTree = "<group>"; };
@@ -989,6 +991,7 @@
 				A00000000000000000009E23 /* LaunchAtLoginServiceTests.swift */,
 				A00000000000000000009A20 /* WindowLiftAvoidanceTests.swift */,
 				A00000000000000000009801 /* CGWindowSnapshotTests.swift */,
+				B10000000000000000000101 /* AppTrackerPeriodicBatchTests.swift */,
 				A00000000000000000009710 /* DragConversionPlanTests.swift */,
 				A00000000000000000000A110 /* MessagingZoneAdmissionTests.swift */,
 				A00000000000000000000B110 /* FinderTaskbarPolicyTests.swift */,
@@ -1436,6 +1439,7 @@
 					A00000000000000000009A21 /* WindowLiftAvoidanceTests.swift in Sources */,
 					A00000000000000000009811 /* CGWindowSnapshot.swift in Sources */,
 					A00000000000000000009812 /* CGWindowSnapshotTests.swift in Sources */,
+					B10000000000000000000001 /* AppTrackerPeriodicBatchTests.swift in Sources */,
 					A00000000000000000009702 /* DragConversionPlan.swift in Sources */,
 					A00000000000000000000A102 /* MessagingZoneAdmission.swift in Sources */,
 					A00000000000000000000B102 /* FinderTaskbarPolicy.swift in Sources */,
