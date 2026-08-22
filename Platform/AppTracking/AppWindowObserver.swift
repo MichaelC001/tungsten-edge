@@ -14,6 +14,10 @@ final class AppWindowObserver {
     private var registeredWindowIDs: Set<CGWindowID> = []
     private var elementToCGID: [AXElementKey: CGWindowID] = [:]
 
+    /// AXObserverCreate 可能失败（观察器根本没建起来）。周期对账的跳读门控用它判断
+    /// 该 pid 有没有事件覆盖——没有覆盖的 pid 永不跳读。
+    var isActive: Bool { observer != nil }
+
     var onWindowCreated: ((pid_t) -> Void)?
     var onWindowDestroyed: ((pid_t, CGWindowID) -> Void)?
     var onWindowMinimized: ((pid_t, CGWindowID) -> Void)?

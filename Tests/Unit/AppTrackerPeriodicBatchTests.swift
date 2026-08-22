@@ -110,6 +110,153 @@ final class AppTrackerPeriodicBatchTests: XCTestCase {
         XCTAssertEqual(reader.readCount, 1)
     }
 
+    // MARK: - 跳读门控集成（DOCK_RECONCILE_SKIP 默认开）
+
+    func testQuiescentPidIsSkippedOnSecondBatch() async {
+        let reader = PeriodicBatchReader(resultsByPID: [
+            pidA: .success([makeSnapshot(pid: pidA, cgWindowID: cgWindowA, title: "Window")]),
+        ])
+        let tracker = AppTracker(
+            reader: reader,
+            processProvider: BatchFixedProcessProvider(),
+            eventAXAsyncEnabled: true
+        )
+        tracker.installFixtureForTesting(makeApp(pid: pidA, cgWindowID: cgWindowA))
+        tracker.setObserverActiveForTesting(pid: pidA, active: true)
+
+        tracker.runPeriodicBatchForTesting(cgSnapshot: cgSnapshot())
+        await waitUntil { !tracker.hasPendingEventReadForTesting(pid: self.pidA) }
+        XCTAssertEqual(reader.readCount, 1)
+
+        // 第二轮：无事件、CG 集不变、上一轮无变化 → 跳过，连 pending 都不注册。
+        tracker.runPeriodicBatchForTesting(cgSnapshot: cgSnapshot())
+        XCTAssertFalse(tracker.hasPendingEventReadForTesting(pid: pidA))
+        await waitUntil(timeoutNanoseconds: 300_000_000) { reader.readCount > 1 }   // 短暂等待以证明确实没有读发生
+        XCTAssertEqual(reader.readCount, 1)
+    }
+
+    func testMinimizeEventReopensGate() async {
+        let reader = PeriodicBatchReader(resultsByPID: [
+            pidA: .success([makeSnapshot(pid: pidA, cgWindowID: cgWindowA, title: "Window")]),
+        ])
+        let tracker = AppTracker(
+            reader: reader,
+            processProvider: BatchFixedProcessProvider(),
+            cgSnapshotProvider: { [snapshot = cgSnapshot()] in snapshot },
+            eventAXAsyncEnabled: true
+        )
+        tracker.installFixtureForTesting(makeApp(pid: pidA, cgWindowID: cgWindowA))
+        tracker.setObserverActiveForTesting(pid: pidA, active: true)
+
+        tracker.runPeriodicBatchForTesting(cgSnapshot: cgSnapshot())
+        await waitUntil { !tracker.hasPendingEventReadForTesting(pid: self.pidA) }
+        tracker.runPeriodicBatchForTesting(cgSnapshot: cgSnapshot())
+        XCTAssertEqual(reader.readCount, 1)
+
+        // AX 最小化事件置脏 → 下一轮必须全读。
+        tracker.minimizeForTesting(pid: pidA, cgWindowID: cgWindowA)
+        tracker.runPeriodicBatchForTesting(cgSnapshot: cgSnapshot())
+        await waitUntil { !tracker.hasPendingEventReadForTesting(pid: self.pidA) }
+        XCTAssertEqual(reader.readCount, 2)
+    }
+
+    func testCGSetChangeReopensGate() async {
+        let reader = PeriodicBatchReader(resultsByPID: [
+            pidA: .success([makeSnapshot(pid: pidA, cgWindowID: cgWindowA, title: "Window")]),
+        ])
+        let tracker = AppTracker(
+            reader: reader,
+            processProvider: BatchFixedProcessProvider(),
+            eventAXAsyncEnabled: true
+        )
+        tracker.installFixtureForTesting(makeApp(pid: pidA, cgWindowID: cgWindowA))
+        tracker.setObserverActiveForTesting(pid: pidA, active: true)
+
+        tracker.runPeriodicBatchForTesting(cgSnapshot: cgSnapshot())
+        await waitUntil { !tracker.hasPendingEventReadForTesting(pid: self.pidA) }
+        tracker.runPeriodicBatchForTesting(cgSnapshot: cgSnapshot())
+        XCTAssertEqual(reader.readCount, 1)
+
+        // 该 pid 的 CG layer-0 集合多了一个窗口 → 必须全读。
+        let grown = AppTrackerCGWindowSnapshot(
+            allWindowIDs: [cgWindowA, cgWindowB, 99],
+            onScreenWindowIDs: [cgWindowA, cgWindowB, 99],
+            windowIDsByPID: [pidA: [cgWindowA, 99], pidB: [cgWindowB]],
+            alphaByWindowID: [:]
+        )
+        tracker.runPeriodicBatchForTesting(cgSnapshot: grown)
+        await waitUntil { !tracker.hasPendingEventReadForTesting(pid: self.pidA) }
+        XCTAssertEqual(reader.readCount, 2)
+    }
+
+    func testAbsenceClockKeepsReadingEveryBatch() async {
+        // phantom 证据必须按原节奏采样：有缺席时钟的 pid 每一轮都读，绝不跳。
+        let reader = PeriodicBatchReader(resultsByPID: [pidA: .success([])])
+        let tracker = AppTracker(
+            reader: reader,
+            processProvider: BatchFixedProcessProvider(),
+            eventAXAsyncEnabled: true
+        )
+        var app = makeApp(pid: pidA, cgWindowID: cgWindowA)
+        app.windowsByID[cgWindowA]?.isMinimized = true
+        app.windowsByID[cgWindowA]?.isFocused = false
+        app.windowsByID[cgWindowA]?.minAbsentSince = Date(timeIntervalSince1970: 10)
+        app.windowsByID[cgWindowA]?.absenceEpisodeID = UUID()
+        tracker.installFixtureForTesting(app)
+        tracker.setObserverActiveForTesting(pid: pidA, active: true)
+
+        tracker.runPeriodicBatchForTesting(cgSnapshot: cgSnapshot())
+        await waitUntil { !tracker.hasPendingEventReadForTesting(pid: self.pidA) }
+        XCTAssertEqual(reader.readCount, 1)
+
+        tracker.runPeriodicBatchForTesting(cgSnapshot: cgSnapshot())
+        await waitUntil { !tracker.hasPendingEventReadForTesting(pid: self.pidA) }
+        XCTAssertEqual(reader.readCount, 2)
+    }
+
+    func testRefreshDueForcesReadAfterMaxSkipInterval() async {
+        let uptime = UptimeBox(value: 1000)
+        let reader = PeriodicBatchReader(resultsByPID: [
+            pidA: .success([makeSnapshot(pid: pidA, cgWindowID: cgWindowA, title: "Window")]),
+        ])
+        let tracker = AppTracker(
+            reader: reader,
+            processProvider: BatchFixedProcessProvider(),
+            eventAXAsyncEnabled: true,
+            uptimeProvider: { uptime.value }
+        )
+        tracker.installFixtureForTesting(makeApp(pid: pidA, cgWindowID: cgWindowA))
+        tracker.setObserverActiveForTesting(pid: pidA, active: true)
+
+        tracker.runPeriodicBatchForTesting(cgSnapshot: cgSnapshot())
+        await waitUntil { !tracker.hasPendingEventReadForTesting(pid: self.pidA) }
+        tracker.runPeriodicBatchForTesting(cgSnapshot: cgSnapshot())
+        XCTAssertEqual(reader.readCount, 1)
+
+        // 越过 30s 单调时钟兜底 → 强制全读。
+        uptime.value = 1031
+        tracker.runPeriodicBatchForTesting(cgSnapshot: cgSnapshot())
+        await waitUntil { !tracker.hasPendingEventReadForTesting(pid: self.pidA) }
+        XCTAssertEqual(reader.readCount, 2)
+    }
+
+    func testUnreadRoundIsAlwaysRetried() async {
+        let reader = PeriodicBatchReader(resultsByPID: [pidA: .unread(.cannotComplete)])
+        let tracker = AppTracker(
+            reader: reader,
+            processProvider: BatchFixedProcessProvider(),
+            eventAXAsyncEnabled: true
+        )
+        tracker.installFixtureForTesting(makeApp(pid: pidA, cgWindowID: cgWindowA))
+        tracker.setObserverActiveForTesting(pid: pidA, active: true)
+
+        tracker.runPeriodicBatchForTesting(cgSnapshot: cgSnapshot())
+        await waitUntil { !tracker.hasPendingEventReadForTesting(pid: self.pidA) }
+        tracker.runPeriodicBatchForTesting(cgSnapshot: cgSnapshot())
+        await waitUntil { !tracker.hasPendingEventReadForTesting(pid: self.pidA) }
+        XCTAssertEqual(reader.readCount, 2)
+    }
+
     // MARK: - Fixtures
 
     private func cgSnapshot() -> AppTrackerCGWindowSnapshot {
@@ -203,6 +350,20 @@ private final class PeriodicBatchReader: AppTrackerWindowReading, @unchecked Sen
         lock.unlock()
         if blocksTimedReads { semaphore.wait() }
         return resultsByPID[pid] ?? .unread(.cannotComplete)
+    }
+}
+
+private final class UptimeBox: @unchecked Sendable {
+    private let lock = NSLock()
+    private var storage: TimeInterval
+
+    init(value: TimeInterval) {
+        self.storage = value
+    }
+
+    var value: TimeInterval {
+        get { lock.lock(); defer { lock.unlock() }; return storage }
+        set { lock.lock(); storage = newValue; lock.unlock() }
     }
 }
 

@@ -128,6 +128,25 @@ final class AppTracker: ObservableObject {
     /// 周期对账（5s tick）的 AX 读超时。默认 100ms、限时后台批量读；nil（DOCK_RECONCILE_AX_TIMEOUT_MS=0）
     /// 回退旧路径：主线程逐 pid 不限时同步读。DOCK_EVENT_AX_ASYNC=0 的同步兼容路径同样走旧路径。
     private let periodicReconcileTimeout: TimeInterval?
+    /// 周期对账跳读门控（DOCK_RECONCILE_SKIP=0 关闭）。只作用于批读路径；旧同步路径不受影响。
+    private let reconcileSkipEnabled: Bool
+    private let uptimeProvider: () -> TimeInterval
+
+    /// 跳读门控的 per-pid 状态。由**任何来源**的成功全读在 reconcileSeats 尾部刷新
+    ///（前台 pid 因 2Hz 前台轮询天然常新、可被周期 tick 跳过）；AX/workspace 事件置脏。
+    private struct ReconcileGateState {
+        var lastCGIDs: Set<CGWindowID>
+        var lastFullReadUptime: TimeInterval
+        var dirty: Bool
+        var lastReadWasUnread: Bool
+        var lastRoundChanged: Bool
+    }
+
+    private var gateStates: [pid_t: ReconcileGateState] = [:]
+    #if DEBUG
+    /// 测试专用：fixture pid 建不出真 AXObserver，跳读门控的 observerActive 判据用它覆盖。
+    private var observerActiveOverridesForTesting: [pid_t: Bool] = [:]
+    #endif
     private let windowEligibility = AppTrackerWindowEligibility()
     private let logger = Logger(subsystem: "com.caye.macosdockcc.v2", category: "app-tracker")
     private let inventoryLog: WindowInventoryAnomalyLog
@@ -143,7 +162,9 @@ final class AppTracker: ObservableObject {
             AppTrackerCGWindowSnapshot.captureOnScreenWindowIDs()
         },
         eventAXAsyncEnabled: Bool = ProcessInfo.processInfo.environment["DOCK_EVENT_AX_ASYNC"] != "0",
-        periodicAXTimeoutMS: Int = Int(ProcessInfo.processInfo.environment["DOCK_RECONCILE_AX_TIMEOUT_MS"] ?? "") ?? 100
+        periodicAXTimeoutMS: Int = Int(ProcessInfo.processInfo.environment["DOCK_RECONCILE_AX_TIMEOUT_MS"] ?? "") ?? 100,
+        reconcileSkipEnabled: Bool = ProcessInfo.processInfo.environment["DOCK_RECONCILE_SKIP"] != "0",
+        uptimeProvider: @escaping () -> TimeInterval = { ProcessInfo.processInfo.systemUptime }
     ) {
         self.inventoryLog = inventoryLog
         self.reader = reader
@@ -152,6 +173,8 @@ final class AppTracker: ObservableObject {
         self.onScreenWindowIDsProvider = onScreenWindowIDsProvider
         self.eventAXAsyncEnabled = eventAXAsyncEnabled
         self.periodicReconcileTimeout = periodicAXTimeoutMS > 0 ? TimeInterval(periodicAXTimeoutMS) / 1000.0 : nil
+        self.reconcileSkipEnabled = reconcileSkipEnabled
+        self.uptimeProvider = uptimeProvider
     }
 
     func start() {
@@ -198,6 +221,7 @@ final class AppTracker: ObservableObject {
         pendingEventReads.removeAll()
         trailingEventSources.removeAll()
         mutationGenerations.removeAll()
+        gateStates.removeAll()
         snapshot = .empty
         inventoryLog.flush()
     }
@@ -294,6 +318,7 @@ final class AppTracker: ObservableObject {
                 usedPreloadedAX: preloadedEligible != nil,
                 errorCode: axReadOutcome.errorCode ?? AXError.failure.rawValue
             )))
+            gateStates[pid]?.lastReadWasUnread = true
             return false
         }
         let reconcileContext = inventoryLog.isEnabled
@@ -707,7 +732,15 @@ final class AppTracker: ObservableObject {
         app.windowOrder = newOrder
         app.windowsByID = newByID
         apps[pid] = app
-        return seatSignature(app) != before
+        let changed = seatSignature(app) != before
+        gateStates[pid] = ReconcileGateState(
+            lastCGIDs: cgPidIDs,
+            lastFullReadUptime: uptimeProvider(),
+            dirty: false,
+            lastReadWasUnread: false,
+            lastRoundChanged: changed || app.shadowTabCgIDs != shadowPool
+        )
+        return changed
     }
 
     private func inventoryReconcileContext(
@@ -955,6 +988,7 @@ final class AppTracker: ObservableObject {
                 apps.removeValue(forKey: stalePID)
                 appOrder.removeAll { $0 == stalePID }
                 clearInventoryDiagnostics(pid: stalePID)
+                gateStates.removeValue(forKey: stalePID)
                 invalidateEventReads(pid: stalePID)
                 elementCache.removeAll(pid: stalePID)
             }
@@ -968,6 +1002,7 @@ final class AppTracker: ObservableObject {
     private func handleAppActivated(_ app: NSRunningApplication) {
         guard isRegularNonSelf(app) else { return }
         guard apps[app.processIdentifier] == nil else {
+            markReconcileGateDirty(pid: app.processIdentifier)
             rebuildSnapshot()  // frontmost changed → active highlight update
             return
         }
@@ -981,6 +1016,7 @@ final class AppTracker: ObservableObject {
         observers.removeValue(forKey: pid)
         if let app = apps[pid] { recordProcessGoneSeats(app: app) }
         clearInventoryDiagnostics(pid: pid)
+        gateStates.removeValue(forKey: pid)
 
         // Finder relaunches immediately via launchd. Keep the entry (no windows) so the chip
         // stays visible during the gap. handleAppLaunched will replace this stale entry with
@@ -999,11 +1035,13 @@ final class AppTracker: ObservableObject {
     }
 
     private func handleAppHidden(pid: pid_t) {
+        markReconcileGateDirty(pid: pid)
         apps[pid]?.isHidden = true
         rebuildSnapshot()
     }
 
     private func handleAppUnhidden(pid: pid_t) {
+        markReconcileGateDirty(pid: pid)
         apps[pid]?.isHidden = false
         rebuildSnapshot()
     }
@@ -1120,11 +1158,13 @@ final class AppTracker: ObservableObject {
     // MARK: - AX Event Handlers
 
     private func handleWindowCreated(pid: pid_t) {
+        markReconcileGateDirty(pid: pid)
         scheduleEventRead(pid: pid, source: .windowCreated)
     }
 
     private func handleWindowDestroyed(pid: pid_t, cgWindowID: CGWindowID) {
         guard apps[pid] != nil else { return }
+        markReconcileGateDirty(pid: pid)
         invalidateEventReads(pid: pid)
         destroyedCGIDs[cgWindowID] = Date()
         purgeFromSeatHistories(cgWindowID)
@@ -1140,6 +1180,7 @@ final class AppTracker: ObservableObject {
     }
 
     private func handleWindowMinimized(pid: pid_t, cgWindowID: CGWindowID) {
+        markReconcileGateDirty(pid: pid)
         invalidateEventReads(pid: pid)
         apps[pid]?.windowsByID[cgWindowID]?.isMinimized = true
         apps[pid]?.windowsByID[cgWindowID]?.isFocused = false
@@ -1147,17 +1188,24 @@ final class AppTracker: ObservableObject {
     }
 
     private func handleWindowDeminiaturized(pid: pid_t, cgWindowID: CGWindowID) {
+        markReconcileGateDirty(pid: pid)
         invalidateEventReads(pid: pid)
         apps[pid]?.windowsByID[cgWindowID]?.isMinimized = false
         rebuildSnapshot()
     }
 
     private func handleFocusedWindowChanged(pid: pid_t) {
+        markReconcileGateDirty(pid: pid)
         scheduleEventRead(pid: pid, source: .focusChanged)
     }
 
     private func handleTitleChanged(pid: pid_t, cgWindowID: CGWindowID) {
+        markReconcileGateDirty(pid: pid)
         scheduleEventRead(pid: pid, source: .titleChanged)
+    }
+
+    private func markReconcileGateDirty(pid: pid_t) {
+        gateStates[pid]?.dirty = true
     }
 
     private func invalidateEventReads(pid: pid_t) {
@@ -1360,6 +1408,7 @@ final class AppTracker: ObservableObject {
             apps.removeValue(forKey: pid)
             appOrder.removeAll { $0 == pid }
             clearInventoryDiagnostics(pid: pid)
+            gateStates.removeValue(forKey: pid)
             invalidateEventReads(pid: pid)
             elementCache.removeAll(pid: pid)
             changed = true
@@ -1390,6 +1439,9 @@ final class AppTracker: ObservableObject {
         var batch: [(pid: pid_t, request: PendingEventRead)] = []
         for pid in appOrder {
             guard pendingEventReads[pid] == nil, let app = apps[pid] else { continue }
+            if reconcileSkipEnabled, shouldSkipPeriodicRead(pid: pid, app: app, cgSnapshot: cgSnapshot) {
+                continue
+            }
             nextEventReadToken &+= 1
             let request = PendingEventRead(
                 token: nextEventReadToken,
@@ -1417,6 +1469,36 @@ final class AppTracker: ObservableObject {
                 self?.completePeriodicBatch(landed, cgSnapshot: cgSnapshot)
             }
         }
+    }
+
+    /// 静默跳读判定（纯决策：PeriodicReconcileSkipDecision，八个条件全过才跳）。
+    /// 跳过 = 本轮不为该 pid 排 AX 读；所有状态保持不推进（与 `.unread` 同语义）。
+    private func shouldSkipPeriodicRead(
+        pid: pid_t,
+        app: AppEntry,
+        cgSnapshot: AppTrackerCGWindowSnapshot
+    ) -> Bool {
+        let gate = gateStates[pid]
+        let input = PeriodicReconcileSkipDecision.Input(
+            captureFailed: cgSnapshot.captureFailed,
+            currentCGIDs: cgSnapshot.windowIDsByPID[pid] ?? [],
+            lastObservedCGIDs: gate?.lastCGIDs,
+            dirtySinceLastRead: gate?.dirty ?? true,
+            hasAbsenceClock: app.windowOrder.contains { app.windowsByID[$0]?.minAbsentSince != nil },
+            hasPhantomCandidate: app.windowOrder.contains { app.windowsByID[$0]?.everSeenVisible == false },
+            lastReadWasUnread: gate?.lastReadWasUnread ?? true,
+            lastRoundChanged: gate?.lastRoundChanged ?? true,
+            observerActive: observerActive(pid: pid),
+            uptimeSinceLastFullRead: gate.map { uptimeProvider() - $0.lastFullReadUptime } ?? .infinity
+        )
+        return PeriodicReconcileSkipDecision.verdict(input) == .skip
+    }
+
+    private func observerActive(pid: pid_t) -> Bool {
+        #if DEBUG
+        if let override = observerActiveOverridesForTesting[pid] { return override }
+        #endif
+        return observers[pid]?.isActive ?? false
     }
 
     private func completePeriodicBatch(
@@ -1762,6 +1844,10 @@ final class AppTracker: ObservableObject {
 
     func hasPendingEventReadForTesting(pid: pid_t) -> Bool {
         pendingEventReads[pid] != nil || trailingEventSources[pid] != nil
+    }
+
+    func setObserverActiveForTesting(pid: pid_t, active: Bool) {
+        observerActiveOverridesForTesting[pid] = active
     }
 
     func runPeriodicBatchForTesting(
