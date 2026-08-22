@@ -1686,6 +1686,45 @@ final class FinderP0Tests: XCTestCase {
         ))
     }
 
+    /// 还原前预激活（2026-08-22 还原时序矩阵）：只有目标 App 除目标外全为最小化窗口时
+    /// 才允许「先切前台再还原」；任何非最小化兄弟（含 hidden——App 被激活会整体 unhide，
+    /// 同样有可提拔对象）都禁用。别的 App 的窗口不算兄弟。
+    func testMinimizedRestorePreActivation() {
+        let t1 = WindowID(rawValue: "cg-restore-1")
+        let t2 = WindowID(rawValue: "cg-restore-2")
+        func record(_ id: WindowID, pid: Int32, status: WindowStatus) -> WindowRecord {
+            WindowRecord(
+                id: id, appID: AppID(rawValue: "test-app"), pid: pid,
+                bundleIdentifier: nil, title: "Test", bounds: nil, status: status
+            )
+        }
+        func makeSnapshot(_ records: [WindowRecord]) -> DockSnapshot {
+            DockSnapshot(
+                windows: Dictionary(uniqueKeysWithValues: records.map { ($0.id, $0) }),
+                orderedWindowIDs: records.map(\.id)
+            )
+        }
+        let target = record(t1, pid: 1, status: .minimized)
+
+        // 没有任何兄弟 → 可预激活
+        XCTAssertTrue(MinimizedRestorePreActivation.canPreActivate(
+            snapshot: makeSnapshot([target]), target: target))
+        // 兄弟也是最小化 → 可预激活
+        XCTAssertTrue(MinimizedRestorePreActivation.canPreActivate(
+            snapshot: makeSnapshot([target, record(t2, pid: 1, status: .minimized)]), target: target))
+        // 兄弟可见（inactive / active）→ 禁用
+        XCTAssertFalse(MinimizedRestorePreActivation.canPreActivate(
+            snapshot: makeSnapshot([target, record(t2, pid: 1, status: .inactive)]), target: target))
+        XCTAssertFalse(MinimizedRestorePreActivation.canPreActivate(
+            snapshot: makeSnapshot([target, record(t2, pid: 1, status: .active)]), target: target))
+        // 兄弟 hidden → 保守禁用
+        XCTAssertFalse(MinimizedRestorePreActivation.canPreActivate(
+            snapshot: makeSnapshot([target, record(t2, pid: 1, status: .hidden)]), target: target))
+        // 别的 App 的可见窗口不算兄弟
+        XCTAssertTrue(MinimizedRestorePreActivation.canPreActivate(
+            snapshot: makeSnapshot([target, record(t2, pid: 2, status: .active)]), target: target))
+    }
+
     private func snapshot(windowID: WindowID, status: WindowStatus) -> DockSnapshot {
         DockSnapshot(
             windows: [

@@ -396,7 +396,8 @@ struct AccessibilityWindowActionExecutor {
         confirmationTimeout: TimeInterval = 0.6,
         pollIntervalMicroseconds: useconds_t = 100_000,
         knownCGWindowID: CGWindowID? = nil,
-        knownMinimized: Bool = false
+        knownMinimized: Bool = false,
+        preActivateForRestore: Bool = false
     ) -> Bool {
         let runningApp = NSRunningApplication(processIdentifier: handle.pid)
         // `knownMinimized` 来自快照，只作**肯定**的快路径用（2026-08-11）：快照说它最小化，就直接
@@ -404,6 +405,14 @@ struct AccessibilityWindowActionExecutor {
         // 反过来**不能**用：快照说「没最小化」时仍必须现读，否则一次陈旧快照就会让窗口回不来。
         // 误判方向也无害：对一个其实没最小化的窗口写 `minimized = false` 是空操作。
         if knownMinimized || reader.boolAttribute(kAXMinimizedAttribute as CFString, from: handle.element) == true {
+            // R2 序（2026-08-22 矩阵）：无非最小化兄弟时先切前台、微秒级紧跟还原——
+            // AppKit 进程内把还原窗口直接立为 key，红绿灯在还原动画期间即为彩色，
+            // 消掉「窗口出现后补聚焦」的过程（外部事件在动画期间进不了 App 事件队列，
+            // 矩阵 R0/R1/R3 实证补发无效，唯一的原生同款路径就是让 App 自己做）。
+            // 判定见 MinimizedRestorePreActivation；有兄弟时走下面的原有顺序。
+            if preActivateForRestore, let wid = knownCGWindowID {
+                postSkyLightFrontSwitchOnly(pid: handle.pid, windowID: wid)
+            }
             _ = setMinimized(false, for: handle)
             // 恢复→切换必须紧贴、中间零 AX 问询（2026-07-05 探针 v3）：最小化恢复不做提前
             // 聚焦——B1 还在 order-out 时任何切前台（含 kCPSNoWindows、不发 make-key 的裸
@@ -609,6 +618,20 @@ struct AccessibilityWindowActionExecutor {
     private static let skyLightFocusEnabled =
         ProcessInfo.processInfo.environment["DOCK_SKYLIGHT_FOCUS"] != "0"
 
+    /// 仅做 `_SLPSSetFrontProcessWithOptions` 前切、不发 make-key down（还原预激活用：
+    /// down 要等 unminimize 之后发，见 activate() 还原分支的 R2 序注释）。
+    @discardableResult
+    fileprivate func postSkyLightFrontSwitchOnly(pid: pid_t, windowID: CGWindowID) -> Bool {
+        guard Self.skyLightFocusEnabled else { return false }
+        guard let focus = Self.skyLightFocus,
+              let getPSN = Self.frontProcessSwitch?.get else { return false }
+        var psn = ProcessSerialNumber()
+        guard getPSN(pid, &psn) == noErr else { return false }
+        let kCPSUserGenerated: UInt32 = 0x200
+        _ = withUnsafePointer(to: &psn) { focus.slps($0, windowID, kCPSUserGenerated) }
+        return true
+    }
+
     /// Shared SkyLight focus core: front-process switch + one synthetic make-key mouse-down for a
     /// known cgWindowID. Pure event posts — no AX round-trips, so it never blocks on a
     /// napping target app. Byte layout is load-bearing (see AGENTS.md); do not vary it.
@@ -767,6 +790,20 @@ enum WindowHandleCapturePlan {
     }
 }
 
+/// 还原前预激活判定（2026-08-22 还原时序矩阵）：仅当目标 App 除目标窗口外
+/// **没有任何非最小化窗口**时，才允许「先切前台、紧跟还原」（R2 序）——那时 AppKit
+/// 无可提拔对象，进程内 deminiaturize-as-key 让红绿灯在还原动画期间即为彩色（原生观感）。
+/// 存在任何非最小化兄弟（可见 / 隐藏 / disappeared 一律保守算数）时禁用：矩阵实证
+/// 即便切换与还原微秒级相邻，AppKit 仍会把可见兄弟持久抬到旧前台之上（07-05 护栏
+/// 在新事件机制下依然成立）。纯函数，FinderP0Tests 锁行为。
+enum MinimizedRestorePreActivation {
+    static func canPreActivate(snapshot: DockSnapshot, target: WindowRecord) -> Bool {
+        !snapshot.windows.values.contains {
+            $0.pid == target.pid && $0.id != target.id && $0.status != .minimized
+        }
+    }
+}
+
 struct PlatformActionExecutor {
     private let windowExecutor: AccessibilityWindowActionExecutor
     private let switches: ActionExecutionSwitches
@@ -894,7 +931,9 @@ struct PlatformActionExecutor {
                 handle,
                 requiresFocusedConfirmation: isFinderWindow,
                 knownCGWindowID: record.cgWindowID,
-                knownMinimized: record.status == .minimized
+                knownMinimized: record.status == .minimized,
+                preActivateForRestore: record.status == .minimized
+                    && MinimizedRestorePreActivation.canPreActivate(snapshot: snapshot, target: record)
             )
         case .minimizeWindow:
             let targetPID = windowExecutor.findBackgroundActivationTarget(for: handle)
