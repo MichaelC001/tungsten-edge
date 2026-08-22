@@ -1696,6 +1696,7 @@ final class PanelCoordinator: NSObject {
             .receive(on: DispatchQueue.main)
             .sink { [weak self] _ in
                 self?.reconcilePanelVisibility()
+                self?.reconcileHoverMouseMonitors()  // 边缘隐藏开关变了：监视器是否还有存在的必要
             }
         fullscreenIntentEnabledSubscription = settingsStore.$fullscreenIntentEnabled
             .removeDuplicates()
@@ -1883,6 +1884,7 @@ final class PanelCoordinator: NSObject {
         relayout(animated: false)      // 切屏瞬时,不滑
         cancelFullscreenIntentIfContextChanged()
         reconcilePanelVisibility()
+        reconcileHoverMouseMonitors()  // 屏幕数量变了：单屏↔多屏切换监视器是否还有存在的必要
     }
 
     // MARK: - Fullscreen Monitor
@@ -2492,14 +2494,36 @@ final class PanelCoordinator: NSObject {
     private static let menuHoverSuspensionEnabled = ProcessInfo.processInfo.environment["DOCK_MENU_HOVER_SUSPEND"] != "0"
     private var hoverLastScreenIndex: Int? = nil
     private var hoverLastInHotZone: Bool? = nil
+    /// 监视器按需化 + 节流（DOCK_HOVER_MONITOR_LEAN=0 回退为常驻 + 每事件全量处理）。
+    private static let hoverMonitorLeanEnabled = ProcessInfo.processInfo.environment["DOCK_HOVER_MONITOR_LEAN"] != "0"
+    private var hoverPollThrottle = HoverPollThrottle(minInterval: 1.0 / 30.0)
     private var hoverSwitchTimer: Timer?
     private var hoverSwitchTargetScreen: NSScreen? = nil
 
     private func setupHoverDiagnostics() {
         if Self.hoverVerboseLogging { logScreenMap() }
-        installHoverMouseMonitors()
         observeMenuTrackingForHoverSuspension()
-        pollMousePosition()
+        reconcileHoverMouseMonitors()
+    }
+
+    /// 鼠标移动监视器只服务两件事：**多屏悬停切换**（单屏无对象）与**边缘自动隐藏**（没开就
+    /// 没有计时对象）。都不成立时干脆不装——「指针每动一下进一次回调」的常驻成本归零；
+    /// 屏幕数或设置变化时重新评估（诊断开关 DOCK_EDGEHOVER_TRACE=1 强制常驻）。
+    private var hoverMonitorsNeeded: Bool {
+        guard Self.hoverMonitorLeanEnabled else { return true }
+        return NSScreen.screens.count > 1
+            || settingsStore.edgeAutoHideEnabled
+            || Self.edgeHoverTraceEnabled
+    }
+
+    private func reconcileHoverMouseMonitors() {
+        guard menuTrackingDepth == 0 else { return }   // 菜单跟踪期间由挂起逻辑接管
+        if hoverMonitorsNeeded {
+            installHoverMouseMonitors()
+            pollMousePosition()
+        } else {
+            removeHoverMouseMonitors()
+        }
     }
 
     /// **菜单跟踪期间摘掉鼠标移动监视器**（owner 2026-08-04 报「菜单里两个选项之间来回晃有粘滞感」，
@@ -2539,10 +2563,8 @@ final class PanelCoordinator: NSObject {
     @objc private func menuTrackingDidEnd() {
         menuTrackingDepth = max(0, menuTrackingDepth - 1)
         guard menuTrackingDepth == 0 else { return }
-        installHoverMouseMonitors()
-        // 摘掉的这段时间里鼠标可能已经跨屏或离开了底边热区，装回来立刻补一次判断，
-        // 否则要等下一次鼠标移动才纠正。
-        pollMousePosition()
+        // 装回来（若仍需要）并立刻补一次判断——摘掉的这段时间里鼠标可能已经跨屏或离开热区。
+        reconcileHoverMouseMonitors()
     }
 
     /// 只摘监视器，**不碰**唤醒/切屏状态——那些由 `removeHoverMouseMonitors` 在真正拆除时负责。
@@ -2561,16 +2583,41 @@ final class PanelCoordinator: NSObject {
 
     private func installHoverMouseMonitors() {
         let events: NSEvent.EventTypeMask = [.mouseMoved, .leftMouseDragged, .rightMouseDragged, .otherMouseDragged]
+        // 监视器回调在安装线程（主线程）送达，assumeIsolated 免去每事件一次 Task 分配。
         if hoverLocalMouseMonitor == nil {
             hoverLocalMouseMonitor = NSEvent.addLocalMonitorForEvents(matching: events) { [weak self] event in
-                Task { @MainActor [weak self] in self?.pollMousePosition() }
+                MainActor.assumeIsolated { self?.hoverPollEventArrived() }
                 return event
             }
         }
         if hoverGlobalMouseMonitor == nil {
             hoverGlobalMouseMonitor = NSEvent.addGlobalMonitorForEvents(matching: events) { [weak self] _ in
-                Task { @MainActor [weak self] in self?.pollMousePosition() }
+                MainActor.assumeIsolated { self?.hoverPollEventArrived() }
             }
+        }
+    }
+
+    /// 每个鼠标移动事件都进这里（移动时可达上百 Hz）。节流到 ≤30Hz：悬停切换要 350ms 驻留、
+    /// 边缘唤醒对 33ms 无感；窗口内恰好停住的最后一个位置由 trailing 收尾补判，不丢热区进出。
+    private func hoverPollEventArrived() {
+        guard Self.hoverMonitorLeanEnabled else {
+            // 旧行为原样：每事件经一次主线程 Task 跳转后全量处理。
+            Task { @MainActor [weak self] in self?.pollMousePosition() }
+            return
+        }
+        switch hoverPollThrottle.eventArrived(now: CACurrentMediaTime()) {
+        case .run:
+            pollMousePosition()
+        case .scheduleTrailing(let after):
+            DispatchQueue.main.asyncAfter(deadline: .now() + after) { [weak self] in
+                MainActor.assumeIsolated {
+                    guard let self else { return }
+                    self.hoverPollThrottle.trailingFired(now: CACurrentMediaTime())
+                    self.pollMousePosition()
+                }
+            }
+        case .drop:
+            break
         }
     }
 
@@ -2583,6 +2630,7 @@ final class PanelCoordinator: NSObject {
             NSEvent.removeMonitor(monitor)
             hoverGlobalMouseMonitor = nil
         }
+        hoverPollThrottle.reset()
         cancelHoverSwitch()
         cancelEdgeWake()
     }

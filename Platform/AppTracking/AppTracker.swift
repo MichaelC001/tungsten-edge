@@ -144,6 +144,15 @@ final class AppTracker: ObservableObject {
 
     private var gateStates: [pid_t: ReconcileGateState] = [:]
 
+    /// 前台 app 的事件缓存。`NSWorkspace.frontmostApplication` 每次读都是一趟同步 LS XPC
+    /// （改造前：前台轮询 2Hz + 每次 rebuildSnapshot 再各一趟——2026-08-22 真空闲归因里剩余
+    /// LS 开销的主源）。didActivate 通知维护（对**所有**激活生效，不限 regular，缓存必须反映
+    /// 真实前台）；5s reconcile 用一次真实查询自愈，错过通知的最坏错位 ≤5s，且激活高亮的
+    /// 正确性只依赖 rebuildSnapshot 时的取值，事后一定被下一次激活/自愈纠正。
+    /// DOCK_FRONTMOST_CACHE=0 回退为每次真实查询。
+    private let frontmostCacheEnabled: Bool
+    private var cachedFrontmostPID: pid_t?
+
     /// 补扫探测门控（DOCK_SCAN_GATE=0 关闭）状态。memo 只记「无合格窗口」的结论；
     /// dirty 由 workspace 启动通知置位；慢速全扫每 60s 兜一次门控漏洞。
     private let scanGateEnabled: Bool
@@ -178,6 +187,7 @@ final class AppTracker: ObservableObject {
         periodicAXTimeoutMS: Int = Int(ProcessInfo.processInfo.environment["DOCK_RECONCILE_AX_TIMEOUT_MS"] ?? "") ?? 100,
         reconcileSkipEnabled: Bool = ProcessInfo.processInfo.environment["DOCK_RECONCILE_SKIP"] != "0",
         scanGateEnabled: Bool = ProcessInfo.processInfo.environment["DOCK_SCAN_GATE"] != "0",
+        frontmostCacheEnabled: Bool = ProcessInfo.processInfo.environment["DOCK_FRONTMOST_CACHE"] != "0",
         uptimeProvider: @escaping () -> TimeInterval = { ProcessInfo.processInfo.systemUptime }
     ) {
         self.inventoryLog = inventoryLog
@@ -189,6 +199,7 @@ final class AppTracker: ObservableObject {
         self.periodicReconcileTimeout = periodicAXTimeoutMS > 0 ? TimeInterval(periodicAXTimeoutMS) / 1000.0 : nil
         self.reconcileSkipEnabled = reconcileSkipEnabled
         self.scanGateEnabled = scanGateEnabled
+        self.frontmostCacheEnabled = frontmostCacheEnabled
         self.uptimeProvider = uptimeProvider
     }
 
@@ -241,6 +252,7 @@ final class AppTracker: ObservableObject {
         scanDirtyPIDs.removeAll()
         lastFullScanUptime = nil
         scanCandidateCache = nil
+        cachedFrontmostPID = nil
         snapshot = .empty
         inventoryLog.flush()
     }
@@ -988,7 +1000,13 @@ final class AppTracker: ObservableObject {
             object: nil, queue: .main
         ) { [weak self] notification in
             guard let app = notification.userInfo?[NSWorkspace.applicationUserInfoKey] as? NSRunningApplication else { return }
-            Task { @MainActor [weak self] in self?.handleAppActivated(app) }
+            let pid = app.processIdentifier
+            Task { @MainActor [weak self] in
+                // 前台缓存对所有激活生效（accessory/自身也占前台）；handleAppActivated 里
+                // 的 regular 过滤只管准入，不管前台事实。
+                self?.cachedFrontmostPID = pid
+                self?.handleAppActivated(app)
+            }
         })
     }
 
@@ -1377,10 +1395,27 @@ final class AppTracker: ObservableObject {
         frontmostPollTimer?.tolerance = 0.05
     }
 
+    private func currentFrontmostPID() -> pid_t? {
+        guard frontmostCacheEnabled else {
+            return NSWorkspace.shared.frontmostApplication?.processIdentifier
+        }
+        if let cached = cachedFrontmostPID { return cached }
+        let live = NSWorkspace.shared.frontmostApplication?.processIdentifier
+        cachedFrontmostPID = live
+        return live
+    }
+
+    /// 5s 一次的真实查询自愈（reconcile tick 里调）。live 为 nil（瞬态无前台）时保留旧值。
+    private func refreshFrontmostCache() {
+        guard frontmostCacheEnabled else { return }
+        if let live = NSWorkspace.shared.frontmostApplication?.processIdentifier {
+            cachedFrontmostPID = live
+        }
+    }
+
     private func pollFrontmostApp() {
         guard AXIsProcessTrusted() else { return }
-        guard let pid = NSWorkspace.shared.frontmostApplication?.processIdentifier,
-              apps[pid] != nil else { return }
+        guard let pid = currentFrontmostPID(), apps[pid] != nil else { return }
 
         scheduleFrontmostPoll(pid: pid)
     }
@@ -1408,6 +1443,7 @@ final class AppTracker: ObservableObject {
     private func reconcile() {
         guard AXIsProcessTrusted() else { return }
         purgeStaleTombstones()
+        refreshFrontmostCache()
         let now = Date()
         var changed = false
 
@@ -1807,7 +1843,7 @@ final class AppTracker: ObservableObject {
 
     private func rebuildSnapshot(onScreenCGIDs: Set<CGWindowID>? = nil) {
         // Read frontmost PID once; passed to windowStatus to determine active highlight
-        let frontmostPID = NSWorkspace.shared.frontmostApplication?.processIdentifier
+        let frontmostPID = currentFrontmostPID()
         lastOnScreenCGIDs = onScreenCGIDs ?? onScreenWindowIDsProvider()
 
         var windows: [WindowID: WindowRecord] = [:]
@@ -1940,6 +1976,10 @@ final class AppTracker: ObservableObject {
 
     func hasPendingEventReadForTesting(pid: pid_t) -> Bool {
         pendingEventReads[pid] != nil || trailingEventSources[pid] != nil
+    }
+
+    func setFrontmostPIDForTesting(_ pid: pid_t?) {
+        cachedFrontmostPID = pid
     }
 
     func setObserverActiveForTesting(pid: pid_t, active: Bool) {

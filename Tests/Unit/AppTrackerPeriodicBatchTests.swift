@@ -257,6 +257,43 @@ final class AppTrackerPeriodicBatchTests: XCTestCase {
         XCTAssertEqual(reader.readCount, 2)
     }
 
+    // MARK: - 前台缓存（下一轮 A）
+
+    func testFrontmostCacheDrivesActiveHighlightWithoutWorkspaceQuery() {
+        let tracker = AppTracker(
+            reader: PeriodicBatchReader(resultsByPID: [:]),
+            processProvider: BatchFixedProcessProvider(),
+            eventAXAsyncEnabled: true
+        )
+        tracker.installFixtureForTesting(makeApp(pid: pidA, cgWindowID: cgWindowA))
+
+        // 缓存说 pidA 在前台 → 该窗口是 active（真实 frontmostApplication 在测试进程里是别人）。
+        tracker.setFrontmostPIDForTesting(pidA)
+        tracker.rebuildSnapshotForTesting()
+        XCTAssertEqual(tracker.snapshot.windows[WindowID(rawValue: "cgw-\(cgWindowA)")]?.status, .active)
+
+        // 缓存改指别的进程 → 同一个座位立刻降级为 inactive。
+        tracker.setFrontmostPIDForTesting(pidB)
+        tracker.rebuildSnapshotForTesting()
+        XCTAssertEqual(tracker.snapshot.windows[WindowID(rawValue: "cgw-\(cgWindowA)")]?.status, .inactive)
+    }
+
+    func testFrontmostCacheKillSwitchIgnoresCachedValue() {
+        let tracker = AppTracker(
+            reader: PeriodicBatchReader(resultsByPID: [:]),
+            processProvider: BatchFixedProcessProvider(),
+            eventAXAsyncEnabled: true,
+            frontmostCacheEnabled: false
+        )
+        tracker.installFixtureForTesting(makeApp(pid: pidA, cgWindowID: cgWindowA))
+
+        // DOCK_FRONTMOST_CACHE=0：每次真查 NSWorkspace，缓存值不参与判定；
+        // 测试进程的真实前台不是 pidA，所以座位不会被点亮。
+        tracker.setFrontmostPIDForTesting(pidA)
+        tracker.rebuildSnapshotForTesting()
+        XCTAssertEqual(tracker.snapshot.windows[WindowID(rawValue: "cgw-\(cgWindowA)")]?.status, .inactive)
+    }
+
     // MARK: - Fixtures
 
     private func cgSnapshot() -> AppTrackerCGWindowSnapshot {
