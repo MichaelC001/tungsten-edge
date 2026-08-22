@@ -17,8 +17,13 @@ final class BadgeStore: ObservableObject {
 
     private let reader: any DockBadgeReading
     private let targetedEnabled: Bool
+    /// 零感知门控（看板卡「没有消息应用时暂停角标轮询」）：可读集为空或任务条逻辑隐藏时
+    /// 连计时器一起停；恢复条件出现即重启并**立即读一次**。DOCK_BADGE_PAUSE=0 关闭
+    ///（计时器常驻，行为回到「空 tick 零 AX 流量」）。
+    private let pauseEnabled: Bool
     private let uptimeProvider: () -> TimeInterval
     private var timer: Timer?
+    private var isStarted = false
     private var isReading = false
     private var itemCache: DockItemCache?
     private var cacheCapturedAt: TimeInterval = 0
@@ -32,25 +37,56 @@ final class BadgeStore: ObservableObject {
     init(
         reader: any DockBadgeReading = DockBadgeReader(),
         targetedEnabled: Bool = ProcessInfo.processInfo.environment["DOCK_BADGE_TARGETED"] != "0",
+        pauseEnabled: Bool = ProcessInfo.processInfo.environment["DOCK_BADGE_PAUSE"] != "0",
         uptimeProvider: @escaping () -> TimeInterval = { ProcessInfo.processInfo.systemUptime }
     ) {
         self.reader = reader
         self.targetedEnabled = targetedEnabled
+        self.pauseEnabled = pauseEnabled
         self.uptimeProvider = uptimeProvider
     }
 
     func start() {
-        guard timer == nil else { return }
-        readOnce()
-        timer = Timer.scheduledTimer(withTimeInterval: 0.5, repeats: true) { [weak self] _ in
-            Task { @MainActor [weak self] in self?.readOnce() }
-        }
-        timer?.tolerance = 0.05
+        guard !isStarted else { return }
+        isStarted = true
+        reconcileTimerState()
     }
 
     func stop() {
+        isStarted = false
         timer?.invalidate()
         timer = nil
+    }
+
+    /// 任务条逻辑显隐（PanelCoordinator 的两条隐藏路径都要通知到）。隐藏期间保留上次
+    /// 发布值——重新显示时 chip 立即带着旧角标出现，恢复读在 ~50ms 内校正，不闪。
+    func setTaskbarVisible(_ visible: Bool) {
+        guard visible != taskbarVisible else { return }
+        taskbarVisible = visible
+        reconcileTimerState()
+    }
+
+    private var shouldPauseTimer: Bool {
+        guard targetedEnabled, pauseEnabled else { return false }
+        return readableMessagingIDs.isEmpty || !taskbarVisible
+    }
+
+    /// 门控状态机：暂停 → 拆计时器；恢复 → 重建计时器并立即读一次（清角标即时性的产品要求
+    /// 靠这一读衔接）。start()/名单变化/显隐变化都汇到这里。
+    private func reconcileTimerState() {
+        guard isStarted else { return }
+        if shouldPauseTimer {
+            timer?.invalidate()
+            timer = nil
+            // 没有任何可读消息应用时字典必然为空集；隐藏态则保留旧值（见 setTaskbarVisible）。
+            if readableMessagingIDs.isEmpty, !badgesByBundleID.isEmpty { publishIfChanged([:]) }
+        } else if timer == nil {
+            timer = Timer.scheduledTimer(withTimeInterval: 0.5, repeats: true) { [weak self] _ in
+                Task { @MainActor [weak self] in self?.readOnce() }
+            }
+            timer?.tolerance = 0.05
+            readOnce()
+        }
     }
 
     deinit {
@@ -64,6 +100,7 @@ final class BadgeStore: ObservableObject {
         guard readable != readableMessagingIDs else { return }
         readableMessagingIDs = readable
         rewalkRequested = true
+        reconcileTimerState()
     }
 
     private func readOnce() {
@@ -80,7 +117,7 @@ final class BadgeStore: ObservableObject {
             rewalkRequested: rewalkRequested
         )) {
         case .pause:
-            if !badgesByBundleID.isEmpty { publishIfChanged([:]) }
+            if readableMessagingIDs.isEmpty, !badgesByBundleID.isEmpty { publishIfChanged([:]) }
         case .fullWalk:
             performFullWalk()
         case .targeted(let bundleIDs):
@@ -165,5 +202,6 @@ final class BadgeStore: ObservableObject {
     }
 
     var isReadingForTesting: Bool { isReading }
+    var isTimerRunningForTesting: Bool { timer != nil }
     #endif
 }

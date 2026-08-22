@@ -128,6 +128,75 @@ final class BadgeStoreTests: XCTestCase {
         XCTAssertEqual(reader.legacyCount, 1)
     }
 
+    // MARK: - 零感知门控（WI-6）
+
+    func testStartWithEmptyContextStaysPausedUntilMessagingAppears() async {
+        let reader = StubBadgeReader()
+        reader.fullWalkResult = DockBadgeWalkOutcome(
+            badges: [wechat: "3"],
+            cache: DockItemCache(dockPID: 1, elementsByBundleID: [:]),
+            pathToBundleID: [:]
+        )
+        let store = BadgeStore(reader: reader, targetedEnabled: true, uptimeProvider: { 100 })
+        defer { store.stop() }
+
+        store.start()
+        // 没有任何可读消息应用：连计时器都不起，零 AX 流量。
+        XCTAssertFalse(store.isTimerRunningForTesting)
+        XCTAssertEqual(reader.fullWalkCount, 0)
+
+        store.updateMessagingContext(visibleMessagingIDs: [wechat], runningBundleIDs: [wechat])
+        // 恢复条件出现：计时器重建并立即读一次。
+        XCTAssertTrue(store.isTimerRunningForTesting)
+        await waitUntil { !store.isReadingForTesting && reader.fullWalkCount == 1 }
+        XCTAssertEqual(reader.fullWalkCount, 1)
+        XCTAssertEqual(store.badgesByBundleID, [wechat: "3"])
+    }
+
+    func testHiddenTaskbarPausesAndKeepsBadgesThenResumeReadsImmediately() async {
+        let reader = StubBadgeReader()
+        reader.fullWalkResult = DockBadgeWalkOutcome(
+            badges: [wechat: "3"],
+            cache: DockItemCache(dockPID: 1, elementsByBundleID: [:]),
+            pathToBundleID: [:]
+        )
+        reader.targetedResult = .ok([wechat: "3"])
+        let store = BadgeStore(reader: reader, targetedEnabled: true, uptimeProvider: { 100 })
+        defer { store.stop() }
+        store.updateMessagingContext(visibleMessagingIDs: [wechat], runningBundleIDs: [wechat])
+        store.start()
+        await waitUntil { !store.isReadingForTesting && reader.fullWalkCount == 1 }
+
+        store.setTaskbarVisible(false)
+        XCTAssertFalse(store.isTimerRunningForTesting)
+        // 隐藏期间保留上次值：重新显示时 chip 立即带旧角标出现，不闪。
+        XCTAssertEqual(store.badgesByBundleID, [wechat: "3"])
+        let readsWhileHidden = reader.fullWalkCount + reader.targetedCount
+
+        store.setTaskbarVisible(true)
+        XCTAssertTrue(store.isTimerRunningForTesting)
+        await waitUntil { !store.isReadingForTesting && reader.fullWalkCount + reader.targetedCount > readsWhileHidden }
+        // 恢复必须立即读一次，不等下一个 0.5s tick。
+        XCTAssertEqual(reader.fullWalkCount + reader.targetedCount, readsWhileHidden + 1)
+    }
+
+    func testPauseKillSwitchKeepsTimerRunning() {
+        let reader = StubBadgeReader()
+        let store = BadgeStore(
+            reader: reader,
+            targetedEnabled: true,
+            pauseEnabled: false,
+            uptimeProvider: { 100 }
+        )
+        defer { store.stop() }
+
+        store.start()
+        // DOCK_BADGE_PAUSE=0：计时器常驻；空名单 tick 本身零 AX 流量（读不到任何调用）。
+        XCTAssertTrue(store.isTimerRunningForTesting)
+        XCTAssertEqual(reader.fullWalkCount, 0)
+        XCTAssertEqual(reader.targetedCount, 0)
+    }
+
     private func waitUntil(
         timeoutNanoseconds: UInt64 = 2_000_000_000,
         _ condition: @escaping @MainActor () -> Bool

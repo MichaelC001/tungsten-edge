@@ -2192,6 +2192,8 @@ final class PanelCoordinator: NSObject {
         dismissWindowTitleTooltip(suppressCurrentUntilExit: true)
 
         panelsAreVisible = false
+        // 全屏预测的快速隐藏路径不经过 applyPanelVisibility，角标门控要单独通知。
+        badgeStore.setTaskbarVisible(false)
         orderDockSurfaceOut()
         capsulePanel?.orderOut(nil)
         drawerPanel?.orderOut(nil)
@@ -2827,6 +2829,8 @@ final class PanelCoordinator: NSObject {
         let shouldShow = visibilityState.isVisible
         guard shouldShow != panelsAreVisible else { return }
         panelsAreVisible = shouldShow
+        // 角标轮询的零感知门控跟着任务条逻辑显隐走；恢复时 BadgeStore 会立即读一次。
+        badgeStore.setTaskbarVisible(shouldShow)
         if Self.edgeHoverTraceEnabled { logEdgeHoverTrace(shouldShow: shouldShow) }
         if shouldShow {
             orderDockSurfaceFront()
