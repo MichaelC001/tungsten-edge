@@ -294,6 +294,112 @@ final class AppTrackerPeriodicBatchTests: XCTestCase {
         XCTAssertEqual(tracker.snapshot.windows[WindowID(rawValue: "cgw-\(cgWindowA)")]?.status, .inactive)
     }
 
+    // MARK: - CG 全表复用门控（DOCK_CG_SNAPSHOT_REUSE 默认开）
+
+    private func makeCountingTracker(
+        reuseEnabled: Bool = true,
+        probeBox: ProbeBox,
+        counters: CGCallCounters,
+        uptime: UptimeBox? = nil
+    ) -> AppTracker {
+        let reader = PeriodicBatchReader(resultsByPID: [
+            pidA: .success([makeSnapshot(pid: pidA, cgWindowID: cgWindowA, title: "Window")]),
+        ])
+        let snapshot = cgSnapshot()
+        let box = uptime
+        return AppTracker(
+            reader: reader,
+            processProvider: BatchFixedProcessProvider(),
+            cgSnapshotProvider: { counters.noteCapture(); return snapshot },
+            onScreenWindowIDsProvider: { counters.noteProbe(); return probeBox.value },
+            eventAXAsyncEnabled: true,
+            cgSnapshotReuseEnabled: reuseEnabled,
+            uptimeProvider: { box?.value ?? 1000 }
+        )
+    }
+
+    private func runEventRead(_ tracker: AppTracker) async {
+        tracker.scheduleEventReadForTesting(pid: pidA, source: .frontmostPoll)
+        await waitUntil { !tracker.hasPendingEventReadForTesting(pid: self.pidA) }
+    }
+
+    func testQuietSecondEventReadReusesCachedTable() async {
+        let counters = CGCallCounters()
+        let tracker = makeCountingTracker(probeBox: ProbeBox(value: [cgWindowA]), counters: counters)
+        tracker.installFixtureForTesting(makeApp(pid: pidA, cgWindowID: cgWindowA))
+        tracker.setObserverActiveForTesting(pid: pidA, active: true)
+
+        await runEventRead(tracker)          // 无缓存 → 探针 + 现拍，缓存接上
+        XCTAssertNotNil(tracker.cgSnapshotCacheForTesting())
+        let capturesAfterFirst = counters.captures
+
+        await runEventRead(tracker)          // 安静 tick：探针相同 → 复用，全拍数不增
+        XCTAssertEqual(counters.captures, capturesAfterFirst)
+    }
+
+    func testProbeChangeForcesFreshCapture() async {
+        let counters = CGCallCounters()
+        let probeBox = ProbeBox(value: [cgWindowA])
+        let tracker = makeCountingTracker(probeBox: probeBox, counters: counters)
+        tracker.installFixtureForTesting(makeApp(pid: pidA, cgWindowID: cgWindowA))
+        tracker.setObserverActiveForTesting(pid: pidA, active: true)
+
+        await runEventRead(tracker)
+        let capturesAfterFirst = counters.captures
+
+        probeBox.value = [cgWindowA, cgWindowB]   // on-screen 集变了（如切了标签）
+        await runEventRead(tracker)
+        XCTAssertEqual(counters.captures, capturesAfterFirst + 1)
+    }
+
+    func testEventGenerationBumpForcesFreshCapture() async {
+        let counters = CGCallCounters()
+        let tracker = makeCountingTracker(probeBox: ProbeBox(value: [cgWindowA]), counters: counters)
+        tracker.installFixtureForTesting(makeApp(pid: pidA, cgWindowID: cgWindowA))
+        tracker.setObserverActiveForTesting(pid: pidA, active: true)
+
+        await runEventRead(tracker)
+        let capturesAfterFirst = counters.captures
+
+        tracker.bumpCGEventGenerationForTesting()  // 期间来了 AX/workspace 事件
+        await runEventRead(tracker)
+        XCTAssertEqual(counters.captures, capturesAfterFirst + 1)
+    }
+
+    func testCacheExpiryForcesFreshCapture() async {
+        let counters = CGCallCounters()
+        let uptime = UptimeBox(value: 1000)
+        let tracker = makeCountingTracker(
+            probeBox: ProbeBox(value: [cgWindowA]), counters: counters, uptime: uptime
+        )
+        tracker.installFixtureForTesting(makeApp(pid: pidA, cgWindowID: cgWindowA))
+        tracker.setObserverActiveForTesting(pid: pidA, active: true)
+
+        await runEventRead(tracker)
+        let capturesAfterFirst = counters.captures
+
+        uptime.value = 1000 + CGSnapshotReuseDecision.defaultMaxCacheAge + 0.1
+        await runEventRead(tracker)
+        XCTAssertEqual(counters.captures, capturesAfterFirst + 1)
+    }
+
+    func testKillSwitchCapturesEveryTimeAndNeverProbes() async {
+        let counters = CGCallCounters()
+        let tracker = makeCountingTracker(
+            reuseEnabled: false, probeBox: ProbeBox(value: [cgWindowA]), counters: counters
+        )
+        tracker.installFixtureForTesting(makeApp(pid: pidA, cgWindowID: cgWindowA))
+        tracker.setObserverActiveForTesting(pid: pidA, active: true)
+
+        await runEventRead(tracker)
+        await runEventRead(tracker)
+        // 与关门前逐位一致：每次事件读各现拍一张。探针计数只可能来自 rebuildSnapshot 的
+        // on-screen 兜底（本用例 seats 不变、不重建），事件读路径必须一次探针都没拍。
+        XCTAssertEqual(counters.captures, 2)
+        XCTAssertEqual(counters.probes, 0)
+        XCTAssertNil(tracker.cgSnapshotCacheForTesting())
+    }
+
     // MARK: - Fixtures
 
     private func cgSnapshot() -> AppTrackerCGWindowSnapshot {
@@ -387,6 +493,30 @@ private final class PeriodicBatchReader: AppTrackerWindowReading, @unchecked Sen
         lock.unlock()
         if blocksTimedReads { semaphore.wait() }
         return resultsByPID[pid] ?? .unread(.cannotComplete)
+    }
+}
+
+private final class CGCallCounters: @unchecked Sendable {
+    private let lock = NSLock()
+    private var captureCount = 0
+    private var probeCount = 0
+
+    func noteCapture() { lock.lock(); captureCount += 1; lock.unlock() }
+    func noteProbe() { lock.lock(); probeCount += 1; lock.unlock() }
+
+    var captures: Int { lock.lock(); defer { lock.unlock() }; return captureCount }
+    var probes: Int { lock.lock(); defer { lock.unlock() }; return probeCount }
+}
+
+private final class ProbeBox: @unchecked Sendable {
+    private let lock = NSLock()
+    private var storage: Set<CGWindowID>
+
+    init(value: Set<CGWindowID>) { self.storage = value }
+
+    var value: Set<CGWindowID> {
+        get { lock.lock(); defer { lock.unlock() }; return storage }
+        set { lock.lock(); storage = newValue; lock.unlock() }
     }
 }
 

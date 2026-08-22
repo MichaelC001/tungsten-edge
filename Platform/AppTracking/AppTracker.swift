@@ -153,6 +153,18 @@ final class AppTracker: ObservableObject {
     private let frontmostCacheEnabled: Bool
     private var cachedFrontmostPID: pid_t?
 
+    /// 事件读路径的 CG 全表复用门控（DOCK_CG_SNAPSHOT_REUSE=0 关闭）。决策与顺序硬规则见
+    /// `CGSnapshotReuseDecision`；缓存只被事件读路径的**现拍**刷新（复用轮不刷新年龄，否则
+    /// 年龄上限失效），5s reconcile 的批量路径不读不写它。
+    private let cgSnapshotReuseEnabled: Bool
+    /// 全局事件代数：任何 AX/workspace 事件（markReconcileGateDirty、app 增删）都递增。
+    /// 缓存记录拍摄时的代数，代数变了 → 下一次事件读现拍。全局而非 per-pid 是刻意保守。
+    private var cgEventGeneration: UInt64 = 0
+    private var cachedCGSnapshot: AppTrackerCGWindowSnapshot?
+    private var cachedCGProbeIDs: Set<CGWindowID>?
+    private var cachedCGAtUptime: TimeInterval = -.infinity
+    private var cachedCGGeneration: UInt64 = 0
+
     /// 补扫探测门控（DOCK_SCAN_GATE=0 关闭）状态。memo 只记「无合格窗口」的结论；
     /// dirty 由 workspace 启动通知置位；慢速全扫每 60s 兜一次门控漏洞。
     private let scanGateEnabled: Bool
@@ -188,6 +200,7 @@ final class AppTracker: ObservableObject {
         reconcileSkipEnabled: Bool = ProcessInfo.processInfo.environment["DOCK_RECONCILE_SKIP"] != "0",
         scanGateEnabled: Bool = ProcessInfo.processInfo.environment["DOCK_SCAN_GATE"] != "0",
         frontmostCacheEnabled: Bool = ProcessInfo.processInfo.environment["DOCK_FRONTMOST_CACHE"] != "0",
+        cgSnapshotReuseEnabled: Bool = ProcessInfo.processInfo.environment["DOCK_CG_SNAPSHOT_REUSE"] != "0",
         uptimeProvider: @escaping () -> TimeInterval = { ProcessInfo.processInfo.systemUptime }
     ) {
         self.inventoryLog = inventoryLog
@@ -200,6 +213,7 @@ final class AppTracker: ObservableObject {
         self.reconcileSkipEnabled = reconcileSkipEnabled
         self.scanGateEnabled = scanGateEnabled
         self.frontmostCacheEnabled = frontmostCacheEnabled
+        self.cgSnapshotReuseEnabled = cgSnapshotReuseEnabled
         self.uptimeProvider = uptimeProvider
     }
 
@@ -1050,6 +1064,7 @@ final class AppTracker: ObservableObject {
     }
 
     private func handleAppTerminated(pid: pid_t) {
+        cgEventGeneration &+= 1
         invalidateEventReads(pid: pid)
         observers[pid]?.stop()
         observers.removeValue(forKey: pid)
@@ -1097,6 +1112,7 @@ final class AppTracker: ObservableObject {
     ) {
         let pid = app.processIdentifier
         guard apps[pid] == nil else { return }
+        cgEventGeneration &+= 1
 
         apps[pid] = AppEntry(
             pid: pid,
@@ -1251,6 +1267,7 @@ final class AppTracker: ObservableObject {
 
     private func markReconcileGateDirty(pid: pid_t) {
         gateStates[pid]?.dirty = true
+        cgEventGeneration &+= 1
     }
 
     private func invalidateEventReads(pid: pid_t) {
@@ -1281,19 +1298,106 @@ final class AppTracker: ObservableObject {
         pendingEventReads[pid] = request
         let reader = self.reader
         let cgSnapshotProvider = self.cgSnapshotProvider
+        let probeProvider = self.onScreenWindowIDsProvider
+        let ticket = makeCGSnapshotReuseTicket(pid: pid)
 
         Task.detached { [weak self] in
             let result = reader.inventoryWindows(forPID: pid, messagingTimeout: 0.1)
-            let cgSnapshot = cgSnapshotProvider()
+            // 顺序硬规则：先探针、后全拍（理由见 CGSnapshotReuseDecision 头注释）。
+            let acquisition: CGSnapshotAcquisition
+            switch CGSnapshotReuseDecision.preVerdict(ticket.input) {
+            case .captureWithoutProbe:
+                acquisition = CGSnapshotAcquisition(
+                    snapshot: cgSnapshotProvider(), probeIDs: nil, fresh: true, ticket: ticket
+                )
+            case .captureAndPrime:
+                let probe = probeProvider()
+                acquisition = CGSnapshotAcquisition(
+                    snapshot: cgSnapshotProvider(), probeIDs: probe, fresh: true, ticket: ticket
+                )
+            case .probeThenCompare:
+                let probe = probeProvider()
+                switch CGSnapshotReuseDecision.probeVerdict(
+                    probe: probe, cachedProbe: ticket.cachedProbeIDs ?? []
+                ) {
+                case .reuse:
+                    acquisition = CGSnapshotAcquisition(
+                        // preVerdict 已保证 hasCache；防御性兜底走现拍。
+                        snapshot: ticket.cachedSnapshot ?? cgSnapshotProvider(),
+                        probeIDs: probe, fresh: false, ticket: ticket
+                    )
+                case .captureAndPrime:
+                    acquisition = CGSnapshotAcquisition(
+                        snapshot: cgSnapshotProvider(), probeIDs: probe, fresh: true, ticket: ticket
+                    )
+                }
+            }
             await MainActor.run { [weak self] in
+                self?.noteCGSnapshotAcquisition(acquisition)
                 self?.completeEventRead(
                     pid: pid,
                     request: request,
                     result: result,
-                    cgSnapshot: cgSnapshot
+                    cgSnapshot: acquisition.snapshot
                 )
             }
         }
+    }
+
+    /// 后台事件读带回的 CG 表来源：现拍（含同轮探针，用于把缓存链接上）或复用缓存。
+    private struct CGSnapshotAcquisition: Sendable {
+        let snapshot: AppTrackerCGWindowSnapshot
+        let probeIDs: Set<CGWindowID>?
+        let fresh: Bool
+        let ticket: CGSnapshotReuseTicket
+    }
+
+    /// 主线程组票：静态判据在这里定格（年龄用组票时刻算，后台读的耗时余量已计入
+    /// `defaultMaxCacheAge`）。缓存快照/探针集随票带走，后台任务不回头读主线程状态。
+    private struct CGSnapshotReuseTicket: Sendable {
+        let input: CGSnapshotReuseDecision.Input
+        let cachedSnapshot: AppTrackerCGWindowSnapshot?
+        let cachedProbeIDs: Set<CGWindowID>?
+        let uptime: TimeInterval
+        let generation: UInt64
+    }
+
+    private func makeCGSnapshotReuseTicket(pid: pid_t) -> CGSnapshotReuseTicket {
+        let now = uptimeProvider()
+        let app = apps[pid]
+        let input = CGSnapshotReuseDecision.Input(
+            reuseEnabled: cgSnapshotReuseEnabled,
+            hasCache: cachedCGSnapshot != nil && cachedCGProbeIDs != nil,
+            cachedCaptureFailed: cachedCGSnapshot?.captureFailed ?? true,
+            cacheAge: now - cachedCGAtUptime,
+            generationMatches: cachedCGGeneration == cgEventGeneration,
+            hasAbsenceClock: app?.windowOrder.contains {
+                app?.windowsByID[$0]?.minAbsentSince != nil
+            } ?? false,
+            hasPhantomCandidate: app?.windowOrder.contains {
+                app?.windowsByID[$0]?.everSeenVisible == false
+            } ?? false,
+            observerActive: observerActive(pid: pid)
+        )
+        return CGSnapshotReuseTicket(
+            input: input,
+            cachedSnapshot: cachedCGSnapshot,
+            cachedProbeIDs: cachedCGProbeIDs,
+            uptime: now,
+            generation: cgEventGeneration
+        )
+    }
+
+    /// 只有**现拍**刷新缓存（复用轮不刷新——刷了年龄上限就失效）。乱序落地用组票时刻挡：
+    /// 旧票的现拍不覆盖新缓存。代数记组票时刻的值：期间来了事件则缓存代数落后 → 下轮现拍，保守。
+    private func noteCGSnapshotAcquisition(_ acquisition: CGSnapshotAcquisition) {
+        guard cgSnapshotReuseEnabled, acquisition.fresh,
+              let probe = acquisition.probeIDs,
+              acquisition.ticket.uptime >= cachedCGAtUptime else { return }
+        cachedCGSnapshot = acquisition.snapshot
+        cachedCGProbeIDs = probe
+        cachedCGAtUptime = acquisition.ticket.uptime
+        cachedCGGeneration = acquisition.ticket.generation
     }
 
     private enum EventReadLanding {
@@ -1385,9 +1489,10 @@ final class AppTracker: ObservableObject {
     }
 
     // 前台快轮询：原生标签组（如 Ghostty）切标签时 AX 可能完全不报，且 min 误报滞后数秒。
-    // 真相在 CG on-screen 集合——切标签时它即时变化。对**前台且多窗口**的 app 以 0.5s 检测：
-    // on-screen 变了（切了标签）就重建，标签组可见标签随之即时更新。同时顺带补 AX 标题/焦点。
-    // 单窗口 app 无歧义，直接跳过，平时零开销。
+    // 真相在 CG on-screen 集合——切标签时它即时变化。对前台 app 以 0.5s 检测：on-screen 变了
+    //（切了标签）就重建，标签组可见标签随之即时更新。同时顺带补 AX 标题/焦点。前台是非跟踪
+    // app 时整个 tick 直接退出（无人值守测量因此可能整段失活——每臂必须记录并固定前台 app）。
+    // 安静 tick 的 CG 全表由 CGSnapshotReuseDecision 门控复用，AX 读照常。
     private func startFrontmostPollTimer() {
         frontmostPollTimer = Timer.scheduledTimer(withTimeInterval: 0.5, repeats: true) { [weak self] _ in
             Task { @MainActor [weak self] in self?.pollFrontmostApp() }
@@ -1980,6 +2085,16 @@ final class AppTracker: ObservableObject {
 
     func setFrontmostPIDForTesting(_ pid: pid_t?) {
         cachedFrontmostPID = pid
+    }
+
+    /// CG 复用门控的缓存状态（fresh 落地后非 nil）。
+    func cgSnapshotCacheForTesting() -> (probeIDs: Set<CGWindowID>, atUptime: TimeInterval)? {
+        guard cachedCGSnapshot != nil, let probe = cachedCGProbeIDs else { return nil }
+        return (probe, cachedCGAtUptime)
+    }
+
+    func bumpCGEventGenerationForTesting() {
+        cgEventGeneration &+= 1
     }
 
     func setObserverActiveForTesting(pid: pid_t, active: Bool) {
