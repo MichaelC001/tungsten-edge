@@ -48,9 +48,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         updateService: updateService,
         subscriptionSubmitter: WebsiteSubscriptionSubmitter()
     )
+    /// 本机授权凭据。设置窗口的「授权」区块读它；将来的试用期逻辑也会读它，
+    /// 所以它是 AppDelegate 的一等成员，不藏在设置窗口里。
+    let licenseStore = LicenseStore()
     private lazy var settingsWindowController = SettingsWindowController(
         store: settingsStore,
-        coordinator: settingsCoordinator
+        coordinator: settingsCoordinator,
+        licenseStore: licenseStore
     )
     /// 常驻切换全局快捷键。回调只切设置（经 settingsStore），不经过 panelCoordinator——
     /// 后者在权限引导完成前是 nil，settingsStore 从 AppDelegate 构造起即存在。

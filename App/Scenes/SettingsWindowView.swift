@@ -11,10 +11,11 @@ struct SettingsWindowView: View {
 
     @ObservedObject var store: AppSettingsStore
     @ObservedObject var coordinator: SettingsCoordinator
+    @ObservedObject var licenseStore: LicenseStore
 
     var body: some View {
         ScrollView(.vertical) {
-            SettingsWindowContent(store: store, coordinator: coordinator)
+            SettingsWindowContent(store: store, coordinator: coordinator, licenseStore: licenseStore)
         }
         .frame(width: Self.contentWidth)
         .onReceive(NotificationCenter.default.publisher(for: NSApplication.didBecomeActiveNotification)) { _ in
@@ -29,9 +30,11 @@ struct SettingsWindowView: View {
 struct SettingsWindowContent: View {
     @ObservedObject var store: AppSettingsStore
     @ObservedObject var coordinator: SettingsCoordinator
+    @ObservedObject var licenseStore: LicenseStore
 
     @State private var presentedAlert: SettingsAlert?
     @State private var subscriptionEmail = ""
+    @State private var licenseKeyInput = ""
 
     var body: some View {
         VStack(alignment: .leading, spacing: 22) {
@@ -86,6 +89,12 @@ struct SettingsWindowContent: View {
                         )
                     )
                 }
+            }
+
+            Divider()
+
+            settingsSection(String(localized: "License")) {
+                licenseRow
             }
 
             Divider()
@@ -146,6 +155,61 @@ struct SettingsWindowContent: View {
             } label: {
                 Label("Open Login Items Settings…", systemImage: "arrow.up.forward.app")
             }
+        }
+    }
+
+    /// 授权区块。离线验证：粘一条授权码进去，本地用内嵌公钥验签名，**不联网、不绑设备**
+    ///（产品决策 `Docs/27`，格式契约 `Docs/31-licensing.md`）。
+    ///
+    /// ⚠️ 激活成功后输入框整行消失，区块高度会变。`SettingsWindowController` 只在 `present()`
+    /// 和几个 `@Published` 的订阅里重新量高度，所以那边给 `licenseStore.$state` 加了一条
+    /// `.sink`——删掉它的话，激活之后窗口不会收缩，只会变成可滚动。
+    ///
+    /// ⚠️ 失败提示走 `SettingsAlert`，不要改成在区块里就地长出一行红字（同上，高度不会跟着变）。
+    @ViewBuilder
+    private var licenseRow: some View {
+        switch licenseStore.state {
+        case .activated(let payload):
+            Text(
+                String(
+                    format: String(localized: "Activated · %@ · %@"),
+                    payload.kind.displayTitle,
+                    payload.email
+                )
+            )
+            .font(.callout)
+            .fixedSize(horizontal: false, vertical: true)
+        case .unactivated:
+            VStack(alignment: .leading, spacing: 8) {
+                Text("Not activated")
+                    .font(.callout)
+                    .foregroundStyle(.secondary)
+                HStack(spacing: 10) {
+                    TextField("Paste your license key", text: $licenseKeyInput)
+                        .textFieldStyle(.roundedBorder)
+                        .onSubmit { activateLicense() }
+                    Button("Activate") { activateLicense() }
+                        .disabled(licenseKeyInput.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                }
+                Text("Founding users: your license key is in the email we sent you.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+        }
+    }
+
+    private func activateLicense() {
+        switch licenseStore.activate(code: licenseKeyInput) {
+        case .success:
+            licenseKeyInput = ""
+        case .failure:
+            // 八种错误对用户是同一件事：这串东西不能用。分门别类地解释只会让人以为
+            // 换个写法就能过——真正的行动永远是「把邮件里那串完整复制一遍」。
+            presentedAlert = SettingsAlert(
+                title: String(localized: "Couldn’t Activate"),
+                message: String(localized: "This license key isn’t valid. Copy the whole key from your email and paste it again.")
+            )
         }
     }
 
@@ -317,5 +381,16 @@ private struct SettingsAlert: Identifiable {
 
     init(_ content: SubscriptionAlertContent) {
         self.init(title: content.title, message: content.message)
+    }
+}
+
+extension LicenseKind {
+    /// 授权种类给用户看的名字。`LicenseVerifier` 那边是纯逻辑、不带文案，所以放在这里。
+    /// 用词照 `Docs/30-i18n-glossary.md`：founding = 原始用户 / Founding User。
+    var displayTitle: String {
+        switch self {
+        case .founding: return String(localized: "Founding User")
+        case .paid: return String(localized: "Paid")
+        }
     }
 }

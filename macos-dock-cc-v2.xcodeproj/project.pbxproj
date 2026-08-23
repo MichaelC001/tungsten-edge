@@ -148,6 +148,12 @@
 		B71000000000000000000002 /* ScreenRectReader.swift in Sources */ = {isa = PBXBuildFile; fileRef = B71000000000000000000003 /* ScreenRectReader.swift */; };
 		B72000000000000000000001 /* AppDisplayNameCache.swift in Sources */ = {isa = PBXBuildFile; fileRef = B72000000000000000000003 /* AppDisplayNameCache.swift */; };
 		B72000000000000000000011 /* InstallationRecord.swift in Sources */ = {isa = PBXBuildFile; fileRef = B72000000000000000000013 /* InstallationRecord.swift */; };
+		B78000000000000000000001 /* LicenseVerifier.swift in Sources */ = {isa = PBXBuildFile; fileRef = B78000000000000000000003 /* LicenseVerifier.swift */; };
+		B78000000000000000000002 /* LicenseVerifier.swift in Sources */ = {isa = PBXBuildFile; fileRef = B78000000000000000000003 /* LicenseVerifier.swift */; };
+		B78000000000000000000011 /* LicenseStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = B78000000000000000000013 /* LicenseStore.swift */; };
+		B78000000000000000000012 /* LicenseStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = B78000000000000000000013 /* LicenseStore.swift */; };
+		B78000000000000000000021 /* LicenseVerifierTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = B78000000000000000000023 /* LicenseVerifierTests.swift */; };
+		B78000000000000000000031 /* LicenseStoreTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = B78000000000000000000033 /* LicenseStoreTests.swift */; };
 		C90000000000000000000006 /* ClickLatencyTrace.swift in Sources */ = {isa = PBXBuildFile; fileRef = C90000000000000000000005 /* ClickLatencyTrace.swift */; };
 		A00000000000000000009AB1 /* HoverTrace.swift in Sources */ = {isa = PBXBuildFile; fileRef = A00000000000000000009AB0 /* HoverTrace.swift */; };
 		D20000000000000000000067 /* HoverTrace.swift in Sources */ = {isa = PBXBuildFile; fileRef = A00000000000000000009AB0 /* HoverTrace.swift */; };
@@ -505,6 +511,10 @@
 		B71000000000000000000003 /* ScreenRectReader.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ScreenRectReader.swift; sourceTree = "<group>"; };
 		B72000000000000000000003 /* AppDisplayNameCache.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppDisplayNameCache.swift; sourceTree = "<group>"; };
 		B72000000000000000000013 /* InstallationRecord.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = InstallationRecord.swift; sourceTree = "<group>"; };
+		B78000000000000000000003 /* LicenseVerifier.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LicenseVerifier.swift; sourceTree = "<group>"; };
+		B78000000000000000000013 /* LicenseStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LicenseStore.swift; sourceTree = "<group>"; };
+		B78000000000000000000023 /* LicenseVerifierTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LicenseVerifierTests.swift; sourceTree = "<group>"; };
+		B78000000000000000000033 /* LicenseStoreTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LicenseStoreTests.swift; sourceTree = "<group>"; };
 		C90000000000000000000005 /* ClickLatencyTrace.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ClickLatencyTrace.swift; sourceTree = "<group>"; };
 		A00000000000000000009AB0 /* HoverTrace.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HoverTrace.swift; sourceTree = "<group>"; };
 		A00000000000000000009200 /* PinnedFolderStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PinnedFolderStore.swift; sourceTree = "<group>"; };
@@ -649,6 +659,7 @@
 				A00000000000000000007010 /* DrawerOrderStore.swift */,
 				A00000000000000000008010 /* AppSettingsStore.swift */,
 				D10000000000000000000003 /* SettingsCoordinator.swift */,
+				B78000000000000000000013 /* LicenseStore.swift */,
 				D10000000000000000000004 /* AutoHideToggleMenuModel.swift */,
 				A00000000000000000009F00 /* GlobalHotKeyMonitor.swift */,
 				A00000000000000000009010 /* LaunchAtLoginService.swift */,
@@ -755,6 +766,7 @@
 				A0000000000000000000FF20 /* AppLaunchTargetDecision.swift */,
 				B72000000000000000000003 /* AppDisplayNameCache.swift */,
 				B72000000000000000000013 /* InstallationRecord.swift */,
+				B78000000000000000000003 /* LicenseVerifier.swift */,
 				B75000000000000000000003 /* WelcomeGuideDecision.swift */,
 				C90000000000000000000005 /* ClickLatencyTrace.swift */,
 				A00000000000000000009AB0 /* HoverTrace.swift */,
@@ -1060,6 +1072,8 @@
 				A00000000000000000000C110 /* ScheduledUpdatePresentationTests.swift */,
 				A00000000000000000000B200 /* AppNameRegistryTests.swift */,
 				A00000000000000000000B210 /* InstallationRecordTests.swift */,
+				B78000000000000000000023 /* LicenseVerifierTests.swift */,
+				B78000000000000000000033 /* LicenseStoreTests.swift */,
 				A00000000000000000009720 /* MessagingAppStoreTests.swift */,
 				A00000000000000000009730 /* DragControllerConversionTests.swift */,
 				A00000000000000000000C00 /* ManualPanelHostTests.swift */,
@@ -1205,6 +1219,7 @@
 					D20000000000000000000001 /* SettingsWindowController.swift in Sources */,
 					D20000000000000000000002 /* SettingsWindowView.swift in Sources */,
 					D20000000000000000000003 /* SettingsCoordinator.swift in Sources */,
+					B78000000000000000000011 /* LicenseStore.swift in Sources */,
 					D20000000000000000000004 /* AutoHideToggleMenuModel.swift in Sources */,
 					D20000000000000000000006 /* AccessoryWindowPresentation.swift in Sources */,
 					D20000000000000000000041 /* StripContextMenuZone.swift in Sources */,
@@ -1268,6 +1283,7 @@
 					A0000000000000000000FF21 /* AppLaunchTargetDecision.swift in Sources */,
 					B72000000000000000000001 /* AppDisplayNameCache.swift in Sources */,
 					B72000000000000000000011 /* InstallationRecord.swift in Sources */,
+					B78000000000000000000001 /* LicenseVerifier.swift in Sources */,
 					B75000000000000000000001 /* WelcomeGuideDecision.swift in Sources */,
 					B75000000000000000000011 /* WelcomeGuideView.swift in Sources */,
 					C90000000000000000000006 /* ClickLatencyTrace.swift in Sources */,
@@ -1390,6 +1406,7 @@
 				A0000000000000000000B062 /* PermissionOnboardingTests.swift in Sources */,
 				A00000000000000000008031 /* AppSettingsStore.swift in Sources */,
 				D20000000000000000000013 /* SettingsCoordinator.swift in Sources */,
+				B78000000000000000000012 /* LicenseStore.swift in Sources */,
 				D20000000000000000000014 /* AutoHideToggleMenuModel.swift in Sources */,
 				D20000000000000000000016 /* AccessoryWindowPresentation.swift in Sources */,
 				D20000000000000000000042 /* StripContextMenuZone.swift in Sources */,
@@ -1437,6 +1454,7 @@
 				A0000000000000000000FF22 /* AppLaunchTargetDecision.swift in Sources */,
 				B72000000000000000000002 /* AppDisplayNameCache.swift in Sources */,
 				B72000000000000000000012 /* InstallationRecord.swift in Sources */,
+				B78000000000000000000002 /* LicenseVerifier.swift in Sources */,
 				B75000000000000000000002 /* WelcomeGuideDecision.swift in Sources */,
 				A0000000000000000000FB02 /* DockThemeTokens.swift in Sources */,
 				E20000000000000000000002 /* DockLiquidGlassConfiguration.swift in Sources */,
@@ -1542,6 +1560,8 @@
 					A00000000000000000000C111 /* ScheduledUpdatePresentationTests.swift in Sources */,
 					A00000000000000000000B201 /* AppNameRegistryTests.swift in Sources */,
 					A00000000000000000000B211 /* InstallationRecordTests.swift in Sources */,
+					B78000000000000000000021 /* LicenseVerifierTests.swift in Sources */,
+					B78000000000000000000031 /* LicenseStoreTests.swift in Sources */,
 					A00000000000000000009721 /* MessagingAppStoreTests.swift in Sources */,
 					A00000000000000000009731 /* DragControllerConversionTests.swift in Sources */,
 					A00000000000000000000C01 /* ManualPanelHostTests.swift in Sources */,

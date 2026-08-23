@@ -6,15 +6,17 @@ import SwiftUI
 final class SettingsWindowController: NSObject, NSWindowDelegate {
     private let store: AppSettingsStore
     private let coordinator: SettingsCoordinator
+    private let licenseStore: LicenseStore
     private var window: NSWindow?
     private var hostingView: NSHostingView<SettingsWindowView>?
     private var sessionSubscriptions: Set<AnyCancellable> = []
     private var closedFrame: NSRect?
     private var hasPresented = false
 
-    init(store: AppSettingsStore, coordinator: SettingsCoordinator) {
+    init(store: AppSettingsStore, coordinator: SettingsCoordinator, licenseStore: LicenseStore) {
         self.store = store
         self.coordinator = coordinator
+        self.licenseStore = licenseStore
     }
 
     func present() {
@@ -27,12 +29,22 @@ final class SettingsWindowController: NSObject, NSWindowDelegate {
             window.setFrame(closedFrame, display: false)
             self.closedFrame = nil
         }
-        let host = NSHostingView(rootView: SettingsWindowView(store: store, coordinator: coordinator))
+        let host = NSHostingView(
+            rootView: SettingsWindowView(store: store, coordinator: coordinator, licenseStore: licenseStore)
+        )
         window.contentView = host
         hostingView = host
 
         sessionSubscriptions.removeAll()
         coordinator.$launchAtLoginState
+            .dropFirst()
+            .sink { [weak self] _ in
+                DispatchQueue.main.async { self?.resizeToFitKeepingTopEdge() }
+            }
+            .store(in: &sessionSubscriptions)
+        // 激活成功后授权区块少掉输入框那一行，窗口得跟着收缩。少了这条订阅，
+        // 内容原地变矮不会重新量高度，只会在窗口里留一片空白。
+        licenseStore.$state
             .dropFirst()
             .sink { [weak self] _ in
                 DispatchQueue.main.async { self?.resizeToFitKeepingTopEdge() }
@@ -77,7 +89,9 @@ final class SettingsWindowController: NSObject, NSWindowDelegate {
 
     private func resizeToFitKeepingTopEdge() {
         guard let window else { return }
-        let probe = NSHostingView(rootView: SettingsWindowContent(store: store, coordinator: coordinator))
+        let probe = NSHostingView(
+            rootView: SettingsWindowContent(store: store, coordinator: coordinator, licenseStore: licenseStore)
+        )
         probe.setFrameSize(NSSize(width: SettingsWindowView.contentWidth, height: 0))
         probe.layoutSubtreeIfNeeded()
         let naturalHeight = probe.fittingSize.height
