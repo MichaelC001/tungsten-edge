@@ -439,6 +439,7 @@ final class AppTracker: ObservableObject {
                     place(make(token: seat.token, Y, history: seat.formerCgIDs,
                                wasEverVisible: seat.everSeenVisible))
                     usedEligible.insert(yc)
+                    observers[pid]?.registerWindow(Y.element, cgWindowID: yc)   // 接手新 activeCgID 必须订阅，理由见下面顶替分支
                     tearOutCgIDs.insert(X)
                     // X 不标 used → 落到 Pass B 成新座位（被赶出去的当前标签）
                 } else {
@@ -479,6 +480,10 @@ final class AppTracker: ObservableObject {
                     place(make(token: seat.token, Y, history: history,
                                wasEverVisible: seat.everSeenVisible))
                     usedEligible.insert(yc)
+                    // 接手的 Y 必须在这里订阅每窗口通知（destroy/min/demin/title 只在接手 activeCgID 的三处订阅：新建座位、顶替、拖出替换）。
+                    // 否则 Y 关掉时没有 destroy 通知 → 没有 tombstone；Ghostty 关掉的窗口还赖在 CG 全列表里，
+                    // 座位会走「仍在 CG」保留分支永久留下幽灵卡（2026-08-23 最小化标签组关最后一个标签实测）。
+                    observers[pid]?.registerWindow(Y.element, cgWindowID: yc)
                 } else if cgIDs.contains(X) && !isTombstoned(X) {
                     // X 离开 AX 但仍在 CG。区分「最小化/隐藏(保座位)」vs「关窗后窗口赖在 CG(该删)」:
                     // 信号 = 离开 AX 前最后一次是不是 min(最小化会先经 Miniaturized 通知标 min；关窗不会)。
