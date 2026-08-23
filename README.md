@@ -178,6 +178,8 @@ The application source code, build scripts, and assets required to build it are 
 
 The license covers the source code; it does not require official signed/notarized binaries or related services to be provided free of charge.
 
+The names "Tungsten Edge" and "钨极" and the logo are trademarks and are not covered by the GPL. Forks and self-built binaries must use a different name and icon — see [TRADEMARK.md](TRADEMARK.md).
+
 ---
 
 ## Developers

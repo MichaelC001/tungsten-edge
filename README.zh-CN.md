@@ -164,6 +164,8 @@ Copyright (C) 2026 Moonbai Studio.
 
 该许可证覆盖源码，但不要求官方签名公证版或相关服务必须免费提供。
 
+「Tungsten Edge」「钨极」两个名称与标志是商标，不在 GPL 授权范围内。分支和自行编译的版本必须换名字、换图标，详见 [TRADEMARK.md](TRADEMARK.md)。
+
 ---
 
 ## 开发者
