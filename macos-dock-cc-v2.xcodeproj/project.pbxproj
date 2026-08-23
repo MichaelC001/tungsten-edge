@@ -94,9 +94,11 @@
 		A0000000000000000000FF01 /* LaunchGateDecision.swift in Sources */ = {isa = PBXBuildFile; fileRef = A0000000000000000000FF00 /* LaunchGateDecision.swift */; };
 		B10000000000000000000008 /* BadgeReadPlan.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10000000000000000000106 /* BadgeReadPlan.swift */; };
 		B1000000000000000000000E /* HoverPollThrottle.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10000000000000000000109 /* HoverPollThrottle.swift */; };
+		B1000000000000000000010E /* MinimizeHandoffTarget.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1000000000000000000010D /* MinimizeHandoffTarget.swift */; };
 		A0000000000000000000FF02 /* LaunchGateDecision.swift in Sources */ = {isa = PBXBuildFile; fileRef = A0000000000000000000FF00 /* LaunchGateDecision.swift */; };
 		B10000000000000000000009 /* BadgeReadPlan.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10000000000000000000106 /* BadgeReadPlan.swift */; };
 		B1000000000000000000000F /* HoverPollThrottle.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10000000000000000000109 /* HoverPollThrottle.swift */; };
+		B1000000000000000000010F /* MinimizeHandoffTarget.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1000000000000000000010D /* MinimizeHandoffTarget.swift */; };
 		A0000000000000000000FF11 /* LaunchGateDecisionTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A0000000000000000000FF10 /* LaunchGateDecisionTests.swift */; };
 		A0000000000000000000FF21 /* AppLaunchTargetDecision.swift in Sources */ = {isa = PBXBuildFile; fileRef = A0000000000000000000FF20 /* AppLaunchTargetDecision.swift */; };
 		A0000000000000000000FF22 /* AppLaunchTargetDecision.swift in Sources */ = {isa = PBXBuildFile; fileRef = A0000000000000000000FF20 /* AppLaunchTargetDecision.swift */; };
@@ -325,6 +327,7 @@
 		B1000000000000000000000B /* BadgeStoreTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10000000000000000000108 /* BadgeStoreTests.swift */; };
 		B1000000000000000000000A /* BadgeReadPlanTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10000000000000000000107 /* BadgeReadPlanTests.swift */; };
 		B10000000000000000000010 /* HoverPollThrottleTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1000000000000000000010A /* HoverPollThrottleTests.swift */; };
+		B10000000000000000000111 /* MinimizeHandoffTargetTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10000000000000000000110 /* MinimizeHandoffTargetTests.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -401,6 +404,7 @@
 		B10000000000000000000108 /* BadgeStoreTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BadgeStoreTests.swift; sourceTree = "<group>"; };
 		B10000000000000000000107 /* BadgeReadPlanTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BadgeReadPlanTests.swift; sourceTree = "<group>"; };
 		B1000000000000000000010A /* HoverPollThrottleTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HoverPollThrottleTests.swift; sourceTree = "<group>"; };
+		B10000000000000000000110 /* MinimizeHandoffTargetTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MinimizeHandoffTargetTests.swift; sourceTree = "<group>"; };
 		A00000000000000000009700 /* DragConversionPlan.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DragConversionPlan.swift; sourceTree = "<group>"; };
 		A00000000000000000009750 /* NonConstrainingPanel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NonConstrainingPanel.swift; sourceTree = "<group>"; };
 		A00000000000000000000C00 /* ManualPanelHostTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ManualPanelHostTests.swift; sourceTree = "<group>"; };
@@ -512,6 +516,7 @@
 		A0000000000000000000FF00 /* LaunchGateDecision.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LaunchGateDecision.swift; sourceTree = "<group>"; };
 		B10000000000000000000106 /* BadgeReadPlan.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BadgeReadPlan.swift; sourceTree = "<group>"; };
 		B10000000000000000000109 /* HoverPollThrottle.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HoverPollThrottle.swift; sourceTree = "<group>"; };
+		B1000000000000000000010D /* MinimizeHandoffTarget.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MinimizeHandoffTarget.swift; sourceTree = "<group>"; };
 		A0000000000000000000FF20 /* AppLaunchTargetDecision.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppLaunchTargetDecision.swift; sourceTree = "<group>"; };
 		A00000000000000000009580 /* AppMembershipMenuPlan.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppMembershipMenuPlan.swift; sourceTree = "<group>"; };
 		A00000000000000000009410 /* LauncherMenuPlanTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LauncherMenuPlanTests.swift; sourceTree = "<group>"; };
@@ -736,6 +741,7 @@
 				A0000000000000000000FF00 /* LaunchGateDecision.swift */,
 				B10000000000000000000106 /* BadgeReadPlan.swift */,
 				B10000000000000000000109 /* HoverPollThrottle.swift */,
+				B1000000000000000000010D /* MinimizeHandoffTarget.swift */,
 				A0000000000000000000FF20 /* AppLaunchTargetDecision.swift */,
 				B72000000000000000000003 /* AppDisplayNameCache.swift */,
 				B72000000000000000000013 /* InstallationRecord.swift */,
@@ -1032,6 +1038,7 @@
 				B10000000000000000000108 /* BadgeStoreTests.swift */,
 				B10000000000000000000107 /* BadgeReadPlanTests.swift */,
 				B1000000000000000000010A /* HoverPollThrottleTests.swift */,
+				B10000000000000000000110 /* MinimizeHandoffTargetTests.swift */,
 				A00000000000000000009710 /* DragConversionPlanTests.swift */,
 				A00000000000000000000A110 /* MessagingZoneAdmissionTests.swift */,
 				A00000000000000000000B110 /* FinderTaskbarPolicyTests.swift */,
@@ -1243,6 +1250,7 @@
 					A0000000000000000000FF01 /* LaunchGateDecision.swift in Sources */,
 					B10000000000000000000008 /* BadgeReadPlan.swift in Sources */,
 					B1000000000000000000000E /* HoverPollThrottle.swift in Sources */,
+					B1000000000000000000010E /* MinimizeHandoffTarget.swift in Sources */,
 					A0000000000000000000FF21 /* AppLaunchTargetDecision.swift in Sources */,
 					B72000000000000000000001 /* AppDisplayNameCache.swift in Sources */,
 					B72000000000000000000011 /* InstallationRecord.swift in Sources */,
@@ -1409,6 +1417,7 @@
 				A0000000000000000000FF02 /* LaunchGateDecision.swift in Sources */,
 				B10000000000000000000009 /* BadgeReadPlan.swift in Sources */,
 				B1000000000000000000000F /* HoverPollThrottle.swift in Sources */,
+				B1000000000000000000010F /* MinimizeHandoffTarget.swift in Sources */,
 				A0000000000000000000FF22 /* AppLaunchTargetDecision.swift in Sources */,
 				B72000000000000000000002 /* AppDisplayNameCache.swift in Sources */,
 				B72000000000000000000012 /* InstallationRecord.swift in Sources */,
@@ -1498,6 +1507,7 @@
 					B1000000000000000000000B /* BadgeStoreTests.swift in Sources */,
 					B1000000000000000000000A /* BadgeReadPlanTests.swift in Sources */,
 					B10000000000000000000010 /* HoverPollThrottleTests.swift in Sources */,
+					B10000000000000000000111 /* MinimizeHandoffTargetTests.swift in Sources */,
 					A00000000000000000009702 /* DragConversionPlan.swift in Sources */,
 					A00000000000000000000A102 /* MessagingZoneAdmission.swift in Sources */,
 					A00000000000000000000B102 /* FinderTaskbarPolicy.swift in Sources */,

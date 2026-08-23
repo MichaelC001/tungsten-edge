@@ -495,109 +495,98 @@ struct AccessibilityWindowActionExecutor {
         return CFEqual(focusedWindow, handle.element)
     }
 
-    /// Finds the previous regular app to return to before minimizing the current
-    /// frontmost focused window. Only fires when this specific handle is focused,
-    /// so right-click minimizing a background sibling does not steal focus.
-    func findBackgroundActivationTarget(for handle: WindowHandle) -> pid_t? {
+    /// 最小化前的前台交接：决定把前台交给谁（规则与理由见 `MinimizeHandoffTarget`）。
+    /// 两道闸保留：目标 App 得在前台、且这扇窗就是它的 focused window——右键最小化后台兄弟不抢焦点。
+    /// CG 列表只取 pid / wid / layer，**不读 `kCGWindowName`**（需要屏幕录制权限，装机版没有，
+    /// 2026-08-23 实测原标题守卫让交接从未生效）；候选资格改由快照成员身份决定。
+    func findBackgroundActivationTarget(
+        for handle: WindowHandle,
+        record: WindowRecord,
+        snapshot: DockSnapshot
+    ) -> MinimizeHandoffTarget.Verdict {
         // isActive（即时读）而非 NSWorkspace.frontmostApplication（滞后缓存）：SkyLight 激活后
         // ~1.5s 内读缓存会误判"App 不在前台"，静默跳过预切 → macOS 提拔同 App 兄弟窗口。
-        guard NSRunningApplication(processIdentifier: handle.pid)?.isActive == true else { return nil }
+        guard NSRunningApplication(processIdentifier: handle.pid)?.isActive == true else { return .none }
 
         let appElement = AXUIElementCreateApplication(handle.pid)
         AXUIElementSetMessagingTimeout(appElement, 0.2)
         guard let focused = axElementAttribute(kAXFocusedWindowAttribute as CFString, from: appElement),
-              CFEqual(focused, handle.element) else { return nil }
+              CFEqual(focused, handle.element) else { return .none }
 
         let ourPID = pid_t(ProcessInfo.processInfo.processIdentifier)
-        let policy = DockWindowEligibilityPolicy()
         guard let list = CGWindowListCopyWindowInfo(
             [.optionOnScreenOnly, .excludeDesktopElements],
             kCGNullWindowID
-        ) as? [[String: Any]] else { return nil }
+        ) as? [[String: Any]] else { return .none }
 
+        var zOrder: [MinimizeHandoffTarget.ZOrderedWindow] = []
         for info in list {
             guard let layer = info[kCGWindowLayer as String] as? Int, layer == 0 else { continue }
-            guard let ownerPID = info[kCGWindowOwnerPID as String] as? pid_t else { continue }
-            guard ownerPID != handle.pid, ownerPID != ourPID else { continue }
-
-            let app = NSRunningApplication(processIdentifier: ownerPID)
-            guard app?.activationPolicy == .regular else { continue }
-            let appName = (info[kCGWindowOwnerName as String] as? String) ?? ""
-            let rawTitle = (info[kCGWindowName as String] as? String)?
-                .trimmingCharacters(in: .whitespacesAndNewlines)
-            let title = rawTitle.flatMap { $0.isEmpty ? nil : $0 }
-            // CG-only 判定：本调用点传 subrole=nil、事后也不做 AX 复核，所以策略里「无标题也放行」
-            // 的分支（飞书）在这里必须失效——否则飞书那些贴在屏幕顶端的隐形 layer-0 窗口会被选成
-            // 交接目标，切前台后 AppKit 把飞书主窗口抬到最前（2026-08-02 实测）。几乎每个 App 都
-            // 挂着无标题 layer-0 窗口，只是别的 App 撞标题检查就被挡住了。见 AGENTS.md。
-            guard title != nil else { continue }
-            let bounds = (info[kCGWindowBounds as String] as? [String: Any])
-                .flatMap { CGRect(dictionaryRepresentation: $0 as CFDictionary) }
-            let alpha = (info[kCGWindowAlpha as String] as? NSNumber)?.doubleValue
-
-            let candidate = DockWindowEligibilityPolicy.Candidate(
-                bundleIdentifier: app?.bundleIdentifier,
-                appName: appName,
-                title: title,
-                subrole: nil,
-                bounds: bounds,
-                alpha: alpha,
-                activationPolicy: app?.activationPolicy ?? .prohibited,
-                executablePath: app?.executableURL?.path
-            )
-            guard policy.evaluate(candidate) == .keep else { continue }
-
-            Self.chipProbeLogger.info(
-                "postactivate-target candidate=\(app?.localizedName ?? "(unknown)", privacy: .public) pid=\(ownerPID, privacy: .public)"
-            )
-            return ownerPID
+            guard let ownerPID = info[kCGWindowOwnerPID as String] as? pid_t, ownerPID != ourPID else { continue }
+            guard let wid = info[kCGWindowNumber as String] as? UInt32 else { continue }
+            zOrder.append(.init(pid: ownerPID, cgWindowID: CGWindowID(wid)))
         }
 
-        Self.chipProbeLogger.info("postactivate-target no-eligible-candidate pid=\(handle.pid, privacy: .public)")
-        return nil
+        let verdict = MinimizeHandoffTarget.select(zOrder: zOrder, target: record, snapshot: snapshot)
+        switch verdict {
+        case .switchTo(let pid, let wid):
+            Self.chipProbeLogger.info(
+                "postactivate-target candidate=\(NSRunningApplication(processIdentifier: pid)?.localizedName ?? "(unknown)", privacy: .public) pid=\(pid, privacy: .public) wid=\(wid, privacy: .public)"
+            )
+        case .siblingTakesOver:
+            Self.chipProbeLogger.info("postactivate-target sibling-takes-over pid=\(handle.pid, privacy: .public)")
+        case .none:
+            Self.chipProbeLogger.info("postactivate-target no-eligible-candidate pid=\(handle.pid, privacy: .public)")
+        }
+        return verdict
     }
 
     // MARK: - Front process and window-targeted focus helpers
 
     private typealias GetProcessForPIDFunc =
         @convention(c) (pid_t, UnsafeMutablePointer<ProcessSerialNumber>) -> OSStatus
-    private typealias SetFrontProcessFunc =
-        @convention(c) (UnsafePointer<ProcessSerialNumber>, UInt32) -> OSStatus
 
-    private static let frontProcessSwitch: (get: GetProcessForPIDFunc, setFront: SetFrontProcessFunc)? = {
+    private static let getProcessForPID: GetProcessForPIDFunc? = {
         let paths = [
             "/System/Library/Frameworks/ApplicationServices.framework/ApplicationServices",
             "/System/Library/Frameworks/CoreServices.framework/CoreServices"
         ]
         for path in paths {
             guard let handle = dlopen(path, RTLD_LAZY) else { continue }
-            guard let get = dlsym(handle, "GetProcessForPID"),
-                  let setFront = dlsym(handle, "SetFrontProcessWithOptions") else { continue }
-            return (
-                unsafeBitCast(get, to: GetProcessForPIDFunc.self),
-                unsafeBitCast(setFront, to: SetFrontProcessFunc.self)
-            )
+            guard let get = dlsym(handle, "GetProcessForPID") else { continue }
+            return unsafeBitCast(get, to: GetProcessForPIDFunc.self)
         }
         return nil
     }()
 
-    /// Makes the previous app active before minimizing, preventing macOS from
-    /// promoting a sibling window in the minimized app. Deprecated-but-public API,
-    /// dlsym-loaded so failure degrades to the post-activate fallback.
-    func switchFrontmostWithoutReorder(toPID pid: pid_t) -> Bool {
-        guard let api = Self.frontProcessSwitch else {
-            Self.chipProbeLogger.info("switch-frontmost-noreorder unavailable (symbols missing)")
+    /// 最小化前的前台交接（M4，2026-08-23 矩阵 0/20 提拔）：`_SLPSSetFrontProcessWithOptions`
+    /// 以 `kCPSNoWindows` 切前台——**不抬交接 App 的任何窗口**，被收的窗口从最上层正常收起，收完
+    /// 下面那扇自然就在最前；然后**等目标 App 自己通过 AX 回答「不在前台」**（典型 9–13ms，
+    /// 上限 100ms）再最小化。`NSRunningApplication.isActive` 瞬间就翻、不能当这个闸：
+    /// 它翻了之后目标 App 仍可能没处理完失活，此时最小化 AppKit 照样提拔兄弟（矩阵 M1/M2/M3
+    /// 各 1–3/10；加 AX 闸后 M4/M5 均 0/20）。旧的公开 API `SetFrontProcessWithOptions(FrontWindowOnly)`
+    /// 会先把交接窗口抬到被收窗口之上，动画从别人背后开始，已弃用。
+    func switchFrontmostForHandoff(toPID pid: pid_t, windowID: CGWindowID, awaitingDeactivationOf targetPID: pid_t) -> Bool {
+        guard postSkyLightFrontSwitchOnly(pid: pid, windowID: windowID, mode: Self.kCPSNoWindows) else {
+            Self.chipProbeLogger.info("switch-frontmost-handoff unavailable pid=\(pid, privacy: .public)")
             return false
         }
-        var psn = ProcessSerialNumber()
-        guard api.get(pid, &psn) == noErr else {
-            Self.chipProbeLogger.info("switch-frontmost-noreorder GetProcessForPID failed pid=\(pid, privacy: .public)")
-            return false
-        }
-        let kSetFrontProcessFrontWindowOnly: UInt32 = 1
-        let result = withUnsafePointer(to: &psn) { api.setFront($0, kSetFrontProcessFrontWindowOnly) }
-        Self.chipProbeLogger.info("switch-frontmost-noreorder pid=\(pid, privacy: .public) result=\(result, privacy: .public)")
-        return result == noErr
+        let targetApp = AXUIElementCreateApplication(targetPID)
+        AXUIElementSetMessagingTimeout(targetApp, 0.05)
+        let deadline = Date().addingTimeInterval(0.1)
+        var stillFrontmost: Bool? = true
+        repeat {
+            var raw: CFTypeRef?
+            if AXUIElementCopyAttributeValue(targetApp, kAXFrontmostAttribute as CFString, &raw) == .success {
+                stillFrontmost = (raw as? NSNumber)?.boolValue
+            } else {
+                stillFrontmost = nil
+            }
+            if stillFrontmost == false { break }
+            usleep(2_000)
+        } while Date() < deadline
+        Self.chipProbeLogger.info("switch-frontmost-handoff pid=\(pid, privacy: .public) targetStillFrontmost=\(String(describing: stillFrontmost), privacy: .public)")
+        return true
     }
 
     private typealias SLPSSetFrontWindowFunc =
@@ -620,15 +609,22 @@ struct AccessibilityWindowActionExecutor {
 
     /// 仅做 `_SLPSSetFrontProcessWithOptions` 前切、不发 make-key down（还原预激活用：
     /// down 要等 unminimize 之后发，见 activate() 还原分支的 R2 序注释）。
+    fileprivate static let kCPSUserGenerated: UInt32 = 0x200
+    /// 切前台但不抬该 App 的任何窗口（最小化交接用，见 `switchFrontmostForHandoff`）。
+    fileprivate static let kCPSNoWindows: UInt32 = 0x400
+
     @discardableResult
-    fileprivate func postSkyLightFrontSwitchOnly(pid: pid_t, windowID: CGWindowID) -> Bool {
+    fileprivate func postSkyLightFrontSwitchOnly(
+        pid: pid_t,
+        windowID: CGWindowID,
+        mode: UInt32 = AccessibilityWindowActionExecutor.kCPSUserGenerated
+    ) -> Bool {
         guard Self.skyLightFocusEnabled else { return false }
         guard let focus = Self.skyLightFocus,
-              let getPSN = Self.frontProcessSwitch?.get else { return false }
+              let getPSN = Self.getProcessForPID else { return false }
         var psn = ProcessSerialNumber()
         guard getPSN(pid, &psn) == noErr else { return false }
-        let kCPSUserGenerated: UInt32 = 0x200
-        _ = withUnsafePointer(to: &psn) { focus.slps($0, windowID, kCPSUserGenerated) }
+        _ = withUnsafePointer(to: &psn) { focus.slps($0, windowID, mode) }
         return true
     }
 
@@ -650,19 +646,26 @@ struct AccessibilityWindowActionExecutor {
     @discardableResult
     fileprivate func postSkyLightWindowFocus(pid: pid_t, windowID: CGWindowID) -> Bool {
         guard Self.skyLightFocusEnabled else { return false }
-        guard let focus = Self.skyLightFocus,
-              let getPSN = Self.frontProcessSwitch?.get else {
+        guard Self.skyLightFocus != nil, Self.getProcessForPID != nil else {
             Self.chipProbeLogger.info("skylight-focus unavailable pid=\(pid, privacy: .public)")
             return false
         }
-        var psn = ProcessSerialNumber()
-        guard getPSN(pid, &psn) == noErr else {
+        guard postSkyLightFrontSwitchOnly(pid: pid, windowID: windowID, mode: Self.kCPSUserGenerated) else {
             Self.chipProbeLogger.info("skylight-focus GetProcessForPID failed pid=\(pid, privacy: .public)")
             return false
         }
+        return postSkyLightMakeKeyDown(pid: pid, windowID: windowID)
+    }
 
-        let kCPSUserGenerated: UInt32 = 0x200
-        _ = withUnsafePointer(to: &psn) { focus.slps($0, windowID, kCPSUserGenerated) }
+    /// 只发 make-key 的合成 mouse-down，不切前台（字节布局见上）。最小化交接后给接手 App 的那扇
+    /// 窗口补 key 用：`kCPSNoWindows` 前切让 App 成了前台却没有 key 窗口（owner 2026-08-23
+    /// 「聚焦是空的」），收起目标后补这一枚 down，接手窗口立刻成 key（矩阵 M6 5/5）。
+    @discardableResult
+    fileprivate func postSkyLightMakeKeyDown(pid: pid_t, windowID: CGWindowID) -> Bool {
+        guard Self.skyLightFocusEnabled else { return false }
+        guard let focus = Self.skyLightFocus, let getPSN = Self.getProcessForPID else { return false }
+        var psn = ProcessSerialNumber()
+        guard getPSN(pid, &psn) == noErr else { return false }
 
         var event = [UInt8](repeating: 0, count: 0x100)
         event[0x04] = 0xf8            // 记录声明长度（不随缓冲区变）
@@ -684,6 +687,11 @@ struct AccessibilityWindowActionExecutor {
             event.withUnsafeBufferPointer { _ = focus.post(pointer, $0.baseAddress!) }
         }
         return true
+    }
+
+    /// 最小化交接的收尾：目标已收起，给接手 App 的窗口补 key（见 `postSkyLightMakeKeyDown`）。
+    func makeKeyAfterHandoff(pid: pid_t, windowID: CGWindowID) {
+        postSkyLightMakeKeyDown(pid: pid, windowID: windowID)
     }
 
     /// 提前聚焦（激活闪根治 2026-07-03）：点击瞬间用快照里已知的 cgWindowID 直接切前台，
@@ -936,14 +944,23 @@ struct PlatformActionExecutor {
                     && MinimizedRestorePreActivation.canPreActivate(snapshot: snapshot, target: record)
             )
         case .minimizeWindow:
-            let targetPID = windowExecutor.findBackgroundActivationTarget(for: handle)
+            let handoff = windowExecutor.findBackgroundActivationTarget(for: handle, record: record, snapshot: snapshot)
+            var targetPID: pid_t?
+            var handoffWindowID: CGWindowID?
             var preSwitched = false
-            if let targetPID {
-                preSwitched = windowExecutor.switchFrontmostWithoutReorder(toPID: targetPID)
+            if case .switchTo(let pid, let wid) = handoff {
+                targetPID = pid
+                handoffWindowID = wid
+                preSwitched = windowExecutor.switchFrontmostForHandoff(
+                    toPID: pid, windowID: wid, awaitingDeactivationOf: handle.pid
+                )
             }
 
             let minExec = windowExecutor.minimize(handle)
             if minExec.success {
+                if preSwitched, let targetPID, let handoffWindowID {
+                    windowExecutor.makeKeyAfterHandoff(pid: targetPID, windowID: handoffWindowID)
+                }
                 if !preSwitched, let targetPID {
                     usleep(Self.postMinimizeActivateDelayMicroseconds)
                     let activated = NSRunningApplication(processIdentifier: targetPID)?
