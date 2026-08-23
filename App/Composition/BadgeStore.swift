@@ -6,10 +6,11 @@ import os
 /// the cadence while visible is a product requirement and never stretches). Since the
 /// targeted-read rework the per-tick work is 1-3 AX round trips against cached AXDockItem
 /// elements instead of a full Dock-tree walk, and the published dict is scoped to the
-/// messaging apps that can actually show a badge (visible ∩ running — the strip's
-/// messaging chips are the only consumer, product decision 2026-06-12). A tick with no
-/// readable messaging app performs zero AX traffic. Publishes only on change so SwiftUI
-/// doesn't re-render chips for identical badge state.
+/// messaging apps that can actually show a badge (messaging **identity** ∩ running, minus
+/// drawer — since 2026-08-23 the badge follows the app, not the zone: a messaging app's
+/// leftmost strip card paints it whether it sits in the zone or in the live zone). A tick
+/// with no readable messaging app performs zero AX traffic. Publishes only on change so
+/// SwiftUI doesn't re-render chips for identical badge state.
 /// Kill switch DOCK_BADGE_TARGETED=0 restores the legacy full-tree walk every tick.
 @MainActor
 final class BadgeStore: ObservableObject {
@@ -29,7 +30,7 @@ final class BadgeStore: ObservableObject {
     private var cacheCapturedAt: TimeInterval = 0
     private var pathToBundleID: [String: String] = [:]
     private var rewalkRequested = false
-    /// 可读集 = 消息区可见 ∩ 在跑（AppDelegate 的四源 CombineLatest 推进来）。
+    /// 可读集 = 消息应用身份 ∩ 在跑 − 抽屉（`AppMembershipProjection.badgeEligibleIDs`，AppDelegate 推进来）。
     private var readableMessagingIDs: [String] = []
     private var taskbarVisible = true
     private let logger = Logger(subsystem: "com.caye.macosdockcc.v2", category: "Badge")

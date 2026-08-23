@@ -1,14 +1,18 @@
 import AppKit
 import Foundation
 
-/// Ordered list of "messaging" apps whose chips pin to the leftmost strip zone and
+/// Ordered list of apps pinned to the leftmost strip zone (the messaging zone) — they
 /// persist even after app exit. Drawer placement may hide the chip without clearing
-/// this messaging identity.
+/// this zone membership.
 ///
-/// Membership has two tiers with identical behavior:
-/// - Auto: built-in whitelist + `LSApplicationCategoryType == social-networking`,
-///   registered the first time the app is seen running (`autoRegister`).
-/// - Manual: right-click「标记为消息应用」, the fallback for apps the whitelist misses.
+/// **Two concepts, split on 2026-08-23 (owner): "is a messaging app" vs "is in the zone".**
+/// - *Identity* (`isMessagingApp`): whitelist ∪ social-networking category ∪ manual pin,
+///   minus opt-out. Decides the **unread badge** — wherever the app's card happens to be.
+/// - *Zone membership* (`bundleIDs`): decides the pinned-zone chip. Auto-entry still
+///   requires an identifiable main window (`autoRegister`); everything else is manual
+///   (right-click「固定到消息区」, the fallback for apps the whitelist misses).
+/// Overseas messengers (信息 / Slack / Discord …) are single-window apps that never pass
+/// the zone gate — the badge is what they actually need, so it must not depend on the zone.
 ///
 /// The messaging flag is permanent until explicitly unmarked — moving an app to the
 /// drawer hides it from the strip but does NOT clear the flag (drawer is the
@@ -75,6 +79,23 @@ final class MessagingAppStore: ObservableObject {
     }
 
     func contains(_ id: String) -> Bool { bundleIDs.contains(id) }
+
+    /// 消息应用**身份**（决定角标），与「在不在消息区」无关：名单里的 / 内置白名单 /
+    /// App Store 社交类目。类目误判（Ghostty 之类）没有副作用——它在系统 Dock 上没有
+    /// 角标，读出来是空。
+    ///
+    /// **不看 opt-out**（2026-08-23 验收回炉：owner 早先把信息从区里取消过，红点就没了）：
+    /// 菜单项叫「固定到消息区」，取消它只能表达「别钉在区里」，表达不了「这不是消息应用」；
+    /// opt-out 的职责只剩「别自动再钉回去」（`autoRegister`）。
+    ///
+    /// 读的是 store 当前状态：调用方必须在发布完成后再读（`@Published` 在赋值前发布，
+    /// `AppDelegate` 的订阅走 `receive(on: .main)` 异步派发，所以安全）。
+    func isMessagingApp(_ id: String) -> Bool {
+        guard !id.isEmpty else { return false }
+        return bundleIDs.contains(id)
+            || Self.builtinMessagingIDs.contains(id)
+            || Self.isSocialCategory(id)
+    }
 
     /// Manual mark: pins the app and clears any earlier opt-out. Returns whether
     /// this was the first join, so the caller seeds kept on first join only.

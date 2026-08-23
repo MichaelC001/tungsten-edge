@@ -51,6 +51,9 @@ struct StripProjection {
     let layoutKeys: [StripLayoutKey]
     let messagingIDs: [String]
     let draggingID: String?
+    /// 每个 app 在常规区**最靠左**那张卡的 entry id——未读角标只画在这一张上
+    /// （一个未读数不能变成三个红点）。消息区成员不在这里：它们的角标画在区里那枚图标上。
+    let badgeEntryIDByBundle: [String: String]
 
     func hasRealWindow(bundleID: String) -> Bool {
         snapshotItems.contains {
@@ -249,8 +252,22 @@ struct DockStripView: View {
         var absorbedWindowIDs = Set<String>()
         for bid in msg {
             let appWindows = items.filter { $0.bundleIdentifier == bid && !$0.isAppLevelFallback }
-            let main = appWindows.first { AppDisplayNameResolver.titleMatchesAppName($0.title, bundleID: bid) }
+            // 认主窗口的三条规则在纯 `MessagingMainWindowDecision` 里（标题匹配 → 排除后唯一 → 认不出）；
+            // 这里只把窗口事实喂进去。
+            let mainID = MessagingMainWindowDecision.mainWindowID(
+                bundleID: bid,
+                windows: appWindows.map {
+                    .init(id: $0.id, title: $0.title,
+                          isMinimized: $0.status == WindowStatus.minimized.rawValue,
+                          area: ($0.bounds?.width ?? 0) * ($0.bounds?.height ?? 0))
+                },
+                titleMatchesAppName: { AppDisplayNameResolver.titleMatchesAppName($0, bundleID: bid) }
+            )
+            let main = appWindows.first { $0.id == mainID }
             if let main { absorbedWindowIDs.insert(main.id) }
+            if main == nil || appWindows.count > 1 {
+                MessagingZoneDiagnostics.record(bundleID: bid, windows: appWindows, mainID: main?.id)
+            }
             messaging.append(.messagingApp(bundleID: bid, mainWindow: main))
         }
 
@@ -323,6 +340,21 @@ struct DockStripView: View {
             guard case let .messagingApp(bundleID, _) = entry else { return nil }
             return bundleID
         }
+        // 角标落点：常规区里每个 app 显示序最左的那张窗口卡 / 占位卡。消息区成员跳过——
+        // 它的红点在区里那枚图标上，独立聊天窗的卡不能再画一个。
+        var badgeEntryIDByBundle: [String: String] = [:]
+        for entry in entries {
+            switch entry {
+            case let .window(item):
+                guard let bid = item.bundleIdentifier, !msgSet.contains(bid) else { continue }
+                if badgeEntryIDByBundle[bid] == nil { badgeEntryIDByBundle[bid] = item.id }
+            case let .keptApp(bid):
+                guard !msgSet.contains(bid) else { continue }
+                if badgeEntryIDByBundle[bid] == nil { badgeEntryIDByBundle[bid] = entry.id }
+            default:
+                continue
+            }
+        }
         let draggingID: String?
         // `carriedPayload` 而不是 `draggingPayload`：松手后还有 0.26 秒的归位飞行，
         // 那段时间原位必须继续空着，否则卡先显形、载体还在飞。
@@ -349,7 +381,8 @@ struct DockStripView: View {
             entries: entries,
             layoutKeys: entries.map(StripLayoutKey.init),
             messagingIDs: messagingIDs,
-            draggingID: draggingID
+            draggingID: draggingID,
+            badgeEntryIDByBundle: badgeEntryIDByBundle
         )
     }
 
@@ -844,9 +877,13 @@ struct DockStripView: View {
         case let .window(item):
             runtime.toggle(windowID: item.actionWindowID)
         case let .messagingApp(bid, main):
-            if let main { runtime.toggle(windowID: main.actionWindowID) } else { launcherTap(bid) }
+            if let main {
+                runtime.toggle(windowID: main.actionWindowID)
+            } else {
+                launcherTap(bid, hasRealWindow: projection.hasRealWindow(bundleID: bid))
+            }
         case let .keptApp(bid):
-            launcherTap(bid)
+            launcherTap(bid, hasRealWindow: false)   // 保留占位只在没有真窗口时存在
         case .pinnedFolder, .shelf, .divider:
             return
         }
@@ -872,10 +909,10 @@ struct DockStripView: View {
     }
 
     /// `LauncherChip` 在条上的两条 tap 路径（`onTap: reopen` / `onLaunch`），加上它自己的「启动中不动」闸。
-    private func launcherTap(_ bid: String) {
+    private func launcherTap(_ bid: String, hasRealWindow: Bool) {
         guard !runtime.launchingBundleIDs.contains(bid) else { return }
         if runningApplicationStore.isRunning(bid) {
-            Self.reopenMainWindow(bundleID: bid)
+            Self.messagingFallbackTap(bundleID: bid, hasRealWindow: hasRealWindow)
         } else {
             _ = runtime.beginLaunch(bid)
         }
@@ -1506,12 +1543,18 @@ struct DockStripView: View {
                                    hovered: Bool, entrance: Bool) -> some View {
         switch entry {
         case let .window(item):
+            // 角标跟着应用走（2026-08-23）：`badgesByBundleID` 已按消息应用身份圈过范围，
+            // 这里只再挑「该 app 最左那张卡」。
+            let windowBadge: String? = item.bundleIdentifier.flatMap { bid in
+                projection.badgeEntryIDByBundle[bid] == item.id ? badgeStore.badgesByBundleID[bid] : nil
+            }
             ChipView(item: item,
                      scale: dockScale,
                      hoverStyle: hoverStyle,
                      isHovered: hovered,
                      showRunningDot: true,
                      pulseNonce: chipPulseNonces[item.id] ?? 0,
+                     badgeText: windowBadge,
                      slotHidden: projection.draggingID == item.id)
         case .divider:
             Rectangle()
@@ -1587,7 +1630,10 @@ struct DockStripView: View {
                                  ),
                                  badgeText: badge,
                                  slotHidden: draggingMessagingBundleID == bid,
-                                 onTap: running ? { Self.reopenMainWindow(bundleID: bid) } : nil,
+                                 onTap: running
+                                    ? { Self.messagingFallbackTap(bundleID: bid,
+                                                                  hasRealWindow: projection.hasRealWindow(bundleID: bid)) }
+                                    : nil,
                                  onLaunch: { runtime.beginLaunch(bid) })
                 }
             }
@@ -1608,6 +1654,8 @@ struct DockStripView: View {
                 hoverStyle: hoverStyle,
                 hoverInput: .resolved(hovered),
                 membershipItems: keptAppMembershipItems(bundleID: bid),
+                badgeText: projection.badgeEntryIDByBundle[bid] == entry.id
+                    ? badgeStore.badgesByBundleID[bid] : nil,
                 slotHidden: projection.draggingID == "app-\(bid)",
                 onTap: reopen,
                 onLaunch: { runtime.beginLaunch(bid) }
@@ -1741,6 +1789,21 @@ struct DockStripView: View {
 
     /// Dock-icon-click equivalent: unhide + reopen. The app recreates its main window
     /// even when other windows are visible (verified with WeChat, 2026-06-12).
+    /// 消息区图标**认不出主窗口**时的左键（第 3 条兜底，2026-08-23）：
+    /// - app 没有任何真窗口 → 叫回主窗口（owner 每天「关主窗 → 点图标叫回来」的流程，不能变）；
+    /// - 有窗口但认不出哪扇是主 → **整个 app 的开关**：在前台就收起、否则唤到前台。图标永远
+    ///   有反应，代价是独立聊天窗一起收——比改前「只能叫不能收」强。逻辑复用抽屉图标那份
+    ///   `LauncherChip.performDefaultTap`，不另抄一遍「前台就收起、否则唤出」。
+    private static func messagingFallbackTap(bundleID: String, hasRealWindow: Bool) {
+        guard hasRealWindow else {
+            reopenMainWindow(bundleID: bundleID)
+            return
+        }
+        LauncherChip.performDefaultTap(bundleID: bundleID, isRunning: true,
+                                       finderHasRealWindow: false,   // 访达进不了消息区
+                                       launch: {}, onOpen: nil)
+    }
+
     private static func reopenMainWindow(bundleID: String) {
         let runningApps = NSRunningApplication.runningApplications(withBundleIdentifier: bundleID)
             .filter {
@@ -1752,6 +1815,35 @@ struct DockStripView: View {
         NSWorkspace.shared.openApplication(at: url, configuration: .init(), completionHandler: nil)
     }
 
+}
+
+// MARK: - Messaging zone diagnostics
+
+/// 永久的异常路径诊断（同 `[tabfold]`：单窗口、认得出的正常路径零输出）：消息区成员**认不出主窗口**，
+/// 或者**有不止一扇真窗口**（这时「挑中了哪扇」本身就是要查的事）时，记一行这个 app 的每扇窗
+/// （id + 原始标题）、挑中的主窗口和名字表此刻认得的写法。按签名去重——同一组窗口 + 同一个
+/// 结论只记一次，变了才再记。走 `Logger` 不走 `print`：`open` 起的构建 stdout 是
+/// 丢掉的，而 `log show --predicate 'category == "MessagingZone"'` 事后随时能读（notice 级才落盘）。
+///
+/// 2026-08-23 加：owner 报「微信消息区一张卡、常规区一张卡」，调试台窗口又有一半在屏幕外，
+/// 三轮追问都定不了是「标题不是微信」还是「名字表没认出微信」——有这一行当场就知道。
+enum MessagingZoneDiagnostics {
+    private static let logger = Logger(subsystem: "com.caye.macosdockcc.v2", category: "MessagingZone")
+    private static let lock = NSLock()
+    private static var lastSignatureByBundle: [String: String] = [:]
+
+    static func record(bundleID: String, windows: [StripItem], mainID: String?) {
+        let described = windows.map { "\($0.id):\($0.title.isEmpty ? "<empty>" : $0.title)" }
+        let signature = described.joined(separator: "|") + "→" + (mainID ?? "none")
+        lock.lock()
+        let unchanged = lastSignatureByBundle[bundleID] == signature
+        if !unchanged { lastSignatureByBundle[bundleID] = signature }
+        lock.unlock()
+        guard !unchanged else { return }
+        let known = AppDisplayNameResolver.knownAppNames(for: bundleID).sorted().joined(separator: ", ")
+        // notice 而不是 info：info 级默认不落盘，`log show` 事后读不到（只有 `log stream` 当场能看）。
+        logger.notice("[msgmain] bid=\(bundleID, privacy: .public) windows=[\(described.joined(separator: ", "), privacy: .public)] known=[\(known, privacy: .public)] main=\(mainID ?? "none", privacy: .public)")
+    }
 }
 
 // MARK: - Chip View
@@ -1781,7 +1873,7 @@ struct ChipView: View {
     /// 外部手势（重击/中键预览）触发的脉冲信号：nonce 变化即触发一次 fireTapPulse，
     /// 给活访达窗口预览那 ~200ms 反查延迟一个"点到了"的即时确认。默认 0 = 不脉冲。
     var pulseNonce: Int = 0
-    /// 未读角标文本（消息区专用），`nil` = 不画。默认 `nil` 是**正确**的省略语义
+    /// 未读角标文本（消息应用的卡：消息区那枚图标，或常规区最左那张），`nil` = 不画。默认 `nil` 是**正确**的省略语义
     /// （绝大多数 chip 本来就没有角标），所以这一个可以有默认值——和 `scale` /
     /// `hoverStyle` 那种"漏传即静默渲染错"的性质不同。
     /// 画在 chip 内部而不是由调用方叠 ZStack，理由见 `ChipBadgeView`。
@@ -1984,6 +2076,14 @@ struct ChipView: View {
         let pill = HStack(spacing: ChipPillMetrics.iconSpacing * scale) {
             appIcon(size: metrics.pillIconSize)
                 .frame(width: ChipPillMetrics.iconSlot * scale, height: ChipPillMetrics.iconSlot * scale)
+                // 未读角标（2026-08-23 起常规区的卡也画）：压在药丸里那枚小图标的右上角，按
+                // `titledCardBadgeScale` 缩一档——16pt 的角标盖在 22pt 的图标上太满。
+                // 同样挂在两个缩放之前，随悬停 / 按压 / 档位一起动。
+                .overlay(alignment: .topTrailing) {
+                    if let badgeText {
+                        ChipBadgeView(text: badgeText, scale: scale * ChipPillMetrics.titledCardBadgeScale)
+                    }
+                }
             Text(capturedDisplayTitle)
                 .font(.system(size: max(10, 12 * scale), weight: .medium, design: .rounded))
                 .foregroundStyle(titleColor)

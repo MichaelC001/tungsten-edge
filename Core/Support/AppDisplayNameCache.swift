@@ -59,6 +59,14 @@ final class AppNameRegistry {
     private let lock = NSLock()
     private var entries: [String: Entry] = [:]
 
+    /// 产品别名——**实测过才写，只加不猜**（2026-08-23）：同一个 app 在某种界面语言下给主窗口
+    /// 用的另一个品牌名，Info.plist 里查不到、运行名也不是它。微信英文界面（大陆账号）主窗口叫
+    /// `Weixin`，而英文系统里这个 app 叫 `WeChat`，两个都不等于「微信」——英文系统 + 大陆账号的
+    /// 用户（海外华人）因此进不了消息区、进了也认不出主窗口。已归一化（小写）。
+    static let productAliases: [String: Set<String>] = [
+        "com.tencent.xinWeChat": ["weixin"],
+    ]
+
     init(bundleNamesLoader: @escaping (String) -> Set<String>,
          runningNameLoader: @escaping (String) -> String?) {
         self.bundleNamesLoader = bundleNamesLoader
@@ -77,7 +85,7 @@ final class AppNameRegistry {
         lock.unlock()
 
         // 读盘在锁外做。条目缺失才读，读到就一直缓存着。
-        var entry = cached ?? Entry(names: bundleNamesLoader(bundleID), sawRunningName: false)
+        var entry = cached ?? Entry(names: baseNames(for: bundleID), sawRunningName: false)
 
         // 还没见过运行名 → 再试一次。见过就再也不查，抽风也影响不到已记住的名字。
         if !entry.sawRunningName {
@@ -118,9 +126,14 @@ final class AppNameRegistry {
 
         // 首次见到这个 bundle 时得把包内名一起带上——`knownNames` 只在条目缺失时读盘，
         // 若这里只塞运行名，包内名就永远补不上了。读盘在锁外做。
-        var names = existing?.names ?? bundleNamesLoader(bundleID)
+        var names = existing?.names ?? baseNames(for: bundleID)
         names.insert(normalized)
         commit(Entry(names: names, sawRunningName: true), for: bundleID)
+    }
+
+    /// 包内派生名 ∪ 产品别名：条目首次建立时的起点，两条建条目的路径都必须走这里。
+    private func baseNames(for bundleID: String) -> Set<String> {
+        bundleNamesLoader(bundleID).union(Self.productAliases[bundleID] ?? [])
     }
 
     func matches(title: String, bundleID: String) -> Bool {

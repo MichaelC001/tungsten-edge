@@ -44,7 +44,7 @@ final class AppMembershipController: ObservableObject {
         drawerStore.add(bundleID)
     }
 
-    /// 「标记为消息应用」：mark + 首次加入补 kept（默认保留）。不改 drawer——位置只能拖动改。
+    /// 「固定到消息区」：mark + 首次加入补 kept（默认保留）。不改 drawer——位置只能拖动改。
     func markMessaging(_ bundleID: String) {
         guard FinderTaskbarPolicy.canMarkMessaging(bundleID) else { return }
         if messagingStore.mark(bundleID) {
@@ -66,7 +66,7 @@ final class AppMembershipController: ObservableObject {
         }
     }
 
-    /// 取消「标记为消息应用」勾选：只清消息身份 + 记 opt-out；kept 与 drawer 保持不变。
+    /// 取消「固定到消息区」勾选：只清消息身份 + 记 opt-out；kept 与 drawer 保持不变。
     func unmarkMessaging(_ bundleID: String) {
         messagingStore.unmark(bundleID)
     }
@@ -114,6 +114,20 @@ enum AppMembershipProjection {
     ) -> [String] {
         let retained = Set(keptIDs).union(runningIDs)
         return filteredUnique(messagingIDs, excluding: Set(drawerIDs)).filter { retained.contains($0) }
+    }
+
+    /// 角标读取范围（2026-08-23 起与消息区解绑）：**身份** ∩ 在跑 − 抽屉。
+    /// 抽屉里的图标不画角标，条上也没有它的卡，读了也没处画，所以剔掉省一趟 AX。
+    /// 输出按字典序，让 `BadgeStore` 的「变了才重走」比较稳定。
+    static func badgeEligibleIDs(
+        isMessagingApp: (String) -> Bool,
+        drawerIDs: [String],
+        runningIDs: Set<String>
+    ) -> [String] {
+        let drawer = Set(drawerIDs)
+        return runningIDs
+            .filter { !$0.isEmpty && !drawer.contains($0) && isMessagingApp($0) }
+            .sorted()
     }
 
     static func drawerPreview(

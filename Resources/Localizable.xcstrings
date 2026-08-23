@@ -1040,18 +1040,18 @@
         }
       }
     },
-    "Mark as Messaging App": {
+    "Pin to Messaging Zone": {
       "localizations": {
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "标记为消息应用"
+            "value": "固定到消息区"
           }
         },
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Mark as Messaging App"
+            "value": "Pin to Messaging Zone"
           }
         }
       }

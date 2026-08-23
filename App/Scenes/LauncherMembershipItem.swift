@@ -31,7 +31,7 @@ extension LauncherMembershipItem {
                     controller.setKept(bundleID, enabled: !isChecked)
                 }
             case let .messaging(isChecked):
-                return LauncherMembershipItem(label: String(localized: "Mark as Messaging App"), isChecked: isChecked) {
+                return LauncherMembershipItem(label: String(localized: "Pin to Messaging Zone"), isChecked: isChecked) {
                     if isChecked {
                         controller.unmarkMessaging(bundleID)
                     } else {

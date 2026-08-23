@@ -133,6 +133,9 @@ enum ChipPillMetrics {
     static let badgeHorizontalPadding: CGFloat = 5
     /// 从卡片右上角往下推的量：原生的角标大部分压在图标上，只稍微探出圆角。
     static let badgeTopOffset: CGFloat = 5
+    /// 带标题的窗口卡上角标的缩放（相对图标卡的角标）。药丸里的图标槽只有 22pt，
+    /// 全尺寸 16pt 的角标会盖掉大半个图标；0.8 → 12.8pt，字号 8pt 仍可读。
+    static let titledCardBadgeScale: CGFloat = 0.8
 
     /// 药丸盒顶边到卡片顶边的距离：两个 `Spacer` 平分 `chipHeight - boxHeight`。
     static let boxTopInset: CGFloat = (chipHeight - boxHeight) / 2

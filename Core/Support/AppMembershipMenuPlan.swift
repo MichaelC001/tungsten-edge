@@ -5,10 +5,10 @@ import Foundation
 /// 映射成带动作的菜单项由 `LauncherMembershipItem.items` 完成，四条菜单构造路径统一消费。
 ///
 /// 固定矩阵（消息项标题恒定，以原生勾选态表达成员身份）：
-/// - strip 普通：在程序坞中保留 + 标记为消息应用（未勾选）
-/// - strip 消息：在程序坞中保留 + 标记为消息应用（已勾选）
+/// - strip 普通：在程序坞中保留 + 固定到消息区（未勾选）
+/// - strip 消息：在程序坞中保留 + 固定到消息区（已勾选）
 /// - drawer 普通：仅在程序坞中保留
-/// - drawer 消息：在程序坞中保留 + 标记为消息应用（已勾选）
+/// - drawer 消息：在程序坞中保留 + 固定到消息区（已勾选）
 /// - Finder：仅在程序坞中保留（2026-08-20 起访达纳入统一保留勾选，但仍不能进消息区）
 enum AppMembershipMenuPlan {
     enum Surface: Equatable { case strip, drawer }
@@ -30,7 +30,7 @@ enum AppMembershipMenuPlan {
         if isMessaging {
             items.append(.messaging(isChecked: true))
         } else if surface == .strip {
-            // 「标记为消息应用」只在 strip 的普通应用出现：抽屉里标记不改 placement（抽屉优先级更高），
+            // 「固定到消息区」只在 strip 的普通应用出现：抽屉里标记不改 placement（抽屉优先级更高），
             // 没有可见效果，故 drawer 面不提供该命令。
             items.append(.messaging(isChecked: false))
         }

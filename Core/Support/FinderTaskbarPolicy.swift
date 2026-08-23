@@ -25,7 +25,7 @@ enum FinderTaskbarPolicy {
         isKept
     }
 
-    /// 能否标记为消息应用。访达永远不行。
+    /// 能否固定到消息区。访达永远不行。
     static func canMarkMessaging(_ bundleID: String) -> Bool {
         !bundleID.isEmpty && !isFinder(bundleID)
     }

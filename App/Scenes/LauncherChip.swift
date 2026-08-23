@@ -7,7 +7,7 @@ import SwiftUI
 ///
 /// Shared by the drawer (collected apps, scale 0.7) and the main strip (messaging
 /// and kept apps, scale 1.0). Call-site differences are injected via
-/// `membershipItems` (在程序坞中保留 / 标记为消息应用).
+/// `membershipItems` (在程序坞中保留 / 固定到消息区).
 
 struct LauncherChip: View {
     let bundleID: String
@@ -29,10 +29,10 @@ struct LauncherChip: View {
     /// 悬停从哪来。任务条传 `.resolved(…)`（整条一块跟踪区算好的），抽屉传 `.selfTracked`
     /// （那块面板没有跟踪区）。**故意不给默认值**，理由同 `scale` / `hoverStyle`。
     let hoverInput: ChipHoverInput
-    /// 成员 / 管理菜单项（右键菜单末尾），如「在程序坞中保留」「标记为消息应用」。
+    /// 成员 / 管理菜单项（右键菜单末尾），如「在程序坞中保留」「固定到消息区」。
     /// 空数组 = 无成员项。
     var membershipItems: [LauncherMembershipItem] = []
-    /// 未读角标文本（消息区专用），`nil` = 不画。画在 chip 内部而不是由调用方叠 ZStack，
+    /// 未读角标文本（消息应用的卡：消息区那枚图标，或常规区的保留占位），`nil` = 不画。画在 chip 内部而不是由调用方叠 ZStack，
     /// 这样悬停放大、按压回缩、档位缩放它全都跟着走——理由见 `ChipBadgeView`。
     var badgeText: String? = nil
     /// 这张图标的格子此刻是不是因为**正被拎在手里**而空着（`DragController.hiddenSlotPayload`）。
@@ -444,6 +444,12 @@ enum AppDisplayNameResolver {
     static func titleMatchesAppName(_ title: String, bundleID: String) -> Bool {
         _ = workspaceObservers
         return nameRegistry.matches(title: title, bundleID: bundleID)
+    }
+
+    /// 诊断用：名字表此刻认得这个 app 的哪些写法（`MessagingZoneDiagnostics`）。
+    static func knownAppNames(for bundleID: String) -> Set<String> {
+        _ = workspaceObservers
+        return nameRegistry.knownNames(for: bundleID)
     }
 
     /// Localized + unlocalized bundle names (covers e.g. 微信 vs WeChat). 归一化后交给注册表缓存。

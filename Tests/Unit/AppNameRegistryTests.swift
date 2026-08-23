@@ -30,6 +30,30 @@ final class AppNameRegistryTests: XCTestCase {
         }
     }
 
+    // MARK: - 产品别名（2026-08-23）
+
+    /// 英文界面的微信主窗口叫 `Weixin`：包内名只有 wechat、运行名是「微信」，三者都不等于它。
+    /// 别名表必须在**两条**建条目的路径上都生效（先 matches / 先 observe）。
+    func testProductAliasMatchesWeixinTitle() {
+        let env = Env()
+        env.bundleNames["com.tencent.xinWeChat"] = ["wechat"]
+        env.runningNames["com.tencent.xinWeChat"] = "微信"
+        let registry = env.makeRegistry()
+        XCTAssertTrue(registry.matches(title: "Weixin", bundleID: "com.tencent.xinWeChat"))
+        XCTAssertTrue(registry.matches(title: " weixin ", bundleID: "com.tencent.xinWeChat"), "别名同样走归一化")
+        XCTAssertTrue(registry.matches(title: "微信", bundleID: "com.tencent.xinWeChat"), "别名是加法，原有名字不受影响")
+
+        let observedFirst = env.makeRegistry()
+        observedFirst.observe(name: "微信", for: "com.tencent.xinWeChat")
+        XCTAssertTrue(observedFirst.matches(title: "Weixin", bundleID: "com.tencent.xinWeChat"))
+    }
+
+    func testProductAliasIsScopedToItsBundle() {
+        let env = Env()
+        env.bundleNames["com.electron.lark"] = ["feishu", "lark"]
+        XCTAssertFalse(env.makeRegistry().matches(title: "Weixin", bundleID: "com.electron.lark"))
+    }
+
     // MARK: - 本 bug 的回归锁
 
     /// 成功观测到一次运行名之后，LaunchServices 再怎么抽风都必须继续匹配。

@@ -464,23 +464,24 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 )
             }
 
-        // 角标读取范围 = 消息区可见 ∩ 在跑（与任务条渲染同一条可见规则）。名单或在跑集合一变
-        // 就推给 BadgeStore：可读集为空时它每 tick 零 AX 流量；集合变化触发重走 Dock 树，
+        // 角标读取范围 = 消息应用**身份** ∩ 在跑 − 抽屉（2026-08-23 起不再要求在消息区里：
+        // 信息 / Slack 这类进不了区的单窗口应用，红点画在它们常规区的卡上）。名单或在跑集合
+        // 一变就推给 BadgeStore：可读集为空时它每 tick 零 AX 流量；集合变化触发重走 Dock 树，
         // 「消息应用刚启动、新磁贴上出角标」靠这条在 ~1s 内补上。订阅先于 badgeStore.start()，
-        // 首次读取前上下文已就位（四个 @Published 订阅即发当前值）。
-        badgeContextSubscription = Publishers.CombineLatest4(
+        // 首次读取前上下文已就位（@Published 订阅即发当前值）。
+        // `isMessagingApp` 回读 store：这里有 receive(on:) 异步派发，发布早已完成，读到的是新值。
+        badgeContextSubscription = Publishers.CombineLatest3(
             messagingStore.$bundleIDs,
             drawerStore.$bundleIDs,
-            keptAppStore.$bundleIDs,
             runningApplicationStore.$runningBundleIDs
         )
         .receive(on: DispatchQueue.main)
-        .sink { [weak self] messaging, drawer, kept, running in
-            self?.badgeStore.updateMessagingContext(
-                visibleMessagingIDs: AppMembershipProjection.visibleMessagingIDs(
-                    messagingIDs: messaging,
+        .sink { [weak self] _, drawer, running in
+            guard let self else { return }
+            self.badgeStore.updateMessagingContext(
+                visibleMessagingIDs: AppMembershipProjection.badgeEligibleIDs(
+                    isMessagingApp: { self.messagingStore.isMessagingApp($0) },
                     drawerIDs: drawer,
-                    keptIDs: kept,
                     runningIDs: running
                 ),
                 runningBundleIDs: running

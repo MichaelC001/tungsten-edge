@@ -15,7 +15,7 @@ enum LauncherMenuItemKind: Equatable {
     case hide
     /// 退出（含 Option 替身 强制退出）——**恒定末项**，成员项一律排在它之前。
     case quit
-    /// 成员 / 管理项区（可勾选的在程序坞中保留 / 标记为消息应用；1 或多项由调用方决定）。
+    /// 成员 / 管理项区（可勾选的在程序坞中保留 / 固定到消息区；1 或多项由调用方决定）。
     case membership
 }
 
