@@ -24,8 +24,8 @@ enum FeedbackDraftCheck {
 }
 
 /// 反馈类型（2026-08-24「模板引导」）：radio 三选一 + 随类型变的引导文字。
-/// 类型**并入 message 开头**（见 `FeedbackComposition`），不加第六个字段——
-/// 「只发送……五个字段」的披露承诺因此不用改，服务端/控制台/邮件也全不用动。
+/// 类型**并入 message 开头**（见 `FeedbackComposition`），不作为独立字段——
+/// JSON body 因此仍是那五个字段，服务端/控制台/邮件全不用动。
 enum FeedbackCategory: String, CaseIterable {
     case bug
     case suggestion
@@ -63,14 +63,33 @@ enum FeedbackComposition {
     }
 }
 
-/// 一次反馈提交的全部内容。**恰好**是设置界面披露的五个字段，一个不多——
-/// 「只发送你写的内容、联系方式、App 版本、macOS 版本和界面语言」是写在界面上的承诺。
+/// 一次反馈提交的全部内容。**恰好**是设置界面披露的六项，一个不多——
+/// 「只发送你写的内容、联系方式、App 版本、macOS 版本、界面语言和你添加的附件」
+/// 是写在界面上的承诺。前五项是 JSON body 的五个字段（2026-08-24 之前是全部），
+/// 附件是 multipart 的独立文件段，**不进那份 JSON**。
 struct FeedbackDraft: Equatable {
     let message: String
     let contact: String?
     let appVersion: String?
     let macosVersion: String?
     let lang: String
+    let attachments: [FeedbackAttachment]
+
+    init(
+        message: String,
+        contact: String?,
+        appVersion: String?,
+        macosVersion: String?,
+        lang: String,
+        attachments: [FeedbackAttachment] = []
+    ) {
+        self.message = message
+        self.contact = contact
+        self.appVersion = appVersion
+        self.macosVersion = macosVersion
+        self.lang = lang
+        self.attachments = attachments
+    }
 }
 
 protocol FeedbackSubmitting {
@@ -83,10 +102,16 @@ typealias FeedbackRequestLoader = (URLRequest) async throws -> (Data, URLRespons
 ///
 /// 三条承重规则与订阅完全一致（权威注释在 `WebsiteSubscriptionSubmitter`）：
 /// **只有 2xx 算成功**；`X-Tungsten-Client: app` **不是安全校验**（只是让无 Origin 的
-/// 原生请求走得通）；body 恰好是披露的五个字段。
+/// 原生请求走得通）；JSON payload 恰好是披露的五个字段（附件是第六项，走独立文件段）。
+///
+/// 两条请求形状：无附件走 JSON（**逐字节不许变**，已发布版本一直在用），
+/// 有附件走 multipart（`payload` + `file0..file2`，超时 300s）。
 final class WebsiteFeedbackSubmitter: FeedbackSubmitting {
     static let endpointURL = URL(string: "https://tungstenedge.app/api/feedback")!
     static let requestTimeout: TimeInterval = 15
+    /// 带附件时的超时。40MB 走一条慢上行链路可以要好几分钟，15 秒会把本来能成功的
+    /// 提交切断，用户看到「无法发送」却查不出任何毛病。
+    static let attachmentRequestTimeout: TimeInterval = 300
 
     private let loader: FeedbackRequestLoader
 
@@ -102,24 +127,10 @@ final class WebsiteFeedbackSubmitter: FeedbackSubmitting {
     }
 
     func submit(_ draft: FeedbackDraft) async throws {
-        var request = URLRequest(url: Self.endpointURL, timeoutInterval: Self.requestTimeout)
-        request.httpMethod = "POST"
-        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
-        request.setValue(
-            WebsiteSubscriptionSubmitter.clientHeaderValue,
-            forHTTPHeaderField: WebsiteSubscriptionSubmitter.clientHeaderField
-        )
-
-        let body = RequestBody(
-            appVersion: draft.appVersion,
-            contact: draft.contact,
-            lang: draft.lang,
-            macosVersion: draft.macosVersion,
-            message: draft.message
-        )
-        let encoder = JSONEncoder()
-        encoder.outputFormatting = [.sortedKeys]
-        request.httpBody = try encoder.encode(body)
+        let payload = try Self.encodedPayload(for: draft)
+        let request = draft.attachments.isEmpty
+            ? Self.jsonRequest(payload: payload)
+            : try Self.multipartRequest(payload: payload, attachments: draft.attachments)
 
         let (_, response) = try await loader(request)
         guard let httpResponse = response as? HTTPURLResponse else {
@@ -129,6 +140,63 @@ final class WebsiteFeedbackSubmitter: FeedbackSubmitting {
             throw FeedbackError.httpStatus(httpResponse.statusCode)
         }
         // 2xx 即成功：D1-first，服务端已经收下了。响应体只有一句话，不解析。
+    }
+
+    /// 五个字段的 JSON。无附件时它就是整个 body；有附件时它是 multipart 的 `payload` 段——
+    /// **两条路上逐字节相同**，服务端因此只有一套 `validateFeedbackPayload`。
+    private static func encodedPayload(for draft: FeedbackDraft) throws -> Data {
+        let body = RequestBody(
+            appVersion: draft.appVersion,
+            contact: draft.contact,
+            lang: draft.lang,
+            macosVersion: draft.macosVersion,
+            message: draft.message
+        )
+        let encoder = JSONEncoder()
+        encoder.outputFormatting = [.sortedKeys]
+        return try encoder.encode(body)
+    }
+
+    /// ⚠️ 无附件的这条路**逐字节不许变**：已经发出去的版本一直在用它，服务端的
+    /// JSON 分支也照着它写；`FeedbackSubmitterTests` 锁着它的形状。
+    private static func jsonRequest(payload: Data) -> URLRequest {
+        var request = URLRequest(url: endpointURL, timeoutInterval: requestTimeout)
+        request.httpMethod = "POST"
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.setValue(
+            WebsiteSubscriptionSubmitter.clientHeaderValue,
+            forHTTPHeaderField: WebsiteSubscriptionSubmitter.clientHeaderField
+        )
+        request.httpBody = payload
+        return request
+    }
+
+    /// `payload` + `file0..file2`。文件内容在**发送这一刻**才读——选完到点发送之间
+    /// 用户可能把文件删了或移走了，那种情况整单失败（草稿含附件列表不清空，可以重试）。
+    private static func multipartRequest(payload: Data, attachments: [FeedbackAttachment]) throws -> URLRequest {
+        var form = MultipartFormBody()
+        form.append(field: "payload", value: String(decoding: payload, as: UTF8.self))
+        for (index, attachment) in attachments.enumerated() {
+            guard let data = try? Data(contentsOf: attachment.url), !data.isEmpty else {
+                throw FeedbackError.attachmentUnreadable
+            }
+            form.append(
+                file: "file\(index)",
+                filename: attachment.name,
+                mimeType: attachment.mimeType,
+                data: data
+            )
+        }
+
+        var request = URLRequest(url: endpointURL, timeoutInterval: attachmentRequestTimeout)
+        request.httpMethod = "POST"
+        request.setValue(form.contentType, forHTTPHeaderField: "Content-Type")
+        request.setValue(
+            WebsiteSubscriptionSubmitter.clientHeaderValue,
+            forHTTPHeaderField: WebsiteSubscriptionSubmitter.clientHeaderField
+        )
+        request.httpBody = form.encoded()
+        return request
     }
 
     private struct RequestBody: Encodable {
@@ -143,6 +211,7 @@ final class WebsiteFeedbackSubmitter: FeedbackSubmitting {
 enum FeedbackError: LocalizedError, Equatable {
     case invalidResponse
     case httpStatus(Int)
+    case attachmentUnreadable
 
     var errorDescription: String? {
         switch self {
@@ -150,6 +219,8 @@ enum FeedbackError: LocalizedError, Equatable {
             return String(localized: "The feedback server returned an invalid response.")
         case .httpStatus(let status):
             return String(format: String(localized: "The feedback server returned status code %d."), status)
+        case .attachmentUnreadable:
+            return String(localized: "One of the attachments could not be read.")
         }
     }
 }
@@ -214,6 +285,49 @@ struct FeedbackAlertContent: Equatable {
             self.init(
                 title: String(localized: "Contact Is Too Long"),
                 message: String(localized: "Keep it under 120 characters."),
+                isWarning: true
+            )
+        }
+    }
+
+    /// 选文件当场被拒的四种情况。**都在本地判掉，不发请求**——40MB 传上去再被 400
+    /// 拒回来，用户等的那几分钟是白等的。
+    init(attachmentRejection: FeedbackAttachmentCheck.Rejection) {
+        switch attachmentRejection {
+        case .tooMany:
+            self.init(
+                title: String(localized: "Too Many Attachments"),
+                message: String(localized: "You can attach up to 3 files. Remove one first."),
+                isWarning: true
+            )
+        case .unsupportedType:
+            self.init(
+                title: String(localized: "File Type Not Supported"),
+                message: String(localized: "Attach a screenshot (PNG, JPEG, GIF, HEIC) or a screen recording (MOV, MP4)."),
+                isWarning: true
+            )
+        case .tooLarge(.image):
+            self.init(
+                title: String(localized: "Image Is Too Large"),
+                message: String(localized: "Each image must be 10 MB or smaller."),
+                isWarning: true
+            )
+        case .tooLarge(.video):
+            self.init(
+                title: String(localized: "Video Is Too Large"),
+                message: String(localized: "Each video must be 30 MB or smaller."),
+                isWarning: true
+            )
+        case .totalTooLarge:
+            self.init(
+                title: String(localized: "Attachments Are Too Large"),
+                message: String(localized: "All attachments together must be 40 MB or smaller."),
+                isWarning: true
+            )
+        case .unreadable:
+            self.init(
+                title: String(localized: "Can’t Read That File"),
+                message: String(localized: "The file could not be read. Try choosing it again."),
                 isWarning: true
             )
         }

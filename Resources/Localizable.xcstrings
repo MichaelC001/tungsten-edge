@@ -182,6 +182,23 @@
         }
       }
     },
+    "Add Screenshot or Recording…": {
+      "comment": "设置窗口 · 反馈附件按钮",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "添加截图或录屏…"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Add Screenshot or Recording…"
+          }
+        }
+      }
+    },
     "Adds a spot on the taskbar for parking files. Dropping a file there doesn’t move or copy it — Tungsten Edge just remembers where it lives.": {
       "localizations": {
         "zh-Hans": {
@@ -210,6 +227,23 @@
           "stringUnit": {
             "state": "translated",
             "value": "Advanced"
+          }
+        }
+      }
+    },
+    "All attachments together must be 40 MB or smaller.": {
+      "comment": "反馈附件被拒 · 合计超 40MB",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "所有附件加起来不能超过 40 MB。"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "All attachments together must be 40 MB or smaller."
           }
         }
       }
@@ -297,6 +331,57 @@
         }
       }
     },
+    "Attach": {
+      "comment": "设置窗口 · 反馈附件选择面板的确认按钮",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "添加"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Attach"
+          }
+        }
+      }
+    },
+    "Attach a screenshot (PNG, JPEG, GIF, HEIC) or a screen recording (MOV, MP4).": {
+      "comment": "反馈附件被拒 · 类型不在白名单",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "请添加截图（PNG、JPEG、GIF、HEIC）或录屏（MOV、MP4）。"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Attach a screenshot (PNG, JPEG, GIF, HEIC) or a screen recording (MOV, MP4)."
+          }
+        }
+      }
+    },
+    "Attachments Are Too Large": {
+      "comment": "反馈附件被拒 · 合计超 40MB",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "附件总量太大"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Attachments Are Too Large"
+          }
+        }
+      }
+    },
     "Back": {
       "localizations": {
         "zh-Hans": {
@@ -342,6 +427,23 @@
           "stringUnit": {
             "state": "translated",
             "value": "Can’t Open Dock Settings"
+          }
+        }
+      }
+    },
+    "Can’t Read That File": {
+      "comment": "反馈附件被拒 · 文件读不出来",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "读不出这个文件"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Can’t Read That File"
           }
         }
       }
@@ -539,6 +641,23 @@
           "stringUnit": {
             "state": "translated",
             "value": "Check your network connection and try again, or leave your address on tungstenedge.app."
+          }
+        }
+      }
+    },
+    "Choose screenshots or screen recordings to send with your feedback.": {
+      "comment": "设置窗口 · 反馈附件选择面板的说明",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "选择要随反馈一起发送的截图或录屏。"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Choose screenshots or screen recordings to send with your feedback."
           }
         }
       }
@@ -885,6 +1004,40 @@
         }
       }
     },
+    "Each image must be 10 MB or smaller.": {
+      "comment": "反馈附件被拒 · 单张图片超 10MB",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "单张图片不能超过 10 MB。"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Each image must be 10 MB or smaller."
+          }
+        }
+      }
+    },
+    "Each video must be 30 MB or smaller.": {
+      "comment": "反馈附件被拒 · 单个视频超 30MB",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "单个视频不能超过 30 MB。"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Each video must be 30 MB or smaller."
+          }
+        }
+      }
+    },
     "Email or WeChat ID (optional)": {
       "comment": "设置窗口 · 反馈联系方式占位",
       "localizations": {
@@ -998,6 +1151,23 @@
           "stringUnit": {
             "state": "translated",
             "value": "Feedback Sent"
+          }
+        }
+      }
+    },
+    "File Type Not Supported": {
+      "comment": "反馈附件被拒 · 类型不在白名单",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "不支持这种文件"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "File Type Not Supported"
           }
         }
       }
@@ -1208,6 +1378,23 @@
           "stringUnit": {
             "state": "translated",
             "value": "If the switch is already on and nothing happens, a permission record left by an older version may no longer match this copy of Tungsten Edge. You can reset it:\n\n1. Quit Tungsten Edge first — while it is running, the minus button in the list is greyed out and the entry cannot be removed.\n2. In Privacy & Security > Accessibility, select Tungsten Edge in the list and remove it with the minus button. There may be more than one entry; remove them all.\n3. Open Tungsten Edge again from your Applications folder, then add it and turn the switch on when prompted."
+          }
+        }
+      }
+    },
+    "Image Is Too Large": {
+      "comment": "反馈附件被拒 · 单张图片超 10MB",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "图片太大"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Image Is Too Large"
           }
         }
       }
@@ -1735,6 +1922,23 @@
         }
       }
     },
+    "One of the attachments could not be read.": {
+      "comment": "反馈错误 · 附件读不出来",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "有一个附件读不出来。"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "One of the attachments could not be read."
+          }
+        }
+      }
+    },
     "Only your email address and first-launch date are sent, to confirm you as a founding user. No marketing email.": {
       "localizations": {
         "zh-Hans": {
@@ -1751,19 +1955,19 @@
         }
       }
     },
-    "Only your message, the contact you enter, the app version, your macOS version and the interface language are sent.": {
-      "comment": "设置窗口 · 反馈披露行（与实际发送字段一致）",
+    "Only your message, the contact you enter, the app version, your macOS version, the interface language and the attachments you add (kept for at most 90 days) are sent.": {
+      "comment": "设置窗口 · 反馈披露行（六项）",
       "localizations": {
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "只发送你写的内容、你填写的联系方式、App 版本、macOS 版本和界面语言。"
+            "value": "只会发送你写的内容、你填写的联系方式、App 版本、macOS 版本、界面语言和你添加的附件（最多保留 90 天）。"
           }
         },
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Only your message, the contact you enter, the app version, your macOS version and the interface language are sent."
+            "value": "Only your message, the contact you enter, the app version, your macOS version, the interface language and the attachments you add (kept for at most 90 days) are sent."
           }
         }
       }
@@ -2235,6 +2439,23 @@
           "stringUnit": {
             "state": "translated",
             "value": "Recent Folders"
+          }
+        }
+      }
+    },
+    "Remove Attachment": {
+      "comment": "设置窗口 · 反馈附件移除按钮的提示",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "移除附件"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Remove Attachment"
           }
         }
       }
@@ -2912,6 +3133,23 @@
         }
       }
     },
+    "The file could not be read. Try choosing it again.": {
+      "comment": "反馈附件被拒 · 文件读不出来",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "这个文件读不出来，请重新选一次。"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "The file could not be read. Try choosing it again."
+          }
+        }
+      }
+    },
     "The language change takes effect after Tungsten Edge restarts.": {
       "comment": "设置窗口 · 语言说明与弹窗正文共用",
       "localizations": {
@@ -3154,6 +3392,23 @@
           "stringUnit": {
             "state": "translated",
             "value": "Toggles the taskbar between always visible and your last auto-hide delay. Default: ⌥⇧⌘D."
+          }
+        }
+      }
+    },
+    "Too Many Attachments": {
+      "comment": "反馈附件被拒 · 超过 3 个",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "附件太多"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Too Many Attachments"
           }
         }
       }
@@ -3438,6 +3693,23 @@
         }
       }
     },
+    "Video Is Too Large": {
+      "comment": "反馈附件被拒 · 单个视频超 30MB",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "视频太大"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Video Is Too Large"
+          }
+        }
+      }
+    },
     "Want the Dock back?": {
       "localizations": {
         "en": {
@@ -3534,6 +3806,23 @@
           "stringUnit": {
             "state": "translated",
             "value": "Write something first."
+          }
+        }
+      }
+    },
+    "You can attach up to 3 files. Remove one first.": {
+      "comment": "反馈附件被拒 · 超过 3 个",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "最多只能添加 3 个附件，请先移除一个。"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "You can attach up to 3 files. Remove one first."
           }
         }
       }

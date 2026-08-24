@@ -298,8 +298,13 @@ final class SettingsCoordinator: ObservableObject {
     }
 
     /// 把 throws 吞成「一定有文案」，界面层不处理 error——和订阅同一约定。
-    /// 五个字段（正文 / 联系方式 / 版本 / macOS / 语言）就是界面上披露的那五个，别多带。
-    func performFeedback(message: String, contact: String) async -> FeedbackAlertContent {
+    /// 六项（正文 / 联系方式 / 版本 / macOS / 语言 / 附件）就是界面上披露的那六项，别多带。
+    /// 附件任一读不出来或传不上去 → 整单失败（`.failure`），界面据此保留草稿让用户重试。
+    func performFeedback(
+        message: String,
+        contact: String,
+        attachments: [FeedbackAttachment] = []
+    ) async -> FeedbackAlertContent {
         if let rejection = FeedbackDraftCheck.validate(message: message, contact: contact) {
             return FeedbackAlertContent(rejection: rejection)
         }
@@ -310,7 +315,8 @@ final class SettingsCoordinator: ObservableObject {
             // 版本行带构建来源后缀（开发版 / 非安装位置），排查问题时正需要它。
             appVersion: versionTitle,
             macosVersion: ProcessInfo.processInfo.operatingSystemVersionString,
-            lang: Bundle.main.preferredLocalizations.first ?? "en"
+            lang: Bundle.main.preferredLocalizations.first ?? "en",
+            attachments: attachments
         )
         do {
             try await feedbackSubmitter.submit(draft)

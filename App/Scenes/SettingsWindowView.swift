@@ -1,5 +1,6 @@
 import AppKit
 import SwiftUI
+import UniformTypeIdentifiers
 
 struct SettingsWindowView: View {
     static let contentWidth: CGFloat = 560
@@ -41,6 +42,8 @@ struct SettingsWindowContent: View {
     @State private var feedbackContact = ""
     // 反馈类型也是草稿：和 message/contact 一样必须留在根视图，下放进页级子视图 = 切页被清空。
     @State private var feedbackCategory: FeedbackCategory = .bug
+    // 附件列表同理（2026-08-24）：切页回来必须还在，否则用户以为附件掉了会重加一遍。
+    @State private var feedbackAttachments: [FeedbackAttachment] = []
 
     var body: some View {
         Group {
@@ -354,10 +357,11 @@ struct SettingsWindowContent: View {
     /// 为什么不是 GitHub / mailto：国内用户打不开 GitHub，mailto 依赖装好的邮件客户端。
     ///
     /// ⚠️ **所有高度固定**（TextEditor 定高 140pt；placeholder 是 overlay，不占布局；
-    /// 发送后清空不改布局），结果一律走 `SettingsAlert`——窗口只在 `present()`、
-    /// license sink 和切页时量高度，就地长出状态行只会变成可滚动。
-    /// ⚠️ 披露行必须与实际发送的字段一致（五个）；类型并入 message（`FeedbackComposition`
-    /// 是组装唯一入口），不是第六个字段，改披露前先看那边的注释。
+    /// 附件区定高 44pt 且**始终渲染**，加到 3 个也不换行；发送后清空不改布局），
+    /// 结果一律走 `SettingsAlert`——窗口只在 `present()`、license sink 和切页时量高度，
+    /// 就地长出状态行或让附件把 pane 顶高，都只会变成可滚动。
+    /// ⚠️ 披露行必须与实际发送的内容一致（六项：正文 / 联系方式 / 版本 / macOS / 语言 / 附件）；
+    /// 类型并入 message（`FeedbackComposition` 是组装唯一入口），不是独立字段。
     @ViewBuilder
     private var feedbackRow: some View {
         VStack(alignment: .leading, spacing: 8) {
@@ -396,6 +400,8 @@ struct SettingsWindowContent: View {
                 }
 
             let presentation = coordinator.feedbackState.presentation
+            feedbackAttachmentRow(isEnabled: presentation.isEnabled)
+
             HStack(spacing: 10) {
                 TextField(String(localized: "Email or WeChat ID (optional)"), text: $feedbackContact)
                     .textFieldStyle(.roundedBorder)
@@ -407,12 +413,88 @@ struct SettingsWindowContent: View {
                     )
             }
 
-            Text("Only your message, the contact you enter, the app version, your macOS version and the interface language are sent.")
+            Text("Only your message, the contact you enter, the app version, your macOS version, the interface language and the attachments you add (kept for at most 90 days) are sent.")
                 .font(.caption)
                 .foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
         }
     }
+
+    /// 附件区：一行，**定高 44pt，始终渲染**（一个都没加时也占着这行）。
+    /// 高度绝不能随附件增减变化——设置窗口只在 present / 切页 / license sink 三处量高度，
+    /// 就地长高只会让内容溢出成可滚动（`.claude/rules/settings.md` 是权威）。
+    /// 因此：胶囊限宽、文件名中间截断、整行 `.frame(height:)` + `.clipped()` 兜底。
+    @ViewBuilder
+    private func feedbackAttachmentRow(isEnabled: Bool) -> some View {
+        HStack(spacing: 8) {
+            Button(String(localized: "Add Screenshot or Recording…")) { addFeedbackAttachments() }
+                .disabled(!isEnabled || feedbackAttachments.count >= FeedbackAttachmentCheck.maximumCount)
+            ForEach(feedbackAttachments) { attachment in
+                feedbackAttachmentChip(attachment, isEnabled: isEnabled)
+            }
+            Spacer(minLength: 0)
+        }
+        .frame(height: 44)
+        .clipped()
+    }
+
+    private func feedbackAttachmentChip(_ attachment: FeedbackAttachment, isEnabled: Bool) -> some View {
+        HStack(spacing: 4) {
+            Text(attachment.name)
+                .lineLimit(1)
+                .truncationMode(.middle)
+            Text(attachment.sizeLabel)
+                .foregroundStyle(.secondary)
+            Button {
+                feedbackAttachments.removeAll { $0.id == attachment.id }
+            } label: {
+                Image(systemName: "xmark.circle.fill")
+                    .foregroundStyle(.secondary)
+            }
+            .buttonStyle(.plain)
+            .disabled(!isEnabled)
+            .help(String(localized: "Remove Attachment"))
+        }
+        .font(.caption)
+        .padding(.horizontal, 8)
+        .padding(.vertical, 4)
+        .frame(maxWidth: 116)
+        .background(Capsule().fill(Color(nsColor: .quaternaryLabelColor)))
+    }
+
+    /// 选文件。可多选，逐个按同一套纯校验放行；**第一个被拒的就当场弹窗并停下**——
+    /// 已经加进去的保留，用户看得见自己还剩几个名额。校验全在本地，40MB 传上去
+    /// 再被服务端 400 拒回来，那几分钟是白等的。
+    private func addFeedbackAttachments() {
+        let panel = NSOpenPanel()
+        panel.allowsMultipleSelection = true
+        panel.canChooseDirectories = false
+        panel.canChooseFiles = true
+        panel.allowedContentTypes = Self.feedbackAttachmentContentTypes
+        panel.prompt = String(localized: "Attach")
+        panel.message = String(localized: "Choose screenshots or screen recordings to send with your feedback.")
+        guard panel.runModal() == .OK else { return }
+
+        for url in panel.urls {
+            let name = url.lastPathComponent
+            let byteCount = (try? url.resourceValues(forKeys: [.fileSizeKey]).fileSize) ?? 0
+            if let rejection = FeedbackAttachmentCheck.validate(
+                adding: name, byteCount: byteCount, to: feedbackAttachments
+            ) {
+                presentedAlert = SettingsAlert(FeedbackAlertContent(attachmentRejection: rejection))
+                return
+            }
+            guard let mimeType = FeedbackAttachmentCheck.mimeType(forFileName: name) else { return }
+            feedbackAttachments.append(FeedbackAttachment(
+                url: url, name: name, byteCount: byteCount, mimeType: mimeType
+            ))
+        }
+    }
+
+    /// 与 `FeedbackAttachmentCheck` 的扩展名白名单一一对应。多放一种，服务端会 400。
+    private static let feedbackAttachmentContentTypes: [UTType] = [
+        .png, .jpeg, .gif, .heic, .quickTimeMovie, .mpeg4Movie
+    ]
 
     private func submitFeedback() {
         // 先组装再上锁：空正文直接返回，不占 submitting 状态（按钮 disabled 已挡，这里兜底）。
@@ -421,13 +503,18 @@ struct SettingsWindowContent: View {
         ) else { return }
         guard coordinator.beginFeedback() else { return }
         let contact = feedbackContact
+        let attachments = feedbackAttachments
         Task {
-            let content = await coordinator.performFeedback(message: composed, contact: contact)
+            let content = await coordinator.performFeedback(
+                message: composed, contact: contact, attachments: attachments
+            )
             coordinator.finishFeedback()
+            // 失败时草稿**全保留**（含附件列表）：40MB 重选一遍是很实在的惩罚。
             if content.didSend {
                 feedbackMessage = ""
                 feedbackContact = ""
                 feedbackCategory = .bug
+                feedbackAttachments = []
             }
             presentedAlert = SettingsAlert(content)
         }
