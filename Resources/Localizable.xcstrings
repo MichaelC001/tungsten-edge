@@ -281,6 +281,23 @@
         }
       }
     },
+    "An Attachment Can’t Be Read": {
+      "comment": "反馈失败 · 附件在发送前被移走或删除",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "有个附件读不出来"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "An Attachment Can’t Be Read"
+          }
+        }
+      }
+    },
     "Anything you want to say — write it here.": {
       "comment": "设置窗口 · 反馈 · 「其他」的引导文字（输入框为空时叠显）",
       "localizations": {
@@ -361,6 +378,23 @@
           "stringUnit": {
             "state": "translated",
             "value": "Attach a screenshot (PNG, JPEG, GIF, HEIC) or a screen recording (MOV, MP4)."
+          }
+        }
+      }
+    },
+    "Attachment Limit Reached for Today": {
+      "comment": "反馈失败 · 附件通道今日额度用尽",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "附件通道今日已满"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Attachment Limit Reached for Today"
           }
         }
       }
@@ -1138,6 +1172,23 @@
         }
       }
     },
+    "Feedback Is Unavailable": {
+      "comment": "反馈失败 · 服务端故障",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "服务暂时不可用"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Feedback Is Unavailable"
+          }
+        }
+      }
+    },
     "Feedback Sent": {
       "comment": "设置窗口 · 反馈结果弹窗标题",
       "localizations": {
@@ -1445,6 +1496,23 @@
           "stringUnit": {
             "state": "translated",
             "value": "Invalid Email Address"
+          }
+        }
+      }
+    },
+    "It may have been moved or deleted. Remove it and add it again.": {
+      "comment": "反馈失败 · 附件在发送前被移走或删除",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "它可能已被移动或删除。请移除后重新添加一次。"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "It may have been moved or deleted. Remove it and add it again."
           }
         }
       }
@@ -2640,6 +2708,23 @@
         }
       }
     },
+    "Sending Too Often": {
+      "comment": "反馈失败 · 每小时限流",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "发送太频繁"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Sending Too Often"
+          }
+        }
+      }
+    },
     "Sending…": {
       "comment": "设置窗口 · 反馈按钮在飞态",
       "localizations": {
@@ -3083,6 +3168,23 @@
         }
       }
     },
+    "The Server Didn’t Accept It": {
+      "comment": "反馈失败 · 内容或附件被服务端拒绝",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "服务器没有接受"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "The Server Didn’t Accept It"
+          }
+        }
+      }
+    },
     "The email address is not valid.": {
       "localizations": {
         "zh-Hans": {
@@ -3129,6 +3231,23 @@
           "stringUnit": {
             "state": "translated",
             "value": "The feedback server returned status code %d."
+          }
+        }
+      }
+    },
+    "The feedback service is temporarily unavailable. Try again later, or email support@tungstenedge.app.": {
+      "comment": "反馈失败 · 服务端故障",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "反馈服务暂时不可用，请稍后再试，或发邮件到 support@tungstenedge.app。"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "The feedback service is temporarily unavailable. Try again later, or email support@tungstenedge.app."
           }
         }
       }
@@ -3375,6 +3494,23 @@
           "stringUnit": {
             "state": "translated",
             "value": "To keep the taskbar from flashing when you switch into full screen, Tungsten Edge has to hide it before your input reaches the app. It therefore watches global left-clicks, key presses and trackpad gestures, and recognizes only four of them: the window’s green button, Control-Command-F, Control-Left/Right arrow, and a three-finger horizontal swipe. What you type is never recorded, logged, or sent anywhere. Turning this off disables the watching completely."
+          }
+        }
+      }
+    },
+    "Today’s attachment allowance is used up. Remove the attachments to send just the text, try again tomorrow, or email support@tungstenedge.app.": {
+      "comment": "反馈失败 · 附件通道今日额度用尽",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "今天的附件额度用完了。可以先移除附件只发文字，或明天再试，也可以发邮件到 support@tungstenedge.app。"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Today’s attachment allowance is used up. Remove the attachments to send just the text, try again tomorrow, or email support@tungstenedge.app."
           }
         }
       }
@@ -3827,6 +3963,23 @@
         }
       }
     },
+    "Your message or attachments were not accepted. Try shortening the message or using a different file, or email support@tungstenedge.app.": {
+      "comment": "反馈失败 · 内容或附件被服务端拒绝",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "内容或附件没被接受。试着精简内容或换一个附件，或发邮件到 support@tungstenedge.app。"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Your message or attachments were not accepted. Try shortening the message or using a different file, or email support@tungstenedge.app."
+          }
+        }
+      }
+    },
     "You’re Already Subscribed": {
       "localizations": {
         "zh-Hans": {
@@ -3855,6 +4008,23 @@
           "stringUnit": {
             "state": "translated",
             "value": "You’re subscribed. When licensing arrives, it will be sent straight to your inbox."
+          }
+        }
+      }
+    },
+    "You’ve sent too many messages in a short time. Try again in a little while — your message and attachments are still here.": {
+      "comment": "反馈失败 · 每小时限流",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "短时间内发送太多次了，请过一会儿再试。你写的内容和附件都还在。"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "You’ve sent too many messages in a short time. Try again in a little while — your message and attachments are still here."
           }
         }
       }

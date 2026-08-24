@@ -299,7 +299,9 @@ final class SettingsCoordinator: ObservableObject {
 
     /// 把 throws 吞成「一定有文案」，界面层不处理 error——和订阅同一约定。
     /// 六项（正文 / 联系方式 / 版本 / macOS / 语言 / 附件）就是界面上披露的那六项，别多带。
-    /// 附件任一读不出来或传不上去 → 整单失败（`.failure`），界面据此保留草稿让用户重试。
+    /// 附件任一读不出来或传不上去 → 整单失败，界面据此保留草稿让用户重试。
+    /// 失败文案按真实成因分六种（`FeedbackFailure`）——所有失败都说「检查网络」会
+    /// 在限流、附件额度满这些场合把用户指向完全错误的方向。
     func performFeedback(
         message: String,
         contact: String,
@@ -322,7 +324,7 @@ final class SettingsCoordinator: ObservableObject {
             try await feedbackSubmitter.submit(draft)
             return .sent
         } catch {
-            return .failure
+            return FeedbackAlertContent(failure: FeedbackFailure(error: error))
         }
     }
 

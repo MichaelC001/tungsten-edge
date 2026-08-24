@@ -71,7 +71,7 @@ final class FeedbackSubmitterTests: XCTestCase {
             try await submitter.submit(fullDraft())
             XCTFail("429 必须抛错")
         } catch let error as FeedbackError {
-            XCTAssertEqual(error, .httpStatus(429))
+            XCTAssertEqual(error, .httpStatus(429, code: nil))
         } catch {
             XCTFail("错误类型不对：\(error)")
         }
@@ -124,6 +124,77 @@ final class FeedbackSubmitterTests: XCTestCase {
         XCTAssertTrue(FeedbackAlertContent.failure.isWarning)
         XCTAssertTrue(FeedbackAlertContent(rejection: .emptyMessage).isWarning)
         XCTAssertFalse(FeedbackAlertContent(rejection: .messageTooLong).didSend)
+    }
+
+    // MARK: 失败分类（2026-08-24）
+    //
+    // 起因：上线当天 owner 第一次真发就撞上每小时限流，界面却说「检查网络」。
+
+    func testServerErrorCodeIsParsedFromTheFailureBody() async {
+        let submitter = WebsiteFeedbackSubmitter { _ in
+            (Data(#"{"code":"feedback_attachment_quota","message":"附件通道今日已满"}"#.utf8), self.okResponse(429))
+        }
+        do {
+            try await submitter.submit(fullDraft())
+            XCTFail("429 必须抛错")
+        } catch let error as FeedbackError {
+            XCTAssertEqual(error, .httpStatus(429, code: "feedback_attachment_quota"))
+        } catch {
+            XCTFail("错误类型不对：\(error)")
+        }
+    }
+
+    func testUnparsableFailureBodyDegradesToNoCodeInsteadOfThrowing() async {
+        for body in ["", "not json at all", "{}", #"{"code":""}"#] {
+            let submitter = WebsiteFeedbackSubmitter { _ in (Data(body.utf8), self.okResponse(503)) }
+            do {
+                try await submitter.submit(fullDraft())
+                XCTFail("503 必须抛错")
+            } catch let error as FeedbackError {
+                XCTAssertEqual(error, .httpStatus(503, code: nil), "body 是「\(body)」时应退化成没有 code")
+            } catch {
+                XCTFail("错误类型不对：\(error)")
+            }
+        }
+    }
+
+    func testFailureMappingCoversEveryCause() {
+        XCTAssertEqual(FeedbackFailure(error: URLError(.notConnectedToInternet)), .offline)
+        XCTAssertEqual(FeedbackFailure(error: URLError(.timedOut)), .offline)
+        XCTAssertEqual(FeedbackFailure(error: FeedbackError.attachmentUnreadable), .attachmentUnreadable)
+        XCTAssertEqual(FeedbackFailure(error: FeedbackError.invalidResponse), .serverUnavailable)
+        XCTAssertEqual(FeedbackFailure(error: FeedbackError.httpStatus(429, code: nil)), .rateLimited)
+        XCTAssertEqual(FeedbackFailure(error: FeedbackError.httpStatus(400, code: "invalid_request")), .rejected)
+        XCTAssertEqual(FeedbackFailure(error: FeedbackError.httpStatus(413, code: "invalid_request")), .rejected)
+        XCTAssertEqual(FeedbackFailure(error: FeedbackError.httpStatus(503, code: "unavailable")), .serverUnavailable)
+        XCTAssertEqual(FeedbackFailure(error: FeedbackError.httpStatus(403, code: "invalid_source")), .serverUnavailable)
+    }
+
+    func testAttachmentQuotaCodeWinsOverTheGeneric429() {
+        // 两种 429 状态码一样、说法完全不同：认 code 必须排在认状态码之前。
+        XCTAssertEqual(
+            FeedbackFailure(error: FeedbackError.httpStatus(429, code: "feedback_attachment_quota")),
+            .attachmentQuota,
+            "附件额度满不能被说成「发送太频繁」"
+        )
+        XCTAssertEqual(
+            FeedbackFailure(error: FeedbackError.httpStatus(429, code: "too_many_requests")),
+            .rateLimited
+        )
+    }
+
+    func testEveryFailureHasItsOwnCopyAndNoneClaimsSuccess() {
+        let failures: [FeedbackFailure] = [
+            .offline, .rateLimited, .attachmentQuota, .rejected, .serverUnavailable, .attachmentUnreadable
+        ]
+        let contents = failures.map { FeedbackAlertContent(failure: $0) }
+        XCTAssertEqual(Set(contents.map(\.title)).count, failures.count, "标题不能重复")
+        XCTAssertEqual(Set(contents.map(\.message)).count, failures.count, "正文不能重复")
+        for content in contents {
+            XCTAssertTrue(content.isWarning)
+            XCTAssertFalse(content.didSend, "失败绝不能清空草稿")
+        }
+        XCTAssertEqual(FeedbackAlertContent(failure: .offline), .failure, "网络故障沿用原有那条文案")
     }
 
     // MARK: 类型引导（2026-08-24）
