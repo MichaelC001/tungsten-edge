@@ -181,14 +181,31 @@ enum AppMenuBuilder {
         menu.addItem(.separator())
     }
 
-    /// Top recent-files section for an app (best-effort), inline at the menu top.
-    /// Opens each doc in its owning app. Adds nothing when there's no readable data.
+    /// 「最常用的文件」区（2026-08-24 由「最近使用的文件」改排序而来），inline at the menu top.
+    /// 候选 = 系统最近列表（读 20 条当排序池）∪ 钨极自己的计数账本；次数降序、同次数看最近，
+    /// 没计过数的按系统最近序垫底（刚升级时与原来的「最近」一致）。顺手把本次榜首交给
+    /// `DocumentUsageStore` 采样（菜单打开就是一次兜底重采样）。Opens each doc in its
+    /// owning app. Adds nothing when there's no readable data.
     static func appendRecentDocuments(to menu: NSMenu, bundleID: String?) {
         guard let bid = bundleID else { return }
         let appURL = NSWorkspace.shared.urlForApplication(withBundleIdentifier: bid)
-        let entries = RecentDocumentsReader.recentDocuments(for: bid)
-            .map { RecentMenuEntry(title: $0.lastPathComponent, url: $0) }
-        appendRecentItems(to: menu, title: String(localized: "Recent Files"), entries: entries) { openRecent($0, appURL: appURL) }
+        let recentPaths = RecentDocumentsReader.recentDocuments(for: bid, maxCount: 20).map(\.path)
+        // 菜单只在主线程构建（NSMenu 本来也只能在主线程用），但本类型是非隔离的，
+        // 编译器看不出来——assumeIsolated 把这个事实变成运行时断言。
+        let ranked = MainActor.assumeIsolated { () -> [String] in
+            let usage = DocumentUsageStore.shared
+            usage.noteRecentSample(bundleID: bid, topPath: recentPaths.first)
+            return usage.ranked(bundleID: bid, recentPaths: recentPaths)
+        }
+        let entries = ranked.map { path in
+            RecentMenuEntry(title: (path as NSString).lastPathComponent, url: URL(fileURLWithPath: path))
+        }
+        appendRecentItems(to: menu, title: String(localized: "Most Used Files"), entries: entries) { url in
+            MainActor.assumeIsolated {
+                DocumentUsageStore.shared.recordOpen(bundleID: bid, path: url.path)
+            }
+            openRecent(url, appURL: appURL)
+        }
     }
 
     /// Top recent-folders section for the Finder chip, inline. Opens each folder in Finder.

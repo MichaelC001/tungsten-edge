@@ -259,6 +259,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         edgeToggleHotKey?.stop()
         scrollReverserMonitor?.stop()
         scrollReverserMonitor = nil
+        DocumentUsageStore.shared.stop()
         permissionCoordinator?.terminationRequested()
         windowLiftAvoidanceController?.stop()
         runtime.stop()
@@ -550,6 +551,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             .sink { [weak self] enabled in
                 self?.windowLiftAvoidanceController?.setEnabledBySetting(enabled)
             }
+        // 最常用文件的计数账本：目录监视 + 激活重采样都挂在任务条运行期。
+        DocumentUsageStore.shared.start()
         // 反转滚轮同款接线。sink 用闭包参数里的新值，不回读 store（@Published 在赋值前发布）。
         applyScrollReverser(enabled: settingsStore.scrollReverserEnabled)
         scrollReverserSettingSubscription = settingsStore.$scrollReverserEnabled
@@ -762,6 +765,7 @@ extension AppDelegate: PermissionEffectHandler {
         scrollReverserSettingSubscription = nil
         scrollReverserMonitor?.stop()
         scrollReverserMonitor = nil
+        DocumentUsageStore.shared.stop()
         panelCoordinator?.suspendAndRelease()
         panelCoordinator = nil
         badgeStore.stop()
