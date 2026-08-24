@@ -6,6 +6,12 @@ struct NativeDockApplyOutcome {
     let error: Error?
 }
 
+/// 改显隐快捷键失败的两种形态：纯校验拒绝（带理由）/ Carbon 注册失败（组合被别的应用占用等）。
+enum HotKeyChangeError: Error, Equatable {
+    case rejected(HotKeyShortcutRejection)
+    case registrationFailed
+}
+
 /// 更新器的注入口。
 ///
 /// ⚠️ **这个协议存在的理由是让 Sparkle 不进测试 target。** `SettingsCoordinator.swift`
@@ -45,6 +51,9 @@ final class SettingsCoordinator: ObservableObject {
     /// 请求；现在两套界面都问同一个 `SparkleUpdateService`，理由自动满足。
     private let updateService: any UpdateControlling
     private let subscriptionSubmitter: SubscriptionSubmitting
+    /// 改键时的真实注册入口（AppDelegate 手里的 `GlobalHotKeyMonitor.update(shortcut:)`）。
+    /// 闭包注入：monitor 归 AppDelegate 持有，临时副本（DMG）根本没有它。
+    private let hotKeyRegistrar: (GlobalHotKeyShortcut) -> GlobalHotKeyMonitor.RegistrationStatus
     private var updateServiceSubscription: AnyCancellable?
     private var launchRefreshGeneration: UInt64 = 0
     private var nativeDockRefreshGeneration: UInt64 = 0
@@ -55,13 +64,15 @@ final class SettingsCoordinator: ObservableObject {
         launchAtLoginService: LaunchAtLoginServicing,
         nativeDockPreferencesService: NativeDockPreferencesServicing,
         updateService: any UpdateControlling,
-        subscriptionSubmitter: SubscriptionSubmitting
+        subscriptionSubmitter: SubscriptionSubmitting,
+        hotKeyRegistrar: @escaping (GlobalHotKeyShortcut) -> GlobalHotKeyMonitor.RegistrationStatus
     ) {
         self.store = store
         self.launchAtLoginService = launchAtLoginService
         self.nativeDockPreferencesService = nativeDockPreferencesService
         self.updateService = updateService
         self.subscriptionSubmitter = subscriptionSubmitter
+        self.hotKeyRegistrar = hotKeyRegistrar
         // **镜像只作首帧种子，不是真值来源。** `SMAppService.mainApp.status` 是 XPC，
         // 放在 init 里同步读会把开销带进每一次界面构造；而每个展示入口（菜单 `menuWillOpen`、
         // 设置窗口 `present()`、`applicationDidBecomeActive`）都会立刻异步刷新，
@@ -118,6 +129,32 @@ final class SettingsCoordinator: ObservableObject {
 
     func openLoginItemsSettings() {
         launchAtLoginService.openSystemSettings()
+    }
+
+    // MARK: 显隐快捷键
+
+    /// 改键的唯一入口：先纯校验（`HotKeyShortcutValidation`），再真实注册，
+    /// **注册成功才落盘**——反过来会让存的键和实际生效的键分家。
+    /// `nil` = 恢复默认 ⌥⇧⌘D。注册失败时 `GlobalHotKeyMonitor.update` 已自行回退旧键，
+    /// 这里不用善后，只把失败报给界面。
+    func applyEdgeToggleShortcut(_ stored: StoredHotKeyShortcut?) -> Result<Void, HotKeyChangeError> {
+        let target: GlobalHotKeyShortcut
+        if let stored {
+            if let rejection = HotKeyShortcutValidation.validate(
+                keyCode: stored.keyCode,
+                carbonModifiers: stored.carbonModifiers
+            ) {
+                return .failure(.rejected(rejection))
+            }
+            target = GlobalHotKeyShortcut(stored: stored)
+        } else {
+            target = .edgeAutoHideMode
+        }
+        guard hotKeyRegistrar(target) == .registered else {
+            return .failure(.registrationFailed)
+        }
+        store.setEdgeToggleShortcut(stored)
+        return .success(())
     }
 
     // MARK: 系统 Dock

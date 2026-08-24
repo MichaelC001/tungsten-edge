@@ -115,7 +115,7 @@ Preferences live in two places, and the split is deliberate: the **status menu**
 
 ### Status menu
 
-- **Tungsten Edge (⌥⇧⌘D to show/hide)** — a greyed-out section header, not a clickable command. Below it sits a compact slider for the taskbar's own wake delay: `Always Visible`, `0.1s`–`3.0s`, or `Never Wake`. The global `⌥⇧⌘D` shortcut switches between always-visible and your last auto-hide delay; it is the system Dock's `⌥⌘D` plus Shift, which also releases the older `⌥⌘E` back to Safari and Finder. If the shortcut cannot be registered, the menu simply stops showing the key hint.
+- **Tungsten Edge (⌥⇧⌘D to show/hide)** — a greyed-out section header, not a clickable command. Below it sits a compact slider for the taskbar's own wake delay: `Always Visible`, `0.1s`–`3.0s`, or `Never Wake`. The global `⌥⇧⌘D` shortcut switches between always-visible and your last auto-hide delay; it is the system Dock's `⌥⌘D` plus Shift, which also releases the older `⌥⌘E` back to Safari and Finder. You can record a different combination in Settings → General. If the shortcut cannot be registered, the menu simply stops showing the key hint.
 - **The Dock (⌥⌘D to show/hide)** — likewise a section header. `⌥⌘D` belongs to macOS, so it is named here as plain text rather than claimed as a shortcut. Its slider sets the **native Dock's** wake delay (`Always Visible`, `0.1s`–`3.0s`, `Never Wake` — drag to `Never Wake` and the Dock stops popping up at the screen edge entirely). Moving it stages a draft and reveals a confirm row; nothing is written until you press it, because every write restarts the Dock and flashes the screen.
 - **Dock Settings…** — opens Desktop & Dock on Ventura and later, or Dock & Menu Bar on macOS 12. It only opens System Settings; it never writes Dock preferences or restarts Dock.
 - **Settings…** — opens the settings window described below.
@@ -125,7 +125,9 @@ Preferences live in two places, and the split is deliberate: the **status menu**
 
 Open it from **Settings…** in the status menu, or by **right-clicking the drawer capsule** at the right end of the taskbar. (`⌘,` does not work in normal operation: Tungsten Edge runs as a menu-bar app and has no menu bar of its own to hang it on.)
 
-- **General** — **Open at Login**: on macOS 13 and later this goes through the system's Login Items; if macOS asks for approval, open Login Items in System Settings and approve Tungsten Edge there. On macOS 12 it is written to System Preferences → Users & Groups → Login Items, where you can also see and remove it.
+- **General**
+  - **Open at Login** — on macOS 13 and later this goes through the system's Login Items; if macOS asks for approval, open Login Items in System Settings and approve Tungsten Edge there. On macOS 12 it is written to System Preferences → Users & Groups → Login Items, where you can also see and remove it.
+  - **Show/hide taskbar shortcut** — click the recorder, press a new combination, done (default `⌥⇧⌘D`; *Reset to Default* brings it back). Combinations that would clash with macOS — `⌥⌘D`, Option-only, Control-Option without Command — are rejected with an explanation, and if another app already owns the combination the previous shortcut stays active.
 - **Taskbar**
   - **Show Shelf** — shows or hides the shelf chip. Unchecking it only hides the chip; stashed file references are kept and come back when you check it again. Note that with the shelf hidden *and* no pinned folders, the whole folder zone disappears, so the taskbar has no external-file drop target and no **Add Folder…** entry — check it back on to get them.
   - **Show app name on hover** — turn it off and moving the pointer across the taskbar no longer pops up app names.

@@ -40,6 +40,7 @@ struct SettingsWindowContent: View {
         VStack(alignment: .leading, spacing: 22) {
             settingsSection(String(localized: "General")) {
                 launchAtLoginRow
+                hotKeyRow
             }
 
             Divider()
@@ -155,6 +156,43 @@ struct SettingsWindowContent: View {
             } label: {
                 Label("Open Login Items Settings…", systemImage: "arrow.up.forward.app")
             }
+        }
+    }
+
+    /// 显隐任务条快捷键：录制框 + 自定义过才出现的「恢复默认」。行高恒定
+    ///（录制态只换文案不换尺寸，按钮出现在同一行内），所以不用给
+    /// `SettingsWindowController.sessionSubscriptions` 加 sink。
+    @ViewBuilder
+    private var hotKeyRow: some View {
+        settingRow(note: String(localized: "Toggles the taskbar between always visible and your last auto-hide delay. Default: ⌥⇧⌘D.")) {
+            HStack(spacing: 10) {
+                Text("Show/hide taskbar shortcut")
+                Spacer()
+                HotKeyRecorder(
+                    currentGlyphs: store.edgeToggleShortcut?.glyphs
+                        ?? GlobalHotKeyShortcut.edgeAutoHideMode.displayGlyphs,
+                    onRecord: { applyShortcut($0) },
+                    onRejectKey: {
+                        presentedAlert = SettingsAlert(
+                            title: String(localized: "Can’t Use This Shortcut"),
+                            message: String(localized: "This key can’t be used as the shortcut key.")
+                        )
+                    }
+                )
+                .fixedSize()
+                if store.edgeToggleShortcut != nil {
+                    Button("Reset to Default") { applyShortcut(nil) }
+                }
+            }
+        }
+    }
+
+    private func applyShortcut(_ stored: StoredHotKeyShortcut?) {
+        if case .failure(let error) = coordinator.applyEdgeToggleShortcut(stored) {
+            presentedAlert = SettingsAlert(
+                hotKeyError: error,
+                attemptedGlyphs: stored?.glyphs ?? GlobalHotKeyShortcut.edgeAutoHideMode.displayGlyphs
+            )
         }
     }
 
@@ -381,6 +419,41 @@ private struct SettingsAlert: Identifiable {
 
     init(_ content: SubscriptionAlertContent) {
         self.init(title: content.title, message: content.message)
+    }
+
+    /// 改键失败 → 一句能行动的人话。拒绝理由逐条给（每条的下一步动作不同）；
+    /// 注册失败只有一种真实成因（组合被别的应用独占注册）。
+    init(hotKeyError: HotKeyChangeError, attemptedGlyphs: String) {
+        switch hotKeyError {
+        case .rejected(.missingPrimaryModifier):
+            self.init(
+                title: String(localized: "Can’t Use This Shortcut"),
+                message: String(localized: "Use at least one of Command, Control or Option.")
+            )
+        case .rejected(.unreliableModifiers):
+            self.init(
+                title: String(localized: "Can’t Use This Shortcut"),
+                message: String(localized: "Option alone or Option-Shift is unreliable on macOS 15.")
+            )
+        case .rejected(.reservedBySystem):
+            self.init(
+                title: String(localized: "Can’t Use This Shortcut"),
+                message: String(localized: "This combination belongs to macOS (⌥⌘D shows/hides the Dock; Control-Option is VoiceOver’s).")
+            )
+        case .rejected(.forbiddenKey):
+            self.init(
+                title: String(localized: "Can’t Use This Shortcut"),
+                message: String(localized: "Escape and Delete can’t be the key.")
+            )
+        case .registrationFailed:
+            self.init(
+                title: String(localized: "Couldn’t Register the Shortcut"),
+                message: String(
+                    format: String(localized: "%@ is already taken by another app. The previous shortcut stays active."),
+                    attemptedGlyphs
+                )
+            )
+        }
     }
 }
 

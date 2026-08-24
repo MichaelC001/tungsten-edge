@@ -51,6 +51,23 @@
         }
       }
     },
+    "%@ is already taken by another app. The previous shortcut stays active.": {
+      "comment": "设置窗口 · 改键失败弹窗",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ 已被其他应用占用，仍沿用原来的快捷键。"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ is already taken by another app. The previous shortcut stays active."
+          }
+        }
+      }
+    },
     "About": {
       "localizations": {
         "zh-Hans": {
@@ -112,6 +129,39 @@
           "stringUnit": {
             "state": "translated",
             "value": "Accessibility permission required"
+          }
+        }
+      }
+    },
+    "Activate": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "激活"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Activate"
+          }
+        }
+      }
+    },
+    "Activated · %@ · %@": {
+      "comment": "两个占位符依次是授权种类（原始用户 / 已购买）与邮箱。",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "已激活 · %@ · %@"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Activated · %@ · %@"
           }
         }
       }
@@ -274,6 +324,23 @@
           "stringUnit": {
             "state": "translated",
             "value": "Can’t Subscribe Right Now"
+          }
+        }
+      }
+    },
+    "Can’t Use This Shortcut": {
+      "comment": "设置窗口 · 改键被拒弹窗标题",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "这个快捷键不能用"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Can’t Use This Shortcut"
           }
         }
       }
@@ -488,6 +555,22 @@
         }
       }
     },
+    "Couldn’t Activate": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "激活失败"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Couldn’t Activate"
+          }
+        }
+      }
+    },
     "Couldn’t Change Dock Settings": {
       "localizations": {
         "zh-Hans": {
@@ -520,6 +603,23 @@
         }
       }
     },
+    "Couldn’t Register the Shortcut": {
+      "comment": "设置窗口 · 改键失败弹窗标题",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "快捷键注册失败"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Couldn’t Register the Shortcut"
+          }
+        }
+      }
+    },
     "Couldn’t start a new instance of Tungsten Edge: %@\n\nYou can click Retry, or quit and open it manually from your Applications folder.": {
       "comment": "%@ 是系统返回的错误描述",
       "localizations": {
@@ -533,6 +633,22 @@
           "stringUnit": {
             "state": "translated",
             "value": "Couldn’t start a new instance of Tungsten Edge: %@\n\nYou can click Retry, or quit and open it manually from your Applications folder."
+          }
+        }
+      }
+    },
+    "Couldn’t update the Login Items list.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "无法更新登录项列表。"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Couldn’t update the Login Items list."
           }
         }
       }
@@ -684,6 +800,23 @@
         }
       }
     },
+    "Escape and Delete can’t be the key.": {
+      "comment": "设置窗口 · 改键被拒弹窗",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Esc 和 Delete 不能作为按键。"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Escape and Delete can’t be the key."
+          }
+        }
+      }
+    },
     "Export Taskbar Snapshot": {
       "localizations": {
         "zh-Hans": {
@@ -748,6 +881,22 @@
         }
       }
     },
+    "Founding User": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "原始用户"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Founding User"
+          }
+        }
+      }
+    },
     "Founding Users · Free Forever": {
       "comment": "⚠️ 与官网 tungstenedge.app 订阅区逐字同源的公开承诺。官网做英文版时必须用同一份英文，不要各写各的。",
       "localizations": {
@@ -761,6 +910,22 @@
           "stringUnit": {
             "state": "translated",
             "value": "Founding Users · Free Forever"
+          }
+        }
+      }
+    },
+    "Founding users: your license key is in the email we sent you.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "原始用户：授权码在我们发给你的那封邮件里。"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Founding users: your license key is in the email we sent you."
           }
         }
       }
@@ -1024,6 +1189,22 @@
         }
       }
     },
+    "License": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "授权"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "License"
+          }
+        }
+      }
+    },
     "Lifts the bottom edge of a screen-filling window above the taskbar. This resizes other apps’ windows, so it is off by default.": {
       "localizations": {
         "zh-Hans": {
@@ -1036,22 +1217,6 @@
           "stringUnit": {
             "state": "translated",
             "value": "Lifts the bottom edge of a screen-filling window above the taskbar. This resizes other apps’ windows, so it is off by default."
-          }
-        }
-      }
-    },
-    "Pin to Messaging Zone": {
-      "localizations": {
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "固定到消息区"
-          }
-        },
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Pin to Messaging Zone"
           }
         }
       }
@@ -1229,6 +1394,22 @@
           "stringUnit": {
             "state": "translated",
             "value": "以后再说"
+          }
+        }
+      }
+    },
+    "Not activated": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "未激活"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Not activated"
           }
         }
       }
@@ -1459,22 +1640,6 @@
         }
       }
     },
-    "Couldn’t update the Login Items list.": {
-      "localizations": {
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "无法更新登录项列表。"
-          }
-        },
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Couldn’t update the Login Items list."
-          }
-        }
-      }
-    },
     "Open in Finder": {
       "localizations": {
         "zh-Hans": {
@@ -1491,6 +1656,55 @@
         }
       }
     },
+    "Option alone or Option-Shift is unreliable on macOS 15.": {
+      "comment": "设置窗口 · 改键被拒弹窗",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "单独的 ⌥ 或 ⌥⇧ 组合在 macOS 15 上不可靠。"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Option alone or Option-Shift is unreliable on macOS 15."
+          }
+        }
+      }
+    },
+    "Paid": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "已购买"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Paid"
+          }
+        }
+      }
+    },
+    "Paste your license key": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "粘贴授权码"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Paste your license key"
+          }
+        }
+      }
+    },
     "Permission to control Finder is required": {
       "localizations": {
         "zh-Hans": {
@@ -1503,6 +1717,22 @@
           "stringUnit": {
             "state": "translated",
             "value": "Permission to control Finder is required"
+          }
+        }
+      }
+    },
+    "Pin to Messaging Zone": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "固定到消息区"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Pin to Messaging Zone"
           }
         }
       }
@@ -1535,6 +1765,23 @@
           "stringUnit": {
             "state": "translated",
             "value": "Predict full-screen transitions to prevent taskbar flicker"
+          }
+        }
+      }
+    },
+    "Press new shortcut…": {
+      "comment": "设置窗口 · 显隐快捷键录制框",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "按下新组合…"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Press new shortcut…"
           }
         }
       }
@@ -1696,6 +1943,23 @@
           "stringUnit": {
             "state": "translated",
             "value": "Remove from Taskbar"
+          }
+        }
+      }
+    },
+    "Reset to Default": {
+      "comment": "设置窗口 · 显隐快捷键",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "恢复默认"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Reset to Default"
           }
         }
       }
@@ -1939,6 +2203,23 @@
           "stringUnit": {
             "state": "translated",
             "value": "Show in Finder"
+          }
+        }
+      }
+    },
+    "Show/hide taskbar shortcut": {
+      "comment": "设置窗口 · 显隐快捷键",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "显隐任务条快捷键"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Show/hide taskbar shortcut"
           }
         }
       }
@@ -2235,6 +2516,23 @@
         }
       }
     },
+    "This combination belongs to macOS (⌥⌘D shows/hides the Dock; Control-Option is VoiceOver’s).": {
+      "comment": "设置窗口 · 改键被拒弹窗",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "这个组合归 macOS 所有（⌥⌘D 是系统程序坞的显隐键，⌃⌥ 是旁白的修饰键）。"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "This combination belongs to macOS (⌥⌘D shows/hides the Dock; Control-Option is VoiceOver’s)."
+          }
+        }
+      }
+    },
     "This copy is running from a temporary or read-only location.": {
       "localizations": {
         "zh-Hans": {
@@ -2263,6 +2561,39 @@
           "stringUnit": {
             "state": "translated",
             "value": "This folder is empty"
+          }
+        }
+      }
+    },
+    "This key can’t be used as the shortcut key.": {
+      "comment": "设置窗口 · 改键被拒弹窗",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "这个键不能用作快捷键的主键。"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "This key can’t be used as the shortcut key."
+          }
+        }
+      }
+    },
+    "This license key isn’t valid. Copy the whole key from your email and paste it again.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "这条授权码用不了。请把邮件里那一整串完整复制一遍，再粘进来。"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "This license key isn’t valid. Copy the whole key from your email and paste it again."
           }
         }
       }
@@ -2333,6 +2664,23 @@
         }
       }
     },
+    "Toggles the taskbar between always visible and your last auto-hide delay. Default: ⌥⇧⌘D.": {
+      "comment": "设置窗口 · 显隐快捷键说明",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "在常驻与上次的自动隐藏档位之间切换任务条。默认 ⌥⇧⌘D。"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Toggles the taskbar between always visible and your last auto-hide delay. Default: ⌥⇧⌘D."
+          }
+        }
+      }
+    },
     "Tungsten Edge": {
       "comment": "钨极组的分组标题（热键未注册时）。中文界面带品牌后缀「钨极」，英文只用产品名。",
       "localizations": {
@@ -2350,18 +2698,19 @@
         }
       }
     },
-    "Tungsten Edge (⌥⇧⌘D to show/hide)": {
+    "Tungsten Edge (%@ to show/hide)": {
+      "comment": "状态栏菜单组标题（%@ = 当前快捷键字形）",
       "localizations": {
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "Tungsten Edge 钨极（⌥⇧⌘D 显隐）"
+            "value": "Tungsten Edge 钨极（%@ 显隐）"
           }
         },
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Tungsten Edge (⌥⇧⌘D to show/hide)"
+            "value": "Tungsten Edge (%@ to show/hide)"
           }
         }
       }
@@ -2545,6 +2894,23 @@
         }
       }
     },
+    "Use at least one of Command, Control or Option.": {
+      "comment": "设置窗口 · 改键被拒弹窗",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "至少要包含 ⌘、⌃ 或 ⌥ 中的一个。"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Use at least one of Command, Control or Option."
+          }
+        }
+      }
+    },
     "Version %@": {
       "localizations": {
         "zh-Hans": {
@@ -2704,167 +3070,6 @@
           "stringUnit": {
             "state": "translated",
             "value": "you@example.com"
-          }
-        }
-      }
-    },
-    "License": {
-      "localizations": {
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "授权"
-          }
-        },
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "License"
-          }
-        }
-      }
-    },
-    "Not activated": {
-      "localizations": {
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "未激活"
-          }
-        },
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Not activated"
-          }
-        }
-      }
-    },
-    "Activated · %@ · %@": {
-      "comment": "两个占位符依次是授权种类（原始用户 / 已购买）与邮箱。",
-      "localizations": {
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "已激活 · %@ · %@"
-          }
-        },
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Activated · %@ · %@"
-          }
-        }
-      }
-    },
-    "Paste your license key": {
-      "localizations": {
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "粘贴授权码"
-          }
-        },
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Paste your license key"
-          }
-        }
-      }
-    },
-    "Activate": {
-      "localizations": {
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "激活"
-          }
-        },
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Activate"
-          }
-        }
-      }
-    },
-    "Founding users: your license key is in the email we sent you.": {
-      "localizations": {
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "原始用户：授权码在我们发给你的那封邮件里。"
-          }
-        },
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Founding users: your license key is in the email we sent you."
-          }
-        }
-      }
-    },
-    "Couldn’t Activate": {
-      "localizations": {
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "激活失败"
-          }
-        },
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Couldn’t Activate"
-          }
-        }
-      }
-    },
-    "This license key isn’t valid. Copy the whole key from your email and paste it again.": {
-      "localizations": {
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "这条授权码用不了。请把邮件里那一整串完整复制一遍，再粘进来。"
-          }
-        },
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "This license key isn’t valid. Copy the whole key from your email and paste it again."
-          }
-        }
-      }
-    },
-    "Founding User": {
-      "localizations": {
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "原始用户"
-          }
-        },
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Founding User"
-          }
-        }
-      }
-    },
-    "Paid": {
-      "localizations": {
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "已购买"
-          }
-        },
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Paid"
           }
         }
       }

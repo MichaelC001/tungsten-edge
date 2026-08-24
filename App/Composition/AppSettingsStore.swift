@@ -40,6 +40,14 @@ enum HoverStyle: String, CaseIterable {
     }
 }
 
+/// 用户自定义的显隐任务条快捷键（nil = 默认 ⌥⇧⌘D）。
+/// `glyphs` 在录制那一刻由 NSEvent 的字符定格（理由见 `HotKeyGlyphs`），展示端只读它。
+struct StoredHotKeyShortcut: Equatable {
+    let keyCode: UInt32
+    let carbonModifiers: UInt32
+    let glyphs: String
+}
+
 
 @MainActor
 final class AppSettingsStore: ObservableObject {
@@ -65,6 +73,9 @@ final class AppSettingsStore: ObservableObject {
     @Published private(set) var windowLiftEnabled: Bool
     /// 标准绿灯 / Control-Command-F 输入投递前预测隐藏任务条，默认开启。
     @Published private(set) var fullscreenIntentEnabled: Bool
+    /// 自定义显隐任务条快捷键；nil = 默认 ⌥⇧⌘D。**只由 `SettingsCoordinator.applyEdgeToggleShortcut`
+    /// 在注册成功后写入**——先落盘再注册失败会让存的键和实际生效的键分家。
+    @Published private(set) var edgeToggleShortcut: StoredHotKeyShortcut?
     /// 这台机器上已经成功提交过邮箱订阅。只用来把设置里那段订阅区块收起来，
     /// 免得已经留过邮箱的人被同一段话反复看见。**不是**「是否为原始用户」的凭据——
     /// 那个凭据是 `InstallationRecord` 的首装时间戳，以及服务端那份名单。
@@ -118,6 +129,8 @@ final class AppSettingsStore: ObservableObject {
         // 同上：缺键即 false = 还没看过欢迎引导。
         hasSeenWelcome = defaults.bool(forKey: Keys.hasSeenWelcome)
         fullscreenIntentEnabled = defaults.bool(forKey: Keys.fullscreenIntentEnabled)
+        // 有意不 register：缺键即 nil = 默认 ⌥⇧⌘D；坏数据（手改过、类型不对）也回落 nil。
+        edgeToggleShortcut = Self.storedHotKeyShortcut(defaults.dictionary(forKey: Keys.edgeToggleShortcut))
         // 坏值（手改过、旧版本残留、类型不对）一律回退中档并**立刻重写**，
         // 否则每次启动都要重新走一遍回退，且 UI 上勾选的档位和存的值对不上。
         dockSize = DockSize(rawValue: defaults.string(forKey: Keys.dockSize) ?? "") ?? .default
@@ -160,6 +173,37 @@ final class AppSettingsStore: ObservableObject {
         guard dockSize != value else { return }
         dockSize = value
         defaults.set(value.rawValue, forKey: Keys.dockSize)
+    }
+
+    /// 只应由 `SettingsCoordinator.applyEdgeToggleShortcut` 在**注册成功后**调用（见属性注释）。
+    func setEdgeToggleShortcut(_ value: StoredHotKeyShortcut?) {
+        guard edgeToggleShortcut != value else { return }
+        edgeToggleShortcut = value
+        guard let value else {
+            defaults.removeObject(forKey: Keys.edgeToggleShortcut)
+            return
+        }
+        defaults.set(
+            [
+                "keyCode": Int(value.keyCode),
+                "modifiers": Int(value.carbonModifiers),
+                "glyphs": value.glyphs,
+            ],
+            forKey: Keys.edgeToggleShortcut
+        )
+    }
+
+    private static func storedHotKeyShortcut(_ dict: [String: Any]?) -> StoredHotKeyShortcut? {
+        guard let dict,
+              let keyCode = dict["keyCode"] as? Int, keyCode >= 0, keyCode <= 0xFFFF,
+              let modifiers = dict["modifiers"] as? Int, modifiers >= 0,
+              let glyphs = dict["glyphs"] as? String, !glyphs.isEmpty
+        else { return nil }
+        return StoredHotKeyShortcut(
+            keyCode: UInt32(keyCode),
+            carbonModifiers: UInt32(modifiers),
+            glyphs: glyphs
+        )
     }
 
     func setHoverStyle(_ value: HoverStyle) {
@@ -321,6 +365,8 @@ private enum Keys {
         // **键留成孤儿，不读不写不删**——回退这轮改动时还读得回用户原来的选择。
     static let windowLiftEnabled = "com.tungsten.edge.windowLiftEnabled"
     static let fullscreenIntentEnabled = "com.tungsten.edge.fullscreenIntentEnabled"
+    /// 自定义显隐快捷键（字典：keyCode / modifiers / glyphs）。缺键 = 默认 ⌥⇧⌘D。
+    static let edgeToggleShortcut = "com.tungsten.edge.hotKey.edgeAutoHideMode"
     /// ⚠️ 这个键名进了用户磁盘。改名 = 所有已订阅的人重新看到订阅区块。
     static let hasSubscribed = "com.tungsten.edge.hasSubscribed"
     /// ⚠️ 同上：改名 = 所有老用户下次启动被欢迎引导再拦一次。

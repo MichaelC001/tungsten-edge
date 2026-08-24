@@ -23,9 +23,10 @@ enum AutoHideToggleMenuModel {
     ///
     /// 快捷键同样只以**纯文字**写进标题、不设 `keyEquivalent`（理由同上）；
     /// 而且只在 Carbon 注册成功时才提，注册失败时按不出来，写上去就是骗人。
-    static func edgeSectionTitle(isHotKeyRegistered: Bool) -> String {
+    /// `glyphs` = 当前生效组合的字形（2026-08-24 起用户可改键，不再写死 ⌥⇧⌘D）。
+    static func edgeSectionTitle(isHotKeyRegistered: Bool, glyphs: String) -> String {
         isHotKeyRegistered
-            ? String(localized: "Tungsten Edge (⌥⇧⌘D to show/hide)")
+            ? String(format: String(localized: "Tungsten Edge (%@ to show/hide)"), glyphs)
             : String(localized: "Tungsten Edge")
     }
 

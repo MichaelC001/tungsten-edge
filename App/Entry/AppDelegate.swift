@@ -46,7 +46,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         launchAtLoginService: launchAtLoginService,
         nativeDockPreferencesService: nativeDockPreferencesService,
         updateService: updateService,
-        subscriptionSubmitter: WebsiteSubscriptionSubmitter()
+        subscriptionSubmitter: WebsiteSubscriptionSubmitter(),
+        // 改键的真实注册入口。临时副本没有 monitor（也进不了设置窗口），兜底报失败。
+        hotKeyRegistrar: { [weak self] shortcut in
+            self?.edgeToggleHotKey?.update(shortcut: shortcut) ?? .monitorUnavailable
+        }
     )
     /// 本机授权凭据。设置窗口的「授权」区块读它；将来的试用期逻辑也会读它，
     /// 所以它是 AppDelegate 的一等成员，不藏在设置窗口里。
@@ -90,7 +94,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             self?.panelCoordinator?.setTaskbarMenuOpen(isOpen)
         },
         onQuit: { NSApp.terminate(nil) },
-        toggleHotKeyShortcut: .edgeAutoHideMode,
+        hotKeyGlyphs: { [weak self] in
+            self?.edgeToggleHotKey?.shortcut.displayGlyphs
+                ?? GlobalHotKeyShortcut.edgeAutoHideMode.displayGlyphs
+        },
         isToggleHotKeyRegistered: { [weak self] in self?.edgeToggleHotKey?.isRegistered ?? false }
     )
 
@@ -137,7 +144,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
             // 先注册热键再建状态菜单：菜单构建时要读注册状态决定是否显示快捷键提示。
             // Carbon 热键不依赖辅助功能权限，不用等权限引导分支。
-            let hotKey = GlobalHotKeyMonitor(shortcut: .edgeAutoHideMode) { [weak self] in
+            // 用户自定义过就用存的组合；坏数据在 store 读入时已回落 nil（= 默认 ⌥⇧⌘D）。
+            let shortcut = settingsStore.edgeToggleShortcut.map(GlobalHotKeyShortcut.init(stored:))
+                ?? .edgeAutoHideMode
+            let hotKey = GlobalHotKeyMonitor(shortcut: shortcut) { [weak self] in
                 self?.settingsStore.toggleEdgeAutoHideMode()
             }
             edgeToggleHotKey = hotKey

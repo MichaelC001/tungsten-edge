@@ -1,25 +1,26 @@
 import AppKit
 import Carbon.HIToolbox
 
-/// 全局快捷键定义。Carbon 注册与 AppKit 菜单展示是两套修饰符常量，必须成对维护。
-struct GlobalHotKeyShortcut {
+/// 全局快捷键定义。keyCode + Carbon 修饰位用于注册；`displayGlyphs` 只管展示，
+/// 在录制那一刻定格、不做 keyCode 反查（理由见 `HotKeyGlyphs`）。
+struct GlobalHotKeyShortcut: Equatable {
     let keyCode: UInt32
     let carbonModifiers: UInt32
-    let keyEquivalent: String
-    let keyEquivalentModifierMask: NSEvent.ModifierFlags
+    /// 展示字形（如 "⌥⇧⌘D"），菜单组标题与设置窗口共用。
+    let displayGlyphs: String
     let signature: OSType
     let id: UInt32
 
     var hotKeyID: EventHotKeyID { EventHotKeyID(signature: signature, id: id) }
 
-    /// ⌥⇧⌘D：系统 Dock 的 ⌥⌘D 加 Shift，释放原 ⌥⌘E 给 Safari / Finder。
+    /// 默认 ⌥⇧⌘D：系统 Dock 的 ⌥⌘D 加 Shift，释放原 ⌥⌘E 给 Safari / Finder。
     /// 四键略重，但这是低频模式切换；组合仍避开 VoiceOver 的 Control+Option，
     /// 也避开 macOS 15 已知失效的纯 Option / Option+Shift（FB15168205）。
+    /// 2026-08-24 起用户可改键，同样的坑由 `HotKeyShortcutValidation` 挡在录制入口。
     static let edgeAutoHideMode = GlobalHotKeyShortcut(
         keyCode: UInt32(kVK_ANSI_D),
         carbonModifiers: UInt32(optionKey | shiftKey | cmdKey),
-        keyEquivalent: "d",
-        keyEquivalentModifierMask: [.option, .shift, .command],
+        displayGlyphs: "⌥⇧⌘D",
         signature: 0x5467_4567, // 'TgEg'
         id: 1
     )
@@ -27,6 +28,21 @@ struct GlobalHotKeyShortcut {
     // ⌥⌘D（系统 Dock 自带的自动隐藏快捷键）**故意没有定义在这里**：macOS 自己持有它，
     // 注册就是抢。原先留过一份精确定义供菜单展示与按键去重，2026-08-01 删掉系统 Dock 的
     // 显隐命令后两个消费方都没了；菜单里现在只在分组标题上以纯文字提一句 ⌥⌘D。
+    // 自定义改键路径也由 `HotKeyShortcutValidation` 拒绝这个组合。
+}
+
+extension GlobalHotKeyShortcut {
+    /// 用户自定义组合 → 注册用定义。signature/id **不变**：热键的身份是「钨极的常驻切换键」，
+    /// 键位只是它的参数——回调匹配、按下去重都按 signature/id 走，换键不换身份。
+    init(stored: StoredHotKeyShortcut) {
+        self.init(
+            keyCode: stored.keyCode,
+            carbonModifiers: stored.carbonModifiers,
+            displayGlyphs: stored.glyphs,
+            signature: Self.edgeAutoHideMode.signature,
+            id: Self.edgeAutoHideMode.id
+        )
+    }
 }
 
 /// 热键事件，backend 已解包成纯值，便于单测构造。
@@ -54,9 +70,12 @@ final class GlobalHotKeyMonitor {
         case registered
         case handlerInstallFailed(OSStatus)
         case registrationFailed(OSStatus)
+
+        /// 「此实例根本没有热键监视器」（临时 DMG 副本）时给 `SettingsCoordinator` 的兜底失败值。
+        static let monitorUnavailable = RegistrationStatus.registrationFailed(OSStatus(paramErr))
     }
 
-    let shortcut: GlobalHotKeyShortcut
+    private(set) var shortcut: GlobalHotKeyShortcut
     private let backend: HotKeyBackend
     private let onPressed: () -> Void
     private(set) var isRegistered = false
@@ -123,6 +142,26 @@ final class GlobalHotKeyMonitor {
         // 主动 stop 过的实例允许再次 start（真实重新注册），否则缓存的 .registered 会谎报。
         // 失败结果仍然缓存：「本次启动不自动重试」只针对失败。
         attemptedStatus = nil
+    }
+
+    /// 换键：停旧、注册新；新键注册失败就原样换回旧键并注册回去。返回**新键**的注册结果。
+    ///
+    /// `stop()` 只在「曾注册成功」时清尝试缓存，所以两处都要显式再清一次——
+    /// 上一轮失败的缓存留着的话，这里的 `start()` 会拿旧结果谎报。
+    /// `start()` 成功时推进 `registrationGeneration`，旧注册排队的回调自然作废。
+    @discardableResult
+    func update(shortcut next: GlobalHotKeyShortcut) -> RegistrationStatus {
+        let previous = shortcut
+        stop()
+        attemptedStatus = nil
+        shortcut = next
+        let status = start()
+        guard status != .registered else { return status }
+        stop()
+        attemptedStatus = nil
+        shortcut = previous
+        _ = start()
+        return status
     }
 
     fileprivate func handle(_ event: HotKeyEvent) -> Bool {

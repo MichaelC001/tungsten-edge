@@ -52,7 +52,8 @@ final class StatusMenuController: NSObject, NSMenuDelegate {
     /// `PanelCoordinator` 在权限引导完成前根本不存在。
     private let onMenuVisibilityChanged: (Bool) -> Void
     private let onQuit: () -> Void
-    private let toggleHotKeyShortcut: GlobalHotKeyShortcut
+    /// 当前显隐快捷键的展示字形。走闭包现取：用户改键后组标题要在下次打开时跟着变。
+    private let hotKeyGlyphs: () -> String
     // 闭包注入：注册状态归 AppDelegate 持有的 GlobalHotKeyMonitor，菜单每次刷新时现查。
     private let isToggleHotKeyRegistered: () -> Bool
     private var edgeDelaySubscription: AnyCancellable?
@@ -101,7 +102,7 @@ final class StatusMenuController: NSObject, NSMenuDelegate {
          onShowSettings: @escaping () -> Void,
          onMenuVisibilityChanged: @escaping (Bool) -> Void = { _ in },
          onQuit: @escaping () -> Void,
-         toggleHotKeyShortcut: GlobalHotKeyShortcut = .edgeAutoHideMode,
+         hotKeyGlyphs: @escaping () -> String,
          isToggleHotKeyRegistered: @escaping () -> Bool = { false }) {
         self.store = store
         self.settingsCoordinator = settingsCoordinator
@@ -111,7 +112,7 @@ final class StatusMenuController: NSObject, NSMenuDelegate {
         self.onShowSettings = onShowSettings
         self.onMenuVisibilityChanged = onMenuVisibilityChanged
         self.onQuit = onQuit
-        self.toggleHotKeyShortcut = toggleHotKeyShortcut
+        self.hotKeyGlyphs = hotKeyGlyphs
         self.isToggleHotKeyRegistered = isToggleHotKeyRegistered
         nativeDockSliderView = PreferenceSliderMenuItemView(accessibilityTitle: String(localized: "Dock wake delay"))
         edgeSliderView = PreferenceSliderMenuItemView(accessibilityTitle: String(localized: "Tungsten Edge wake delay"))
@@ -334,7 +335,8 @@ final class StatusMenuController: NSObject, NSMenuDelegate {
     /// ⌥⇧⌘D 只以纯文字写进标题，且只在 Carbon 注册成功时才提——注册失败时按不出来，写上去是骗人。
     private func refreshEdgeSectionTitle() {
         edgeSectionItem.title = AutoHideToggleMenuModel.edgeSectionTitle(
-            isHotKeyRegistered: isToggleHotKeyRegistered()
+            isHotKeyRegistered: isToggleHotKeyRegistered(),
+            glyphs: hotKeyGlyphs()
         )
     }
 

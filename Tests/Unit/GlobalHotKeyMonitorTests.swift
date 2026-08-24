@@ -18,12 +18,17 @@ private final class FakeHotKeyBackend: HotKeyBackend {
         return installStatus
     }
 
+    /// 一次性结果队列（update 的「新键失败、回退旧键成功」需要两次 register 各给各的结果）；
+    /// 队列空了回落到常驻的 registerStatus。
+    var registerStatusQueue: [OSStatus] = []
+
     func register(keyCode: UInt32, modifiers: UInt32, hotKeyID: EventHotKeyID, exclusive: Bool) -> OSStatus {
         calls.append("register")
         registeredKeyCode = keyCode
         registeredModifiers = modifiers
         registeredHotKeyID = hotKeyID
         registeredExclusive = exclusive
+        if !registerStatusQueue.isEmpty { return registerStatusQueue.removeFirst() }
         return registerStatus
     }
 
@@ -189,6 +194,56 @@ final class GlobalHotKeyMonitorTests: XCTestCase {
         drainMainQueue()
         XCTAssertEqual(fired, 1)
         XCTAssertTrue(backend.send(.released(signature: shortcut.signature, id: shortcut.id)))
+    }
+
+    private var customShortcut: GlobalHotKeyShortcut {
+        GlobalHotKeyShortcut(stored: StoredHotKeyShortcut(
+            keyCode: 40, // kVK_ANSI_K
+            carbonModifiers: UInt32(controlKey | cmdKey),
+            glyphs: "⌃⌘K"
+        ))
+    }
+
+    func testUpdateStopsOldThenRegistersNewShortcut() {
+        let backend = FakeHotKeyBackend()
+        let monitor = GlobalHotKeyMonitor(shortcut: shortcut, backend: backend) {}
+        _ = monitor.start()
+
+        let next = customShortcut
+        XCTAssertEqual(monitor.update(shortcut: next), .registered)
+        XCTAssertTrue(monitor.isRegistered)
+        XCTAssertEqual(monitor.shortcut, next)
+        XCTAssertEqual(backend.calls, ["install", "register", "unregister", "removeHandler", "install", "register"])
+        XCTAssertEqual(backend.registeredKeyCode, 40)
+        XCTAssertEqual(backend.registeredModifiers, UInt32(controlKey | cmdKey))
+        XCTAssertEqual(backend.registeredHotKeyID?.signature, shortcut.signature, "换键不换身份：signature/id 不变")
+        XCTAssertEqual(backend.registeredHotKeyID?.id, shortcut.id)
+    }
+
+    func testUpdateFailureRevertsToPreviousShortcut() {
+        let backend = FakeHotKeyBackend()
+        let monitor = GlobalHotKeyMonitor(shortcut: shortcut, backend: backend) {}
+        _ = monitor.start()
+
+        // 新键注册失败（被别人占用），回退时旧键要注册回去且成功。
+        backend.registerStatusQueue = [OSStatus(eventHotKeyExistsErr)]
+        XCTAssertEqual(monitor.update(shortcut: customShortcut), .registrationFailed(OSStatus(eventHotKeyExistsErr)))
+        XCTAssertTrue(monitor.isRegistered, "回退后旧键重新生效")
+        XCTAssertEqual(monitor.shortcut, shortcut)
+        XCTAssertEqual(backend.registeredKeyCode, shortcut.keyCode, "最后一次注册的是旧键")
+    }
+
+    func testUpdateDropsPressQueuedUnderOldRegistration() {
+        let backend = FakeHotKeyBackend()
+        var fired = 0
+        let monitor = GlobalHotKeyMonitor(shortcut: shortcut, backend: backend) { fired += 1 }
+        _ = monitor.start()
+
+        XCTAssertTrue(backend.send(.pressed(signature: shortcut.signature, id: shortcut.id)))
+        _ = monitor.update(shortcut: customShortcut)
+        drainMainQueue()
+
+        XCTAssertEqual(fired, 0, "旧注册排队的 pressed 不能借新注册状态触发")
     }
 
     private func drainMainQueue() {

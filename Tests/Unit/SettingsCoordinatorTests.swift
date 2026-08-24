@@ -1,3 +1,4 @@
+import Carbon.HIToolbox
 import Combine
 import XCTest
 
@@ -125,7 +126,8 @@ final class SettingsCoordinatorTests: XCTestCase {
             launchAtLoginService: launch,
             nativeDockPreferencesService: NativeDockServiceStub(),
             updateService: UpdateControlStub(),
-            subscriptionSubmitter: SubscriptionSubmitterStub()
+            subscriptionSubmitter: SubscriptionSubmitterStub(),
+            hotKeyRegistrar: { _ in .registered }
         )
 
         let older = Task { await coordinator.refreshLaunchAtLoginState() }
@@ -151,7 +153,8 @@ final class SettingsCoordinatorTests: XCTestCase {
             launchAtLoginService: LaunchServiceStub(state: .off),
             nativeDockPreferencesService: native,
             updateService: UpdateControlStub(),
-            subscriptionSubmitter: SubscriptionSubmitterStub()
+            subscriptionSubmitter: SubscriptionSubmitterStub(),
+            hotKeyRegistrar: { _ in .registered }
         )
 
         let prewarm = Task { await coordinator.reconcileNativeDockMirror() }
@@ -204,19 +207,73 @@ final class SettingsCoordinatorTests: XCTestCase {
         XCTAssertTrue(coordinator.automaticallyChecksForUpdates)
     }
 
+    // MARK: 显隐快捷键
+
+    func testApplyShortcutRejectionNeverReachesRegistrar() {
+        let store = makeStore()
+        var registrarCalls = 0
+        let coordinator = makeCoordinator(store: store, hotKeys: { _ in
+            registrarCalls += 1
+            return .registered
+        })
+
+        let result = coordinator.applyEdgeToggleShortcut(
+            StoredHotKeyShortcut(keyCode: 0, carbonModifiers: 0, glyphs: "A")
+        )
+
+        guard case .failure(let error) = result else { return XCTFail("无主修饰键的组合必须被拒") }
+        XCTAssertEqual(error, .rejected(.missingPrimaryModifier))
+        XCTAssertEqual(registrarCalls, 0, "纯校验被拒时不许碰真实注册")
+        XCTAssertNil(store.edgeToggleShortcut)
+    }
+
+    func testApplyShortcutRegistrationFailureLeavesStoreUnchanged() {
+        let store = makeStore()
+        let coordinator = makeCoordinator(store: store, hotKeys: { _ in .registrationFailed(-9878) })
+
+        let result = coordinator.applyEdgeToggleShortcut(
+            StoredHotKeyShortcut(keyCode: 40, carbonModifiers: UInt32(cmdKey | controlKey), glyphs: "⌃⌘K")
+        )
+
+        guard case .failure(let error) = result else { return XCTFail("注册失败必须上报") }
+        XCTAssertEqual(error, .registrationFailed)
+        XCTAssertNil(store.edgeToggleShortcut, "注册失败不许落盘")
+    }
+
+    func testApplyShortcutSuccessPersistsAndResetRemoves() {
+        let store = makeStore()
+        var registered: [GlobalHotKeyShortcut] = []
+        let coordinator = makeCoordinator(store: store, hotKeys: { shortcut in
+            registered.append(shortcut)
+            return .registered
+        })
+
+        let custom = StoredHotKeyShortcut(keyCode: 40, carbonModifiers: UInt32(cmdKey | controlKey), glyphs: "⌃⌘K")
+        if case .failure = coordinator.applyEdgeToggleShortcut(custom) { XCTFail("合法组合应当成功") }
+        XCTAssertEqual(store.edgeToggleShortcut, custom)
+        XCTAssertEqual(registered.last?.keyCode, 40)
+        XCTAssertEqual(registered.last?.signature, GlobalHotKeyShortcut.edgeAutoHideMode.signature, "换键不换身份")
+
+        if case .failure = coordinator.applyEdgeToggleShortcut(nil) { XCTFail("恢复默认应当成功") }
+        XCTAssertNil(store.edgeToggleShortcut)
+        XCTAssertEqual(registered.last, .edgeAutoHideMode)
+    }
+
     private func makeCoordinator(
         store: AppSettingsStore? = nil,
         launch: LaunchServiceStub? = nil,
         native: NativeDockServiceStub? = nil,
         updates: UpdateControlStub? = nil,
-        subscriptions: SubscriptionSubmitterStub? = nil
+        subscriptions: SubscriptionSubmitterStub? = nil,
+        hotKeys: ((GlobalHotKeyShortcut) -> GlobalHotKeyMonitor.RegistrationStatus)? = nil
     ) -> SettingsCoordinator {
         SettingsCoordinator(
             store: store ?? makeStore(),
             launchAtLoginService: launch ?? LaunchServiceStub(state: .off),
             nativeDockPreferencesService: native ?? NativeDockServiceStub(),
             updateService: updates ?? UpdateControlStub(),
-            subscriptionSubmitter: subscriptions ?? SubscriptionSubmitterStub()
+            subscriptionSubmitter: subscriptions ?? SubscriptionSubmitterStub(),
+            hotKeyRegistrar: hotKeys ?? { _ in .registered }
         )
     }
 

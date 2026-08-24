@@ -604,17 +604,56 @@ final class AppSettingsStoreTests: XCTestCase {
         XCTAssertEqual(AppSettingsStore.sanitizedLastEnabledDelay(AppSettingsStore.neverWakeDelay), AppSettingsStore.neverWakeDelay)
     }
 
+    // MARK: - 自定义显隐快捷键存储
+
+    func testEdgeToggleShortcutDefaultsToNilAndRoundTrips() {
+        let defaults = makeDefaults()
+        let store = AppSettingsStore(defaults: defaults)
+        XCTAssertNil(store.edgeToggleShortcut, "缺键 = 默认 ⌥⇧⌘D")
+
+        let custom = StoredHotKeyShortcut(keyCode: 40, carbonModifiers: 4352, glyphs: "⌃⌘K")
+        store.setEdgeToggleShortcut(custom)
+        XCTAssertEqual(store.edgeToggleShortcut, custom)
+
+        let reloaded = AppSettingsStore(defaults: defaults)
+        XCTAssertEqual(reloaded.edgeToggleShortcut, custom, "跨启动往返")
+    }
+
+    func testEdgeToggleShortcutResetRemovesKeyAndMalformedFallsBackToNil() {
+        let defaults = makeDefaults()
+        let store = AppSettingsStore(defaults: defaults)
+        store.setEdgeToggleShortcut(StoredHotKeyShortcut(keyCode: 40, carbonModifiers: 4352, glyphs: "⌃⌘K"))
+
+        store.setEdgeToggleShortcut(nil)
+        XCTAssertNil(store.edgeToggleShortcut)
+        XCTAssertNil(defaults.dictionary(forKey: "com.tungsten.edge.hotKey.edgeAutoHideMode"), "恢复默认要删键，不是写空值")
+
+        // 坏数据（类型不对 / 字段缺失 / 超范围）一律回落 nil，不能让启动读入炸掉或存半个键。
+        defaults.set(["keyCode": "not-a-number", "glyphs": "X"], forKey: "com.tungsten.edge.hotKey.edgeAutoHideMode")
+        XCTAssertNil(AppSettingsStore(defaults: defaults).edgeToggleShortcut)
+        defaults.set(["keyCode": 99999, "modifiers": 256, "glyphs": "X"], forKey: "com.tungsten.edge.hotKey.edgeAutoHideMode")
+        XCTAssertNil(AppSettingsStore(defaults: defaults).edgeToggleShortcut, "keyCode 超出 16 位不认")
+        defaults.set(["keyCode": 40, "modifiers": 256, "glyphs": ""], forKey: "com.tungsten.edge.hotKey.edgeAutoHideMode")
+        XCTAssertNil(AppSettingsStore(defaults: defaults).edgeToggleShortcut, "空字形不认")
+    }
+
     // MARK: - 菜单分组标题纯逻辑
 
     /// 快捷键只在 Carbon 注册成功时才写进标题——注册失败时按不出来，提了就是骗人。
+    /// 2026-08-24 起字形由调用方传入（用户可改键），标题跟着当前生效的组合走。
     func testEdgeSectionTitleMentionsShortcutOnlyWhenRegistered() {
         XCTAssertEqual(
-            AutoHideToggleMenuModel.edgeSectionTitle(isHotKeyRegistered: true),
-            String(localized: "Tungsten Edge (⌥⇧⌘D to show/hide)")
+            AutoHideToggleMenuModel.edgeSectionTitle(isHotKeyRegistered: true, glyphs: "⌥⇧⌘D"),
+            String(format: String(localized: "Tungsten Edge (%@ to show/hide)"), "⌥⇧⌘D")
         )
         XCTAssertEqual(
-            AutoHideToggleMenuModel.edgeSectionTitle(isHotKeyRegistered: false),
-            String(localized: "Tungsten Edge")
+            AutoHideToggleMenuModel.edgeSectionTitle(isHotKeyRegistered: true, glyphs: "⌃⌘K"),
+            String(format: String(localized: "Tungsten Edge (%@ to show/hide)"), "⌃⌘K")
+        )
+        XCTAssertEqual(
+            AutoHideToggleMenuModel.edgeSectionTitle(isHotKeyRegistered: false, glyphs: "⌃⌘K"),
+            String(localized: "Tungsten Edge"),
+            "注册失败时不提任何组合"
         )
     }
 
