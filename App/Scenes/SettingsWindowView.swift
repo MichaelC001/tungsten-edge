@@ -12,10 +12,17 @@ struct SettingsWindowView: View {
     @ObservedObject var store: AppSettingsStore
     @ObservedObject var coordinator: SettingsCoordinator
     @ObservedObject var licenseStore: LicenseStore
+    @ObservedObject var tabState: SettingsTabState
 
     var body: some View {
+        // ScrollView 保留作小屏兜底：每页正常都短于一屏，量高把窗口撑到内容高度，滚动不出现。
         ScrollView(.vertical) {
-            SettingsWindowContent(store: store, coordinator: coordinator, licenseStore: licenseStore)
+            SettingsWindowContent(
+                store: store,
+                coordinator: coordinator,
+                licenseStore: licenseStore,
+                tabState: tabState
+            )
         }
         .frame(width: Self.contentWidth)
     }
@@ -25,6 +32,7 @@ struct SettingsWindowContent: View {
     @ObservedObject var store: AppSettingsStore
     @ObservedObject var coordinator: SettingsCoordinator
     @ObservedObject var licenseStore: LicenseStore
+    @ObservedObject var tabState: SettingsTabState
 
     @State private var presentedAlert: SettingsAlert?
     @State private var subscriptionEmail = ""
@@ -33,16 +41,49 @@ struct SettingsWindowContent: View {
     @State private var feedbackContact = ""
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 22) {
-            settingsSection(String(localized: "General")) {
-                languageRow
-                hotKeyRow
-                scrollReverserRow
+        Group {
+            switch tabState.selected {
+            case .general: generalPane
+            case .taskbar: taskbarPane
+            case .advanced: advancedPane
+            case .license: licensePane
+            case .about: aboutPane
             }
+        }
+        .padding(28)
+        .frame(width: SettingsWindowView.contentWidth, alignment: .leading)
+        .alert(item: $presentedAlert) { alert in
+            guard let actionTitle = alert.actionTitle, let action = alert.action else {
+                return Alert(
+                    title: Text(alert.title),
+                    message: Text(alert.message),
+                    dismissButton: .default(Text("OK"))
+                )
+            }
+            return Alert(
+                title: Text(alert.title),
+                message: Text(alert.message),
+                primaryButton: .default(Text(actionTitle), action: action),
+                secondaryButton: .cancel(Text("Later"))
+            )
+        }
+    }
 
-            Divider()
+    // 分区标题行随分页取消（窗口标题承担）。页体全部是**本根视图**的计算属性——
+    // 草稿 @State（presentedAlert / 订阅邮箱 / 授权码 / 反馈正文与联系方式）必须留在根上，
+    // 下放进页级子视图 = 切页即清空（settings.md 有对应规则）。
+    @ViewBuilder
+    private var generalPane: some View {
+        settingsPane {
+            languageRow
+            hotKeyRow
+            scrollReverserRow
+        }
+    }
 
-            settingsSection(String(localized: "Taskbar")) {
+    @ViewBuilder
+    private var taskbarPane: some View {
+        settingsPane {
                 settingRow(note: String(localized: "Adds a spot on the taskbar for parking files. Dropping a file there doesn’t move or copy it — Tungsten Edge just remembers where it lives.")) {
                     Toggle("Show Shelf", isOn: binding(get: { store.showShelf }, set: store.setShowShelf))
                 }
@@ -70,12 +111,14 @@ struct SettingsWindowContent: View {
                 }
                 .pickerStyle(.segmented)
             }
+    }
 
-            Divider()
-
-            // 「高级」= 需要额外能力、默认就对、基本不用碰的开关。放这里不是为了藏，
-            // 而是让主设置面只留日常会调的东西；真想拒绝这个能力的人找得到（owner 2026-08-09）。
-            settingsSection(String(localized: "Advanced")) {
+    // 「高级」= 需要额外能力、默认就对、基本不用碰的开关。单独一页不是为了藏，
+    // 而是让常用页只留日常会调的东西；真想拒绝这个能力的人找得到（owner 2026-08-09，
+    // 2026-08-24 分页时 owner 确认保留「高级」这一页）。
+    @ViewBuilder
+    private var advancedPane: some View {
+        settingsPane {
                 settingRow(
                     note: String(localized: "To keep the taskbar from flashing when you switch into full screen, Tungsten Edge has to hide it before your input reaches the app. It therefore watches global left-clicks, key presses and trackpad gestures, and recognizes only four of them: the window’s green button, Control-Command-F, Control-Left/Right arrow, and a three-finger horizontal swipe. What you type is never recorded, logged, or sent anywhere. Turning this off disables the watching completely.")
                 ) {
@@ -88,38 +131,22 @@ struct SettingsWindowContent: View {
                     )
                 }
             }
+    }
 
-            Divider()
-
-            settingsSection(String(localized: "License")) {
-                licenseRow
-            }
-
-            Divider()
-
-            settingsSection(String(localized: "About")) {
-                aboutRow
-                feedbackRow
-                subscriptionRow
-                githubStarRow
-            }
+    @ViewBuilder
+    private var licensePane: some View {
+        settingsPane {
+            licenseRow
         }
-        .padding(28)
-        .frame(width: SettingsWindowView.contentWidth, alignment: .leading)
-        .alert(item: $presentedAlert) { alert in
-            guard let actionTitle = alert.actionTitle, let action = alert.action else {
-                return Alert(
-                    title: Text(alert.title),
-                    message: Text(alert.message),
-                    dismissButton: .default(Text("OK"))
-                )
-            }
-            return Alert(
-                title: Text(alert.title),
-                message: Text(alert.message),
-                primaryButton: .default(Text(actionTitle), action: action),
-                secondaryButton: .cancel(Text("Later"))
-            )
+    }
+
+    @ViewBuilder
+    private var aboutPane: some View {
+        settingsPane {
+            aboutRow
+            feedbackRow
+            subscriptionRow
+            githubStarRow
         }
     }
 
@@ -459,13 +486,11 @@ struct SettingsWindowContent: View {
         }
     }
 
-    private func settingsSection<Content: View>(
-        _ title: String,
+    /// 一页的行容器。分区标题随 2026-08-24 分页取消（窗口标题承担），只剩统一行距。
+    private func settingsPane<Content: View>(
         @ViewBuilder content: () -> Content
     ) -> some View {
         VStack(alignment: .leading, spacing: 12) {
-            Text(title)
-                .font(.headline)
             content()
         }
         .frame(maxWidth: .infinity, alignment: .leading)

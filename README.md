@@ -126,7 +126,7 @@ Preferences live in two places, and the split is deliberate: the **status menu**
 
 ### Settings window
 
-Open it from **Settings…** in the status menu, or by **right-clicking the drawer capsule** at the right end of the taskbar. (`⌘,` does not work in normal operation: Tungsten Edge runs as a menu-bar app and has no menu bar of its own to hang it on.)
+Open it from **Settings…** in the status menu, or by **right-clicking the drawer capsule** at the right end of the taskbar. The window is organized as five toolbar tabs — General, Taskbar, Advanced, License, About — and its title follows the selected tab. (`⌘,` does not work in normal operation: Tungsten Edge runs as a menu-bar app and has no menu bar of its own to hang it on.)
 
 - **General**
   - **Language** — System (default) / 简体中文 / English. Uses the same per-app language mechanism as macOS 13+'s Language & Region, and brings it to macOS 12; takes effect after a restart (the prompt offers one-click relaunch).

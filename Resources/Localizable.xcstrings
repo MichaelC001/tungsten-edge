@@ -3107,22 +3107,6 @@
         }
       }
     },
-    "Tungsten Edge Settings": {
-      "localizations": {
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Tungsten Edge 钨极 设置"
-          }
-        },
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Tungsten Edge Settings"
-          }
-        }
-      }
-    },
     "Tungsten Edge and the Dock both live along the bottom edge of the screen, so they cover each other up.": {
       "localizations": {
         "en": {
