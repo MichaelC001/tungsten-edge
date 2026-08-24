@@ -39,6 +39,8 @@ struct SettingsWindowContent: View {
     @State private var licenseKeyInput = ""
     @State private var feedbackMessage = ""
     @State private var feedbackContact = ""
+    // 反馈类型也是草稿：和 message/contact 一样必须留在根视图，下放进页级子视图 = 切页被清空。
+    @State private var feedbackCategory: FeedbackCategory = .bug
 
     var body: some View {
         Group {
@@ -47,6 +49,7 @@ struct SettingsWindowContent: View {
             case .taskbar: taskbarPane
             case .advanced: advancedPane
             case .license: licensePane
+            case .feedback: feedbackPane
             case .about: aboutPane
             }
         }
@@ -141,10 +144,16 @@ struct SettingsWindowContent: View {
     }
 
     @ViewBuilder
+    private var feedbackPane: some View {
+        settingsPane {
+            feedbackRow
+        }
+    }
+
+    @ViewBuilder
     private var aboutPane: some View {
         settingsPane {
             aboutRow
-            feedbackRow
             subscriptionRow
             githubStarRow
         }
@@ -340,29 +349,51 @@ struct SettingsWindowContent: View {
         )
     }
 
-    /// 应用内反馈表单（2026-08-24）：正文 + 选填联系方式 → 官网 `/api/feedback` → D1，
-    /// owner 在本机控制台看。为什么不是 GitHub / mailto：国内用户打不开 GitHub，
-    /// mailto 依赖装好的邮件客户端。
+    /// 应用内反馈表单（2026-08-24，同日拎成独立标签页）：类型三选一 + 随类型变的引导
+    /// 文字 + 正文 + 选填联系方式 → 官网 `/api/feedback` → D1，owner 在本机控制台看。
+    /// 为什么不是 GitHub / mailto：国内用户打不开 GitHub，mailto 依赖装好的邮件客户端。
     ///
-    /// ⚠️ **所有高度固定**（TextEditor 定高 88pt，发送后清空不改布局），结果一律走
-    /// `SettingsAlert`——窗口只在 `present()` 和两个 sink 里量高度（顶部注释），
-    /// 就地长出状态行只会变成可滚动。
-    /// ⚠️ 披露行必须与实际发送的字段一致（五个），改一边就要改另一边。
+    /// ⚠️ **所有高度固定**（TextEditor 定高 140pt；placeholder 是 overlay，不占布局；
+    /// 发送后清空不改布局），结果一律走 `SettingsAlert`——窗口只在 `present()`、
+    /// license sink 和切页时量高度，就地长出状态行只会变成可滚动。
+    /// ⚠️ 披露行必须与实际发送的字段一致（五个）；类型并入 message（`FeedbackComposition`
+    /// 是组装唯一入口），不是第六个字段，改披露前先看那边的注释。
     @ViewBuilder
     private var feedbackRow: some View {
-        Divider()
-            .padding(.vertical, 2)
-
         VStack(alignment: .leading, spacing: 8) {
-            Text("Feedback")
-                .font(.callout.weight(.medium))
+            Text("Ran into a problem or have an idea? Write to us here.")
+                .font(.callout)
+                .foregroundStyle(.secondary)
+
+            HStack(spacing: 10) {
+                Text("Type")
+                    .font(.callout)
+                Picker("Type", selection: $feedbackCategory) {
+                    ForEach(FeedbackCategory.allCases, id: \.self) { category in
+                        Text(category.displayName).tag(category)
+                    }
+                }
+                .pickerStyle(.radioGroup)
+                .horizontalRadioGroupLayout()
+                .labelsHidden()
+            }
+
             TextEditor(text: $feedbackMessage)
                 .font(.callout)
-                .frame(height: 88)
+                .frame(height: 140)
                 .overlay(
                     RoundedRectangle(cornerRadius: 6)
                         .stroke(Color(nsColor: .separatorColor), lineWidth: 1)
                 )
+                .overlay(alignment: .topLeading) {
+                    if feedbackMessage.isEmpty {
+                        Text(feedbackCategory.placeholder)
+                            .font(.callout)
+                            .foregroundStyle(Color(nsColor: .placeholderTextColor))
+                            .padding(.horizontal, 5)
+                            .allowsHitTesting(false)
+                    }
+                }
 
             let presentation = coordinator.feedbackState.presentation
             HStack(spacing: 10) {
@@ -384,15 +415,19 @@ struct SettingsWindowContent: View {
     }
 
     private func submitFeedback() {
+        // 先组装再上锁：空正文直接返回，不占 submitting 状态（按钮 disabled 已挡，这里兜底）。
+        guard let composed = FeedbackComposition.compose(
+            category: feedbackCategory, message: feedbackMessage
+        ) else { return }
         guard coordinator.beginFeedback() else { return }
-        let message = feedbackMessage
         let contact = feedbackContact
         Task {
-            let content = await coordinator.performFeedback(message: message, contact: contact)
+            let content = await coordinator.performFeedback(message: composed, contact: contact)
             coordinator.finishFeedback()
             if content.didSend {
                 feedbackMessage = ""
                 feedbackContact = ""
+                feedbackCategory = .bug
             }
             presentedAlert = SettingsAlert(content)
         }

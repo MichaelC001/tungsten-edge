@@ -23,6 +23,46 @@ enum FeedbackDraftCheck {
     }
 }
 
+/// 反馈类型（2026-08-24「模板引导」）：radio 三选一 + 随类型变的引导文字。
+/// 类型**并入 message 开头**（见 `FeedbackComposition`），不加第六个字段——
+/// 「只发送……五个字段」的披露承诺因此不用改，服务端/控制台/邮件也全不用动。
+enum FeedbackCategory: String, CaseIterable {
+    case bug
+    case suggestion
+    case other
+
+    var displayName: String {
+        switch self {
+        case .bug: return String(localized: "Bug Report")
+        case .suggestion: return String(localized: "Feature Suggestion")
+        case .other: return String(localized: "Other")
+        }
+    }
+
+    /// 输入框为空时叠显的引导文字（随类型变，overlay 不占布局）。
+    var placeholder: String {
+        switch self {
+        case .bug:
+            return String(localized: "What went wrong? What did you do when it happened? Paste any details that might help.")
+        case .suggestion:
+            return String(localized: "What should Tungsten Edge add or improve? Tell us how you'd use it.")
+        case .other:
+            return String(localized: "Anything you want to say — write it here.")
+        }
+    }
+}
+
+/// 正文组装的唯一入口：trim 后为空返回 nil，否则「【类型】\n正文」。
+/// 长度校验必须跑在组装结果上（`performFeedback` 收到的就是它）——前缀也占
+/// 2000 字限额，客户端不挡的话服务端会 400，弹「无法发送」误导用户。
+enum FeedbackComposition {
+    static func compose(category: FeedbackCategory, message: String) -> String? {
+        let trimmed = message.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return nil }
+        return "【\(category.displayName)】\n\(trimmed)"
+    }
+}
+
 /// 一次反馈提交的全部内容。**恰好**是设置界面披露的五个字段，一个不多——
 /// 「只发送你写的内容、联系方式、App 版本、macOS 版本和界面语言」是写在界面上的承诺。
 struct FeedbackDraft: Equatable {

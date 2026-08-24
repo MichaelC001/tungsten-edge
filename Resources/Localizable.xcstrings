@@ -247,6 +247,23 @@
         }
       }
     },
+    "Anything you want to say — write it here.": {
+      "comment": "设置窗口 · 反馈 · 「其他」的引导文字（输入框为空时叠显）",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "想说什么都可以写在这里。"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Anything you want to say — write it here."
+          }
+        }
+      }
+    },
     "Apply": {
       "localizations": {
         "zh-Hans": {
@@ -292,6 +309,23 @@
           "stringUnit": {
             "state": "translated",
             "value": "Back"
+          }
+        }
+      }
+    },
+    "Bug Report": {
+      "comment": "设置窗口 · 反馈 · 类型单选",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "问题反馈"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Bug Report"
           }
         }
       }
@@ -913,6 +947,23 @@
           "stringUnit": {
             "state": "translated",
             "value": "Extra Large"
+          }
+        }
+      }
+    },
+    "Feature Suggestion": {
+      "comment": "设置窗口 · 反馈 · 类型单选",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "功能建议"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Feature Suggestion"
           }
         }
       }
@@ -1928,6 +1979,23 @@
         }
       }
     },
+    "Other": {
+      "comment": "设置窗口 · 反馈 · 类型单选",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "其他"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Other"
+          }
+        }
+      }
+    },
     "Paid": {
       "localizations": {
         "zh-Hans": {
@@ -2134,6 +2202,23 @@
           "stringUnit": {
             "state": "translated",
             "value": "Quit Tungsten Edge"
+          }
+        }
+      }
+    },
+    "Ran into a problem or have an idea? Write to us here.": {
+      "comment": "设置窗口 · 反馈 · 页首引导句",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "遇到问题或有建议？直接写给我们。"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Ran into a problem or have an idea? Write to us here."
           }
         }
       }
@@ -3270,6 +3355,23 @@
         }
       }
     },
+    "Type": {
+      "comment": "设置窗口 · 反馈 · 类型单选的标签",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "反馈类型"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Type"
+          }
+        }
+      }
+    },
     "Use at least one of Command, Control or Option.": {
       "comment": "设置窗口 · 改键被拒弹窗",
       "localizations": {
@@ -3365,6 +3467,40 @@
           "stringUnit": {
             "state": "translated",
             "value": "Warning"
+          }
+        }
+      }
+    },
+    "What should Tungsten Edge add or improve? Tell us how you'd use it.": {
+      "comment": "设置窗口 · 反馈 · 功能建议的引导文字（输入框为空时叠显）",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "希望钨极增加或改进什么？说说你的使用场景。"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "What should Tungsten Edge add or improve? Tell us how you'd use it."
+          }
+        }
+      }
+    },
+    "What went wrong? What did you do when it happened? Paste any details that might help.": {
+      "comment": "设置窗口 · 反馈 · 问题反馈的引导文字（输入框为空时叠显）",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "遇到了什么问题？怎么操作会出现？方便的话贴一下当时的情况。"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "What went wrong? What did you do when it happened? Paste any details that might help."
           }
         }
       }

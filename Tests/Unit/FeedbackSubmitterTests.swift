@@ -125,4 +125,23 @@ final class FeedbackSubmitterTests: XCTestCase {
         XCTAssertTrue(FeedbackAlertContent(rejection: .emptyMessage).isWarning)
         XCTAssertFalse(FeedbackAlertContent(rejection: .messageTooLong).didSend)
     }
+
+    // MARK: 类型引导（2026-08-24）
+
+    func testComposeReturnsNilForEmptyOrWhitespaceMessage() {
+        XCTAssertNil(FeedbackComposition.compose(category: .bug, message: ""))
+        XCTAssertNil(FeedbackComposition.compose(category: .suggestion, message: "  \n\t "))
+    }
+
+    func testComposePrefixesCategoryAndTrimsBody() {
+        let composed = FeedbackComposition.compose(category: .bug, message: "  点击无反应 \n")
+        XCTAssertEqual(composed, "【\(FeedbackCategory.bug.displayName)】\n点击无反应")
+    }
+
+    func testEveryCategoryHasDistinctDisplayNameAndPlaceholder() {
+        let all = FeedbackCategory.allCases
+        XCTAssertEqual(all.count, 3)
+        XCTAssertEqual(Set(all.map(\.displayName)).count, all.count, "类型名不能重复")
+        XCTAssertEqual(Set(all.map(\.placeholder)).count, all.count, "引导文字必须随类型变")
+    }
 }

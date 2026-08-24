@@ -126,7 +126,7 @@ Preferences live in two places, and the split is deliberate: the **status menu**
 
 ### Settings window
 
-Open it from **Settings…** in the status menu, or by **right-clicking the drawer capsule** at the right end of the taskbar. The window is organized as five toolbar tabs — General, Taskbar, Advanced, License, About — and its title follows the selected tab. (`⌘,` does not work in normal operation: Tungsten Edge runs as a menu-bar app and has no menu bar of its own to hang it on.)
+Open it from **Settings…** in the status menu, or by **right-clicking the drawer capsule** at the right end of the taskbar. The window is organized as six toolbar tabs — General, Taskbar, Advanced, License, Feedback, About — and its title follows the selected tab. (`⌘,` does not work in normal operation: Tungsten Edge runs as a menu-bar app and has no menu bar of its own to hang it on.)
 
 - **General**
   - **Language** — System (default) / 简体中文 / English. Uses the same per-app language mechanism as macOS 13+'s Language & Region, and brings it to macOS 12; takes effect after a restart (the prompt offers one-click relaunch).
@@ -137,8 +137,9 @@ Open it from **Settings…** in the status menu, or by **right-clicking the draw
   - **Show app name on hover** — turn it off and moving the pointer across the taskbar no longer pops up app names.
   - **Keep maximized windows above the taskbar** — lifts the bottom edge of a screen-filling window above the taskbar. This resizes other apps' windows, so it is off by default.
   - **Taskbar Size** — four tiers (Small / Medium / Large / Extra Large) that scale the taskbar and its capsule together: icons, labels, spacing, corner radius and bar height all follow. Medium is the default and matches the real Dock's height. Switching applies instantly; an open drawer closes so it can be re-measured. The drawer's own contents and the folder / shelf popups keep their current size.
+- **Feedback** — pick a type (Bug Report / Feature Suggestion / Other) and the box offers a matching hint; write your message, optionally leave a contact and hit Send — only your message, the contact you enter, the app version, your macOS version and the interface language are transmitted.
 - **Advanced** — **Predict full-screen transitions to prevent taskbar flicker** (on by default; see [Global input observation](#global-input-observation) for exactly what it watches).
-- **About** — version, **Check for Updates…** (when an update is available you get an update window: one click downloads, installs and relaunches — no more downloading a disk image and dragging it across by hand), **Check for updates automatically** (on by default; turn it off and Tungsten Edge stops contacting the network on a schedule, checking only when you click *Check for Updates…*), a **Feedback** form (write a message, optionally leave a contact, hit Send — only your message, the contact you enter, the app version, your macOS version and the interface language are transmitted), and the founding-user mailing list.
+- **About** — version, **Check for Updates…** (when an update is available you get an update window: one click downloads, installs and relaunches — no more downloading a disk image and dragging it across by hand), **Check for updates automatically** (on by default; turn it off and Tungsten Edge stops contacting the network on a schedule, checking only when you click *Check for Updates…*), and the founding-user mailing list.
 
 Writing native Dock preferences requires a non-sandboxed build, because sandboxed apps cannot write Dock preferences or restart Dock. Opening the settings pane works in either environment.
 
