@@ -1293,6 +1293,23 @@
         }
       }
     },
+    "Language": {
+      "comment": "设置窗口 · 通用",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "语言"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Language"
+          }
+        }
+      }
+    },
     "Large": {
       "localizations": {
         "zh-Hans": {
@@ -2202,6 +2219,23 @@
         }
       }
     },
+    "Restart Tungsten Edge": {
+      "comment": "语言切换弹窗按钮",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "立即重启"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Restart Tungsten Edge"
+          }
+        }
+      }
+    },
     "Restarting Tungsten Edge…": {
       "localizations": {
         "zh-Hans": {
@@ -2610,6 +2644,23 @@
         }
       }
     },
+    "System": {
+      "comment": "语言选单第一档（术语表：System 不是 Auto）",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "跟随系统"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "System"
+          }
+        }
+      }
+    },
     "System Preferences > Security & Privacy > Privacy > Accessibility": {
       "comment": "macOS 12 的权限路径，必须与英文系统界面的原词一致",
       "localizations": {
@@ -2772,6 +2823,23 @@
           "stringUnit": {
             "state": "translated",
             "value": "The feedback server returned status code %d."
+          }
+        }
+      }
+    },
+    "The language change takes effect after Tungsten Edge restarts.": {
+      "comment": "设置窗口 · 语言说明与弹窗正文共用",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "语言更改在钨极重新启动后生效。"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "The language change takes effect after Tungsten Edge restarts."
           }
         }
       }

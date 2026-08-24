@@ -42,6 +42,7 @@ struct SettingsWindowContent: View {
         VStack(alignment: .leading, spacing: 22) {
             settingsSection(String(localized: "General")) {
                 launchAtLoginRow
+                languageRow
                 hotKeyRow
                 scrollReverserRow
             }
@@ -113,7 +114,7 @@ struct SettingsWindowContent: View {
         .padding(28)
         .frame(width: SettingsWindowView.contentWidth, alignment: .leading)
         .alert(item: $presentedAlert) { alert in
-            guard let openButtonTitle = alert.openButtonTitle, let openURL = alert.openURL else {
+            guard let actionTitle = alert.actionTitle, let action = alert.action else {
                 return Alert(
                     title: Text(alert.title),
                     message: Text(alert.message),
@@ -123,7 +124,7 @@ struct SettingsWindowContent: View {
             return Alert(
                 title: Text(alert.title),
                 message: Text(alert.message),
-                primaryButton: .default(Text(openButtonTitle)) { NSWorkspace.shared.open(openURL) },
+                primaryButton: .default(Text(actionTitle), action: action),
                 secondaryButton: .cancel(Text("Later"))
             )
         }
@@ -161,6 +162,61 @@ struct SettingsWindowContent: View {
                 Label("Open Login Items Settings…", systemImage: "arrow.up.forward.app")
             }
         }
+    }
+
+    /// 界面语言（2026-08-24，反转 8-17「不做语言开关」，见 `Docs/27`）。写**应用自己域**的
+    /// `AppleLanguages`（与 macOS 13+ 逐 App 语言同一个键），「跟随系统」= 删键；重启生效。
+    /// 读现状必须走 `CFPreferencesCopyAppValue`——`array(forKey:)` 会继承全局域，
+    /// 分不清「跟随系统」和「显式设置」（`AppLanguageOption` 注释是权威）。
+    @ViewBuilder
+    private var languageRow: some View {
+        settingRow(note: String(localized: "The language change takes effect after Tungsten Edge restarts.")) {
+            Picker(
+                String(localized: "Language"),
+                selection: Binding(
+                    get: { Self.currentLanguageOption() },
+                    set: { applyLanguage($0) }
+                )
+            ) {
+                ForEach(AppLanguageOption.allCases, id: \.self) { option in
+                    Text(option.displayName).tag(option)
+                }
+            }
+            .pickerStyle(.menu)
+            .frame(maxWidth: 280, alignment: .leading)
+        }
+    }
+
+    private static func currentLanguageOption() -> AppLanguageOption {
+        let bundleID = (Bundle.main.bundleIdentifier ?? "") as CFString
+        let value = CFPreferencesCopyAppValue("AppleLanguages" as CFString, bundleID) as? [String]
+        return AppLanguageOption.current(appDomainValue: value)
+    }
+
+    private func applyLanguage(_ option: AppLanguageOption) {
+        guard option != Self.currentLanguageOption() else { return }
+        if let value = option.appleLanguagesValue {
+            UserDefaults.standard.set(value, forKey: "AppleLanguages")
+        } else {
+            UserDefaults.standard.removeObject(forKey: "AppleLanguages")
+        }
+        presentedAlert = SettingsAlert(
+            title: String(localized: "Language"),
+            message: String(localized: "The language change takes effect after Tungsten Edge restarts."),
+            actionTitle: String(localized: "Restart Tungsten Edge"),
+            action: { Self.relaunch() }
+        )
+    }
+
+    /// 分离一个「睡半秒再 open」的壳进程后自退。新实例启动时旧的已退干净，
+    /// `terminateOtherInstances()` 不会反杀谁。环境无需再清——本进程入口处
+    /// `ProcessEnvironmentScrub.apply()` 已经清过，子进程继承的就是干净环境。
+    private static func relaunch() {
+        let process = Process()
+        process.executableURL = URL(fileURLWithPath: "/bin/sh")
+        process.arguments = ["-c", "sleep 0.5; /usr/bin/open \"$0\"", Bundle.main.bundleURL.path]
+        try? process.run()
+        NSApp.terminate(nil)
     }
 
     /// 显隐任务条快捷键：录制框 + 自定义过才出现的「恢复默认」。行高恒定
@@ -481,14 +537,15 @@ private struct SettingsAlert: Identifiable {
     let id = UUID()
     let title: String
     let message: String
-    let openButtonTitle: String?
-    let openURL: URL?
+    /// 可选的第二个按钮（如语言切换的「立即重启」）。为 nil 时只有「好」。
+    let actionTitle: String?
+    let action: (() -> Void)?
 
-    init(title: String, message: String, openButtonTitle: String? = nil, openURL: URL? = nil) {
+    init(title: String, message: String, actionTitle: String? = nil, action: (() -> Void)? = nil) {
         self.title = title
         self.message = message
-        self.openButtonTitle = openButtonTitle
-        self.openURL = openURL
+        self.actionTitle = actionTitle
+        self.action = action
     }
 
     init(_ content: SubscriptionAlertContent) {
