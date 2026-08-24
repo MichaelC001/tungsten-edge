@@ -18,12 +18,6 @@ struct SettingsWindowView: View {
             SettingsWindowContent(store: store, coordinator: coordinator, licenseStore: licenseStore)
         }
         .frame(width: Self.contentWidth)
-        .onReceive(NotificationCenter.default.publisher(for: NSApplication.didBecomeActiveNotification)) { _ in
-            // 用户去系统设置勾完登录项再切回来，状态得跟着变。
-            Task { @MainActor in
-                _ = await coordinator.refreshLaunchAtLoginState()
-            }
-        }
     }
 }
 
@@ -41,7 +35,6 @@ struct SettingsWindowContent: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 22) {
             settingsSection(String(localized: "General")) {
-                launchAtLoginRow
                 languageRow
                 hotKeyRow
                 scrollReverserRow
@@ -130,39 +123,8 @@ struct SettingsWindowContent: View {
         }
     }
 
-    @ViewBuilder
-    private var launchAtLoginRow: some View {
-        // 状态恒来自 `LaunchAtLoginService`，不读 `AppSettingsStore` 的镜像——
-        // 用户随时可能在系统设置里改掉它。
-        let presentation = LaunchAtLoginMenuPresentation(state: coordinator.launchAtLoginState)
-        Toggle(
-            presentation.title,
-            isOn: Binding(
-                get: { presentation.isChecked },
-                // 走和菜单同一个纯决策，别让两处对四态各有一套理解。
-                set: { _ in
-                    guard let enable = LaunchAtLoginMenuModel.requestedEnabledValue(
-                        afterSelecting: coordinator.launchAtLoginState
-                    ) else { return }
-                    if case .failure(let error) = coordinator.setLaunchAtLogin(enable) {
-                        presentedAlert = SettingsAlert(
-                            title: String(localized: "Couldn’t Change Open at Login"),
-                            message: error.localizedDescription
-                        )
-                    }
-                }
-            )
-        )
-        .disabled(!presentation.isEnabled)
-
-        if presentation.showsSettingsItem {
-            Button {
-                coordinator.openLoginItemsSettings()
-            } label: {
-                Label("Open Login Items Settings…", systemImage: "arrow.up.forward.app")
-            }
-        }
-    }
+    // 登录时启动 2026-08-24 当天两度搬家：随去重进过设置窗口，owner 复议后定为
+    // **只在状态栏菜单（第一项）**。这里不再放它，也不再需要 didBecomeActive 刷新。
 
     /// 界面语言（2026-08-24，反转 8-17「不做语言开关」，见 `Docs/27`）。写**应用自己域**的
     /// `AppleLanguages`（与 macOS 13+ 逐 App 语言同一个键），「跟随系统」= 删键；重启生效。

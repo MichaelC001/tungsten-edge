@@ -20,10 +20,6 @@ final class SettingsWindowController: NSObject, NSWindowDelegate {
     }
 
     func present() {
-        Task { @MainActor [weak coordinator] in
-            _ = await coordinator?.refreshLaunchAtLoginState()
-        }
-
         let window = window ?? makeWindow()
         if let closedFrame {
             window.setFrame(closedFrame, display: false)
@@ -36,12 +32,8 @@ final class SettingsWindowController: NSObject, NSWindowDelegate {
         hostingView = host
 
         sessionSubscriptions.removeAll()
-        coordinator.$launchAtLoginState
-            .dropFirst()
-            .sink { [weak self] _ in
-                DispatchQueue.main.async { self?.resizeToFitKeepingTopEdge() }
-            }
-            .store(in: &sessionSubscriptions)
+        // 登录项 2026-08-24 起只在状态栏菜单，设置窗口没有会变高矮的登录行了，
+        // 它那条量高订阅随之删除；剩下的唯一订阅是授权状态。
         // 激活成功后授权区块少掉输入框那一行，窗口得跟着收缩。少了这条订阅，
         // 内容原地变矮不会重新量高度，只会在窗口里留一片空白。
         licenseStore.$state

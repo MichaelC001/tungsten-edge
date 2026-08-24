@@ -71,6 +71,10 @@ final class StatusMenuController: NSObject, NSMenuDelegate {
     private let permissionWarningItem = NSMenuItem(title: String(localized: "Accessibility Permission Required"), action: #selector(openAccessibilitySettings), keyEquivalent: "")
     private let permissionWarningSeparator = NSMenuItem.separator()
     private let settingsItem = NSMenuItem(title: String(localized: "Settings…"), action: #selector(showSettings), keyEquivalent: ",")
+    /// 登录项 2026-08-24 当天两度搬家：随菜单去重挪去设置窗口，owner 复议后**回到菜单做第一项**、
+    /// 设置窗口不再放（仍不重复）。别再挪回设置窗口，除非 owner 再开口。
+    private let launchAtLoginItem = NSMenuItem(title: String(localized: "Open at Login"), action: #selector(toggleLaunchAtLogin), keyEquivalent: "")
+    private let openLoginItemsSettingsItem = NSMenuItem(title: String(localized: "Open Login Items Settings…"), action: #selector(openLoginItemsSettings), keyEquivalent: "")
     /// 「安装 vX.Y.Z…」：**只在有待装新版时可见**（2026-08-24 菜单去重）。登录项、检查更新、
     /// 版本号都只住设置窗口了；这一行是菜单里唯一的更新表面，因为它是一条**消息**不是命令——
     /// 红点要在用户没主动去查的时候也能被看见。可见性只允许在 `prepareMenuForPresentation`
@@ -119,6 +123,7 @@ final class StatusMenuController: NSObject, NSMenuDelegate {
         super.init()
         configureStatusItem()
         configureMenu()
+        refreshCheckmarks()
         refreshInstallUpdateItem(allowsLayoutChange: true)
         // 钨极滑块是即时生效的本地值：⌥⇧⌘D、设置窗口都可能在菜单开着时改它，滑块要跟着动。
         // sink 用 publisher 发出的新值：@Published 在赋值完成前发布，此刻回读 store 是旧值。
@@ -160,6 +165,13 @@ final class StatusMenuController: NSObject, NSMenuDelegate {
         permissionWarningSeparator.isHidden = true
         menu.addItem(permissionWarningItem)
         menu.addItem(permissionWarningSeparator)
+
+        // 登录时启动 = 菜单第一项（owner 2026-08-24 定；权限警告只在异常态出现，不算数）。
+        launchAtLoginItem.target = self
+        menu.addItem(launchAtLoginItem)
+        openLoginItemsSettingsItem.target = self
+        menu.addItem(openLoginItemsSettingsItem)
+        menu.addItem(.separator())
 
         // 钨极组排在系统 Dock 组之前——这是钨极自己的菜单，自家的设置在前。
         // 两组都有灰色组标题当"帽子"：从前只有系统 Dock 有，整个菜单只有一顶帽子在上面，
@@ -294,6 +306,7 @@ final class StatusMenuController: NSObject, NSMenuDelegate {
         let granted = isAccessibilityTrusted()
         permissionWarningItem.isHidden = granted
         permissionWarningSeparator.isHidden = granted
+        refreshCheckmarks()
         refreshInstallUpdateItem(allowsLayoutChange: true)
         // 没点确认就关菜单 = 作废：什么都不写，下次打开一切从系统真值重新起步。
         // （否则「随手拨一下看看」也会招来一次 killall Dock——关个菜单屏幕突然闪一下，
@@ -313,19 +326,23 @@ final class StatusMenuController: NSObject, NSMenuDelegate {
 
     /// 系统读取在服务专用队列执行。任务条菜单按左上角定位，显示后改高度会让底边漂移，
     /// 所以那条路径只更新缓存；状态栏菜单没有这个锚点约束，可以就地吸收新真值。
-    /// （登录项那半 2026-08-24 随菜单去重一起删了——菜单里已没有读它的行，
-    /// 设置窗口在 `present()` 和 `didBecomeActive` 时自己刷新。）
+    /// （登录项那半 2026-08-24 随去重删过一轮，owner 复议登录项回菜单后一并恢复。）
     private func refreshSystemTruth() {
         systemTruthRefreshTask?.cancel()
         let settingsCoordinator = settingsCoordinator
         systemTruthRefreshTask = Task { @MainActor [weak self] in
-            let accepted = await settingsCoordinator.reconcileNativeDockMirror()
+            async let launchAccepted = settingsCoordinator.refreshLaunchAtLoginState()
+            async let nativeDockAccepted = settingsCoordinator.reconcileNativeDockMirror()
+            let accepted = await (launchAccepted, nativeDockAccepted)
             guard let self,
                   !Task.isCancelled,
                   self.isMenuOpen,
                   !self.isPresentedFromTaskbar else { return }
+            if accepted.0 {
+                self.refreshCheckmarks(allowsLayoutChange: false)
+            }
             // 滑块只在用户还没开始拖的时候才跟着真值走——正在拖的手不能被跳一下。
-            if accepted, !self.nativeDockSliderView.hasDraft {
+            if accepted.1, !self.nativeDockSliderView.hasDraft {
                 self.nativeDockSliderView.sync(delay: self.store.nativeDockAutoHideDelay)
             }
         }
@@ -368,6 +385,25 @@ final class StatusMenuController: NSObject, NSMenuDelegate {
             )
             return
         }
+    }
+
+    /// `allowsLayoutChange` = 本次刷新可不可以增删菜单行。展示前（`prepareMenuForPresentation`）
+    /// 可以，异步真值回来时**不可以**——理由见 `refreshLaunchAtLoginState`。
+    private func refreshCheckmarks(allowsLayoutChange: Bool = true) {
+        refreshLaunchAtLoginState(allowsLayoutChange: allowsLayoutChange)
+    }
+
+    private func refreshLaunchAtLoginState(allowsLayoutChange: Bool) {
+        let presentation = LaunchAtLoginMenuPresentation(state: settingsCoordinator.launchAtLoginState)
+        launchAtLoginItem.title = presentation.title
+        launchAtLoginItem.state = presentation.isChecked ? .on : .off
+        launchAtLoginItem.isEnabled = presentation.isEnabled
+        // 菜单已经在屏幕上时**只改文字与勾选，绝不增删行**。登录项处于 `.requiresApproval`
+        //（刚注册、等系统设置里批准）时这一行会冒出来，异步真值回来得晚，行一多菜单高度就变——
+        // 用户看到的是"内容自己跳了一下"，而任务条那条路径按左上角定位，高度一变底边还会漂。
+        // 迟一轮不要紧：下次 `prepareMenuForPresentation` 在菜单显示**之前**会补上。
+        guard allowsLayoutChange else { return }
+        openLoginItemsSettingsItem.isHidden = !presentation.showsSettingsItem
     }
 
     /// 「安装 vX.Y.Z…」行的唯一刷新入口。`allowsLayoutChange` = 本次刷新可不可以改行的显隐：
@@ -471,6 +507,18 @@ final class StatusMenuController: NSObject, NSMenuDelegate {
         image.isTemplate = true
         image.accessibilityDescription = String(localized: "Tungsten Edge — update available")
         return image
+    }
+
+    @objc private func toggleLaunchAtLogin() {
+        guard let enable = LaunchAtLoginMenuModel.requestedEnabledValue(afterSelecting: settingsCoordinator.launchAtLoginState) else { return }
+        if case .failure(let error) = settingsCoordinator.setLaunchAtLogin(enable) {
+            presentError(title: String(localized: "Couldn’t Change Open at Login"), message: error.localizedDescription)
+        }
+        refreshCheckmarks()
+    }
+
+    @objc private func openLoginItemsSettings() {
+        settingsCoordinator.openLoginItemsSettings()
     }
 
     /// Sparkle 自带全套结果界面，而且用户主动发起的检查它保证会置前，

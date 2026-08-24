@@ -48,7 +48,7 @@ Unlike a plain Windows-style task switcher, single-window apps stay collapsed as
 - **Pinned messaging apps + badges** — messaging apps (WeChat, Feishu, …) get a persistent pinned entry and mirror the Dock's red unread badge.
 - **App drawer** — stash rarely-used apps into a drawer on the right to keep the strip clean; pin favorites in the drawer to use it as a launcher.
 - **Drag to organize** — reorder cards by dragging; drag a card into the drawer to stash it; drag it back out and it lands exactly where you drop it.
-- **Menu bar and Settings** — the status menu holds what you flip mid-session (the wake delays for the Dock and for Tungsten Edge); everything else — Open at Login, the appearance preferences (Show Shelf, hover names, maximized-window avoidance, taskbar size) and update checking — lives in the settings window.
+- **Menu bar and Settings** — the status menu holds Open at Login and the wake delays for the Dock and for Tungsten Edge; everything else — language, shortcuts, the appearance preferences (Show Shelf, hover names, maximized-window avoidance, taskbar size) and update checking — lives in the settings window.
 - **Edge auto-hide** — Tungsten Edge can hide itself and wake from the bottom edge after the delay you choose; moving away hides it again after about 0.2s.
 - **Frosted-glass look** — native-grade translucency that blends into the desktop.
 - **Multi-display follow** — resting the pointer on another screen's bottom edge moves the taskbar there automatically.
@@ -117,6 +117,7 @@ Preferences live in two places, and the split is deliberate: the **status menu**
 
 ### Status menu
 
+- **Open at Login** — the first menu item. On macOS 13 and later this goes through the system's Login Items; if macOS asks for approval, open Login Items in System Settings and approve Tungsten Edge there. On macOS 12 it is written to System Preferences → Users & Groups → Login Items, where you can also see and remove it.
 - **Tungsten Edge (⌥⇧⌘D to show/hide)** — a greyed-out section header, not a clickable command. Below it sits a compact slider for the taskbar's own wake delay: `Always Visible`, `0.1s`–`3.0s`, or `Never Wake`. The global `⌥⇧⌘D` shortcut switches between always-visible and your last auto-hide delay; it is the system Dock's `⌥⌘D` plus Shift, which also releases the older `⌥⌘E` back to Safari and Finder. You can record a different combination in Settings → General. If the shortcut cannot be registered, the menu simply stops showing the key hint.
 - **The Dock (⌥⌘D to show/hide)** — likewise a section header. `⌥⌘D` belongs to macOS, so it is named here as plain text rather than claimed as a shortcut. Its slider sets the **native Dock's** wake delay (`Always Visible`, `0.1s`–`3.0s`, `Never Wake` — drag to `Never Wake` and the Dock stops popping up at the screen edge entirely). Moving it stages a draft and reveals a confirm row; nothing is written until you press it, because every write restarts the Dock and flashes the screen.
 - **Dock Settings…** — opens Desktop & Dock on Ventura and later, or Dock & Menu Bar on macOS 12. It only opens System Settings; it never writes Dock preferences or restarts Dock.
@@ -128,7 +129,6 @@ Preferences live in two places, and the split is deliberate: the **status menu**
 Open it from **Settings…** in the status menu, or by **right-clicking the drawer capsule** at the right end of the taskbar. (`⌘,` does not work in normal operation: Tungsten Edge runs as a menu-bar app and has no menu bar of its own to hang it on.)
 
 - **General**
-  - **Open at Login** — on macOS 13 and later this goes through the system's Login Items; if macOS asks for approval, open Login Items in System Settings and approve Tungsten Edge there. On macOS 12 it is written to System Preferences → Users & Groups → Login Items, where you can also see and remove it.
   - **Language** — System (default) / 简体中文 / English. Uses the same per-app language mechanism as macOS 13+'s Language & Region, and brings it to macOS 12; takes effect after a restart (the prompt offers one-click relaunch).
   - **Show/hide taskbar shortcut** — click the recorder, press a new combination, done (default `⌥⇧⌘D`; *Reset to Default* brings it back). Combinations that would clash with macOS — `⌥⌘D`, Option-only, Control-Option without Command — are rejected with an explanation, and if another app already owns the combination the previous shortcut stays active.
   - **Reverse mouse scroll direction** — off by default. Flips mouse-wheel scrolling system-wide, like Scroll Reverser, so the wheel can scroll Windows-style while the trackpad keeps macOS natural scrolling. Trackpads and Magic Mouse are not affected. If Scroll Reverser or Mos is also running, the two cancel out — keep only one. See [Global input observation](#global-input-observation) for what this touches.
