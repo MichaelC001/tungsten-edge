@@ -42,6 +42,8 @@ final class SettingsCoordinator: ObservableObject {
     @Published private(set) var launchAtLoginState: LaunchAtLoginState
     /// 同理：订阅按钮连点两下不能发两次请求。
     @Published private(set) var subscriptionState = SubscriptionSubmitState()
+    /// 反馈发送按钮的在飞守卫，同上。
+    @Published private(set) var feedbackState = FeedbackSubmitState()
 
     private let store: AppSettingsStore
     private let launchAtLoginService: LaunchAtLoginServicing
@@ -51,6 +53,7 @@ final class SettingsCoordinator: ObservableObject {
     /// 请求；现在两套界面都问同一个 `SparkleUpdateService`，理由自动满足。
     private let updateService: any UpdateControlling
     private let subscriptionSubmitter: SubscriptionSubmitting
+    private let feedbackSubmitter: FeedbackSubmitting
     /// 改键时的真实注册入口（AppDelegate 手里的 `GlobalHotKeyMonitor.update(shortcut:)`）。
     /// 闭包注入：monitor 归 AppDelegate 持有，临时副本（DMG）根本没有它。
     private let hotKeyRegistrar: (GlobalHotKeyShortcut) -> GlobalHotKeyMonitor.RegistrationStatus
@@ -65,6 +68,7 @@ final class SettingsCoordinator: ObservableObject {
         nativeDockPreferencesService: NativeDockPreferencesServicing,
         updateService: any UpdateControlling,
         subscriptionSubmitter: SubscriptionSubmitting,
+        feedbackSubmitter: FeedbackSubmitting,
         hotKeyRegistrar: @escaping (GlobalHotKeyShortcut) -> GlobalHotKeyMonitor.RegistrationStatus
     ) {
         self.store = store
@@ -72,6 +76,7 @@ final class SettingsCoordinator: ObservableObject {
         self.nativeDockPreferencesService = nativeDockPreferencesService
         self.updateService = updateService
         self.subscriptionSubmitter = subscriptionSubmitter
+        self.feedbackSubmitter = feedbackSubmitter
         self.hotKeyRegistrar = hotKeyRegistrar
         // **镜像只作首帧种子，不是真值来源。** `SMAppService.mainApp.status` 是 XPC，
         // 放在 init 里同步读会把开销带进每一次界面构造；而每个展示入口（菜单 `menuWillOpen`、
@@ -279,6 +284,40 @@ final class SettingsCoordinator: ObservableObject {
     var automaticallyChecksForUpdates: Bool {
         get { updateService.automaticallyChecksForUpdates }
         set { updateService.automaticallyChecksForUpdates = newValue }
+    }
+
+    // MARK: 应用内反馈
+
+    /// 返回 false = 已经有一次提交在飞，本次忽略。
+    func beginFeedback() -> Bool {
+        feedbackState.begin()
+    }
+
+    func finishFeedback() {
+        feedbackState.finish()
+    }
+
+    /// 把 throws 吞成「一定有文案」，界面层不处理 error——和订阅同一约定。
+    /// 五个字段（正文 / 联系方式 / 版本 / macOS / 语言）就是界面上披露的那五个，别多带。
+    func performFeedback(message: String, contact: String) async -> FeedbackAlertContent {
+        if let rejection = FeedbackDraftCheck.validate(message: message, contact: contact) {
+            return FeedbackAlertContent(rejection: rejection)
+        }
+        let trimmedContact = contact.trimmingCharacters(in: .whitespacesAndNewlines)
+        let draft = FeedbackDraft(
+            message: message.trimmingCharacters(in: .whitespacesAndNewlines),
+            contact: trimmedContact.isEmpty ? nil : trimmedContact,
+            // 版本行带构建来源后缀（开发版 / 非安装位置），排查问题时正需要它。
+            appVersion: versionTitle,
+            macosVersion: ProcessInfo.processInfo.operatingSystemVersionString,
+            lang: Bundle.main.preferredLocalizations.first ?? "en"
+        )
+        do {
+            try await feedbackSubmitter.submit(draft)
+            return .sent
+        } catch {
+            return .failure
+        }
     }
 
     // MARK: 邮箱订阅

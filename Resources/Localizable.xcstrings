@@ -312,6 +312,23 @@
         }
       }
     },
+    "Can’t Send Right Now": {
+      "comment": "设置窗口 · 反馈失败弹窗标题",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "暂时无法发送"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Can’t Send Right Now"
+          }
+        }
+      }
+    },
     "Can’t Subscribe Right Now": {
       "localizations": {
         "zh-Hans": {
@@ -459,6 +476,23 @@
         }
       }
     },
+    "Check your network connection and try again, or email support@tungstenedge.app.": {
+      "comment": "设置窗口 · 反馈失败弹窗",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "检查网络后重试，或发邮件到 support@tungstenedge.app。"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Check your network connection and try again, or email support@tungstenedge.app."
+          }
+        }
+      }
+    },
     "Check your network connection and try again, or leave your address on tungstenedge.app.": {
       "localizations": {
         "zh-Hans": {
@@ -519,6 +553,23 @@
           "stringUnit": {
             "state": "translated",
             "value": "Connect to Server…"
+          }
+        }
+      }
+    },
+    "Contact Is Too Long": {
+      "comment": "设置窗口 · 反馈校验弹窗标题",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "联系方式过长"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Contact Is Too Long"
           }
         }
       }
@@ -800,6 +851,23 @@
         }
       }
     },
+    "Email or WeChat ID (optional)": {
+      "comment": "设置窗口 · 反馈联系方式占位",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "邮箱或微信号（可选）"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Email or WeChat ID (optional)"
+          }
+        }
+      }
+    },
     "Escape and Delete can’t be the key.": {
       "comment": "设置窗口 · 改键被拒弹窗",
       "localizations": {
@@ -845,6 +913,40 @@
           "stringUnit": {
             "state": "translated",
             "value": "Extra Large"
+          }
+        }
+      }
+    },
+    "Feedback": {
+      "comment": "设置窗口 · 关于",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "反馈"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Feedback"
+          }
+        }
+      }
+    },
+    "Feedback Sent": {
+      "comment": "设置窗口 · 反馈结果弹窗标题",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "已发送"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Feedback Sent"
           }
         }
       }
@@ -1125,6 +1227,40 @@
         }
       }
     },
+    "Keep it under 120 characters.": {
+      "comment": "设置窗口 · 反馈校验弹窗",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "请控制在 120 字以内。"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Keep it under 120 characters."
+          }
+        }
+      }
+    },
+    "Keep it under 2000 characters.": {
+      "comment": "设置窗口 · 反馈校验弹窗",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "请控制在 2000 字以内。"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Keep it under 2000 characters."
+          }
+        }
+      }
+    },
     "Keep maximized windows above the taskbar": {
       "localizations": {
         "zh-Hans": {
@@ -1250,6 +1386,40 @@
           "stringUnit": {
             "state": "translated",
             "value": "Medium"
+          }
+        }
+      }
+    },
+    "Message Is Empty": {
+      "comment": "设置窗口 · 反馈校验弹窗标题",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "内容为空"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Message Is Empty"
+          }
+        }
+      }
+    },
+    "Message Is Too Long": {
+      "comment": "设置窗口 · 反馈校验弹窗标题",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "内容过长"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Message Is Too Long"
           }
         }
       }
@@ -1509,6 +1679,23 @@
           "stringUnit": {
             "state": "translated",
             "value": "Only your email address and first-launch date are sent, to confirm you as a founding user. No marketing email."
+          }
+        }
+      }
+    },
+    "Only your message, the contact you enter, the app version, your macOS version and the interface language are sent.": {
+      "comment": "设置窗口 · 反馈披露行（与实际发送字段一致）",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "只发送你写的内容、你填写的联系方式、App 版本、macOS 版本和界面语言。"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Only your message, the contact you enter, the app version, your macOS version and the interface language are sent."
           }
         }
       }
@@ -2096,6 +2283,40 @@
         }
       }
     },
+    "Send": {
+      "comment": "设置窗口 · 反馈按钮",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "发送"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Send"
+          }
+        }
+      }
+    },
+    "Sending…": {
+      "comment": "设置窗口 · 反馈按钮在飞态",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "发送中…"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Sending…"
+          }
+        }
+      }
+    },
     "Settings…": {
       "comment": "状态栏菜单项，打开设置窗口",
       "localizations": {
@@ -2456,6 +2677,23 @@
         }
       }
     },
+    "Thanks — we read every message.": {
+      "comment": "设置窗口 · 反馈结果弹窗",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "谢谢，每一条我们都会看。"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Thanks — we read every message."
+          }
+        }
+      }
+    },
     "The Dock (⌥⌘D to show/hide)": {
       "localizations": {
         "zh-Hans": {
@@ -2500,6 +2738,40 @@
           "stringUnit": {
             "state": "translated",
             "value": "The email address is not valid."
+          }
+        }
+      }
+    },
+    "The feedback server returned an invalid response.": {
+      "comment": "FeedbackError",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "反馈服务器返回了无效响应。"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "The feedback server returned an invalid response."
+          }
+        }
+      }
+    },
+    "The feedback server returned status code %d.": {
+      "comment": "FeedbackError",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "反馈服务器返回了状态码 %d。"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "The feedback server returned status code %d."
           }
         }
       }
@@ -3057,6 +3329,23 @@
           "stringUnit": {
             "state": "translated",
             "value": "When off, moving the pointer across the taskbar no longer shows app names."
+          }
+        }
+      }
+    },
+    "Write something first.": {
+      "comment": "设置窗口 · 反馈校验弹窗",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "先写点内容。"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Write something first."
           }
         }
       }

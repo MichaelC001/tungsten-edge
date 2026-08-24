@@ -35,6 +35,8 @@ struct SettingsWindowContent: View {
     @State private var presentedAlert: SettingsAlert?
     @State private var subscriptionEmail = ""
     @State private var licenseKeyInput = ""
+    @State private var feedbackMessage = ""
+    @State private var feedbackContact = ""
 
     var body: some View {
         VStack(alignment: .leading, spacing: 22) {
@@ -103,6 +105,7 @@ struct SettingsWindowContent: View {
 
             settingsSection(String(localized: "About")) {
                 aboutRow
+                feedbackRow
                 subscriptionRow
                 githubStarRow
             }
@@ -292,6 +295,64 @@ struct SettingsWindowContent: View {
         )
     }
 
+    /// 应用内反馈表单（2026-08-24）：正文 + 选填联系方式 → 官网 `/api/feedback` → D1，
+    /// owner 在本机控制台看。为什么不是 GitHub / mailto：国内用户打不开 GitHub，
+    /// mailto 依赖装好的邮件客户端。
+    ///
+    /// ⚠️ **所有高度固定**（TextEditor 定高 88pt，发送后清空不改布局），结果一律走
+    /// `SettingsAlert`——窗口只在 `present()` 和两个 sink 里量高度（顶部注释），
+    /// 就地长出状态行只会变成可滚动。
+    /// ⚠️ 披露行必须与实际发送的字段一致（五个），改一边就要改另一边。
+    @ViewBuilder
+    private var feedbackRow: some View {
+        Divider()
+            .padding(.vertical, 2)
+
+        VStack(alignment: .leading, spacing: 8) {
+            Text("Feedback")
+                .font(.callout.weight(.medium))
+            TextEditor(text: $feedbackMessage)
+                .font(.callout)
+                .frame(height: 88)
+                .overlay(
+                    RoundedRectangle(cornerRadius: 6)
+                        .stroke(Color(nsColor: .separatorColor), lineWidth: 1)
+                )
+
+            let presentation = coordinator.feedbackState.presentation
+            HStack(spacing: 10) {
+                TextField(String(localized: "Email or WeChat ID (optional)"), text: $feedbackContact)
+                    .textFieldStyle(.roundedBorder)
+                    .disabled(!presentation.isEnabled)
+                Button(presentation.title) { submitFeedback() }
+                    .disabled(
+                        !presentation.isEnabled
+                            || feedbackMessage.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+                    )
+            }
+
+            Text("Only your message, the contact you enter, the app version, your macOS version and the interface language are sent.")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+    }
+
+    private func submitFeedback() {
+        guard coordinator.beginFeedback() else { return }
+        let message = feedbackMessage
+        let contact = feedbackContact
+        Task {
+            let content = await coordinator.performFeedback(message: message, contact: contact)
+            coordinator.finishFeedback()
+            if content.didSend {
+                feedbackMessage = ""
+                feedbackContact = ""
+            }
+            presentedAlert = SettingsAlert(content)
+        }
+    }
+
     /// 「原始用户，永久免费」的留邮箱入口。
     ///
     /// ⚠️ 标题和正文与官网 tungstenedge.app 的订阅区**逐字同源**（owner 逐句敲定的公开承诺），
@@ -431,6 +492,10 @@ private struct SettingsAlert: Identifiable {
     }
 
     init(_ content: SubscriptionAlertContent) {
+        self.init(title: content.title, message: content.message)
+    }
+
+    init(_ content: FeedbackAlertContent) {
         self.init(title: content.title, message: content.message)
     }
 

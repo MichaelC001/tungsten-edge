@@ -127,6 +127,7 @@ final class SettingsCoordinatorTests: XCTestCase {
             nativeDockPreferencesService: NativeDockServiceStub(),
             updateService: UpdateControlStub(),
             subscriptionSubmitter: SubscriptionSubmitterStub(),
+            feedbackSubmitter: FeedbackSubmitterStub(),
             hotKeyRegistrar: { _ in .registered }
         )
 
@@ -154,6 +155,7 @@ final class SettingsCoordinatorTests: XCTestCase {
             nativeDockPreferencesService: native,
             updateService: UpdateControlStub(),
             subscriptionSubmitter: SubscriptionSubmitterStub(),
+            feedbackSubmitter: FeedbackSubmitterStub(),
             hotKeyRegistrar: { _ in .registered }
         )
 
@@ -265,6 +267,7 @@ final class SettingsCoordinatorTests: XCTestCase {
         native: NativeDockServiceStub? = nil,
         updates: UpdateControlStub? = nil,
         subscriptions: SubscriptionSubmitterStub? = nil,
+        feedback: FeedbackSubmitterStub? = nil,
         hotKeys: ((GlobalHotKeyShortcut) -> GlobalHotKeyMonitor.RegistrationStatus)? = nil
     ) -> SettingsCoordinator {
         SettingsCoordinator(
@@ -273,6 +276,7 @@ final class SettingsCoordinatorTests: XCTestCase {
             nativeDockPreferencesService: native ?? NativeDockServiceStub(),
             updateService: updates ?? UpdateControlStub(),
             subscriptionSubmitter: subscriptions ?? SubscriptionSubmitterStub(),
+            feedbackSubmitter: feedback ?? FeedbackSubmitterStub(),
             hotKeyRegistrar: hotKeys ?? { _ in .registered }
         )
     }
@@ -431,4 +435,16 @@ private final class UpdateControlStub: UpdateControlling {
 
 private enum TestError: Error {
     case failed
+}
+
+
+/// 反馈提交替身：记录草稿、可脚本化失败。
+private final class FeedbackSubmitterStub: FeedbackSubmitting {
+    private(set) var drafts: [FeedbackDraft] = []
+    var error: Error?
+
+    func submit(_ draft: FeedbackDraft) async throws {
+        if let error { throw error }
+        drafts.append(draft)
+    }
 }

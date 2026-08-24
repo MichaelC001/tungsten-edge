@@ -47,6 +47,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         nativeDockPreferencesService: nativeDockPreferencesService,
         updateService: updateService,
         subscriptionSubmitter: WebsiteSubscriptionSubmitter(),
+        feedbackSubmitter: WebsiteFeedbackSubmitter(),
         // 改键的真实注册入口。临时副本没有 monitor（也进不了设置窗口），兜底报失败。
         hotKeyRegistrar: { [weak self] shortcut in
             self?.edgeToggleHotKey?.update(shortcut: shortcut) ?? .monitorUnavailable
