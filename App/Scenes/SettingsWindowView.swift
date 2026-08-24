@@ -41,6 +41,7 @@ struct SettingsWindowContent: View {
             settingsSection(String(localized: "General")) {
                 launchAtLoginRow
                 hotKeyRow
+                scrollReverserRow
             }
 
             Divider()
@@ -184,6 +185,18 @@ struct SettingsWindowContent: View {
                     Button("Reset to Default") { applyShortcut(nil) }
                 }
             }
+        }
+    }
+
+    /// 全局反转鼠标滚轮。作用于整个系统而不只是任务条，所以放「通用」。
+    /// 说明必须写清「只改写方向值、不记录不发送」——这是全项目唯一改写别人输入事件的功能。
+    @ViewBuilder
+    private var scrollReverserRow: some View {
+        settingRow(note: String(localized: "Flips mouse-wheel scrolling system-wide, like Scroll Reverser. Trackpads and Magic Mouse are not affected. Tungsten Edge only inverts the direction values of scroll-wheel events; nothing is recorded or sent anywhere. If Scroll Reverser or Mos is also running, the two cancel out — keep only one.")) {
+            Toggle(
+                "Reverse mouse scroll direction",
+                isOn: binding(get: { store.scrollReverserEnabled }, set: store.setScrollReverserEnabled)
+            )
         }
     }
 

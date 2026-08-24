@@ -73,6 +73,8 @@ Entering a native full-screen Space lets the system's transition snapshot catch 
 
 Ordinary input is not recorded, logged, modified, or sent anywhere. The listener is enabled by default; turn off **Predict full-screen transitions to prevent taskbar flicker** under **Advanced** in Settings to disable it completely.
 
+Separately, when **Reverse mouse scroll direction** (Settings › General, off by default) is on, a second event tap watches scroll-wheel events and inverts the direction values of discrete mouse-wheel ones — that inversion is the whole feature; trackpad and Magic Mouse events pass through untouched, and nothing is recorded or sent anywhere. The tap exists only while the switch is on. Kill switch for diagnostics: launch with `DOCK_SCROLL_REVERSER=0`.
+
 macOS suppresses key events from global event taps while Secure Input is active, such as in a protected password field. During that time the keyboard shortcuts cannot be recognized in advance; green-button and trackpad-gesture detection are unaffected.
 
 ## Install
@@ -128,6 +130,7 @@ Open it from **Settings…** in the status menu, or by **right-clicking the draw
 - **General**
   - **Open at Login** — on macOS 13 and later this goes through the system's Login Items; if macOS asks for approval, open Login Items in System Settings and approve Tungsten Edge there. On macOS 12 it is written to System Preferences → Users & Groups → Login Items, where you can also see and remove it.
   - **Show/hide taskbar shortcut** — click the recorder, press a new combination, done (default `⌥⇧⌘D`; *Reset to Default* brings it back). Combinations that would clash with macOS — `⌥⌘D`, Option-only, Control-Option without Command — are rejected with an explanation, and if another app already owns the combination the previous shortcut stays active.
+  - **Reverse mouse scroll direction** — off by default. Flips mouse-wheel scrolling system-wide, like Scroll Reverser, so the wheel can scroll Windows-style while the trackpad keeps macOS natural scrolling. Trackpads and Magic Mouse are not affected. If Scroll Reverser or Mos is also running, the two cancel out — keep only one. See [Global input observation](#global-input-observation) for what this touches.
 - **Taskbar**
   - **Show Shelf** — shows or hides the shelf chip. Unchecking it only hides the chip; stashed file references are kept and come back when you check it again. Note that with the shelf hidden *and* no pinned folders, the whole folder zone disappears, so the taskbar has no external-file drop target and no **Add Folder…** entry — check it back on to get them.
   - **Show app name on hover** — turn it off and moving the pointer across the taskbar no longer pops up app names.

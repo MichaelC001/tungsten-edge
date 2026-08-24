@@ -2627,6 +2627,8 @@ private final class WheelScrollInterceptorView: NSView {
         let maxX = max(0, documentView.bounds.width - clipView.bounds.width)
         guard maxX > 0 else { return }
 
+        // 「反转鼠标滚轮方向」开着时**不用管**：那个 tap 插在 session 头部，这里收到的
+        // 已经是反转后的 delta，和别的应用看到的一致——条上的平移方向自然跟着一起反。
         let naturalScrolling = UserDefaults.standard.bool(forKey: "com.apple.swipescrolldirection")
         let sign: CGFloat = naturalScrolling ? -1 : 1
         let rawDelta = sign * event.scrollingDeltaY * Self.wheelSpeed

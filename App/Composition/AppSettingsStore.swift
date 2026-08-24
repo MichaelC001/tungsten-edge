@@ -76,6 +76,9 @@ final class AppSettingsStore: ObservableObject {
     /// 自定义显隐任务条快捷键；nil = 默认 ⌥⇧⌘D。**只由 `SettingsCoordinator.applyEdgeToggleShortcut`
     /// 在注册成功后写入**——先落盘再注册失败会让存的键和实际生效的键分家。
     @Published private(set) var edgeToggleShortcut: StoredHotKeyShortcut?
+    /// 全局反转鼠标滚轮（只反离散滚轮，触控板 / 妙控鼠标不动）。**默认关**——
+    /// 改写全系统输入事件的能力必须由用户主动选择，理由同 `windowLiftEnabled`。
+    @Published private(set) var scrollReverserEnabled: Bool
     /// 这台机器上已经成功提交过邮箱订阅。只用来把设置里那段订阅区块收起来，
     /// 免得已经留过邮箱的人被同一段话反复看见。**不是**「是否为原始用户」的凭据——
     /// 那个凭据是 `InstallationRecord` 的首装时间戳，以及服务端那份名单。
@@ -131,6 +134,8 @@ final class AppSettingsStore: ObservableObject {
         fullscreenIntentEnabled = defaults.bool(forKey: Keys.fullscreenIntentEnabled)
         // 有意不 register：缺键即 nil = 默认 ⌥⇧⌘D；坏数据（手改过、类型不对）也回落 nil。
         edgeToggleShortcut = Self.storedHotKeyShortcut(defaults.dictionary(forKey: Keys.edgeToggleShortcut))
+        // 同样有意不 register：缺键即 false 正好是「默认关」，注册个 false 会让人误读成默认开。
+        scrollReverserEnabled = defaults.bool(forKey: Keys.scrollReverserEnabled)
         // 坏值（手改过、旧版本残留、类型不对）一律回退中档并**立刻重写**，
         // 否则每次启动都要重新走一遍回退，且 UI 上勾选的档位和存的值对不上。
         dockSize = DockSize(rawValue: defaults.string(forKey: Keys.dockSize) ?? "") ?? .default
@@ -191,6 +196,12 @@ final class AppSettingsStore: ObservableObject {
             ],
             forKey: Keys.edgeToggleShortcut
         )
+    }
+
+    func setScrollReverserEnabled(_ value: Bool) {
+        guard scrollReverserEnabled != value else { return }
+        scrollReverserEnabled = value
+        defaults.set(value, forKey: Keys.scrollReverserEnabled)
     }
 
     private static func storedHotKeyShortcut(_ dict: [String: Any]?) -> StoredHotKeyShortcut? {
@@ -367,6 +378,7 @@ private enum Keys {
     static let fullscreenIntentEnabled = "com.tungsten.edge.fullscreenIntentEnabled"
     /// 自定义显隐快捷键（字典：keyCode / modifiers / glyphs）。缺键 = 默认 ⌥⇧⌘D。
     static let edgeToggleShortcut = "com.tungsten.edge.hotKey.edgeAutoHideMode"
+    static let scrollReverserEnabled = "com.tungsten.edge.scrollReverserEnabled"
     /// ⚠️ 这个键名进了用户磁盘。改名 = 所有已订阅的人重新看到订阅区块。
     static let hasSubscribed = "com.tungsten.edge.hasSubscribed"
     /// ⚠️ 同上：改名 = 所有老用户下次启动被欢迎引导再拦一次。

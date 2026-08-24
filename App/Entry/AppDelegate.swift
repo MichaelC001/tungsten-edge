@@ -74,6 +74,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var messagingAutoRegisterSubscription: AnyCancellable?
     private var badgeContextSubscription: AnyCancellable?
     private var windowLiftSettingSubscription: AnyCancellable?
+    /// 全局反转鼠标滚轮。active tap 需要辅助功能授权，所以挂在任务条运行期
+    ///（startTaskbarRuntime 建、suspend/终止拆），与全屏 tap 同一生命周期语义。
+    private var scrollReverserMonitor: ScrollReverserMonitor?
+    private var scrollReverserSettingSubscription: AnyCancellable?
     private let permissionService = PermissionService()
     private var installLocation: AppInstallLocation = .other
     private var permissionCoordinator: PermissionRecoveryCoordinator?
@@ -233,6 +237,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // 并让协调器取消在飞的恢复任务——光设阶段拦不住已经进了 await 的 Task，
         // 那会在退出之后还去拉起一个新实例。
         edgeToggleHotKey?.stop()
+        // 滚轮 tap 同理先拆：进程退出前多活一秒，全系统的滚动就多经手一秒。
+        scrollReverserMonitor?.stop()
+        scrollReverserMonitor = nil
         permissionCoordinator?.terminationRequested()
 
         guard let controller = windowLiftAvoidanceController else { return .terminateNow }
@@ -250,6 +257,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     func applicationWillTerminate(_ notification: Notification) {
         edgeToggleHotKey?.stop()
+        scrollReverserMonitor?.stop()
+        scrollReverserMonitor = nil
         permissionCoordinator?.terminationRequested()
         windowLiftAvoidanceController?.stop()
         runtime.stop()
@@ -541,6 +550,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             .sink { [weak self] enabled in
                 self?.windowLiftAvoidanceController?.setEnabledBySetting(enabled)
             }
+        // 反转滚轮同款接线。sink 用闭包参数里的新值，不回读 store（@Published 在赋值前发布）。
+        applyScrollReverser(enabled: settingsStore.scrollReverserEnabled)
+        scrollReverserSettingSubscription = settingsStore.$scrollReverserEnabled
+            .removeDuplicates()
+            .sink { [weak self] enabled in
+                self?.applyScrollReverser(enabled: enabled)
+            }
         badgeStore.start()
         // 任务条真的起来了才谈得上「建议怎么配」。放在这里而不是启动那一刻，是因为
         // 用户得先看见任务条长什么样，那句「它俩都在屏幕底边会互相遮挡」才有所指。
@@ -664,6 +680,25 @@ extension AppDelegate: PermissionEffectHandler {
 
     func registerHotKey() { _ = edgeToggleHotKey?.start() }
 
+    /// 反转滚轮的唯一开合入口：开 = 建 monitor + 起 tap，关 = 拆干净。
+    /// `settingEnabled` 由调用方传（订阅的新值或起步时的 store 值），不在这里回读 store——
+    /// @Published 在赋值完成前发布，sink 里回读拿到的是旧值（仓库惯例）。
+    private func applyScrollReverser(enabled settingEnabled: Bool) {
+        let enabled = ScrollReverserDecision.isEnabled(
+            settingEnabled: settingEnabled,
+            environment: ProcessInfo.processInfo.environment
+        )
+        if enabled {
+            guard scrollReverserMonitor == nil else { return }
+            let monitor = ScrollReverserMonitor()
+            scrollReverserMonitor = monitor
+            monitor.start()
+        } else {
+            scrollReverserMonitor?.stop()
+            scrollReverserMonitor = nil
+        }
+    }
+
     func terminateSelf() { NSApp.terminate(nil) }
 
     // MARK: 运行期恢复
@@ -723,6 +758,10 @@ extension AppDelegate: PermissionEffectHandler {
         badgeContextSubscription?.cancel()
         badgeContextSubscription = nil
         runtime.onToggleDrawer = nil
+        scrollReverserSettingSubscription?.cancel()
+        scrollReverserSettingSubscription = nil
+        scrollReverserMonitor?.stop()
+        scrollReverserMonitor = nil
         panelCoordinator?.suspendAndRelease()
         panelCoordinator = nil
         badgeStore.stop()

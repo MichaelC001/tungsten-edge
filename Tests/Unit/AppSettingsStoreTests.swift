@@ -604,6 +604,21 @@ final class AppSettingsStoreTests: XCTestCase {
         XCTAssertEqual(AppSettingsStore.sanitizedLastEnabledDelay(AppSettingsStore.neverWakeDelay), AppSettingsStore.neverWakeDelay)
     }
 
+    // MARK: - 反转鼠标滚轮
+
+    func testScrollReverserDefaultsOffAndRoundTrips() {
+        let defaults = makeDefaults()
+        let store = AppSettingsStore(defaults: defaults)
+        XCTAssertFalse(store.scrollReverserEnabled, "改写全系统输入事件的能力必须默认关")
+
+        store.setScrollReverserEnabled(true)
+        XCTAssertTrue(store.scrollReverserEnabled)
+        XCTAssertTrue(AppSettingsStore(defaults: defaults).scrollReverserEnabled, "跨启动往返")
+
+        store.setScrollReverserEnabled(false)
+        XCTAssertFalse(AppSettingsStore(defaults: defaults).scrollReverserEnabled)
+    }
+
     // MARK: - 自定义显隐快捷键存储
 
     func testEdgeToggleShortcutDefaultsToNilAndRoundTrips() {

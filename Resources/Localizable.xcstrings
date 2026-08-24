@@ -865,6 +865,23 @@
         }
       }
     },
+    "Flips mouse-wheel scrolling system-wide, like Scroll Reverser. Trackpads and Magic Mouse are not affected. Tungsten Edge only inverts the direction values of scroll-wheel events; nothing is recorded or sent anywhere. If Scroll Reverser or Mos is also running, the two cancel out — keep only one.": {
+      "comment": "设置窗口 · 反转滚轮说明（改写输入事件的披露文案）",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "把鼠标滚轮的滚动方向整体反过来（类似 Scroll Reverser）。触控板和妙控鼠标不受影响。钨极只把滚轮事件的方向值取反，不记录、不发送任何内容。若同时运行 Scroll Reverser 或 Mos，两者会互相抵消，请只保留一个。"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Flips mouse-wheel scrolling system-wide, like Scroll Reverser. Trackpads and Magic Mouse are not affected. Tungsten Edge only inverts the direction values of scroll-wheel events; nothing is recorded or sent anywhere. If Scroll Reverser or Mos is also running, the two cancel out — keep only one."
+          }
+        }
+      }
+    },
     "Force Quit": {
       "localizations": {
         "zh-Hans": {
@@ -2040,6 +2057,23 @@
           "stringUnit": {
             "state": "translated",
             "value": "Retry"
+          }
+        }
+      }
+    },
+    "Reverse mouse scroll direction": {
+      "comment": "设置窗口 · 通用",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "反转鼠标滚轮方向"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Reverse mouse scroll direction"
           }
         }
       }
