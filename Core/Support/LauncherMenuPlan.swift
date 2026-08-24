@@ -10,6 +10,9 @@ import Foundation
 enum LauncherMenuItemKind: Equatable {
     /// 「打开」——仅未运行时出现，严格排在最近文件与成员项之前。运行态用 显示/隐藏/退出 代替。
     case open
+    /// Dock 式窗口列表（✓ 前台 / ◇ 最小化）——运行中且确有真窗口时排在最前（2026-08-24）。
+    /// 只属于应用级图标；具体窗口卡不经过本计划。
+    case windowList
     case recentDocuments
     case show
     case hide
@@ -23,14 +26,17 @@ enum LauncherMenuPlan {
     /// - Parameters:
     ///   - isRunning: 图标所在区的**显示态**（非进程存活态）。
     ///   - isHidden: 显示态下 app 是否隐藏（决定「显示」还是「隐藏」）。
+    ///   - hasWindows: 快照里该应用有没有真窗口（决定要不要窗口列表）。
     ///   - hasMembership: 是否有成员/管理项。
     static func itemKinds(isRunning: Bool,
                           isHidden: Bool,
+                          hasWindows: Bool,
                           hasMembership: Bool) -> [LauncherMenuItemKind] {
-        // 次序对齐 DockStripView 的窗口卡片分支：动作项 → 成员项 → 退出。
+        // 次序（Docs/27 2026-08-24）：窗口列表 → 最近文件 → 动作项 → 成员项 → 退出。
         // 退出必须恒为末项——成员项夹在退出之后会让「退出」落到倒数第三，与用户预期相悖。
         var kinds: [LauncherMenuItemKind] = []
         if !isRunning { kinds.append(.open) }
+        if isRunning && hasWindows { kinds.append(.windowList) }
         if isRunning || hasMembership { kinds.append(.recentDocuments) }
         if isRunning { kinds.append(isHidden ? .show : .hide) }
         if hasMembership { kinds.append(.membership) }

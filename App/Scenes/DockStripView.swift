@@ -1552,6 +1552,8 @@ struct DockStripView: View {
                      scale: dockScale,
                      hoverStyle: hoverStyle,
                      isHovered: hovered,
+                     // 只有 app-* 兜底卡（访达常驻 / 保留兜底）代表整个应用；普通窗口卡不列。
+                     showsWindowListInMenu: item.isAppLevelFallback,
                      showRunningDot: true,
                      pulseNonce: chipPulseNonces[item.id] ?? 0,
                      badgeText: windowBadge,
@@ -1605,7 +1607,10 @@ struct DockStripView: View {
                     // 运行中有主窗 → app chip 即主窗卡：标准 toggle + 完整窗口菜单。iconOnly 保持消息区
                     // 定宽图标行，运行点标记它是 app 入口。
                     ChipView(item: main, scale: dockScale, hoverStyle: hoverStyle,
-                             isHovered: hovered, iconOnly: true, showRunningDot: true,
+                             isHovered: hovered,
+                             // 消息区图标恒代表整个应用（主窗开着也一样），列出全部窗口。
+                             showsWindowListInMenu: true,
+                             iconOnly: true, showRunningDot: true,
                              badgeText: badge,
                              slotHidden: draggingMessagingBundleID == bid)
                 } else {
@@ -1621,6 +1626,14 @@ struct DockStripView: View {
                                  scale: dockScale,
                                  hoverStyle: hoverStyle,
                                  hoverInput: .resolved(hovered),
+                                 windowEntriesProvider: {
+                                     WindowListMenuPlan.entries(
+                                         snapshot: runtime.snapshot,
+                                         bundleID: bid,
+                                         fallbackTitle: AppDisplayNameResolver.displayName(for: bid)
+                                     )
+                                 },
+                                 onActivateWindow: { runtime.activate(windowID: $0) },
                                  membershipItems: LauncherMembershipItem.items(
                                     surface: .strip,
                                     bundleID: bid,
@@ -1653,6 +1666,14 @@ struct DockStripView: View {
                 scale: dockScale,
                 hoverStyle: hoverStyle,
                 hoverInput: .resolved(hovered),
+                windowEntriesProvider: {
+                    WindowListMenuPlan.entries(
+                        snapshot: runtime.snapshot,
+                        bundleID: bid,
+                        fallbackTitle: AppDisplayNameResolver.displayName(for: bid)
+                    )
+                },
+                onActivateWindow: { runtime.activate(windowID: $0) },
                 membershipItems: keptAppMembershipItems(bundleID: bid),
                 badgeText: projection.badgeEntryIDByBundle[bid] == entry.id
                     ? badgeStore.badgesByBundleID[bid] : nil,
@@ -1865,6 +1886,10 @@ struct ChipView: View {
     /// 指针在不在这张卡上。**由任务条整条那块跟踪区算好后传进来**，卡片自己不再挂 `.onHover`
     /// （漏格 + 边界带方向，成因与实测见 `StripHoverResolution`）。同样故意不给默认值。
     let isHovered: Bool
+    /// 右键菜单顶部要不要列 Dock 式窗口列表。只有「一个图标代表整个应用」的入口才 true
+    ///（live 区 = `item.isAppLevelFallback`，消息区主窗卡 = 恒 true）；普通窗口卡自己就是
+    /// 那个窗口，恒 false。**故意不给默认值**——漏传必须是编译错误（同 `scale` 那条铁律）。
+    let showsWindowListInMenu: Bool
     var iconOnly: Bool = false
     var showRunningDot: Bool = false
     /// 见 `EnvironmentValues.isDragCarrierSnapshot`：拍副本时不画圆点、不烘投影。
@@ -2159,6 +2184,19 @@ struct ChipView: View {
     private func buildChipMenu() -> NSMenu {
         let menu = NSMenu()
         let bid = item.bundleIdentifier
+        // 窗口列表最前（仅应用级入口；次序见 Docs/27 2026-08-24）：✓ 前台窗，◇ 已最小化。
+        // 只读快照——菜单在右键瞬间同步构建，这条路径上不做任何 AX。
+        if showsWindowListInMenu, let listBid = bid {
+            AppMenuBuilder.appendWindowList(
+                to: menu,
+                entries: WindowListMenuPlan.entries(
+                    snapshot: runtime.snapshot,
+                    bundleID: listBid,
+                    fallbackTitle: AppDisplayNameResolver.displayName(for: listBid)
+                ),
+                activate: { runtime.activate(windowID: $0) }
+            )
+        }
         // 最近项置顶：Finder 显示「最近使用的文件夹」（FXRecentFolders），其余 app 显示「最近使用的文件」。
         if isFinderChip {
             AppMenuBuilder.appendFinderRecentFolders(to: menu)

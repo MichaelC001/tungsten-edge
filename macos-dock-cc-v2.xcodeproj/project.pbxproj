@@ -300,6 +300,9 @@
 		A00000000000000000009E13 /* AXWindowReader.swift in Sources */ = {isa = PBXBuildFile; fileRef = A00000000000000000000054 /* AXWindowReader.swift */; };
 		A00000000000000000009F01 /* GlobalHotKeyMonitor.swift in Sources */ = {isa = PBXBuildFile; fileRef = A00000000000000000009F00 /* GlobalHotKeyMonitor.swift */; };
 		A00000000000000000009F02 /* GlobalHotKeyMonitor.swift in Sources */ = {isa = PBXBuildFile; fileRef = A00000000000000000009F00 /* GlobalHotKeyMonitor.swift */; };
+		F1C0000000000000000000A1 /* WindowListMenuPlan.swift in Sources */ = {isa = PBXBuildFile; fileRef = F1C0000000000000000000A0 /* WindowListMenuPlan.swift */; };
+		F1C0000000000000000000A2 /* WindowListMenuPlan.swift in Sources */ = {isa = PBXBuildFile; fileRef = F1C0000000000000000000A0 /* WindowListMenuPlan.swift */; };
+		F1C0000000000000000000B1 /* WindowListMenuPlanTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = F1C0000000000000000000B0 /* WindowListMenuPlanTests.swift */; };
 		F1B0000000000000000000A1 /* ScrollReverserDecision.swift in Sources */ = {isa = PBXBuildFile; fileRef = F1B0000000000000000000A0 /* ScrollReverserDecision.swift */; };
 		F1B0000000000000000000A2 /* ScrollReverserDecision.swift in Sources */ = {isa = PBXBuildFile; fileRef = F1B0000000000000000000A0 /* ScrollReverserDecision.swift */; };
 		F1B0000000000000000000B1 /* ScrollReverserMonitor.swift in Sources */ = {isa = PBXBuildFile; fileRef = F1B0000000000000000000B0 /* ScrollReverserMonitor.swift */; };
@@ -413,6 +416,8 @@
 		A00000000000000000009E20 /* LegacyLoginItemBackend.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LegacyLoginItemBackend.swift; sourceTree = "<group>"; };
 		A00000000000000000009E23 /* LaunchAtLoginServiceTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LaunchAtLoginServiceTests.swift; sourceTree = "<group>"; };
 		A00000000000000000009F00 /* GlobalHotKeyMonitor.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GlobalHotKeyMonitor.swift; sourceTree = "<group>"; };
+		F1C0000000000000000000A0 /* WindowListMenuPlan.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WindowListMenuPlan.swift; sourceTree = "<group>"; };
+		F1C0000000000000000000B0 /* WindowListMenuPlanTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WindowListMenuPlanTests.swift; sourceTree = "<group>"; };
 		F1B0000000000000000000A0 /* ScrollReverserDecision.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ScrollReverserDecision.swift; sourceTree = "<group>"; };
 		F1B0000000000000000000B0 /* ScrollReverserMonitor.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ScrollReverserMonitor.swift; sourceTree = "<group>"; };
 		F1B0000000000000000000C0 /* ScrollReverserDecisionTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ScrollReverserDecisionTests.swift; sourceTree = "<group>"; };
@@ -780,6 +785,7 @@
 				A00000000000000000009300 /* StripDropRouting.swift */,
 				A00000000000000000009900 /* FolderDropPlan.swift */,
 				A00000000000000000009400 /* LauncherMenuPlan.swift */,
+				F1C0000000000000000000A0 /* WindowListMenuPlan.swift */,
 				A0000000000000000000FA00 /* LauncherChipVisualPlan.swift */,
 				A0000000000000000000FF00 /* LaunchGateDecision.swift */,
 				B10000000000000000000106 /* BadgeReadPlan.swift */,
@@ -1100,6 +1106,7 @@
 				F1A0000000000000000000D0 /* HotKeyShortcutValidationTests.swift */,
 				F1A0000000000000000000E0 /* HotKeyGlyphsTests.swift */,
 				F1B0000000000000000000C0 /* ScrollReverserDecisionTests.swift */,
+				F1C0000000000000000000B0 /* WindowListMenuPlanTests.swift */,
 				B78000000000000000000033 /* LicenseStoreTests.swift */,
 				A00000000000000000009720 /* MessagingAppStoreTests.swift */,
 				A00000000000000000009730 /* DragControllerConversionTests.swift */,
@@ -1307,6 +1314,7 @@
 					A00000000000000000009901 /* FolderDropPlan.swift in Sources */,
 					A00000000000000000009911 /* FileMover.swift in Sources */,
 					A00000000000000000009401 /* LauncherMenuPlan.swift in Sources */,
+					F1C0000000000000000000A1 /* WindowListMenuPlan.swift in Sources */,
 					A0000000000000000000FA01 /* LauncherChipVisualPlan.swift in Sources */,
 					A0000000000000000000FF01 /* LaunchGateDecision.swift in Sources */,
 					B10000000000000000000008 /* BadgeReadPlan.swift in Sources */,
@@ -1460,6 +1468,7 @@
 				F1A0000000000000000000A2 /* HotKeyShortcutValidation.swift in Sources */,
 				F1A0000000000000000000B2 /* HotKeyGlyphs.swift in Sources */,
 				F1B0000000000000000000A2 /* ScrollReverserDecision.swift in Sources */,
+				F1C0000000000000000000A2 /* WindowListMenuPlan.swift in Sources */,
 				A00000000000000000009F11 /* GlobalHotKeyMonitorTests.swift in Sources */,
 				A00000000000000000009071 /* StatusMenuController.swift in Sources */,
 				B74000000000000000000002 /* SubscriptionSubmitter.swift in Sources */,
@@ -1599,6 +1608,7 @@
 					F1A0000000000000000000D1 /* HotKeyShortcutValidationTests.swift in Sources */,
 					F1A0000000000000000000E1 /* HotKeyGlyphsTests.swift in Sources */,
 					F1B0000000000000000000C1 /* ScrollReverserDecisionTests.swift in Sources */,
+					F1C0000000000000000000B1 /* WindowListMenuPlanTests.swift in Sources */,
 					B78000000000000000000031 /* LicenseStoreTests.swift in Sources */,
 					A00000000000000000009721 /* MessagingAppStoreTests.swift in Sources */,
 					A00000000000000000009731 /* DragControllerConversionTests.swift in Sources */,

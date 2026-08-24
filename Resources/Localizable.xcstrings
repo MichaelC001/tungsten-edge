@@ -1270,6 +1270,23 @@
         }
       }
     },
+    "Minimized": {
+      "comment": "窗口列表 ◇ 标记的 VoiceOver 描述",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "已最小化"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Minimized"
+          }
+        }
+      }
+    },
     "Move Tungsten Edge to Applications": {
       "localizations": {
         "zh-Hans": {

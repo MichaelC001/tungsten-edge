@@ -299,6 +299,16 @@ struct DrawerView: View {
                      // 抽屉这块面板没有整条那样的跟踪区，图标各自挂 `.onHover`。
                      // 格子 30.8pt、指针在里面停留的时间远长于条上横扫，漏格不成问题。
                      hoverInput: .selfTracked,
+                     // 抽屉应用的窗口块整体藏在任务条之外，这个列表是找回它们的唯一入口。
+                     // 点窗口行不触发 onPrimaryAction——抽屉保持打开（同右键「打开」的规矩）。
+                     windowEntriesProvider: {
+                         WindowListMenuPlan.entries(
+                             snapshot: runtime.snapshot,
+                             bundleID: id,
+                             fallbackTitle: AppDisplayNameResolver.displayName(for: id)
+                         )
+                     },
+                     onActivateWindow: { runtime.activate(windowID: $0) },
                      membershipItems: membershipItems(for: id),
                      slotHidden: isDragging(id),
                      hoverSuppressed: isHoverSuppressed(id),

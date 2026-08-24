@@ -29,6 +29,11 @@ struct LauncherChip: View {
     /// 悬停从哪来。任务条传 `.resolved(…)`（整条一块跟踪区算好的），抽屉传 `.selfTracked`
     /// （那块面板没有跟踪区）。**故意不给默认值**，理由同 `scale` / `hoverStyle`。
     let hoverInput: ChipHoverInput
+    /// Dock 式窗口列表的数据源（右键构建菜单那一刻才求值；读快照、不做 AX）。
+    /// **故意不给默认值**——应用级图标漏传 = 整个窗口列表静默消失，这种错必须是编译错误。
+    let windowEntriesProvider: () -> [WindowMenuEntry]
+    /// 点击窗口行 → activate（最小化的行为还原）。**故意不给默认值**，理由同上。
+    let onActivateWindow: (String) -> Void
     /// 成员 / 管理菜单项（右键菜单末尾），如「在程序坞中保留」「固定到消息区」。
     /// 空数组 = 无成员项。
     var membershipItems: [LauncherMembershipItem] = []
@@ -194,15 +199,20 @@ struct LauncherChip: View {
 
     private func buildLauncherMenu() -> NSMenu {
         let menu = NSMenu()
+        // 只在右键这一刻求值一次；未运行的显示态连取都不取（列表判据跟着显示区走）。
+        let windowEntries = isRunning ? windowEntriesProvider() : []
         // 菜单运行态跟随「图标所在区的显示态」(isRunning prop)，不再独立问 NSWorkspace——否则待启动区里
         // 进程仍活（关窗不退 / 常驻）的图标会误报「隐藏 / 退出」，与其「已退出」的灰显外观矛盾。
         let kinds = LauncherMenuPlan.itemKinds(isRunning: isRunning,
                                                isHidden: isHidden,
+                                               hasWindows: !windowEntries.isEmpty,
                                                hasMembership: !membershipItems.isEmpty)
         // 仅在真要执行 显示/隐藏/退出 时才取 app 对象；取不到就跳过该项（快照短暂陈旧的兜底）。
         let runningApps = Self.regularRunningApplications(bundleID: bundleID)
         for kind in kinds {
             switch kind {
+            case .windowList:
+                AppMenuBuilder.appendWindowList(to: menu, entries: windowEntries, activate: onActivateWindow)
             case .open:
                 // 右键「打开」：复用 runtime 启动路径，但不触发 onPrimaryAction——
                 // 否则抽屉图标右键打开会顺手关掉抽屉。

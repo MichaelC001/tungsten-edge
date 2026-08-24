@@ -147,6 +147,40 @@ enum AppMenuBuilder {
         menu.addItem(force)
     }
 
+    /// Dock 式窗口列表（仅应用级图标；具体窗口卡不列）：✓ = 前台窗，◇ = 已最小化，
+    /// 点击 = activate（最小化则还原）。条目来自纯 `WindowListMenuPlan`（只读快照，
+    /// 菜单路径上不做任何 AX）。空列表什么都不加。
+    static func appendWindowList(
+        to menu: NSMenu,
+        entries: [WindowMenuEntry],
+        activate: @escaping (String) -> Void
+    ) {
+        guard !entries.isEmpty else { return }
+        for entry in entries {
+            let item = ClosureMenuItem(entry.title) { activate(entry.actionWindowID) }
+            switch entry.marker {
+            case .none:
+                break
+            case .front:
+                item.state = .on
+            case .minimized:
+                // ◇：原生 Dock 的最小化标记。SF Symbol「diamond」macOS 12 就有；
+                // 万一取不到（理论防御）退回文字前缀，别让标记静默消失。
+                if let diamond = NSImage(
+                    systemSymbolName: "diamond",
+                    accessibilityDescription: String(localized: "Minimized")
+                ) {
+                    item.state = .on
+                    item.onStateImage = diamond
+                } else {
+                    item.title = "◇ " + entry.title
+                }
+            }
+            menu.addItem(item)
+        }
+        menu.addItem(.separator())
+    }
+
     /// Top recent-files section for an app (best-effort), inline at the menu top.
     /// Opens each doc in its owning app. Adds nothing when there's no readable data.
     static func appendRecentDocuments(to menu: NSMenu, bundleID: String?) {
