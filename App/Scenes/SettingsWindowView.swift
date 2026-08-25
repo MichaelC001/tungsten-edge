@@ -291,19 +291,31 @@ struct SettingsWindowContent: View {
             .font(.callout)
             .fixedSize(horizontal: false, vertical: true)
         case .unactivated:
+            // ⚠️ 这一页说出口的每样东西都必须和「授权码到底发没发」对得上。2026-08-25 之前
+            // 它既说「授权码在我们发给你的那封邮件里」，又摆着一个「粘贴授权码」输入框，
+            // 而当时**一条授权码都没签发过**——文案和控件在说同一句假话，反馈里因此收到
+            // 「邮箱并没有收到激活码」。发放没开始时这里只说明现状：没有状态行（没东西可
+            // 激活时「未激活」只会让人以为该去激活点什么），没有输入框，没有按钮。
+            //
+            // 恢复方式：`LicenseStore.isIssuingLicenses` 翻成 true。**用 if 而不是注释掉，
+            // 是为了让两个分支都参与编译**——注释掉的代码没人记得恢复，也会让
+            // `activateLicense()` 变成无引用。
             VStack(alignment: .leading, spacing: 8) {
-                Text("Not activated")
-                    .font(.callout)
-                    .foregroundStyle(.secondary)
-                HStack(spacing: 10) {
-                    TextField("Paste your license key", text: $licenseKeyInput)
-                        .textFieldStyle(.roundedBorder)
-                        .onSubmit { activateLicense() }
-                    Button("Activate") { activateLicense() }
-                        .disabled(licenseKeyInput.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                if LicenseStore.isIssuingLicenses {
+                    Text("Not activated")
+                        .font(.callout)
+                        .foregroundStyle(.secondary)
+                    HStack(spacing: 10) {
+                        TextField("Paste your license key", text: $licenseKeyInput)
+                            .textFieldStyle(.roundedBorder)
+                            .onSubmit { activateLicense() }
+                        Button("Activate") { activateLicense() }
+                            .disabled(licenseKeyInput.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                    }
                 }
-                Text("Founding users: your license key is in the email we sent you.")
-                    .font(.caption)
+                // 发放开始后它退回配角（输入框才是主角），所以字号跟着开关走。
+                Text("Licensing opens with version 1.0. Tungsten Edge is completely free until then, and founding users who have confirmed their email will receive a permanent free license key.")
+                    .font(LicenseStore.isIssuingLicenses ? .caption : .callout)
                     .foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
             }

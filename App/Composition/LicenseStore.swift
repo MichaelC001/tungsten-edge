@@ -24,6 +24,18 @@ final class LicenseStore: ObservableObject {
     /// 前缀沿用 `InstallationRecord`。
     static let licenseKeyDefaultsKey = "com.tungsten.edge.licenseKey"
 
+    /// 授权码发放还没开始（`licenses` 表 0 条，1.0 才发）。
+    ///
+    /// 为 false 时「授权」页**只说明现状，不显示输入框和激活按钮**——在没有任何授权码
+    /// 存在的时候摆一个「粘贴授权码」的输入框，等于告诉用户「你手上该有一串码」，
+    /// 2026-08-25 因此收到反馈「邮箱并没有收到激活码」。
+    ///
+    /// **1.0 开始发放时翻成 true**，同时把设置页那句「将在 1.0 正式版开放」改回去——
+    /// 两处是一件事，只改一处就又会出现「界面和现实对不上」。
+    ///
+    /// 已接受的后果：停在 0.9.x 不升级的用户，拿到授权码后得先升到 1.0 才有地方粘。
+    static let isIssuingLicenses = false
+
     @Published private(set) var state: LicenseState
 
     private let defaults: UserDefaults

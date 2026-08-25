@@ -630,18 +630,18 @@
         }
       }
     },
-    "Check your inbox and click the confirmation link to finish subscribing.": {
+    "Check your inbox and click the confirmation link to finish subscribing. If it is not there, check your spam folder.": {
       "localizations": {
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "请到邮箱点击确认链接完成订阅。"
+            "value": "请到邮箱点击确认链接完成订阅。如果收件箱没有，请查一下垃圾邮件。"
           }
         },
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Check your inbox and click the confirmation link to finish subscribing."
+            "value": "Check your inbox and click the confirmation link to finish subscribing. If it is not there, check your spam folder."
           }
         }
       }
@@ -1321,22 +1321,6 @@
         }
       }
     },
-    "Founding users: your license key is in the email we sent you.": {
-      "localizations": {
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "原始用户：授权码在我们发给你的那封邮件里。"
-          }
-        },
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Founding users: your license key is in the email we sent you."
-          }
-        }
-      }
-    },
     "General": {
       "localizations": {
         "zh-Hans": {
@@ -1693,6 +1677,22 @@
           "stringUnit": {
             "state": "translated",
             "value": "License"
+          }
+        }
+      }
+    },
+    "Licensing opens with version 1.0. Tungsten Edge is completely free until then, and founding users who have confirmed their email will receive a permanent free license key.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "授权功能将在 1.0 正式版开放。在那之前钨极完全免费；已完成邮箱确认的原始用户，届时会收到永久免费的授权码。"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Licensing opens with version 1.0. Tungsten Edge is completely free until then, and founding users who have confirmed their email will receive a permanent free license key."
           }
         }
       }
