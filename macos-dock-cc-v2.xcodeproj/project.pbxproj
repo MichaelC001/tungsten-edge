@@ -32,6 +32,7 @@
 		D20000000000000000000004 /* AutoHideToggleMenuModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = D10000000000000000000004 /* AutoHideToggleMenuModel.swift */; };
 		D20000000000000000000006 /* AccessoryWindowPresentation.swift in Sources */ = {isa = PBXBuildFile; fileRef = D10000000000000000000006 /* AccessoryWindowPresentation.swift */; };
 		D20000000000000000000041 /* StripContextMenuZone.swift in Sources */ = {isa = PBXBuildFile; fileRef = D10000000000000000000041 /* StripContextMenuZone.swift */; };
+		D2000000000000000000006B /* StripWheelScroll.swift in Sources */ = {isa = PBXBuildFile; fileRef = D10000000000000000000067 /* StripWheelScroll.swift */; };
 		D20000000000000000000061 /* StripHoverResolution.swift in Sources */ = {isa = PBXBuildFile; fileRef = D10000000000000000000061 /* StripHoverResolution.swift */; };
 		D20000000000000000000064 /* DragLandingPlan.swift in Sources */ = {isa = PBXBuildFile; fileRef = D10000000000000000000063 /* DragLandingPlan.swift */; };
 		D20000000000000000000068 /* StripBlockLanding.swift in Sources */ = {isa = PBXBuildFile; fileRef = D10000000000000000000065 /* StripBlockLanding.swift */; };
@@ -39,12 +40,14 @@
 		D20000000000000000000014 /* AutoHideToggleMenuModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = D10000000000000000000004 /* AutoHideToggleMenuModel.swift */; };
 		D20000000000000000000016 /* AccessoryWindowPresentation.swift in Sources */ = {isa = PBXBuildFile; fileRef = D10000000000000000000006 /* AccessoryWindowPresentation.swift */; };
 		D20000000000000000000042 /* StripContextMenuZone.swift in Sources */ = {isa = PBXBuildFile; fileRef = D10000000000000000000041 /* StripContextMenuZone.swift */; };
+		D2000000000000000000006C /* StripWheelScroll.swift in Sources */ = {isa = PBXBuildFile; fileRef = D10000000000000000000067 /* StripWheelScroll.swift */; };
 		D20000000000000000000062 /* StripHoverResolution.swift in Sources */ = {isa = PBXBuildFile; fileRef = D10000000000000000000061 /* StripHoverResolution.swift */; };
 		D20000000000000000000065 /* DragLandingPlan.swift in Sources */ = {isa = PBXBuildFile; fileRef = D10000000000000000000063 /* DragLandingPlan.swift */; };
 		D20000000000000000000069 /* StripBlockLanding.swift in Sources */ = {isa = PBXBuildFile; fileRef = D10000000000000000000065 /* StripBlockLanding.swift */; };
 		D20000000000000000000017 /* SettingsCoordinatorTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = D10000000000000000000007 /* SettingsCoordinatorTests.swift */; };
 		D20000000000000000000019 /* AccessoryWindowPresentationTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = D10000000000000000000009 /* AccessoryWindowPresentationTests.swift */; };
 		D20000000000000000000043 /* StripContextMenuZoneTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = D10000000000000000000042 /* StripContextMenuZoneTests.swift */; };
+		D2000000000000000000006D /* StripWheelScrollTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = D10000000000000000000068 /* StripWheelScrollTests.swift */; };
 		D20000000000000000000063 /* StripHoverResolutionTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = D10000000000000000000062 /* StripHoverResolutionTests.swift */; };
 		D20000000000000000000066 /* DragLandingPlanTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = D10000000000000000000064 /* DragLandingPlanTests.swift */; };
 		D2000000000000000000006A /* StripBlockLandingTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = D10000000000000000000066 /* StripBlockLandingTests.swift */; };
@@ -400,12 +403,14 @@
 		D10000000000000000000004 /* AutoHideToggleMenuModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AutoHideToggleMenuModel.swift; sourceTree = "<group>"; };
 		D10000000000000000000006 /* AccessoryWindowPresentation.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AccessoryWindowPresentation.swift; sourceTree = "<group>"; };
 		D10000000000000000000041 /* StripContextMenuZone.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StripContextMenuZone.swift; sourceTree = "<group>"; };
+		D10000000000000000000067 /* StripWheelScroll.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StripWheelScroll.swift; sourceTree = "<group>"; };
 		D10000000000000000000061 /* StripHoverResolution.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StripHoverResolution.swift; sourceTree = "<group>"; };
 		D10000000000000000000063 /* DragLandingPlan.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DragLandingPlan.swift; sourceTree = "<group>"; };
 		D10000000000000000000065 /* StripBlockLanding.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StripBlockLanding.swift; sourceTree = "<group>"; };
 		D10000000000000000000007 /* SettingsCoordinatorTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettingsCoordinatorTests.swift; sourceTree = "<group>"; };
 		D10000000000000000000009 /* AccessoryWindowPresentationTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AccessoryWindowPresentationTests.swift; sourceTree = "<group>"; };
 		D10000000000000000000042 /* StripContextMenuZoneTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StripContextMenuZoneTests.swift; sourceTree = "<group>"; };
+		D10000000000000000000068 /* StripWheelScrollTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StripWheelScrollTests.swift; sourceTree = "<group>"; };
 		D10000000000000000000062 /* StripHoverResolutionTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StripHoverResolutionTests.swift; sourceTree = "<group>"; };
 		D10000000000000000000064 /* DragLandingPlanTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DragLandingPlanTests.swift; sourceTree = "<group>"; };
 		D10000000000000000000066 /* StripBlockLandingTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StripBlockLandingTests.swift; sourceTree = "<group>"; };
@@ -844,6 +849,7 @@
 				A00000000000000000009E07 /* BuildProvenance.swift */,
 				D10000000000000000000006 /* AccessoryWindowPresentation.swift */,
 				D10000000000000000000041 /* StripContextMenuZone.swift */,
+				D10000000000000000000067 /* StripWheelScroll.swift */,
 				D10000000000000000000061 /* StripHoverResolution.swift */,
 				D10000000000000000000063 /* DragLandingPlan.swift */,
 				D10000000000000000000000 /* CarrierSnapshot.swift */,
@@ -1073,6 +1079,7 @@
 				D10000000000000000000007 /* SettingsCoordinatorTests.swift */,
 				D10000000000000000000009 /* AccessoryWindowPresentationTests.swift */,
 				D10000000000000000000042 /* StripContextMenuZoneTests.swift */,
+				D10000000000000000000068 /* StripWheelScrollTests.swift */,
 				D10000000000000000000062 /* StripHoverResolutionTests.swift */,
 				D10000000000000000000064 /* DragLandingPlanTests.swift */,
 				D1000000000000000000000A /* DragCarrierGeometryTests.swift */,
@@ -1292,6 +1299,7 @@
 					D20000000000000000000004 /* AutoHideToggleMenuModel.swift in Sources */,
 					D20000000000000000000006 /* AccessoryWindowPresentation.swift in Sources */,
 					D20000000000000000000041 /* StripContextMenuZone.swift in Sources */,
+					D2000000000000000000006B /* StripWheelScroll.swift in Sources */,
 					D20000000000000000000061 /* StripHoverResolution.swift in Sources */,
 					D20000000000000000000064 /* DragLandingPlan.swift in Sources */,
 					D20000000000000000000000 /* CarrierSnapshot.swift in Sources */,
@@ -1491,6 +1499,7 @@
 				D20000000000000000000014 /* AutoHideToggleMenuModel.swift in Sources */,
 				D20000000000000000000016 /* AccessoryWindowPresentation.swift in Sources */,
 				D20000000000000000000042 /* StripContextMenuZone.swift in Sources */,
+				D2000000000000000000006C /* StripWheelScroll.swift in Sources */,
 				D20000000000000000000062 /* StripHoverResolution.swift in Sources */,
 				D20000000000000000000065 /* DragLandingPlan.swift in Sources */,
 				D20000000000000000000005 /* CarrierSnapshot.swift in Sources */,
@@ -1501,6 +1510,7 @@
 				D20000000000000000000017 /* SettingsCoordinatorTests.swift in Sources */,
 				D20000000000000000000019 /* AccessoryWindowPresentationTests.swift in Sources */,
 				D20000000000000000000043 /* StripContextMenuZoneTests.swift in Sources */,
+				D2000000000000000000006D /* StripWheelScrollTests.swift in Sources */,
 				D20000000000000000000063 /* StripHoverResolutionTests.swift in Sources */,
 				D20000000000000000000066 /* DragLandingPlanTests.swift in Sources */,
 				D2000000000000000000006A /* StripBlockLandingTests.swift in Sources */,
