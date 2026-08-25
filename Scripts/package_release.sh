@@ -231,7 +231,13 @@ if ! NOTARY_PREFLIGHT="$(xcrun notarytool history --keychain-profile "$NOTARY_KE
 fi
 unset NOTARY_PREFLIGHT
 
-BUILD_SETTINGS="$(xcodebuild -project "$PROJECT" -scheme "$SCHEME" -configuration Release -showBuildSettings 2>/dev/null)" \
+# -derivedDataPath must match the build below. Without it xcodebuild resolves the
+# Swift package dependencies into the *default* DerivedData, which has nothing to do
+# with this build: on a cold default location that means cloning Sparkle from GitHub
+# while holding the SwiftPM cache lock, and the preflight hangs for minutes and then
+# dies with "could not resolve Release build settings" (2026-08-25, v0.9.7).
+BUILD_SETTINGS="$(xcodebuild -project "$PROJECT" -scheme "$SCHEME" -configuration Release \
+  -derivedDataPath "$DD" -showBuildSettings 2>/dev/null)" \
   || die "could not resolve Release build settings"
 VERSION="$(build_setting MARKETING_VERSION)"
 BUILD_NUMBER="$(build_setting CURRENT_PROJECT_VERSION)"
