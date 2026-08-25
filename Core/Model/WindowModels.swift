@@ -81,4 +81,22 @@ extension OptimisticWindowState {
             $0.pid == record.pid && $0.id != record.id && $0.status == .active
         }
     }
+
+    /// 兄弟激活在飞（2026-08-25）：同 App 另一窗口持有尚未被快照兑现的乐观 .active——
+    /// 焦点正在交接途中，此刻本窗口的「active」读数（快照或乐观残留）都不可信：来回快点
+    /// 两个可见窗口时，点后台窗曾被误收起（Release 实测，click-latency 里 6 条
+    /// 「快照 inactive 却规划成 minimize」）。用于 toggle 规划的收起判定降级
+    /// （见 LifecycleActionPlanner），哲学同上一条：宁可多余 activate，绝不错误 minimize。
+    static func siblingActivationInFlight(
+        windowID: String,
+        optimisticStates: [String: OptimisticWindowState],
+        snapshot: DockSnapshot
+    ) -> Bool {
+        guard let record = snapshot.windows[WindowID(rawValue: windowID)] else { return false }
+        return optimisticStates.contains { key, state in
+            guard key != windowID, state.status == .active else { return false }
+            guard let sibling = snapshot.windows[WindowID(rawValue: key)] else { return false }
+            return sibling.pid == record.pid && sibling.status != .active
+        }
+    }
 }

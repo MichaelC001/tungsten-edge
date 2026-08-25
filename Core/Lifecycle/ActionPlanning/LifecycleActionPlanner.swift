@@ -51,6 +51,9 @@ final class LifecycleActionPlanner {
     /// 前台轴检查，默认 = 新建 NSRunningApplication 实例的即时 isActive 读
     ///（SkyLight 切换后立即翻面，Docs/22 §11 POSTACTIVATE 实证；测试注入桩）。
     private let isAppFrontmost: (pid_t) -> Bool
+    /// 陈旧 active 护栏杀开关（默认开）。关掉即回「快照/乐观 active + 前台 = 收起」旧判定。
+    private static let staleActiveGuardEnabled =
+        ProcessInfo.processInfo.environment["DOCK_STALE_ACTIVE_GUARD"] != "0"
 
     init(isAppFrontmost: @escaping (pid_t) -> Bool = {
         NSRunningApplication(processIdentifier: $0)?.isActive == true
@@ -84,6 +87,16 @@ final class LifecycleActionPlanner {
                 return PlatformActionRequest(kind: appIsFrontmost ? .hideApp : .activateWindow, windowID: id)
             }
             if status == .active && appIsFrontmost {
+                // 陈旧 active 护栏（2026-08-25）：兄弟窗口的激活还在飞（乐观 .active 未兑现）
+                // 时，本窗口的 active 读数大概率是焦点交接迟滞的残影——来回快点两个可见窗口，
+                // 点后台窗曾被误收起。降级为多余 activate，与 supersededByActiveSibling 同一
+                // 哲学；兄弟兑现或 4s 超时后乐观态清除，判定自动恢复，同窗口连点交替不受影响。
+                if Self.staleActiveGuardEnabled,
+                   OptimisticWindowState.siblingActivationInFlight(
+                       windowID: id.rawValue, optimisticStates: optimisticStates, snapshot: snapshot
+                   ) {
+                    return PlatformActionRequest(kind: .activateWindow, windowID: id)
+                }
                 return PlatformActionRequest(kind: .minimizeWindow, windowID: id)
             }
             return PlatformActionRequest(kind: .activateWindow, windowID: id)

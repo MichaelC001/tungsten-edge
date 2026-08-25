@@ -1686,6 +1686,78 @@ final class FinderP0Tests: XCTestCase {
         ))
     }
 
+    /// 兄弟激活在飞（2026-08-25）：同 App 另一窗口的乐观 .active 尚未兑现 → toggle 的收起
+    /// 判定必须降级为 activate——来回快点两个可见窗口时，快照/乐观 active 都可能是焦点交接
+    /// 迟滞的残影，误收起是 Release 实测症状。宁可多余激活，绝不错误收起。
+    func testSiblingActivationInFlightDowngradesMinimizeToActivate() {
+        let w1 = WindowID(rawValue: "cg-inflight-1")
+        let w2 = WindowID(rawValue: "cg-inflight-2")
+        func record(_ id: WindowID, pid: Int32, status: WindowStatus) -> WindowRecord {
+            WindowRecord(
+                id: id, appID: AppID(rawValue: "test-app"), pid: pid,
+                bundleIdentifier: nil, title: "Test", bounds: nil, status: status
+            )
+        }
+        func makeSnapshot(_ records: [WindowRecord]) -> DockSnapshot {
+            DockSnapshot(
+                windows: Dictionary(uniqueKeysWithValues: records.map { ($0.id, $0) }),
+                orderedWindowIDs: records.map(\.id)
+            )
+        }
+        let planner = LifecycleActionPlanner(isAppFrontmost: { _ in true })
+        let optimisticW2Active = ["cg-inflight-2": OptimisticWindowState(status: .active, createdAt: Date())]
+
+        // 纯函数：兄弟乐观 .active 未兑现 → 在飞
+        XCTAssertTrue(OptimisticWindowState.siblingActivationInFlight(
+            windowID: w1.rawValue, optimisticStates: optimisticW2Active,
+            snapshot: makeSnapshot([record(w1, pid: 1, status: .active), record(w2, pid: 1, status: .inactive)])
+        ))
+        // 兄弟已兑现（快照 .active）→ 不在飞
+        XCTAssertFalse(OptimisticWindowState.siblingActivationInFlight(
+            windowID: w1.rawValue, optimisticStates: optimisticW2Active,
+            snapshot: makeSnapshot([record(w1, pid: 1, status: .inactive), record(w2, pid: 1, status: .active)])
+        ))
+        // 兄弟属别的 pid → 不相干
+        XCTAssertFalse(OptimisticWindowState.siblingActivationInFlight(
+            windowID: w1.rawValue, optimisticStates: optimisticW2Active,
+            snapshot: makeSnapshot([record(w1, pid: 1, status: .active), record(w2, pid: 2, status: .inactive)])
+        ))
+        // 自己的乐观态不算兄弟
+        XCTAssertFalse(OptimisticWindowState.siblingActivationInFlight(
+            windowID: w1.rawValue,
+            optimisticStates: ["cg-inflight-1": OptimisticWindowState(status: .active, createdAt: Date())],
+            snapshot: makeSnapshot([record(w1, pid: 1, status: .active)])
+        ))
+        // 规划接线：W1 快照 active + 前台，但 W2 激活在飞 → 降级为 activate
+        XCTAssertEqual(
+            planner.plan(
+                intent: .toggle(w1),
+                snapshot: makeSnapshot([record(w1, pid: 1, status: .active), record(w2, pid: 1, status: .inactive)]),
+                optimisticStates: optimisticW2Active
+            ).kind,
+            .activateWindow
+        )
+        // 无在飞兄弟 → 收起判定原样（护栏不扰动正常 toggle）
+        XCTAssertEqual(
+            planner.plan(
+                intent: .toggle(w1),
+                snapshot: makeSnapshot([record(w1, pid: 1, status: .active), record(w2, pid: 1, status: .inactive)])
+            ).kind,
+            .minimizeWindow
+        )
+        // 乐观陈旧路径：W1 快照 inactive + 乐观残留 .active + W2 在飞 → 同样降级
+        var both = optimisticW2Active
+        both["cg-inflight-1"] = OptimisticWindowState(status: .active, createdAt: Date())
+        XCTAssertEqual(
+            planner.plan(
+                intent: .toggle(w1),
+                snapshot: makeSnapshot([record(w1, pid: 1, status: .inactive), record(w2, pid: 1, status: .inactive)]),
+                optimisticStates: both
+            ).kind,
+            .activateWindow
+        )
+    }
+
     /// 还原前预激活（2026-08-22 还原时序矩阵）：只有目标 App 除目标外全为最小化窗口时
     /// 才允许「先切前台再还原」；任何非最小化兄弟（含 hidden——App 被激活会整体 unhide，
     /// 同样有可提拔对象）都禁用。别的 App 的窗口不算兄弟。
