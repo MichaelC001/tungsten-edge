@@ -578,8 +578,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         panel.canChooseDirectories = true
         panel.canChooseFiles = false
         panel.allowsMultipleSelection = true
-        panel.prompt = "固定"
-        panel.message = "选择要固定到任务条的文件夹"
+        panel.prompt = String(localized: "Pin")
+        panel.message = String(localized: "Choose a folder to pin to the taskbar")
         if panel.runModal() == .OK {
             for url in panel.urls { pinnedFolderStore.add(url.path) }
         }

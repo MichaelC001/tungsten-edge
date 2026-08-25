@@ -6,7 +6,7 @@
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "\n\n如果直接把开关打开就生效了，钨极会自己重启，不用管；走上面的清理步骤则需要退出后手动重开。\n另外，之前被任务条让开过的窗口可能会矮一条边——重新最大化一次就复原了。"
+            "value": "\n\n如果直接把开关打开就生效了，钨极会自己重启，不用管；走上面的清理步骤则需要退出后手动重开。\n另外，之前被 Dock 栏让开过的窗口可能会矮一条边——重新最大化一次就复原了。"
           }
         },
         "en": {
@@ -204,7 +204,7 @@
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "任务条上多一个临时存放文件的格子。拖进去的文件不会被移动或复制，只是记住位置。"
+            "value": "Dock 栏上多一个临时存放文件的格子。拖进去的文件不会被移动或复制，只是记住位置。"
           }
         },
         "en": {
@@ -679,6 +679,22 @@
         }
       }
     },
+    "Choose a folder to pin to the taskbar": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "选择要固定到 Dock 栏的文件夹"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Choose a folder to pin to the taskbar"
+          }
+        }
+      }
+    },
     "Choose screenshots or screen recordings to send with your feedback.": {
       "comment": "设置窗口 · 反馈附件选择面板的说明",
       "localizations": {
@@ -1111,7 +1127,7 @@
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "导出任务条快照"
+            "value": "导出 Dock 栏快照"
           }
         },
         "en": {
@@ -1572,7 +1588,7 @@
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "最大化窗口避开任务条"
+            "value": "最大化窗口避开 Dock 栏"
           }
         },
         "en": {
@@ -1686,7 +1702,7 @@
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "把铺满屏幕的窗口底边抬到任务条上方。这会改动其他应用的窗口尺寸，所以默认关闭。"
+            "value": "把铺满屏幕的窗口底边抬到 Dock 栏上方。这会改动其他应用的窗口尺寸，所以默认关闭。"
           }
         },
         "en": {
@@ -2316,6 +2332,22 @@
         }
       }
     },
+    "Pin": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "固定"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Pin"
+          }
+        }
+      }
+    },
     "Pin to Messaging Zone": {
       "localizations": {
         "zh-Hans": {
@@ -2353,7 +2385,7 @@
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "预测全屏切换，消除任务条闪烁"
+            "value": "预测全屏切换，消除 Dock 栏闪烁"
           }
         },
         "en": {
@@ -2911,7 +2943,7 @@
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "显隐任务条快捷键"
+            "value": "显隐 Dock 栏快捷键"
           }
         },
         "en": {
@@ -3092,7 +3124,7 @@
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "任务条"
+            "value": "Dock 栏"
           }
         },
         "en": {
@@ -3108,7 +3140,7 @@
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "任务条大小"
+            "value": "Dock 栏大小"
           }
         },
         "en": {
@@ -3487,7 +3519,7 @@
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "为了不让任务条在切进全屏时闪一下，钨极需要在你的输入送到应用之前先把它藏起来。因此会监听全局的鼠标左键按下、键盘按下和触控板手势，只识别窗口绿灯、Control-Command-F、Control-左右方向键和三指水平滑动这四种；不记录输入内容，也不写日志、不发送到任何地方。关闭后这些监听会被完全停用。"
+            "value": "为了不让 Dock 栏在切进全屏时闪一下，钨极需要在你的输入送到应用之前先把它藏起来。因此会监听全局的鼠标左键按下、键盘按下和触控板手势，只识别窗口绿灯、Control-Command-F、Control-左右方向键和三指水平滑动这四种；不记录输入内容，也不写日志、不发送到任何地方。关闭后这些监听会被完全停用。"
           }
         },
         "en": {
@@ -3521,7 +3553,7 @@
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "在常驻与上次的自动隐藏档位之间切换任务条。默认 ⌥⇧⌘D。"
+            "value": "在常驻与上次的自动隐藏档位之间切换钨极 Dock 栏。默认 ⌥⇧⌘D。"
           }
         },
         "en": {
@@ -3637,7 +3669,7 @@
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "钨极刚才失去了辅助功能权限，任务条已经收起。请在%@中重新打开 Tungsten Edge 钨极的开关。"
+            "value": "钨极刚才失去了辅助功能权限，Dock 栏已经收起。请在%@中重新打开 Tungsten Edge 钨极的开关。"
           }
         },
         "en": {
@@ -3735,7 +3767,7 @@
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "请在%@中，打开 Tungsten Edge 钨极的开关。开启后本窗口会自动关闭，任务条会继续启动。"
+            "value": "请在%@中，打开 Tungsten Edge 钨极的开关。开启后本窗口会自动关闭，Dock 栏会继续启动。"
           }
         },
         "en": {
@@ -3918,7 +3950,7 @@
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "关闭后，鼠标划过任务条不再有放大和名称提示。"
+            "value": "关闭后，鼠标划过 Dock 栏不再有放大和名称提示。"
           }
         },
         "en": {

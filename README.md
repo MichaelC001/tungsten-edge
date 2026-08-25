@@ -41,9 +41,11 @@ Open enough windows and every Mac user hits the same thing: getting back to *tha
 
 Apple knows too: Mission Control and Stage Manager are their answers — but they tidy your desktop, not your switching. Tungsten Edge takes a different route: it brings "every window one click away" to the bottom of your Mac.
 
-The answer is **one window, one card**, plus two key choices: single-window apps stay collapsed as compact icons, expanding into cards only when they grow more windows; and a minimized window's card waits right where it was. The result: the compactness of the Dock with the per-window clarity of a Windows taskbar.
+- **Organized by window**: every window gets its own card on the taskbar — one click and you're there; single-window apps stay collapsed as compact icons, so the bar stays lean; a minimized window's card waits right where it was.
+- **Switching done right**: clicks do the right thing — wake what should wake, minimize what should minimize; cards don't jump around, flicker, or linger as ghosts. Anyone who has tried similar tools knows none of this comes for free — window identification is where most of Tungsten Edge's engineering lives.
+- **Native and light**: built in native Swift, not a web wrapper; frosted glass that blends into the desktop; animations and dragging stay glued to your pointer; designed to sit quietly at the bottom edge all day.
 
-Tungsten Edge is finished to the standard of "what would Apple ship": native frosted-glass materials that blend into the desktop, animations and dragging that stay glued to your pointer, and a quiet presence designed to live at the bottom edge all day without getting in your way.
+The drawer, unread badges for messaging apps, pinned folders, multi-display follow, blink-free full screen — all there; see the features below.
 
 ## Features
 
