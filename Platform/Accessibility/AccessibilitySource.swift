@@ -397,7 +397,8 @@ struct AccessibilityWindowActionExecutor {
         pollIntervalMicroseconds: useconds_t = 100_000,
         knownCGWindowID: CGWindowID? = nil,
         knownMinimized: Bool = false,
-        preActivateForRestore: Bool = false
+        preActivateForRestore: Bool = false,
+        awaitOnScreenBeforeFocus: Bool = false
     ) -> Bool {
         let runningApp = NSRunningApplication(processIdentifier: handle.pid)
         // `knownMinimized` 来自快照，只作**肯定**的快路径用（2026-08-11）：快照说它最小化，就直接
@@ -414,6 +415,15 @@ struct AccessibilityWindowActionExecutor {
                 postSkyLightFrontSwitchOnly(pid: handle.pid, windowID: wid)
             }
             _ = setMinimized(false, for: handle)
+            // 回屏等待(2026-08-25 midMin/midMinWait 探针,仅连点先验路径):unminimize 落在
+            // genie 尾段时窗口有约 40-100ms 离屏空窗,聚焦(含前台切换)若在空窗内被处理,
+            // AppKit 会把可见兄弟**持久**提拔(访达 gap300 实测 1/3 踩中:+381ms B2 压 A1,
+            // 目标回屏后伤害仍在);等 wid 回到 CG 在屏后再发聚焦,脏配置复测 2/2 干净,
+            // 通常只等 ≤50ms(等待时长可从 DOCK_CLICK_TRACE 的 total 看出)。R2 预切路径与
+            // 普通还原(目标本就稳定离屏,聚焦排队到还原动画尾,v3 实测 5/5)保持原序不动。
+            if awaitOnScreenBeforeFocus, !preActivateForRestore, let wid = knownCGWindowID {
+                waitForWindowOnScreen(wid)
+            }
             // 恢复→切换必须紧贴、中间零 AX 问询（2026-07-05 探针 v3）：最小化恢复不做提前
             // 聚焦——B1 还在 order-out 时任何切前台（含 kCPSNoWindows、不发 make-key 的裸
             // psn 切换）都会让 App 自动提拔可见兄弟 B2 压到旧前台 A1 上（持久 z 序变化）。
@@ -449,6 +459,25 @@ struct AccessibilityWindowActionExecutor {
         }
 
         return focusedViaSkyLight || raised || runningApp?.isActive == true
+    }
+
+    /// 等窗口回到 CG 在屏列表(layer-0 onscreen)。Platform 首个 CG 轮询;语义与
+    /// `scratch/minrestore_probe.swift` 的 midMinWait 变体一致(探针用全表 contains,这里用
+    /// 单窗查询判 onscreen+layer0)。2ms 步长、0.9s 上限与探针一致、超时照做不阻塞(全仓惯例);
+    /// 只在 actionQueue 后台线程上运行。
+    @discardableResult
+    private func waitForWindowOnScreen(_ windowID: CGWindowID, cap: TimeInterval = 0.9) -> Bool {
+        let deadline = ProcessInfo.processInfo.systemUptime + cap
+        repeat {
+            if let list = CGWindowListCopyWindowInfo([.optionIncludingWindow], windowID) as? [[String: Any]],
+               let info = list.first,
+               (info[kCGWindowIsOnscreen as String] as? Bool) == true,
+               (info[kCGWindowLayer as String] as? Int) == 0 {
+                return true
+            }
+            usleep(2_000)
+        } while ProcessInfo.processInfo.systemUptime < deadline
+        return false
     }
 
     func close(_ handle: WindowHandle) -> Bool {
@@ -787,13 +816,19 @@ enum WindowHandleCapturePlan {
         return fallback()
     }
 
+    /// `knownMinimized` 的 activate 禁止 app 级兜底(2026-08-25,无条件生效、不挂沉降门开关):
+    /// `activateAppWithWindowRecovery` raise 的是 `visibleWindows[0]`——对最小化目标永远还原
+    /// 不了它,只会把兄弟窗口带到前面(owner 连点实测的确切出处)。捕获全败就返回失败让乐观态
+    /// 回弹,与 2026-08-11「minimize 捕获失败绝不 hide 整 App」同构,故同样不挂开关。
     static func usesAppFallbackAfterCaptureFailure(
         requestKind: PlatformActionRequest.ActionKind,
         isFinderWindow: Bool,
-        minimizeAppFallbackEnabled: Bool
+        minimizeAppFallbackEnabled: Bool,
+        knownMinimized: Bool
     ) -> Bool {
         guard !isFinderWindow else { return false }
         if requestKind == .minimizeWindow { return minimizeAppFallbackEnabled }
+        if requestKind == .activateWindow && knownMinimized { return false }
         return true
     }
 }
@@ -824,11 +859,19 @@ struct PlatformActionExecutor {
     }
 
     @discardableResult
-    func execute(_ request: PlatformActionRequest, snapshot: DockSnapshot) -> Bool {
+    func execute(
+        _ request: PlatformActionRequest,
+        snapshot: DockSnapshot,
+        forcedMinimizedPrior: Bool
+    ) -> Bool {
         guard let windowID = request.windowID,
               let record = snapshot.windows[windowID] else {
             return false
         }
+        // 沉降门先验(v2,2026-08-25):门层刚对该窗口派发过 minimize(priorWindow 内)。
+        // 只作**肯定**信号合成进 knownMinimized——真最小化走实测锁死的 v3 还原序;其实没
+        // 最小化时 unminimize 是无害空操作 + 正常聚焦。绝不反向使用(affirmative-only)。
+        let effectiveKnownMinimized = forcedMinimizedPrior || record.status == .minimized
 
         if record.id.rawValue.hasPrefix("app-") {
             return executeAppFallback(request: request, record: record)
@@ -853,7 +896,11 @@ struct PlatformActionExecutor {
         // 最小化窗口【不】提前（2026-07-05 探针 v0–v3）：B1 仍 order-out 时任何切前台都会
         // 让 App 把可见兄弟 B2 提拔到旧前台之上（持久 z 序 bug）；改为 activate() 里
         // unminimize 之后立即切换（见 knownCGWindowID 路径），实测同样无闪。
+        // 沉降门先验在飞时跳过提前聚焦(2026-08-25):连点风暴中快照可能仍陈旧地写着
+        // inactive,而窗口实际在 genie 中/屏外——此时提前聚焦的前台切换就是 07-05 矩阵里
+        // 3/3 提拔兄弟的裸切换(owner 点击日志实锤该路径在风暴中触发过)。
         if request.kind == .activateWindow,
+           !forcedMinimizedPrior,
            let cgWindowID = record.cgWindowID,
            record.status == .active || record.status == .inactive,
            NSRunningApplication(processIdentifier: record.pid)?.isActive != true {
@@ -926,7 +973,8 @@ struct PlatformActionExecutor {
             guard WindowHandleCapturePlan.usesAppFallbackAfterCaptureFailure(
                 requestKind: request.kind,
                 isFinderWindow: isFinderWindow,
-                minimizeAppFallbackEnabled: switches.minimizeAppFallbackEnabled
+                minimizeAppFallbackEnabled: switches.minimizeAppFallbackEnabled,
+                knownMinimized: effectiveKnownMinimized
             ) else {
                 return false
             }
@@ -939,9 +987,10 @@ struct PlatformActionExecutor {
                 handle,
                 requiresFocusedConfirmation: isFinderWindow,
                 knownCGWindowID: record.cgWindowID,
-                knownMinimized: record.status == .minimized,
-                preActivateForRestore: record.status == .minimized
-                    && MinimizedRestorePreActivation.canPreActivate(snapshot: snapshot, target: record)
+                knownMinimized: effectiveKnownMinimized,
+                preActivateForRestore: effectiveKnownMinimized
+                    && MinimizedRestorePreActivation.canPreActivate(snapshot: snapshot, target: record),
+                awaitOnScreenBeforeFocus: forcedMinimizedPrior
             )
         case .minimizeWindow:
             let handoff = windowExecutor.findBackgroundActivationTarget(for: handle, record: record, snapshot: snapshot)

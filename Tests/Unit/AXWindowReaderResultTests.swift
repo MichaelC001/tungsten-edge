@@ -262,17 +262,46 @@ final class ActionExecutionSwitchesTests: XCTestCase {
         XCTAssertFalse(WindowHandleCapturePlan.usesAppFallbackAfterCaptureFailure(
             requestKind: .minimizeWindow,
             isFinderWindow: false,
-            minimizeAppFallbackEnabled: false
+            minimizeAppFallbackEnabled: false,
+            knownMinimized: false
         ))
         XCTAssertTrue(WindowHandleCapturePlan.usesAppFallbackAfterCaptureFailure(
             requestKind: .minimizeWindow,
             isFinderWindow: false,
-            minimizeAppFallbackEnabled: true
+            minimizeAppFallbackEnabled: true,
+            knownMinimized: false
         ))
         XCTAssertTrue(WindowHandleCapturePlan.usesAppFallbackAfterCaptureFailure(
             requestKind: .activateWindow,
             isFinderWindow: false,
-            minimizeAppFallbackEnabled: false
+            minimizeAppFallbackEnabled: false,
+            knownMinimized: false
+        ))
+    }
+
+    /// 【承重,2026-08-25】knownMinimized 的 activate 禁止 app 级兜底,且**不挂沉降门开关**:
+    /// `activateAppWithWindowRecovery` raise 的是 `visibleWindows[0]`,对最小化目标永远还原
+    /// 不了它,只会把兄弟窗口带到前面(owner 连点实测的确切出处)。
+    func testKnownMinimizedActivateNeverUsesAppFallback() {
+        XCTAssertFalse(WindowHandleCapturePlan.usesAppFallbackAfterCaptureFailure(
+            requestKind: .activateWindow,
+            isFinderWindow: false,
+            minimizeAppFallbackEnabled: false,
+            knownMinimized: true
+        ))
+        // 两轴正交:knownMinimized 不影响 minimize 请求的兜底开关语义。
+        XCTAssertTrue(WindowHandleCapturePlan.usesAppFallbackAfterCaptureFailure(
+            requestKind: .minimizeWindow,
+            isFinderWindow: false,
+            minimizeAppFallbackEnabled: true,
+            knownMinimized: true
+        ))
+        // Finder guard 优先级不变。
+        XCTAssertFalse(WindowHandleCapturePlan.usesAppFallbackAfterCaptureFailure(
+            requestKind: .activateWindow,
+            isFinderWindow: true,
+            minimizeAppFallbackEnabled: false,
+            knownMinimized: true
         ))
     }
 }

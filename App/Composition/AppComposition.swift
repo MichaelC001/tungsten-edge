@@ -78,6 +78,8 @@ final class AppRuntime: ObservableObject {
     private let launchLogger = Logger(subsystem: "com.caye.macosdockcc.v2", category: "Launch")
     private static let launchTraceEnabled = ProcessInfo.processInfo.environment["DOCK_LAUNCH_TRACE"] == "1"
     private static let chipProbeEnabled = ProcessInfo.processInfo.environment["DOCK_CHIP_PROBE"] == "1"
+    /// 最小化沉降门杀开关（默认开）。关掉时既不记 minimize 锚也不 hold，派发路径与旧行为逐位一致。
+    private static let settleGateEnabled = ProcessInfo.processInfo.environment["DOCK_MINIMIZE_SETTLE_GATE"] != "0"
     private static let launchPolicyRecheckDeadlines: [TimeInterval] = [1.5, 3.0, 5.0]
 
     init(
@@ -117,12 +119,16 @@ final class AppRuntime: ObservableObject {
         snapshotSubscription = nil
         feedbackTimer?.invalidate()
         feedbackTimer = nil
+        for held in heldActionsByWindowID.values { held.workItem.cancel() }
+        heldActionsByWindowID.removeAll()
+        recentMinimizeDispatchAtByWindowID.removeAll()
         stopLaunchSessions()
     }
 
     deinit {
         feedbackTimer?.invalidate()
         snapshotSubscription?.cancel()
+        for held in heldActionsByWindowID.values { held.workItem.cancel() }
         for entry in launchSessions.currentEntries {
             entry.value.policyRecheckTask?.cancel()
             entry.value.timeoutTask?.cancel()
@@ -155,6 +161,8 @@ final class AppRuntime: ObservableObject {
         // 不知道该算在谁头上——owner 报的是「点击 / 最小化之后的动作卡」，先得能圈出「之后」。
         HoverTrace.action("\(intent.action)", phase: "begin")
         defer { HoverTrace.action("\(intent.action)", phase: "dispatched") }
+        // 同窗口若有被沉降门扣住的动作，任何新 intent 都先取消它（最新意图获胜）。
+        cancelHeldAction(for: intent)
         // 可打断（2026-06-13）：显隐类动作不再锁 pending —— 执行本身是几十毫秒的
         // 一次性 AX 调用，没有需要取消的并发；一致性靠乐观 overlay 驱动规划 +
         // 真实快照最终对账。只有 close / quit（窗口会消失）保持锁到确认。
@@ -196,8 +204,174 @@ final class AppRuntime: ObservableObject {
         publishFeedbackEntries()
         updateFeedbackTimer()
 
+        routeThroughSettleGate(intent: intent, request: request)
+    }
+
+    /// 用户动作的执行队列。并发（保持与旧 `Task.detached` 相同的并行度：连点两下不互相排队），
+    /// `.userInitiated`（这是人在等的路径，优先于任何后台盘点）。
+    private static let actionQueue = DispatchQueue(
+        label: "com.caye.macosdockcc.v2.window-action",
+        qos: .userInitiated,
+        attributes: .concurrent
+    )
+
+    // MARK: - Minimize Settle Gate
+
+    /// 同窗口连点的「最小化沉降门」（v2,2026-08-25）：刚对某窗口派发过 minimize 时,它的
+    /// activate 在这里等**快照确认 `.minimized`**(= 写已落地的证明,人手双击时通常已到,
+    /// 感知零延迟)即放行,unminimize 落在 genie 中段反向打断动画;未确认兜底 1.0s 照放。
+    /// 安全不靠等待:放行时带 `dispatchPrior` 先验(2.0s 锚窗口)→ 执行层强制走 07-05 v3
+    /// 实测安全的还原序、跳过 earlyFocus、封死 app 级兜底,「屏外先切前台」三条提拔路径全堵。
+    /// 判定在 `MinimizeSettleGate`(纯函数,有单测)。只门 activate、不门跨 chip。
+    private struct HeldAction {
+        let intent: UserIntent
+        let request: PlatformActionRequest
+        /// 这次 hold 锚定的 minimize 派发时刻。hold 存活期间锚不会变：同窗口任何新
+        /// intent 都会先取消 hold（最新意图获胜），所以 flush 直接用它重跑判定。
+        let anchor: Date
+        let generation: UInt64
+        var workItem: DispatchWorkItem
+    }
+
+    private var recentMinimizeDispatchAtByWindowID: [String: Date] = [:]
+    private var heldActionsByWindowID: [String: HeldAction] = [:]
+    private var settleGateGeneration: UInt64 = 0
+
+    private func routeThroughSettleGate(intent: UserIntent, request: PlatformActionRequest) {
+        guard Self.settleGateEnabled, let windowID = request.windowID?.rawValue else {
+            dispatchToExecutor(intent: intent, request: request)
+            return
+        }
+        if request.kind == .minimizeWindow {
+            // app-* 卡不产生 minimizeWindow（planner 只给它 hideApp / activateWindow），
+            // 前缀判断只是防御。锚只由时间修剪(priorWindow),**绝不因 minimize 执行结果
+            // failure 清除**——动画期成功例行被立即回读记成失败(FeedbackTickPolicy 规则
+            // 明载),失败清锚会恰在动画中段解除设防。
+            if !windowID.hasPrefix("app-") {
+                recentMinimizeDispatchAtByWindowID[windowID] = Date()
+            }
+            dispatchToExecutor(intent: intent, request: request)
+            return
+        }
+        let verdict = MinimizeSettleGate.verdict(
+            requestKind: request.kind,
+            minimizeDispatchedAt: recentMinimizeDispatchAtByWindowID[windowID],
+            snapshotConfirmsMinimized: snapshot.windows[WindowID(rawValue: windowID)]?.status == .minimized,
+            now: Date()
+        )
+        switch verdict {
+        case .dispatchNow:
+            dispatchToExecutor(intent: intent, request: request)
+        case .hold(let until):
+            ClickLatencyTrace.mark(windowID: windowID, "settleGate", detail: "hold")
+            holdAction(intent: intent, request: request, windowID: windowID, until: until)
+        }
+    }
+
+    private func holdAction(intent: UserIntent, request: PlatformActionRequest, windowID: String, until: Date) {
+        guard let anchor = recentMinimizeDispatchAtByWindowID[windowID] else {
+            // verdict 只在有锚时返回 hold；走到这里说明状态被并发改动，保守直接派发。
+            dispatchToExecutor(intent: intent, request: request)
+            return
+        }
+        settleGateGeneration &+= 1
+        let generation = settleGateGeneration
+        let workItem = makeFlushWorkItem(windowID: windowID, generation: generation)
+        heldActionsByWindowID[windowID] = HeldAction(
+            intent: intent, request: request, anchor: anchor, generation: generation, workItem: workItem
+        )
+        DispatchQueue.main.asyncAfter(deadline: .now() + max(0, until.timeIntervalSinceNow), execute: workItem)
+    }
+
+    private func makeFlushWorkItem(windowID: String, generation: UInt64) -> DispatchWorkItem {
+        DispatchWorkItem { [weak self] in
+            Task { @MainActor [weak self] in
+                self?.flushHeldAction(windowID: windowID, generation: generation)
+            }
+        }
+    }
+
+    private func flushHeldAction(windowID: String, generation: UInt64) {
+        guard isRunning,
+              let held = heldActionsByWindowID[windowID],
+              held.generation == generation else { return }
+        let verdict = MinimizeSettleGate.verdict(
+            requestKind: held.request.kind,
+            minimizeDispatchedAt: held.anchor,
+            snapshotConfirmsMinimized: snapshot.windows[WindowID(rawValue: windowID)]?.status == .minimized,
+            now: Date()
+        )
+        switch verdict {
+        case .dispatchNow:
+            heldActionsByWindowID.removeValue(forKey: windowID)
+            let confirmed = snapshot.windows[WindowID(rawValue: windowID)]?.status == .minimized
+            ClickLatencyTrace.mark(windowID: windowID, "settleGateFlush", detail: confirmed ? "confirmed" : "cap")
+            dispatchToExecutor(intent: held.intent, request: held.request)
+        case .hold(let until):
+            // 沉降期已过但快照还没确认 → 判定把 deadline 推到硬上限，重排一次即可
+            //（deadline 单调不回退，MinimizeSettleGateTests 锁住）。
+            held.workItem.cancel()
+            let workItem = makeFlushWorkItem(windowID: windowID, generation: generation)
+            heldActionsByWindowID[windowID]?.workItem = workItem
+            DispatchQueue.main.asyncAfter(deadline: .now() + max(0, until.timeIntervalSinceNow), execute: workItem)
+        }
+    }
+
+    /// 快照更新 / 反馈 tick 时重评：快照确认 + 沉降期已过的 held 立即放行，
+    /// 不用等 workItem 到点；顺带修剪过期的 minimize 锚。
+    private func reevaluateHeldActions(now: Date = Date()) {
+        if !recentMinimizeDispatchAtByWindowID.isEmpty {
+            // 锚的寿命 = 先验窗口(2.0s,锚的第二职责),不是 hold 上限——v1 用 maxHold 修剪,
+            // 访达 887ms 动画期间锚先过期,正是「快速连点仍漏兄弟」的洞之一。
+            recentMinimizeDispatchAtByWindowID = recentMinimizeDispatchAtByWindowID.filter {
+                now.timeIntervalSince($0.value) < MinimizeSettleGate.priorWindow
+            }
+        }
+        guard !heldActionsByWindowID.isEmpty else { return }
+        for (windowID, held) in heldActionsByWindowID {
+            let verdict = MinimizeSettleGate.verdict(
+                requestKind: held.request.kind,
+                minimizeDispatchedAt: held.anchor,
+                snapshotConfirmsMinimized: snapshot.windows[WindowID(rawValue: windowID)]?.status == .minimized,
+                now: now
+            )
+            guard case .dispatchNow = verdict else { continue }
+            held.workItem.cancel()
+            heldActionsByWindowID.removeValue(forKey: windowID)
+            let confirmed = snapshot.windows[WindowID(rawValue: windowID)]?.status == .minimized
+            ClickLatencyTrace.mark(windowID: windowID, "settleGateFlush", detail: confirmed ? "confirmed" : "cap")
+            dispatchToExecutor(intent: held.intent, request: held.request)
+        }
+    }
+
+    /// 同窗口新 intent 到来时取消 held（最新意图获胜）。close / quit 需要把从未执行的
+    /// held 诚实置 failure，否则它留下的 pending 条目会挡掉 canBegin。其余 intent 的
+    /// registerPending 会直接覆盖同 windowID 的反馈条目，无需额外处理。
+    private func cancelHeldAction(for intent: UserIntent) {
+        guard let held = heldActionsByWindowID.removeValue(forKey: intent.windowID.rawValue) else { return }
+        held.workItem.cancel()
+        switch intent.action {
+        case .close, .quit:
+            intentPipeline.registerExecutionResult(intent: held.intent, request: held.request, success: false)
+        default:
+            break
+        }
+    }
+
+    /// 把动作交给执行队列。**快照在调用时刻现取**：立即派发时它与 trigger 同一轮
+    ///（µs 级新鲜）；被沉降门扣住的动作 flush 时在这里拿到已翻面的新快照，执行层
+    /// 才能走 `knownMinimized` 肯定快路径，而不是拿着陈旧快照误入 app 级兜底。
+    private func dispatchToExecutor(intent: UserIntent, request: PlatformActionRequest) {
         let executor = actionExecutor
         let capturedSnapshot = snapshot
+        // 沉降门先验(v2):主线程读锚表算好随闭包带走——单一咽喉,四个派发口自动一致。
+        // activate 且锚在先验窗口(2.0s)内 → 执行层强制走还原分支 + 跳过 earlyFocus +
+        // 封死 app 兜底。开关关闭时锚表恒空,先验自然恒 false。
+        let forcedMinimizedPrior = request.kind == .activateWindow
+            && MinimizeSettleGate.dispatchPrior(
+                minimizeDispatchedAt: request.windowID.flatMap { recentMinimizeDispatchAtByWindowID[$0.rawValue] },
+                now: Date()
+            )
         // **不用 `Task.detached`**（2026-08-11）：那会把用户点击丢进 Swift 协作线程池，而
         // `AppTracker` 的两处后台 AX 读也在同一个池里——事件读每 pid 一发，5 秒补扫更是个
         // **串行 for 循环**（最多 N × 100ms 占住一个池线程）。AX 调用是阻塞式的，本来就不该
@@ -206,7 +380,7 @@ final class AppRuntime: ObservableObject {
             // 第一个里程碑就量「派发到真正开始跑」这一段——线程池被后台 AX 读占满时，
             // 用户点击就卡在这里，而这段延迟从末端状态是完全看不出来的。
             ClickLatencyTrace.mark(windowID: request.windowID?.rawValue, "execStart")
-            let success = executor.execute(request, snapshot: capturedSnapshot)
+            let success = executor.execute(request, snapshot: capturedSnapshot, forcedMinimizedPrior: forcedMinimizedPrior)
             ClickLatencyTrace.end(windowID: request.windowID?.rawValue, success: success)
             Task { @MainActor [weak self] in
                 guard let self else { return }
@@ -218,14 +392,6 @@ final class AppRuntime: ObservableObject {
             }
         }
     }
-
-    /// 用户动作的执行队列。并发（保持与旧 `Task.detached` 相同的并行度：连点两下不互相排队），
-    /// `.userInitiated`（这是人在等的路径，优先于任何后台盘点）。
-    private static let actionQueue = DispatchQueue(
-        label: "com.caye.macosdockcc.v2.window-action",
-        qos: .userInitiated,
-        attributes: .concurrent
-    )
 
     /// 登记并发起一次用户启动。返回 false 表示已有同 bundle 会话，或无法解析 app URL。
     @discardableResult
@@ -621,6 +787,7 @@ final class AppRuntime: ObservableObject {
         intentPipeline.reconcile(with: newSnapshot)
         publishFeedbackEntries()
         reconcileOptimisticStates()
+        reevaluateHeldActions()
         updateFeedbackTimer()
         if startedAt != nil {
             let ms = Int(Date().timeIntervalSince(startedAt!) * 1000)
@@ -633,6 +800,7 @@ final class AppRuntime: ObservableObject {
         intentPipeline.reconcile(with: snapshot)
         publishFeedbackEntries()
         reconcileOptimisticStates()
+        reevaluateHeldActions()
         updateFeedbackTimer()
     }
 
