@@ -235,6 +235,7 @@ final class PanelCoordinator: NSObject {
     private var dragSpringSubscription: AnyCancellable?
     private var dragInhibitorSubscription: AnyCancellable?
     private var edgeDelaySubscription: AnyCancellable?
+    private var taskbarScreenPlacementSubscription: AnyCancellable?
     private var fullscreenIntentEnabledSubscription: AnyCancellable?
     private var showShelfSubscription: AnyCancellable?
     private var dockSizeSubscription: AnyCancellable?
@@ -1381,7 +1382,7 @@ final class PanelCoordinator: NSObject {
     }
 
     private func setupDockPanel() {
-        let screen = NSScreen.main ?? NSScreen.screens[0]
+        let screen = resolvedPinnedScreen() ?? NSScreen.main ?? NSScreen.screens[0]
         let s = screen.frame
         let legacyInitialFrame = NSRect(
             x: s.minX,
@@ -1698,6 +1699,22 @@ final class PanelCoordinator: NSObject {
                 self?.reconcilePanelVisibility()
                 self?.reconcileHoverMouseMonitors()  // 边缘隐藏开关变了：监视器是否还有存在的必要
             }
+        // 显示位置变化：dwell 作废；切到固定档立即搬到固定屏；监视器与唤醒武装按新档重估。
+        // dropFirst——启动路径 setupDockPanel 已消费过持久化的档位。
+        taskbarScreenPlacementSubscription = settingsStore.$taskbarScreenPlacement
+            .removeDuplicates()
+            .dropFirst()
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self] _ in
+                guard let self else { return }
+                self.cancelHoverSwitch()
+                if let home = self.resolvedPinnedScreen(), let panel = self.dockPanel,
+                   self.panelCurrentScreen(panel: panel) != home {
+                    self.layoutPanels(contentWidth: self.lastDesiredWidth, on: home, animated: false)
+                }
+                self.reconcileHoverMouseMonitors()
+                self.reconcilePanelVisibility()
+            }
         fullscreenIntentEnabledSubscription = settingsStore.$fullscreenIntentEnabled
             .removeDuplicates()
             .receive(on: DispatchQueue.main)
@@ -1881,6 +1898,12 @@ final class PanelCoordinator: NSObject {
         closeFolderPopup()             // 屏幕参数变了,旧锚点坐标作废
         dismissWindowTitleTooltip(suppressCurrentUntilExit: true)
         guard dockPanel != nil else { return }
+        // 固定到某屏：屏幕集合变了先归位（拔固定屏 → 回落主屏；接回 → 搬回去）。
+        // 必须在 relayout 之前——relayout 用 panelCurrentScreen 从面板坐标反推所在屏。
+        if let home = resolvedPinnedScreen(), let panel = dockPanel,
+           panelCurrentScreen(panel: panel) != home {
+            layoutPanels(contentWidth: lastDesiredWidth, on: home, animated: false)
+        }
         relayout(animated: false)      // 切屏瞬时,不滑
         cancelFullscreenIntentIfContextChanged()
         reconcilePanelVisibility()
@@ -2500,18 +2523,42 @@ final class PanelCoordinator: NSObject {
     private var hoverSwitchTimer: Timer?
     private var hoverSwitchTargetScreen: NSScreen? = nil
 
+    /// 任务条显示位置：悬停切屏（底边停留搬 dock）只在「跟随鼠标」档生效。
+    private var hoverScreenSwitchingEnabled: Bool {
+        settingsStore.taskbarScreenPlacement.allowsHoverScreenSwitching
+    }
+
+    /// 固定档下把存的 display UUID 解析成当前的 NSScreen（固定屏缺席回落主屏 / 首屏）；
+    /// 跟随鼠标档返回 nil。刻意**无持久运行态**：每次屏幕参数 / 设置变化都重解析一遍，
+    /// 固定的屏一接回来自然搬回去，不需要任何「记住上次在哪」的状态机。
+    private func resolvedPinnedScreen() -> NSScreen? {
+        guard let selection = settingsStore.taskbarScreenPlacement.pinnedSelection else { return nil }
+        let screens = NSScreen.screens
+        let outcome = TaskbarScreenResolution.resolve(
+            pinnedUUID: selection.uuid,
+            screenUUIDs: screens.map { DisplayIdentity.uuidString(for: $0) },
+            mainIndex: NSScreen.main.flatMap { screens.firstIndex(of: $0) }
+        )
+        switch outcome {
+        case .matched(let index), .fallback(let index):
+            return screens[index]
+        case nil:
+            return nil
+        }
+    }
+
     private func setupHoverDiagnostics() {
         if Self.hoverVerboseLogging { logScreenMap() }
         observeMenuTrackingForHoverSuspension()
         reconcileHoverMouseMonitors()
     }
 
-    /// 鼠标移动监视器只服务两件事：**多屏悬停切换**（单屏无对象）与**边缘自动隐藏**（没开就
-    /// 没有计时对象）。都不成立时干脆不装——「指针每动一下进一次回调」的常驻成本归零；
-    /// 屏幕数或设置变化时重新评估（诊断开关 DOCK_EDGEHOVER_TRACE=1 强制常驻）。
+    /// 鼠标移动监视器只服务两件事：**多屏悬停切换**（单屏无对象；固定到某屏时也无对象）与
+    /// **边缘自动隐藏**（没开就没有计时对象）。都不成立时干脆不装——「指针每动一下进一次回调」
+    /// 的常驻成本归零；屏幕数或设置变化时重新评估（诊断开关 DOCK_EDGEHOVER_TRACE=1 强制常驻）。
     private var hoverMonitorsNeeded: Bool {
         guard Self.hoverMonitorLeanEnabled else { return true }
-        return NSScreen.screens.count > 1
+        return (NSScreen.screens.count > 1 && hoverScreenSwitchingEnabled)
             || settingsStore.edgeAutoHideEnabled
             || Self.edgeHoverTraceEnabled
     }
@@ -2695,6 +2742,11 @@ final class PanelCoordinator: NSObject {
 
     private func commitHoverSwitch() {
         hoverSwitchTimer = nil
+        // 保险：350ms dwell 窗口内设置可能翻到固定档，武装时的判定已过期。
+        guard hoverScreenSwitchingEnabled else {
+            hoverSwitchTargetScreen = nil
+            return
+        }
         guard let targetScreen = hoverSwitchTargetScreen, let panel = dockPanel else {
             hoverSwitchTargetScreen = nil
             return
@@ -2728,6 +2780,12 @@ final class PanelCoordinator: NSObject {
 
         let panelScreen = panelCurrentScreen(panel: panel)
         if screen != panelScreen {
+            // 固定到某屏：别的屏的底边热区什么都不武装——dwell 计时器根本不该起。
+            guard hoverScreenSwitchingEnabled else {
+                cancelEdgeWake()
+                cancelHoverSwitch()
+                return
+            }
             cancelEdgeWake()
             if hoverSwitchTargetScreen == screen {
                 return
@@ -2826,6 +2884,13 @@ final class PanelCoordinator: NSObject {
     }
 
     private func armEdgeWakeIfNeeded(on screen: NSScreen, requiresHotZone: Bool = true) {
+        // 固定到某屏：唤醒探测只认**面板实际所在的屏**（不是存的固定屏——固定屏被拔、
+        // 条落在回退屏时，回退屏照常唤醒）。这里是所有武装路径的单一咽喉，
+        // 包括 reconcilePanelVisibility 里按 screenContainingMouse() 的那条。
+        if !hoverScreenSwitchingEnabled,
+           let panel = dockPanel, panelCurrentScreen(panel: panel) != screen {
+            return
+        }
         guard EdgeAutoHideRuntimeRules.canArmWake(state: visibilityState, delay: settingsStore.edgeAutoHideDelay) else { return }
         if edgeWakeTargetScreen == screen,
            edgeWakeTimer != nil,
@@ -2851,7 +2916,9 @@ final class PanelCoordinator: NSObject {
         }
         edgeWakeTargetScreen = nil
         edgeWakeRequiresHotZone = true
-        if let panel = dockPanel, panelCurrentScreen(panel: panel) != screen {
+        // 顺带搬屏只属于跟随鼠标档；固定档下武装已被上面的咽喉拦住，这里再挡一道
+        // arm 与 fire 之间屏幕集合变化的漂移。
+        if hoverScreenSwitchingEnabled, let panel = dockPanel, panelCurrentScreen(panel: panel) != screen {
             layoutPanels(contentWidth: lastDesiredWidth, on: screen, animated: false)
         }
         visibilityState.setEdgeAutoHidden(false)

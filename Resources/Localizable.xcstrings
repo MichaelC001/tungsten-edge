@@ -34,6 +34,23 @@
         }
       }
     },
+    "%@ (disconnected)": {
+      "comment": "%@ 是屏幕名，「显示位置」Picker 里已断开的固定屏",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@（未连接）"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ (disconnected)"
+          }
+        }
+      }
+    },
     "%@ failed (status code %d).": {
       "comment": "%@ 是可执行文件名，%d 是退出码",
       "localizations": {
@@ -1268,6 +1285,23 @@
           "stringUnit": {
             "state": "translated",
             "value": "Flips mouse-wheel scrolling system-wide, like Scroll Reverser. Trackpads and Magic Mouse are not affected. Tungsten Edge only inverts the direction values of scroll-wheel events; nothing is recorded or sent anywhere. If Scroll Reverser or Mos is also running, the two cancel out — keep only one."
+          }
+        }
+      }
+    },
+    "Follow the mouse": {
+      "comment": "任务条显示位置的默认档",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "跟随鼠标"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Follow the mouse"
           }
         }
       }
@@ -2937,6 +2971,23 @@
         }
       }
     },
+    "Show taskbar on": {
+      "comment": "设置「任务条」页 Picker 标签",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "任务条显示在"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Show taskbar on"
+          }
+        }
+      }
+    },
     "Show/hide taskbar shortcut": {
       "comment": "设置窗口 · 显隐快捷键",
       "localizations": {
@@ -3957,6 +4008,22 @@
           "stringUnit": {
             "state": "translated",
             "value": "When off, moving the pointer across the taskbar no longer shows app names."
+          }
+        }
+      }
+    },
+    "With “Follow the mouse”, the taskbar moves to whichever screen’s bottom edge the pointer rests on. Pinned to one screen, it stays there; if that screen disconnects, the taskbar falls back to the main screen and returns once the screen is reconnected.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "「跟随鼠标」时，光标在哪块屏幕底边停留，任务条就切到哪块屏；固定到某块屏后不再跟随。固定的屏幕断开时任务条暂回主屏幕，重新接上后自动回去。"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "With “Follow the mouse”, the taskbar moves to whichever screen’s bottom edge the pointer rests on. Pinned to one screen, it stays there; if that screen disconnects, the taskbar falls back to the main screen and returns once the screen is reconnected."
           }
         }
       }

@@ -99,11 +99,13 @@
 		B1000000000000000000000E /* HoverPollThrottle.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10000000000000000000109 /* HoverPollThrottle.swift */; };
 		B1000000000000000000010E /* MinimizeHandoffTarget.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1000000000000000000010D /* MinimizeHandoffTarget.swift */; };
 		B10000000000000000000113 /* MinimizeSettleGate.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10000000000000000000112 /* MinimizeSettleGate.swift */; };
+		B10000000000000000000118 /* TaskbarScreenPlacement.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10000000000000000000117 /* TaskbarScreenPlacement.swift */; };
 		A0000000000000000000FF02 /* LaunchGateDecision.swift in Sources */ = {isa = PBXBuildFile; fileRef = A0000000000000000000FF00 /* LaunchGateDecision.swift */; };
 		B10000000000000000000009 /* BadgeReadPlan.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10000000000000000000106 /* BadgeReadPlan.swift */; };
 		B1000000000000000000000F /* HoverPollThrottle.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10000000000000000000109 /* HoverPollThrottle.swift */; };
 		B1000000000000000000010F /* MinimizeHandoffTarget.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1000000000000000000010D /* MinimizeHandoffTarget.swift */; };
 		B10000000000000000000114 /* MinimizeSettleGate.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10000000000000000000112 /* MinimizeSettleGate.swift */; };
+		B10000000000000000000119 /* TaskbarScreenPlacement.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10000000000000000000117 /* TaskbarScreenPlacement.swift */; };
 		A0000000000000000000FF11 /* LaunchGateDecisionTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A0000000000000000000FF10 /* LaunchGateDecisionTests.swift */; };
 		A0000000000000000000FF21 /* AppLaunchTargetDecision.swift in Sources */ = {isa = PBXBuildFile; fileRef = A0000000000000000000FF20 /* AppLaunchTargetDecision.swift */; };
 		A0000000000000000000FF22 /* AppLaunchTargetDecision.swift in Sources */ = {isa = PBXBuildFile; fileRef = A0000000000000000000FF20 /* AppLaunchTargetDecision.swift */; };
@@ -326,6 +328,7 @@
 		F1B0000000000000000000A1 /* ScrollReverserDecision.swift in Sources */ = {isa = PBXBuildFile; fileRef = F1B0000000000000000000A0 /* ScrollReverserDecision.swift */; };
 		F1B0000000000000000000A2 /* ScrollReverserDecision.swift in Sources */ = {isa = PBXBuildFile; fileRef = F1B0000000000000000000A0 /* ScrollReverserDecision.swift */; };
 		F1B0000000000000000000B1 /* ScrollReverserMonitor.swift in Sources */ = {isa = PBXBuildFile; fileRef = F1B0000000000000000000B0 /* ScrollReverserMonitor.swift */; };
+		F1B0000000000000000000C3 /* DisplayIdentity.swift in Sources */ = {isa = PBXBuildFile; fileRef = F1B0000000000000000000C2 /* DisplayIdentity.swift */; };
 		F1B0000000000000000000C1 /* ScrollReverserDecisionTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = F1B0000000000000000000C0 /* ScrollReverserDecisionTests.swift */; };
 		F1A0000000000000000000A1 /* HotKeyShortcutValidation.swift in Sources */ = {isa = PBXBuildFile; fileRef = F1A0000000000000000000A0 /* HotKeyShortcutValidation.swift */; };
 		F1A0000000000000000000A2 /* HotKeyShortcutValidation.swift in Sources */ = {isa = PBXBuildFile; fileRef = F1A0000000000000000000A0 /* HotKeyShortcutValidation.swift */; };
@@ -375,6 +378,7 @@
 		B10000000000000000000010 /* HoverPollThrottleTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1000000000000000000010A /* HoverPollThrottleTests.swift */; };
 		B10000000000000000000111 /* MinimizeHandoffTargetTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10000000000000000000110 /* MinimizeHandoffTargetTests.swift */; };
 		B10000000000000000000116 /* MinimizeSettleGateTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10000000000000000000115 /* MinimizeSettleGateTests.swift */; };
+		B1000000000000000000011B /* TaskbarScreenPlacementTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1000000000000000000011A /* TaskbarScreenPlacementTests.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -453,6 +457,7 @@
 		F1C0000000000000000000B0 /* WindowListMenuPlanTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WindowListMenuPlanTests.swift; sourceTree = "<group>"; };
 		F1B0000000000000000000A0 /* ScrollReverserDecision.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ScrollReverserDecision.swift; sourceTree = "<group>"; };
 		F1B0000000000000000000B0 /* ScrollReverserMonitor.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ScrollReverserMonitor.swift; sourceTree = "<group>"; };
+		F1B0000000000000000000C2 /* DisplayIdentity.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DisplayIdentity.swift; sourceTree = "<group>"; };
 		F1B0000000000000000000C0 /* ScrollReverserDecisionTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ScrollReverserDecisionTests.swift; sourceTree = "<group>"; };
 		F1A0000000000000000000A0 /* HotKeyShortcutValidation.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HotKeyShortcutValidation.swift; sourceTree = "<group>"; };
 		F1A0000000000000000000B0 /* HotKeyGlyphs.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HotKeyGlyphs.swift; sourceTree = "<group>"; };
@@ -475,6 +480,7 @@
 		B1000000000000000000010A /* HoverPollThrottleTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HoverPollThrottleTests.swift; sourceTree = "<group>"; };
 		B10000000000000000000110 /* MinimizeHandoffTargetTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MinimizeHandoffTargetTests.swift; sourceTree = "<group>"; };
 		B10000000000000000000115 /* MinimizeSettleGateTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MinimizeSettleGateTests.swift; sourceTree = "<group>"; };
+		B1000000000000000000011A /* TaskbarScreenPlacementTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TaskbarScreenPlacementTests.swift; sourceTree = "<group>"; };
 		A00000000000000000009700 /* DragConversionPlan.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DragConversionPlan.swift; sourceTree = "<group>"; };
 		A00000000000000000009750 /* NonConstrainingPanel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NonConstrainingPanel.swift; sourceTree = "<group>"; };
 		A00000000000000000000C00 /* ManualPanelHostTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ManualPanelHostTests.swift; sourceTree = "<group>"; };
@@ -596,6 +602,7 @@
 		B10000000000000000000109 /* HoverPollThrottle.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HoverPollThrottle.swift; sourceTree = "<group>"; };
 		B1000000000000000000010D /* MinimizeHandoffTarget.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MinimizeHandoffTarget.swift; sourceTree = "<group>"; };
 		B10000000000000000000112 /* MinimizeSettleGate.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MinimizeSettleGate.swift; sourceTree = "<group>"; };
+		B10000000000000000000117 /* TaskbarScreenPlacement.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TaskbarScreenPlacement.swift; sourceTree = "<group>"; };
 		A0000000000000000000FF20 /* AppLaunchTargetDecision.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppLaunchTargetDecision.swift; sourceTree = "<group>"; };
 		A00000000000000000009580 /* AppMembershipMenuPlan.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppMembershipMenuPlan.swift; sourceTree = "<group>"; };
 		A00000000000000000009410 /* LauncherMenuPlanTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LauncherMenuPlanTests.swift; sourceTree = "<group>"; };
@@ -833,6 +840,7 @@
 				B10000000000000000000109 /* HoverPollThrottle.swift */,
 				B1000000000000000000010D /* MinimizeHandoffTarget.swift */,
 				B10000000000000000000112 /* MinimizeSettleGate.swift */,
+				B10000000000000000000117 /* TaskbarScreenPlacement.swift */,
 				A0000000000000000000FF20 /* AppLaunchTargetDecision.swift */,
 				B72000000000000000000003 /* AppDisplayNameCache.swift */,
 				B72000000000000000000013 /* InstallationRecord.swift */,
@@ -985,6 +993,7 @@
 				F10000000000000000000011 /* FullscreenIntentMonitor.swift */,
 				F1B0000000000000000000A0 /* ScrollReverserDecision.swift */,
 				F1B0000000000000000000B0 /* ScrollReverserMonitor.swift */,
+				F1B0000000000000000000C2 /* DisplayIdentity.swift */,
 				A00000000000000000000010 /* CoreGraphicsSource.swift */,
 				A00000000000000000000061 /* DockWindowEligibilityPolicy.swift */,
 			);
@@ -1138,6 +1147,7 @@
 				B1000000000000000000010A /* HoverPollThrottleTests.swift */,
 				B10000000000000000000110 /* MinimizeHandoffTargetTests.swift */,
 				B10000000000000000000115 /* MinimizeSettleGateTests.swift */,
+				B1000000000000000000011A /* TaskbarScreenPlacementTests.swift */,
 				A00000000000000000009710 /* DragConversionPlanTests.swift */,
 				A00000000000000000000A110 /* MessagingZoneAdmissionTests.swift */,
 				A00000000000000000000D110 /* MessagingMainWindowDecisionTests.swift */,
@@ -1339,6 +1349,7 @@
 					F2A0000000000000000000A1 /* SettingsTab.swift in Sources */,
 					F1B0000000000000000000A1 /* ScrollReverserDecision.swift in Sources */,
 					F1B0000000000000000000B1 /* ScrollReverserMonitor.swift in Sources */,
+					F1B0000000000000000000C3 /* DisplayIdentity.swift in Sources */,
 					A00000000000000000009011 /* LaunchAtLoginService.swift in Sources */,
 					A00000000000000000009E21 /* LegacyLoginItemBackend.swift in Sources */,
 					A00000000000000000009021 /* NativeDockPreferencesService.swift in Sources */,
@@ -1377,6 +1388,7 @@
 					B1000000000000000000000E /* HoverPollThrottle.swift in Sources */,
 					B1000000000000000000010E /* MinimizeHandoffTarget.swift in Sources */,
 					B10000000000000000000113 /* MinimizeSettleGate.swift in Sources */,
+					B10000000000000000000118 /* TaskbarScreenPlacement.swift in Sources */,
 					A0000000000000000000FF21 /* AppLaunchTargetDecision.swift in Sources */,
 					B72000000000000000000001 /* AppDisplayNameCache.swift in Sources */,
 					B72000000000000000000011 /* InstallationRecord.swift in Sources */,
@@ -1560,6 +1572,7 @@
 				B1000000000000000000000F /* HoverPollThrottle.swift in Sources */,
 				B1000000000000000000010F /* MinimizeHandoffTarget.swift in Sources */,
 				B10000000000000000000114 /* MinimizeSettleGate.swift in Sources */,
+				B10000000000000000000119 /* TaskbarScreenPlacement.swift in Sources */,
 				A0000000000000000000FF22 /* AppLaunchTargetDecision.swift in Sources */,
 				B72000000000000000000002 /* AppDisplayNameCache.swift in Sources */,
 				B72000000000000000000012 /* InstallationRecord.swift in Sources */,
@@ -1652,6 +1665,7 @@
 					B10000000000000000000010 /* HoverPollThrottleTests.swift in Sources */,
 					B10000000000000000000111 /* MinimizeHandoffTargetTests.swift in Sources */,
 					B10000000000000000000116 /* MinimizeSettleGateTests.swift in Sources */,
+					B1000000000000000000011B /* TaskbarScreenPlacementTests.swift in Sources */,
 					A00000000000000000009702 /* DragConversionPlan.swift in Sources */,
 					A00000000000000000000A102 /* MessagingZoneAdmission.swift in Sources */,
 					A00000000000000000000D102 /* MessagingMainWindowDecision.swift in Sources */,

@@ -1142,6 +1142,73 @@ final class AppSettingsStoreTests: XCTestCase {
         )
     }
 
+    func testTaskbarScreenPlacementDefaultsToFollowMouseWithoutWritingKeys() {
+        let defaults = makeDefaults()
+        let store = AppSettingsStore(defaults: defaults)
+
+        XCTAssertEqual(store.taskbarScreenPlacement, .followMouse)
+        // 缺键即默认，init 不许把键写出来（老用户升级无感）。
+        XCTAssertNil(defaults.object(forKey: "com.tungsten.edge.taskbarScreen.mode"))
+        XCTAssertNil(defaults.object(forKey: "com.tungsten.edge.taskbarScreen.pinned"))
+    }
+
+    func testTaskbarScreenPlacementPinnedRoundTrips() {
+        let defaults = makeDefaults()
+        let store = AppSettingsStore(defaults: defaults)
+        let selection = PinnedScreenSelection(uuid: "UUID-1", name: "LG HDR 4K")
+
+        store.setTaskbarScreenPlacement(.pinned(selection))
+
+        XCTAssertEqual(store.taskbarScreenPlacement, .pinned(selection))
+        let rebuilt = AppSettingsStore(defaults: defaults)
+        XCTAssertEqual(rebuilt.taskbarScreenPlacement, .pinned(selection))
+    }
+
+    func testTaskbarScreenPlacementPinnedWithBrokenSelectionFallsBackAndRewritesMode() {
+        let defaults = makeDefaults()
+        defaults.set("pinned", forKey: "com.tungsten.edge.taskbarScreen.mode")
+        defaults.set(["uuid": 42], forKey: "com.tungsten.edge.taskbarScreen.pinned")
+
+        let store = AppSettingsStore(defaults: defaults)
+
+        XCTAssertEqual(store.taskbarScreenPlacement, .followMouse)
+        XCTAssertEqual(
+            defaults.string(forKey: "com.tungsten.edge.taskbarScreen.mode"),
+            "followMouse",
+            "坏选择回退后要立刻重写 mode 键，否则每次启动重走回退且 UI 与存值对不上"
+        )
+    }
+
+    func testTaskbarScreenPlacementUnknownModeDegradesWithoutRewritingKey() {
+        let defaults = makeDefaults()
+        defaults.set("allScreens", forKey: "com.tungsten.edge.taskbarScreen.mode")
+
+        let store = AppSettingsStore(defaults: defaults)
+
+        XCTAssertEqual(store.taskbarScreenPlacement, .followMouse)
+        XCTAssertEqual(
+            defaults.string(forKey: "com.tungsten.edge.taskbarScreen.mode"),
+            "allScreens",
+            "将来版本的档被老版本读到时只降级运行，不毁掉用户的选择"
+        )
+    }
+
+    func testTaskbarScreenPlacementSwitchingBackKeepsPinnedSelectionRemembered() {
+        let defaults = makeDefaults()
+        let store = AppSettingsStore(defaults: defaults)
+        let selection = PinnedScreenSelection(uuid: "UUID-1", name: "LG HDR 4K")
+        store.setTaskbarScreenPlacement(.pinned(selection))
+
+        store.setTaskbarScreenPlacement(.followMouse)
+
+        XCTAssertEqual(store.taskbarScreenPlacement, .followMouse)
+        XCTAssertEqual(defaults.string(forKey: "com.tungsten.edge.taskbarScreen.mode"), "followMouse")
+        XCTAssertNotNil(
+            defaults.dictionary(forKey: "com.tungsten.edge.taskbarScreen.pinned"),
+            "remembered 惯例：切回跟随鼠标保留上次选的屏"
+        )
+    }
+
     private func makeDefaults() -> UserDefaults {
         let suiteName = "com.tungsten.edge.tests.\(UUID().uuidString)"
         let defaults = UserDefaults(suiteName: suiteName)!

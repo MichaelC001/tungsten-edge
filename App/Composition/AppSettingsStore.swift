@@ -79,6 +79,8 @@ final class AppSettingsStore: ObservableObject {
     /// 全局反转鼠标滚轮（只反离散滚轮，触控板 / 妙控鼠标不动）。**默认关**——
     /// 改写全系统输入事件的能力必须由用户主动选择，理由同 `windowLiftEnabled`。
     @Published private(set) var scrollReverserEnabled: Bool
+    /// 任务条显示位置。默认 `.followMouse` = 现状（底边停留切屏）；`.pinned` 固定到某屏。
+    @Published private(set) var taskbarScreenPlacement: TaskbarScreenPlacement
     /// 这台机器上已经成功提交过邮箱订阅。只用来把设置里那段订阅区块收起来，
     /// 免得已经留过邮箱的人被同一段话反复看见。**不是**「是否为原始用户」的凭据——
     /// 那个凭据是 `InstallationRecord` 的首装时间戳，以及服务端那份名单。
@@ -136,6 +138,26 @@ final class AppSettingsStore: ObservableObject {
         edgeToggleShortcut = Self.storedHotKeyShortcut(defaults.dictionary(forKey: Keys.edgeToggleShortcut))
         // 同样有意不 register：缺键即 false 正好是「默认关」，注册个 false 会让人误读成默认开。
         scrollReverserEnabled = defaults.bool(forKey: Keys.scrollReverserEnabled)
+        // 有意不 register：缺键即 followMouse = 现状行为，老用户升级无感。
+        let pinnedSelection = Self.storedPinnedScreenSelection(
+            defaults.dictionary(forKey: Keys.taskbarScreenPinned)
+        )
+        switch defaults.string(forKey: Keys.taskbarScreenMode) {
+        case nil, TaskbarScreenMode.followMouse.rawValue:
+            taskbarScreenPlacement = .followMouse
+        case TaskbarScreenMode.pinned.rawValue:
+            if let pinnedSelection {
+                taskbarScreenPlacement = .pinned(pinnedSelection)
+            } else {
+                // pinned 但选择缺失/坏 → 回退并立刻重写 mode 键（对齐 dockSize 的坏值即重写惯例）。
+                taskbarScreenPlacement = .followMouse
+                defaults.set(TaskbarScreenMode.followMouse.rawValue, forKey: Keys.taskbarScreenMode)
+            }
+        default:
+            // 未知字符串（将来版本的新档被老版本读到）→ 按 followMouse 跑但**不重写键**，
+            // 降级不毁掉用户在新版本里做的选择。
+            taskbarScreenPlacement = .followMouse
+        }
         // 坏值（手改过、旧版本残留、类型不对）一律回退中档并**立刻重写**，
         // 否则每次启动都要重新走一遍回退，且 UI 上勾选的档位和存的值对不上。
         dockSize = DockSize(rawValue: defaults.string(forKey: Keys.dockSize) ?? "") ?? .default
@@ -202,6 +224,28 @@ final class AppSettingsStore: ObservableObject {
         guard scrollReverserEnabled != value else { return }
         scrollReverserEnabled = value
         defaults.set(value, forKey: Keys.scrollReverserEnabled)
+    }
+
+    func setTaskbarScreenPlacement(_ value: TaskbarScreenPlacement) {
+        guard taskbarScreenPlacement != value else { return }
+        taskbarScreenPlacement = value
+        defaults.set(value.mode.rawValue, forKey: Keys.taskbarScreenMode)
+        if let selection = value.pinnedSelection {
+            defaults.set(
+                ["uuid": selection.uuid, "name": selection.name],
+                forKey: Keys.taskbarScreenPinned
+            )
+        }
+        // 切回 followMouse 时**保留** pinned 字典不删（remembered 惯例，
+        // 同 lastEnabledEdgeAutoHideDelay 的精神：再切回固定档时还记得上次选的屏）。
+    }
+
+    private static func storedPinnedScreenSelection(_ dict: [String: Any]?) -> PinnedScreenSelection? {
+        guard let dict,
+              let uuid = dict["uuid"] as? String, !uuid.isEmpty,
+              let name = dict["name"] as? String
+        else { return nil }
+        return PinnedScreenSelection(uuid: uuid, name: name)
     }
 
     private static func storedHotKeyShortcut(_ dict: [String: Any]?) -> StoredHotKeyShortcut? {
@@ -379,6 +423,12 @@ private enum Keys {
     /// 自定义显隐快捷键（字典：keyCode / modifiers / glyphs）。缺键 = 默认 ⌥⇧⌘D。
     static let edgeToggleShortcut = "com.tungsten.edge.hotKey.edgeAutoHideMode"
     static let scrollReverserEnabled = "com.tungsten.edge.scrollReverserEnabled"
+    /// 任务条显示位置（followMouse / pinned，将来加 allScreens）。缺键 = followMouse。
+    /// ⚠️ 旧的 `com.tungsten.edge.displayMode`（早期「单屏/多屏」档，已随功能删除）是孤儿键，
+    /// **永不再读**（`Docs/05`）——新功能只认下面这两个键。
+    static let taskbarScreenMode = "com.tungsten.edge.taskbarScreen.mode"
+    /// 固定屏身份（字典：uuid / name）。切回 followMouse 时保留不删。
+    static let taskbarScreenPinned = "com.tungsten.edge.taskbarScreen.pinned"
     /// ⚠️ 这个键名进了用户磁盘。改名 = 所有已订阅的人重新看到订阅区块。
     static let hasSubscribed = "com.tungsten.edge.hasSubscribed"
     /// ⚠️ 同上：改名 = 所有老用户下次启动被欢迎引导再拦一次。

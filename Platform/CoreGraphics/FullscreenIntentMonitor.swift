@@ -25,6 +25,8 @@ private enum ManagedSpaceLayoutReader {
         return (cid, unsafeBitCast(copySym, to: CopySpacesFn.self))
     }()
 
+    // 同样的 NSScreen→UUID 逻辑在 `DisplayIdentity.uuidString(for:)` 还有一份（固定到某屏用）；
+    // 本文件细节被规则冻结，刻意不共享实现，改一边记得看另一边。
     static func displayUUIDString(for screen: NSScreen) -> String? {
         guard let number = screen.deviceDescription[
             NSDeviceDescriptionKey("NSScreenNumber")
