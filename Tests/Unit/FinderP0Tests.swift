@@ -1659,30 +1659,151 @@ final class FinderP0Tests: XCTestCase {
             )
         }
 
+        let now = Date()
+        func superseded(predicted: WindowStatus, snapshot: DockSnapshot,
+                        optimisticStates: [String: OptimisticWindowState] = [:]) -> Bool {
+            OptimisticWindowState.supersededByActiveSibling(
+                windowID: w1.rawValue,
+                state: OptimisticWindowState(status: predicted, createdAt: now),
+                now: now, optimisticStates: optimisticStates,
+                snapshot: snapshot, handoffGraceEnabled: true
+            )
+        }
+
         // 同 pid 兄弟已 .active → 顶替成立
-        XCTAssertTrue(OptimisticWindowState.supersededByActiveSibling(
-            windowID: w1.rawValue, predicted: .active,
+        XCTAssertTrue(superseded(
+            predicted: .active,
             snapshot: makeSnapshot([record(w1, pid: 1, status: .inactive), record(w2, pid: 1, status: .active)])
         ))
         // 兄弟 .active 但属于别的 pid → 不算顶替
-        XCTAssertFalse(OptimisticWindowState.supersededByActiveSibling(
-            windowID: w1.rawValue, predicted: .active,
+        XCTAssertFalse(superseded(
+            predicted: .active,
             snapshot: makeSnapshot([record(w1, pid: 1, status: .inactive), record(w2, pid: 2, status: .active)])
         ))
         // 没有任何兄弟 .active → 预测继续等兑现/超时
-        XCTAssertFalse(OptimisticWindowState.supersededByActiveSibling(
-            windowID: w1.rawValue, predicted: .active,
+        XCTAssertFalse(superseded(
+            predicted: .active,
             snapshot: makeSnapshot([record(w1, pid: 1, status: .inactive), record(w2, pid: 1, status: .inactive)])
         ))
         // 预测不是 .active（minimize 类）→ 与兄弟状态无关，永不因顶替被清
-        XCTAssertFalse(OptimisticWindowState.supersededByActiveSibling(
-            windowID: w1.rawValue, predicted: .minimized,
+        XCTAssertFalse(superseded(
+            predicted: .minimized,
             snapshot: makeSnapshot([record(w1, pid: 1, status: .inactive), record(w2, pid: 1, status: .active)])
         ))
         // 自己 .active 不算「兄弟」——兑现路径由 optimisticConfirmed 负责
-        XCTAssertFalse(OptimisticWindowState.supersededByActiveSibling(
-            windowID: w1.rawValue, predicted: .active,
+        XCTAssertFalse(superseded(
+            predicted: .active,
             snapshot: makeSnapshot([record(w1, pid: 1, status: .active)])
+        ))
+        // 在飞折扣（2026-08-26）：兄弟快照 .active 但它自己有在飞的乐观 .minimized
+        //（用户刚收起它）→ 那是残影，不算顶替者
+        XCTAssertFalse(superseded(
+            predicted: .active,
+            snapshot: makeSnapshot([record(w1, pid: 1, status: .inactive), record(w2, pid: 1, status: .active)]),
+            optimisticStates: [w2.rawValue: OptimisticWindowState(status: .minimized, createdAt: now)]
+        ))
+        // 兄弟在飞的是乐观 .active（用户点了它）→ 快照 .active 可信，顶替照常成立
+        XCTAssertTrue(superseded(
+            predicted: .active,
+            snapshot: makeSnapshot([record(w1, pid: 1, status: .inactive), record(w2, pid: 1, status: .active)]),
+            optimisticStates: [w2.rawValue: OptimisticWindowState(status: .active, createdAt: now)]
+        ))
+    }
+
+    /// 还原宽限（2026-08-26）：还原出身的乐观 .active 在 1.5s 宽限内不被兄弟顶替清掉。
+    /// 访达实测：还原动画期 App 已前台、焦点仍挂可见兄弟，快照短暂证实兄弟 .active，
+    /// 预测 10–530ms 就被顶掉，之后 ~1s 内的收起点击全成了空 activate（「点了不收」）。
+    /// 让位条件：非还原出身 / 过宽限 / 兄弟自己也有乐观 .active（用户真点了兄弟卡）/
+    /// 杀开关关 —— 任一成立即回到 2026-08-22 顶替原语义。
+    func testRestoreOriginOptimisticActiveSurvivesTransientSiblingActive() {
+        let w1 = WindowID(rawValue: "cg-restore-1")
+        let w2 = WindowID(rawValue: "cg-restore-2")
+        func record(_ id: WindowID, pid: Int32, status: WindowStatus) -> WindowRecord {
+            WindowRecord(
+                id: id, appID: AppID(rawValue: "test-app"), pid: pid,
+                bundleIdentifier: nil, title: "Test", bounds: nil, status: status
+            )
+        }
+        func makeSnapshot(_ records: [WindowRecord]) -> DockSnapshot {
+            DockSnapshot(
+                windows: Dictionary(uniqueKeysWithValues: records.map { ($0.id, $0) }),
+                orderedWindowIDs: records.map(\.id)
+            )
+        }
+        let now = Date()
+        // 还原动画期的真实快照形态：刚还原的 w1 尚未兑现，兄弟 w2 被短暂证实 .active。
+        let handoffSnapshot = makeSnapshot([
+            record(w1, pid: 1, status: .inactive), record(w2, pid: 1, status: .active),
+        ])
+        let restoreOrigin = OptimisticWindowState(status: .active, createdAt: now, focusHandoffGrace: true)
+
+        // 还原出身 + 宽限内 + 无兄弟在飞 → 豁免，预测存活
+        XCTAssertFalse(OptimisticWindowState.supersededByActiveSibling(
+            windowID: w1.rawValue, state: restoreOrigin, now: now,
+            optimisticStates: [w1.rawValue: restoreOrigin],
+            snapshot: handoffSnapshot, handoffGraceEnabled: true
+        ))
+        // 非还原出身（普通激活）→ 顶替原语义照清
+        XCTAssertTrue(OptimisticWindowState.supersededByActiveSibling(
+            windowID: w1.rawValue,
+            state: OptimisticWindowState(status: .active, createdAt: now),
+            now: now, optimisticStates: [:],
+            snapshot: handoffSnapshot, handoffGraceEnabled: true
+        ))
+        // 过宽限 → 照清
+        XCTAssertTrue(OptimisticWindowState.supersededByActiveSibling(
+            windowID: w1.rawValue, state: restoreOrigin,
+            now: now.addingTimeInterval(OptimisticWindowState.handoffSupersessionGrace + 0.1),
+            optimisticStates: [w1.rawValue: restoreOrigin],
+            snapshot: handoffSnapshot, handoffGraceEnabled: true
+        ))
+        // 兄弟自己也持有乐观 .active（用户点了兄弟卡，焦点真被拿走）→ 照清
+        XCTAssertTrue(OptimisticWindowState.supersededByActiveSibling(
+            windowID: w1.rawValue, state: restoreOrigin, now: now,
+            optimisticStates: [
+                w1.rawValue: restoreOrigin,
+                w2.rawValue: OptimisticWindowState(status: .active, createdAt: now),
+            ],
+            snapshot: handoffSnapshot, handoffGraceEnabled: true
+        ))
+        // 杀开关关 → 照清
+        XCTAssertTrue(OptimisticWindowState.supersededByActiveSibling(
+            windowID: w1.rawValue, state: restoreOrigin, now: now,
+            optimisticStates: [w1.rawValue: restoreOrigin],
+            snapshot: handoffSnapshot, handoffGraceEnabled: false
+        ))
+        // 没有兄弟被证实 .active → 核心判定就不成立，与豁免无关
+        XCTAssertFalse(OptimisticWindowState.supersededByActiveSibling(
+            windowID: w1.rawValue, state: restoreOrigin, now: now,
+            optimisticStates: [w1.rawValue: restoreOrigin],
+            snapshot: makeSnapshot([
+                record(w1, pid: 1, status: .inactive), record(w2, pid: 1, status: .inactive),
+            ]),
+            handoffGraceEnabled: true
+        ))
+    }
+
+    /// 系统预测证伪（2026-08-26）：交接预测落在实际已收起的窗上时（快照滞后 + 动画期 CG
+    /// 在屏残留），快照 minimized/hidden 即矛盾 → 立即清除，唤醒点击回到 activate。
+    /// 用户自己「还原→再收起」的交替态（非系统预测的 .active + 快照 minimized）绝不能清。
+    func testSystemPredictionFalsifiedOnlyClearsSystemPredictions() {
+        let now = Date()
+        let prediction = OptimisticWindowState(
+            status: .active, createdAt: now, focusHandoffGrace: true, systemPredicted: true
+        )
+        let userRestore = OptimisticWindowState(status: .active, createdAt: now, focusHandoffGrace: true)
+
+        // 系统预测 + 快照 minimized / hidden → 证伪
+        XCTAssertTrue(OptimisticWindowState.systemPredictionFalsified(state: prediction, actual: .minimized))
+        XCTAssertTrue(OptimisticWindowState.systemPredictionFalsified(state: prediction, actual: .hidden))
+        // 快照 inactive（还在等兑现）→ 不证伪
+        XCTAssertFalse(OptimisticWindowState.systemPredictionFalsified(state: prediction, actual: .inactive))
+        // 用户还原出身（非系统预测）→ 交替态正常在飞，绝不清
+        XCTAssertFalse(OptimisticWindowState.systemPredictionFalsified(state: userRestore, actual: .minimized))
+        // 非 .active 预测与证伪无关
+        XCTAssertFalse(OptimisticWindowState.systemPredictionFalsified(
+            state: OptimisticWindowState(status: .minimized, createdAt: now, systemPredicted: true),
+            actual: .inactive
         ))
     }
 
@@ -1745,14 +1866,39 @@ final class FinderP0Tests: XCTestCase {
             ).kind,
             .minimizeWindow
         )
-        // 乐观陈旧路径：W1 快照 inactive + 乐观残留 .active + W2 在飞 → 同样降级
-        var both = optimisticW2Active
-        both["cg-inflight-1"] = OptimisticWindowState(status: .active, createdAt: Date())
+        // 乐观陈旧路径：W1 的乐观 .active 是**更旧的**残留 + W2 在飞（用户后点了 W2）
+        // → 焦点正流向 W2，照旧降级（08-25 语义，2026-08-26 起以时间先后为准）
+        let base = Date()
+        var both = ["cg-inflight-2": OptimisticWindowState(status: .active, createdAt: base)]
+        both["cg-inflight-1"] = OptimisticWindowState(status: .active, createdAt: base.addingTimeInterval(-1.0))
         XCTAssertEqual(
             planner.plan(
                 intent: .toggle(w1),
                 snapshot: makeSnapshot([record(w1, pid: 1, status: .inactive), record(w2, pid: 1, status: .inactive)]),
                 optimisticStates: both
+            ).kind,
+            .activateWindow
+        )
+        // 时序裁决（2026-08-26）：W1 自己的乐观 .active 比 W2 的**更新**（批量还原后用户
+        // 最近点的就是 W1）→ 第二击是同窗严格交替，不降级、正常收起
+        var ownNewer = ["cg-inflight-2": OptimisticWindowState(status: .active, createdAt: base)]
+        ownNewer["cg-inflight-1"] = OptimisticWindowState(status: .active, createdAt: base.addingTimeInterval(1.0))
+        XCTAssertEqual(
+            planner.plan(
+                intent: .toggle(w1),
+                snapshot: makeSnapshot([record(w1, pid: 1, status: .inactive), record(w2, pid: 1, status: .inactive)]),
+                optimisticStates: ownNewer
+            ).kind,
+            .minimizeWindow
+        )
+        // 同刻（时间戳相等）→ 保守降级
+        var tied = ["cg-inflight-2": OptimisticWindowState(status: .active, createdAt: base)]
+        tied["cg-inflight-1"] = OptimisticWindowState(status: .active, createdAt: base)
+        XCTAssertEqual(
+            planner.plan(
+                intent: .toggle(w1),
+                snapshot: makeSnapshot([record(w1, pid: 1, status: .inactive), record(w2, pid: 1, status: .inactive)]),
+                optimisticStates: tied
             ).kind,
             .activateWindow
         )

@@ -80,6 +80,10 @@ final class AppRuntime: ObservableObject {
     private static let chipProbeEnabled = ProcessInfo.processInfo.environment["DOCK_CHIP_PROBE"] == "1"
     /// 最小化沉降门杀开关（默认开）。关掉时既不记 minimize 锚也不 hold，派发路径与旧行为逐位一致。
     private static let settleGateEnabled = ProcessInfo.processInfo.environment["DOCK_MINIMIZE_SETTLE_GATE"] != "0"
+    /// 过渡宽限杀开关（默认开）。关掉时兄弟顶替清除回到 2026-08-22 原语义（无过渡豁免）。
+    private static let handoffActiveGraceEnabled = ProcessInfo.processInfo.environment["DOCK_HANDOFF_ACTIVE_GRACE"] != "0"
+    /// 交接预测杀开关（默认开）。关掉时收起交接不再给接手窗口写乐观 .active 预测。
+    private static let handoffActivePredictionEnabled = ProcessInfo.processInfo.environment["DOCK_HANDOFF_ACTIVE_PREDICTION"] != "0"
     private static let launchPolicyRecheckDeadlines: [TimeInterval] = [1.5, 3.0, 5.0]
 
     init(
@@ -186,7 +190,7 @@ final class AppRuntime: ObservableObject {
             let runningApp = NSRunningApplication(processIdentifier: record.pid)
             let freshActive = runningApp?.isActive == true
             let optimisticStatus = optimisticStatesByWindowID[wid.rawValue]?.status.rawValue ?? "none"
-            chipProbeLogger.info("toggle-planned app=\(runningApp?.localizedName ?? "(unknown)", privacy: .public) bundleID=\(record.bundleIdentifier ?? "(none)", privacy: .public) recordStatus=\(record.status.rawValue, privacy: .public) optimisticStatus=\(optimisticStatus, privacy: .public) freshActive=\(freshActive, privacy: .public) plannedAction=\(request.kind.rawValue, privacy: .public)")
+            chipProbeLogger.info("toggle-planned windowID=\(wid.rawValue, privacy: .public) app=\(runningApp?.localizedName ?? "(unknown)", privacy: .public) bundleID=\(record.bundleIdentifier ?? "(none)", privacy: .public) recordStatus=\(record.status.rawValue, privacy: .public) optimisticStatus=\(optimisticStatus, privacy: .public) freshActive=\(freshActive, privacy: .public) plannedAction=\(request.kind.rawValue, privacy: .public)")
         }
 
         if ClickLatencyTrace.isEnabled, let wid = request.windowID?.rawValue {
@@ -199,7 +203,11 @@ final class AppRuntime: ObservableObject {
             )
         }
 
-        applyOptimisticState(for: request)
+        // 还原出身判定用规划时的有效状态（乐观优先），与 planner 的 status 轴同口径。
+        let effectiveStatusAtPlan: WindowStatus? = request.windowID.flatMap { wid in
+            optimisticStatesByWindowID[wid.rawValue]?.status ?? snapshot.windows[wid]?.status
+        }
+        applyOptimisticState(for: request, wasMinimizedAtPlan: effectiveStatusAtPlan == .minimized)
         intentPipeline.registerPending(intent: intent, request: request)
         publishFeedbackEntries()
         updateFeedbackTimer()
@@ -376,11 +384,36 @@ final class AppRuntime: ObservableObject {
         // `AppTracker` 的两处后台 AX 读也在同一个池里——事件读每 pid 一发，5 秒补扫更是个
         // **串行 for 循环**（最多 N × 100ms 占住一个池线程）。AX 调用是阻塞式的，本来就不该
         // 占协作线程；点击排在盘点读后面更是白等。改用自己的 `.userInitiated` 并发队列。
+        // 收起交接的接手者预测（2026-08-26）：执行层算出交接目标的瞬间回传（早于 minimize
+        // 落地），主线程给接手窗口写带过渡宽限的乐观 .active——快照兑现前点它的卡才能正确
+        // 规划成收起（「收窗 1 后快点窗 2 收不起来」）。绝不覆盖已存在的乐观条目（用户动作
+        // 优先于系统预测）。误预测由顶替清除自愈（真接手者被快照证实即顶掉本预测）。
+        let onHandoffActivePrediction: ((WindowID) -> Void)? =
+            (request.kind == .minimizeWindow && Self.handoffActivePredictionEnabled)
+            ? { [weak self] windowID in
+                Task { @MainActor [weak self] in
+                    guard let self else { return }
+                    guard self.optimisticStatesByWindowID[windowID.rawValue] == nil else { return }
+                    // 写入时对当下快照复核：交接判定用的是派发时快照，风暴中可能已过时——
+                    // 快照说接手者 minimized/hidden 就不写（写了也会被证伪清除，不如不写）。
+                    guard let current = self.snapshot.windows[windowID],
+                          current.status != .minimized, current.status != .hidden else { return }
+                    self.optimisticStatesByWindowID[windowID.rawValue] = OptimisticWindowState(
+                        status: .active, createdAt: Date(), focusHandoffGrace: true, systemPredicted: true
+                    )
+                }
+            }
+            : nil
         Self.actionQueue.async { [weak self] in
             // 第一个里程碑就量「派发到真正开始跑」这一段——线程池被后台 AX 读占满时，
             // 用户点击就卡在这里，而这段延迟从末端状态是完全看不出来的。
             ClickLatencyTrace.mark(windowID: request.windowID?.rawValue, "execStart")
-            let success = executor.execute(request, snapshot: capturedSnapshot, forcedMinimizedPrior: forcedMinimizedPrior)
+            let success = executor.execute(
+                request,
+                snapshot: capturedSnapshot,
+                forcedMinimizedPrior: forcedMinimizedPrior,
+                onHandoffActivePrediction: onHandoffActivePrediction
+            )
             ClickLatencyTrace.end(windowID: request.windowID?.rawValue, success: success)
             Task { @MainActor [weak self] in
                 guard let self else { return }
@@ -847,11 +880,11 @@ final class AppRuntime: ObservableObject {
 
     /// 按计划出的动作写预测态。hideApp 只盖被点的那张 chip，同 app 其他窗口
     /// 等快照（v1 接受）。close / quit / newWindow 不写（窗口要消失 / 是别的窗口）。
-    private func applyOptimisticState(for request: PlatformActionRequest) {
+    private func applyOptimisticState(for request: PlatformActionRequest, wasMinimizedAtPlan: Bool) {
         let state: OptimisticWindowState?
         switch request.kind {
         case .activateWindow:
-            state = OptimisticWindowState(status: .active, createdAt: Date())
+            state = OptimisticWindowState(status: .active, createdAt: Date(), focusHandoffGrace: wasMinimizedAtPlan)
         case .minimizeWindow:
             state = OptimisticWindowState(status: .minimized, createdAt: Date())
         case .hideApp:
@@ -868,13 +901,30 @@ final class AppRuntime: ObservableObject {
     private func reconcileOptimisticStates(now: Date = Date()) {
         guard !optimisticStatesByWindowID.isEmpty else { return }
         let next = optimisticStatesByWindowID.filter { windowID, state in
-            if now.timeIntervalSince(state.createdAt) > Self.optimisticTimeout { return false }
-            guard let record = snapshot.windows[WindowID(rawValue: windowID)] else { return false }
-            if Self.optimisticConfirmed(predicted: state.status, actual: record.status) { return false }
-            if OptimisticWindowState.supersededByActiveSibling(
-                windowID: windowID, predicted: state.status, snapshot: snapshot
-            ) { return false }
-            return true
+            let cleared: String?
+            if now.timeIntervalSince(state.createdAt) > Self.optimisticTimeout {
+                cleared = "timeout"
+            } else if snapshot.windows[WindowID(rawValue: windowID)] == nil {
+                cleared = "window-gone"
+            } else if let record = snapshot.windows[WindowID(rawValue: windowID)],
+                      Self.optimisticConfirmed(predicted: state.status, actual: record.status) {
+                cleared = "confirmed"
+            } else if let record = snapshot.windows[WindowID(rawValue: windowID)],
+                      OptimisticWindowState.systemPredictionFalsified(state: state, actual: record.status) {
+                cleared = "prediction-falsified"
+            } else if OptimisticWindowState.supersededByActiveSibling(
+                windowID: windowID, state: state, now: now,
+                optimisticStates: optimisticStatesByWindowID,
+                snapshot: snapshot, handoffGraceEnabled: Self.handoffActiveGraceEnabled
+            ) {
+                cleared = "superseded-by-active-sibling"
+            } else {
+                cleared = nil
+            }
+            if Self.chipProbeEnabled, let cleared {
+                chipProbeLogger.info("optimistic-cleared windowID=\(windowID, privacy: .public) predicted=\(state.status.rawValue, privacy: .public) ageMs=\(Int(now.timeIntervalSince(state.createdAt) * 1000), privacy: .public) reason=\(cleared, privacy: .public)")
+            }
+            return cleared == nil
         }
         if next != optimisticStatesByWindowID {
             optimisticStatesByWindowID = next

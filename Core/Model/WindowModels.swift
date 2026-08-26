@@ -62,6 +62,22 @@ enum WindowStatus: String, Hashable, Codable, Sendable {
 struct OptimisticWindowState: Hashable, Sendable {
     let status: WindowStatus
     let createdAt: Date
+    /// 该 .active 预测描述的是「焦点正经由系统过渡抵达本窗」：还原动画（点最小化窗口
+    /// 还原），或收起交接（收起焦点窗后系统提拔的接手者）。过渡期间快照可能短暂把
+    /// 兄弟证实 .active（残影），顶替清除对这类预测有 1.5s 宽限
+    ///（见 `supersededByActiveSibling`）。省略即 false（用户点击可见窗口的普通激活）。
+    let focusHandoffGrace: Bool
+    /// 该预测由系统推断产生（收起交接的接手者预测），而非用户点击。系统预测的证据强度
+    /// 低于用户动作：被快照证伪（窗口实为 minimized/hidden）时立即清除，见
+    /// `systemPredictionFalsified`。省略即 false（用户动作出身，语义正确）。
+    let systemPredicted: Bool
+
+    init(status: WindowStatus, createdAt: Date, focusHandoffGrace: Bool = false, systemPredicted: Bool = false) {
+        self.status = status
+        self.createdAt = createdAt
+        self.focusHandoffGrace = focusHandoffGrace
+        self.systemPredicted = systemPredicted
+    }
 }
 
 extension OptimisticWindowState {
@@ -70,16 +86,60 @@ extension OptimisticWindowState {
     /// macOS 26 曾把 SkyLight make-key 静默废掉，误最小化正是靠这类残留发作；留这层防御，
     /// 未来焦点通道再静默失效时症状降级为「多余的 activate」而不是「误 minimize」。
     /// 只清 .active 预测：minimize / hidden 的兑现语义（含 disappeared）与兄弟状态无关。
+    /// 过渡宽限（2026-08-26，原「还原宽限」推广到收起交接）：焦点过渡出身的 .active
+    /// 预测在此窗口内不被兄弟顶替清除。访达实测：过渡期 App 已前台、焦点仍挂在可见
+    /// 兄弟上，快照短暂把兄弟证实 .active，10–530ms 就把预测顶掉，之后 ~1s 内的收起
+    /// 点击全被降级成空 activate（owner「点了不收」）。1.5s 上限覆盖访达 887ms 动画。
+    static let handoffSupersessionGrace: TimeInterval = 1.5
+
+    /// 系统预测证伪（2026-08-26 Release 风暴实测）：交接预测可能落在一扇实际已收起的窗上
+    ///（快照滞后 + 收起动画期窗口仍在 CG 在屏表），这份错误的 .active 带着宽限存活，会把
+    /// 之后的唤醒点击误规划成收起，反复无效直到 4s 超时。快照说这窗 minimized/hidden 即
+    /// 与「即将成为焦点」矛盾 → 立即清除，点击回到 activate（= 还原，正合用户意图）。
+    /// **只清系统预测**：用户自己「还原→再收起」的交替态（乐观 .active + 快照 .minimized）
+    /// 是正常在飞状态，绝不能清。
+    static func systemPredictionFalsified(state: OptimisticWindowState, actual: WindowStatus) -> Bool {
+        guard state.systemPredicted, state.status == .active else { return false }
+        return actual == .minimized || actual == .hidden
+    }
+
+    /// 顶替清除的完整判定（reconcile 用）。
+    ///
+    /// 兄弟「已证实 .active」有一条**在飞折扣**：兄弟自己持有在飞的乐观 .minimized /
+    /// .hidden（用户刚收起/隐藏它）时，它快照里的 .active 是被用户动作抵触的残影，不算
+    /// 焦点接手者——否则收起窗 1 在飞期间，其 active 残影会立刻顶掉刚写给接手窗 2 的预测。
+    ///
+    /// 宽限豁免需同时满足：预测带 `focusHandoffGrace`、未过宽限、没有任何同 pid 兄弟
+    /// 自己也持有乐观 .active（有 = 用户真点了兄弟卡，焦点是真被拿走，预测照清——
+    /// 保住「宁可多余 activate，绝不错误 minimize」的底线）。
     static func supersededByActiveSibling(
         windowID: String,
-        predicted: WindowStatus,
-        snapshot: DockSnapshot
+        state: OptimisticWindowState,
+        now: Date,
+        optimisticStates: [String: OptimisticWindowState],
+        snapshot: DockSnapshot,
+        handoffGraceEnabled: Bool
     ) -> Bool {
-        guard predicted == .active else { return false }
+        guard state.status == .active else { return false }
         guard let record = snapshot.windows[WindowID(rawValue: windowID)] else { return false }
-        return snapshot.windows.values.contains {
-            $0.pid == record.pid && $0.id != record.id && $0.status == .active
+        let crediblyActiveSibling = snapshot.windows.values.contains { sibling in
+            guard sibling.pid == record.pid, sibling.id != record.id, sibling.status == .active else {
+                return false
+            }
+            let inFlight = optimisticStates[sibling.id.rawValue]?.status
+            return inFlight != .minimized && inFlight != .hidden
         }
+        guard crediblyActiveSibling else { return false }
+        guard handoffGraceEnabled,
+              state.focusHandoffGrace,
+              now.timeIntervalSince(state.createdAt) <= Self.handoffSupersessionGrace
+        else { return true }
+        let siblingActivationClicked = optimisticStates.contains { key, sibling in
+            guard key != windowID, sibling.status == .active else { return false }
+            guard let siblingRecord = snapshot.windows[WindowID(rawValue: key)] else { return false }
+            return siblingRecord.pid == record.pid
+        }
+        return siblingActivationClicked
     }
 
     /// 兄弟激活在飞（2026-08-25）：同 App 另一窗口持有尚未被快照兑现的乐观 .active——
@@ -93,10 +153,20 @@ extension OptimisticWindowState {
         snapshot: DockSnapshot
     ) -> Bool {
         guard let record = snapshot.windows[WindowID(rawValue: windowID)] else { return false }
+        let ownActivationCreatedAt: Date? = {
+            guard let own = optimisticStates[windowID], own.status == .active else { return nil }
+            return own.createdAt
+        }()
         return optimisticStates.contains { key, state in
             guard key != windowID, state.status == .active else { return false }
             guard let sibling = snapshot.windows[WindowID(rawValue: key)] else { return false }
-            return sibling.pid == record.pid && sibling.status != .active
+            guard sibling.pid == record.pid, sibling.status != .active else { return false }
+            // 时序裁决（2026-08-26，Release 批量还原实测）：本窗自己的乐观 .active 比该
+            // 兄弟的更新 → 用户最近一次激活意图落在本窗，第二击是同窗严格交替（该收起），
+            // 不降级——否则批量还原后逐窗收起全被压成空激活。兄弟的更新（或本窗无乐观态、
+            // 只有快照残影）→ 焦点正流向兄弟，维持 08-25 降级，误收起底线不破。
+            if let own = ownActivationCreatedAt, own > state.createdAt { return false }
+            return true
         }
     }
 }

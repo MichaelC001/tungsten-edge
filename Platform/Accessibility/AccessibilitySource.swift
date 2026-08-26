@@ -329,10 +329,13 @@ struct AccessibilityWindowActionExecutor {
         }
 
         guard let button = axElementAttribute(kAXMinimizeButtonAttribute as CFString, from: handle.element) else {
+            // 无最小化按钮但回读已是收起态（AXDialog 类窗口，Release 实测 2026-08-26）：
+            // 目标状态已成立就是成功，报失败会让乐观态误回弹。
+            let verified = reader.boolAttribute(kAXMinimizedAttribute as CFString, from: handle.element)
             return ActionExecution(
-                success: false,
+                success: verified == true,
                 mechanism: "missing-minimize-button",
-                verifiedMinimized: reader.boolAttribute(kAXMinimizedAttribute as CFString, from: handle.element)
+                verifiedMinimized: verified
             )
         }
 
@@ -558,12 +561,12 @@ struct AccessibilityWindowActionExecutor {
 
         let verdict = MinimizeHandoffTarget.select(zOrder: zOrder, target: record, snapshot: snapshot)
         switch verdict {
-        case .switchTo(let pid, let wid):
+        case .switchTo(let pid, let wid, let windowID):
             Self.chipProbeLogger.info(
-                "postactivate-target candidate=\(NSRunningApplication(processIdentifier: pid)?.localizedName ?? "(unknown)", privacy: .public) pid=\(pid, privacy: .public) wid=\(wid, privacy: .public)"
+                "postactivate-target candidate=\(NSRunningApplication(processIdentifier: pid)?.localizedName ?? "(unknown)", privacy: .public) pid=\(pid, privacy: .public) wid=\(wid, privacy: .public) windowID=\(windowID.rawValue, privacy: .public)"
             )
-        case .siblingTakesOver:
-            Self.chipProbeLogger.info("postactivate-target sibling-takes-over pid=\(handle.pid, privacy: .public)")
+        case .siblingTakesOver(let windowID):
+            Self.chipProbeLogger.info("postactivate-target sibling-takes-over pid=\(handle.pid, privacy: .public) windowID=\(windowID.rawValue, privacy: .public)")
         case .none:
             Self.chipProbeLogger.info("postactivate-target no-eligible-candidate pid=\(handle.pid, privacy: .public)")
         }
@@ -862,7 +865,8 @@ struct PlatformActionExecutor {
     func execute(
         _ request: PlatformActionRequest,
         snapshot: DockSnapshot,
-        forcedMinimizedPrior: Bool
+        forcedMinimizedPrior: Bool,
+        onHandoffActivePrediction: ((WindowID) -> Void)?
     ) -> Bool {
         guard let windowID = request.windowID,
               let record = snapshot.windows[windowID] else {
@@ -994,10 +998,18 @@ struct PlatformActionExecutor {
             )
         case .minimizeWindow:
             let handoff = windowExecutor.findBackgroundActivationTarget(for: handle, record: record, snapshot: snapshot)
+            // 接手者预测尽早回传（minimize 尚未执行）：越早写乐观 .active，越能覆盖极快的
+            // 「收窗 1 → 点窗 2」第二击。minimize 失败时预测由顶替清除自愈（目标仍 .active 兑现）。
+            switch handoff {
+            case .switchTo(_, _, let windowID), .siblingTakesOver(let windowID):
+                onHandoffActivePrediction?(windowID)
+            case .none:
+                break
+            }
             var targetPID: pid_t?
             var handoffWindowID: CGWindowID?
             var preSwitched = false
-            if case .switchTo(let pid, let wid) = handoff {
+            if case .switchTo(let pid, let wid, _) = handoff {
                 targetPID = pid
                 handoffWindowID = wid
                 preSwitched = windowExecutor.switchFrontmostForHandoff(
@@ -1005,8 +1017,7 @@ struct PlatformActionExecutor {
                 )
             }
 
-            let minExec = windowExecutor.minimize(handle)
-            if minExec.success {
+            func finishSuccessfulMinimize(_ exec: AccessibilityWindowActionExecutor.ActionExecution) -> Bool {
                 if preSwitched, let targetPID, let handoffWindowID {
                     windowExecutor.makeKeyAfterHandoff(pid: targetPID, windowID: handoffWindowID)
                 }
@@ -1019,9 +1030,14 @@ struct PlatformActionExecutor {
                     }
                 }
                 if switches.chipProbeEnabled {
-                    Self.chipProbeLogger.info("minimize-exec-result windowID=\(request.windowID?.rawValue ?? "nil", privacy: .public) success=\(minExec.success, privacy: .public) preSwitched=\(preSwitched, privacy: .public) mechanism=\(minExec.mechanism, privacy: .public) verifiedMinimized=\(String(describing: minExec.verifiedMinimized), privacy: .public)")
+                    Self.chipProbeLogger.info("minimize-exec-result windowID=\(request.windowID?.rawValue ?? "nil", privacy: .public) success=\(exec.success, privacy: .public) preSwitched=\(preSwitched, privacy: .public) mechanism=\(exec.mechanism, privacy: .public) verifiedMinimized=\(String(describing: exec.verifiedMinimized), privacy: .public)")
                 }
                 return true
+            }
+
+            let minExec = windowExecutor.minimize(handle)
+            if minExec.success {
+                return finishSuccessfulMinimize(minExec)
             }
             if justUnhid {
                 usleep(100_000)
@@ -1031,6 +1047,25 @@ struct PlatformActionExecutor {
                         Self.chipProbeLogger.info("minimize-exec-result windowID=\(request.windowID?.rawValue ?? "nil", privacy: .public) success=\(retryExec.success, privacy: .public) preSwitched=\(preSwitched, privacy: .public) mechanism=\(retryExec.mechanism, privacy: .public) verifiedMinimized=\(String(describing: retryExec.verifiedMinimized), privacy: .public)")
                     }
                     return retryExec.success
+                }
+            }
+            // 还原动画期的写入丢弃（2026-08-26 Release 实测）：还原 genie 未结束时，
+            // kAXMinimized 写入与最小化按钮点击都被应用丢弃（11–16ms 快速失败、回读 false）。
+            // 中途反向打断不可行（scratch/minrestore_probe 2026-08-25），有界重试等窗口恢复
+            // 接受写入后立刻补上这一击——是能达到的最早收起时点。8×120ms 总覆盖 ~1s
+            //（访达 887ms 动画；同日 Release 实测 27/27 次首试 +250ms 即成功，故间隔收紧到
+            // 120ms 磨掉落地零头）；只走失败路径，正常收起零成本。全部失败则照旧返回失败、
+            // 乐观态回弹。
+            if minExec.verifiedMinimized != true {
+                for attempt in 1...8 {
+                    usleep(120_000)
+                    let retryExec = windowExecutor.minimize(handle)
+                    if switches.chipProbeEnabled {
+                        Self.chipProbeLogger.info("minimize-retry attempt=\(attempt, privacy: .public) windowID=\(request.windowID?.rawValue ?? "nil", privacy: .public) success=\(retryExec.success, privacy: .public) mechanism=\(retryExec.mechanism, privacy: .public) verifiedMinimized=\(String(describing: retryExec.verifiedMinimized), privacy: .public)")
+                    }
+                    if retryExec.success {
+                        return finishSuccessfulMinimize(retryExec)
+                    }
                 }
             }
             if switches.chipProbeEnabled {

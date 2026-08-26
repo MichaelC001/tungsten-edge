@@ -17,9 +17,12 @@ enum MinimizeHandoffTarget {
         let cgWindowID: CGWindowID
     }
 
+    /// 两个「有接手者」分支都带上接手窗口的快照身份（2026-08-26）：接手者随即成为焦点，
+    /// 但快照要 0.5–1s 才兑现——这段窗口期点接手者的卡会被误判「不是焦点」而规划成空
+    /// activate（owner「收起窗 1 后快点窗 2 收不起来」）。身份交给乐观层写 .active 预测。
     enum Verdict: Equatable {
-        case switchTo(pid: Int32, cgWindowID: CGWindowID)
-        case siblingTakesOver
+        case switchTo(pid: Int32, cgWindowID: CGWindowID, windowID: WindowID)
+        case siblingTakesOver(windowID: WindowID)
         case none
     }
 
@@ -42,9 +45,9 @@ enum MinimizeHandoffTarget {
             guard let record = recordsByWID[entry.cgWindowID] else { continue }
             guard record.status != .minimized, record.status != .hidden else { continue }
             if record.pid == target.pid {
-                return .siblingTakesOver
+                return .siblingTakesOver(windowID: record.id)
             }
-            return .switchTo(pid: entry.pid, cgWindowID: entry.cgWindowID)
+            return .switchTo(pid: entry.pid, cgWindowID: entry.cgWindowID, windowID: record.id)
         }
         return .none
     }
