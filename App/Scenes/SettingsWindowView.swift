@@ -17,7 +17,9 @@ struct SettingsWindowView: View {
 
     var body: some View {
         // ScrollView 保留作小屏兜底：每页正常都短于一屏，量高把窗口撑到内容高度，滚动不出现。
-        ScrollView(.vertical) {
+        // **指示器必须关**：滚动条样式为「自动」且接了鼠标时是占位式的，出现时吃掉约 15pt 可视宽，
+        // 切页动画那 0.2 秒内容溢出 → 滚动条在位 → 整页水平平移一下。内层也不许写死宽度（见下）。
+        ScrollView(.vertical, showsIndicators: false) {
             SettingsWindowContent(
                 store: store,
                 coordinator: coordinator,
@@ -44,8 +46,6 @@ struct SettingsWindowContent: View {
     @State private var feedbackCategory: FeedbackCategory = .bug
     // 附件列表同理（2026-08-24）：切页回来必须还在，否则用户以为附件掉了会重加一遍。
     @State private var feedbackAttachments: [FeedbackAttachment] = []
-    // 不是草稿——只是屏幕拔插时逼一次重渲染，让「显示位置」Picker 的屏幕列表现算刷新。
-    @State private var screenParametersGeneration = 0
 
     var body: some View {
         Group {
@@ -59,7 +59,9 @@ struct SettingsWindowContent: View {
             }
         }
         .padding(28)
-        .frame(width: SettingsWindowView.contentWidth, alignment: .leading)
+        // **不许写死宽度**：外面套着 ScrollView，刚性宽度在可视区变窄时会被居中 = 整页平移。
+        // 弹性宽度下左边缘恒在 padding 处，最多重排换行。测高探针给的仍是 contentWidth 的提案。
+        .frame(maxWidth: .infinity, alignment: .leading)
         .alert(item: $presentedAlert) { alert in
             guard let actionTitle = alert.actionTitle, let action = alert.action else {
                 return Alert(
@@ -118,68 +120,7 @@ struct SettingsWindowContent: View {
                     }
                 }
                 .pickerStyle(.segmented)
-
-                taskbarScreenRow
             }
-    }
-
-    /// 任务条显示位置：**拍平的单 Picker**——「跟随鼠标」+ 每块已连接的屏一项，不做
-    /// 「模式 + 屏幕」两级（没有「选了固定但没选屏」的空态；将来加「所有屏幕」= 多一行）。
-    /// 固定的屏断开时补一项「XX（未连接）」且选中态落在它上——选择保留，接回自动生效。
-    private var taskbarScreenRow: some View {
-        let options = connectedScreenOptions()
-        let pinned = store.taskbarScreenPlacement.pinnedSelection
-        let pinnedIsConnected = pinned.map { sel in options.contains { $0.uuid == sel.uuid } } ?? false
-        return settingRow(note: String(localized: "With “Follow the mouse”, the taskbar moves to whichever screen’s bottom edge the pointer rests on. Pinned to one screen, it stays there; if that screen disconnects, the taskbar falls back to the main screen and returns once the screen is reconnected.")) {
-            Picker(
-                "Show taskbar on",
-                selection: binding(
-                    get: {
-                        store.taskbarScreenPlacement.pinnedSelection
-                            .map { TaskbarScreenChoice.screen(uuid: $0.uuid) } ?? .followMouse
-                    },
-                    set: { choice in
-                        switch choice {
-                        case .followMouse:
-                            store.setTaskbarScreenPlacement(.followMouse)
-                        case .screen(let uuid):
-                            // name 快照：在场屏取去重后的展示名；重选那块断开的屏时沿用旧快照。
-                            let name = options.first(where: { $0.uuid == uuid })?.title
-                                ?? store.taskbarScreenPlacement.pinnedSelection?.name
-                                ?? ""
-                            store.setTaskbarScreenPlacement(
-                                .pinned(PinnedScreenSelection(uuid: uuid, name: name))
-                            )
-                        }
-                    }
-                )
-            ) {
-                Text("Follow the mouse").tag(TaskbarScreenChoice.followMouse)
-                ForEach(options, id: \.uuid) { option in
-                    Text(option.title).tag(TaskbarScreenChoice.screen(uuid: option.uuid))
-                }
-                if let pinned, !pinnedIsConnected {
-                    Text(String(format: String(localized: "%@ (disconnected)"), pinned.name))
-                        .tag(TaskbarScreenChoice.screen(uuid: pinned.uuid))
-                }
-            }
-            .pickerStyle(.menu)
-        }
-        .onReceive(
-            NotificationCenter.default.publisher(for: NSApplication.didChangeScreenParametersNotification)
-        ) { _ in
-            screenParametersGeneration += 1
-        }
-    }
-
-    /// 已连接屏 → (display UUID, 去重后的展示名)。读不出 UUID 的屏不进列表（固定不了它）。
-    private func connectedScreenOptions() -> [(uuid: String, title: String)] {
-        let identified: [(uuid: String, name: String)] = NSScreen.screens.compactMap { screen in
-            guard let uuid = DisplayIdentity.uuidString(for: screen) else { return nil }
-            return (uuid, screen.localizedName)
-        }
-        let titles = TaskbarScreenResolution.displayTitles(names: identified.map(\.name))
-        return zip(identified, titles).map { ($0.uuid, $1) }
     }
 
     // 「高级」= 需要额外能力、默认就对、基本不用碰的开关。单独一页不是为了藏，
@@ -715,12 +656,6 @@ struct SettingsWindowContent: View {
     ) -> Binding<Value> {
         Binding(get: get, set: set)
     }
-}
-
-/// 「显示位置」Picker 的 tag：跟随鼠标，或某块屏（按 display UUID 认屏，永不按数组序号）。
-private enum TaskbarScreenChoice: Hashable {
-    case followMouse
-    case screen(uuid: String)
 }
 
 private struct SettingsAlert: Identifiable {

@@ -103,7 +103,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             self?.edgeToggleHotKey?.shortcut.displayGlyphs
                 ?? GlobalHotKeyShortcut.edgeAutoHideMode.displayGlyphs
         },
-        isToggleHotKeyRegistered: { [weak self] in self?.edgeToggleHotKey?.isRegistered ?? false }
+        isToggleHotKeyRegistered: { [weak self] in self?.edgeToggleHotKey?.isRegistered ?? false },
+        connectedScreens: { DisplayIdentity.connectedScreenOptions() }
     )
 
     func applicationDidFinishLaunching(_ notification: Notification) {

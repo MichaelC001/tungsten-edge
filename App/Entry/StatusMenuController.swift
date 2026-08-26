@@ -56,6 +56,13 @@ final class StatusMenuController: NSObject, NSMenuDelegate {
     private let hotKeyGlyphs: () -> String
     // 闭包注入：注册状态归 AppDelegate 持有的 GlobalHotKeyMonitor，菜单每次刷新时现查。
     private let isToggleHotKeyRegistered: () -> Bool
+    /// 在场屏快照的来源。闭包注入而非直接调 `DisplayIdentity`：测试 target 编译本文件
+    /// 但不含 `Platform/`（同 `isAccessibilityTrusted` 的理由）。
+    private let connectedScreens: () -> [(uuid: String, title: String)]
+    /// 屏幕快照缓存。**菜单路径只读它，绝不现算**——`localizedName` 会读 IODisplay，
+    /// 菜单路径上的主线程系统 I/O 会让 macOS 合并 mouse-moved 事件（菜单划不动）。
+    private var connectedScreensCache: [(uuid: String, title: String)] = []
+    private var screenParametersObserver: NSObjectProtocol?
     private var edgeDelaySubscription: AnyCancellable?
     /// 待装新版的提示：图标上那个点要在菜单关着时也能亮起来，所以单独订阅。
     private var pendingUpdateSubscription: AnyCancellable?
@@ -95,6 +102,15 @@ final class StatusMenuController: NSObject, NSMenuDelegate {
     private let nativeDockApplyItem = NSMenuItem()
     private let nativeDockApplyRow = NativeDockApplyRowView()
     private let openNativeDockSettingsItem = NSMenuItem(title: String(localized: "Dock Settings…"), action: #selector(openNativeDockSettings), keyEquivalent: "")
+    /// 「任务条显示在 ▸」：二级子菜单，「跟随鼠标」+ 每块在场屏一项（owner 2026-08-26 把这个
+    /// 设置从设置窗口搬到菜单，不两边都放）。做成子菜单是为了**主菜单只多一行、高度恒定**——
+    /// 屏幕数变化不会改主菜单高度，任务条那条按左上角定位的路径就不会漂。
+    /// 整行的显隐只允许在 `prepareMenuForPresentation` 翻转（菜单开着时增删行的老规矩）。
+    private let taskbarScreenItem = NSMenuItem(title: String(localized: "Show taskbar on"), action: nil, keyEquivalent: "")
+    /// **刻意不设 delegate**：`menuWillOpen` / `menuDidClose` 不区分 menu 参数，
+    /// 子菜单一开一关会被当成主菜单开关，提前解除边缘自动隐藏抑制。内容改为在父菜单
+    /// 显示前（`prepareMenuForPresentation`）建好。
+    private let taskbarScreenMenu = NSMenu()
     private let nativeDockSliderView: PreferenceSliderMenuItemView
     private let edgeSliderView: PreferenceSliderMenuItemView
 
@@ -107,7 +123,8 @@ final class StatusMenuController: NSObject, NSMenuDelegate {
          onMenuVisibilityChanged: @escaping (Bool) -> Void = { _ in },
          onQuit: @escaping () -> Void,
          hotKeyGlyphs: @escaping () -> String,
-         isToggleHotKeyRegistered: @escaping () -> Bool = { false }) {
+         isToggleHotKeyRegistered: @escaping () -> Bool = { false },
+         connectedScreens: @escaping () -> [(uuid: String, title: String)] = { [] }) {
         self.store = store
         self.settingsCoordinator = settingsCoordinator
         self.isAccessibilityTrusted = isAccessibilityTrusted
@@ -118,6 +135,7 @@ final class StatusMenuController: NSObject, NSMenuDelegate {
         self.onQuit = onQuit
         self.hotKeyGlyphs = hotKeyGlyphs
         self.isToggleHotKeyRegistered = isToggleHotKeyRegistered
+        self.connectedScreens = connectedScreens
         nativeDockSliderView = PreferenceSliderMenuItemView(accessibilityTitle: String(localized: "Dock wake delay"))
         edgeSliderView = PreferenceSliderMenuItemView(accessibilityTitle: String(localized: "Tungsten Edge wake delay"))
         super.init()
@@ -149,6 +167,24 @@ final class StatusMenuController: NSObject, NSMenuDelegate {
             }
         refreshStatusItemBadge()
         refreshSystemTruth()
+        // 屏幕列表只在拔插时重算一次，菜单打开时读缓存（见 connectedScreensCache）。
+        connectedScreensCache = connectedScreens()
+        screenParametersObserver = NotificationCenter.default.addObserver(
+            forName: NSApplication.didChangeScreenParametersNotification,
+            object: nil,
+            queue: .main
+        ) { [weak self] _ in
+            MainActor.assumeIsolated {
+                guard let self else { return }
+                self.connectedScreensCache = self.connectedScreens()
+            }
+        }
+    }
+
+    deinit {
+        if let screenParametersObserver {
+            NotificationCenter.default.removeObserver(screenParametersObserver)
+        }
     }
 
     private func configureStatusItem() {
@@ -241,6 +277,12 @@ final class StatusMenuController: NSObject, NSMenuDelegate {
         // 「设置…」和「退出」归为底部一组（owner 2026-08-03）：菜单栏应用的普遍习惯是
         // 把这类"进另一个界面"的入口放在下面，上面留给随手切的开关。
         // 登录项 / 检查更新 / 版本号已于 2026-08-24 去重，只留设置窗口。
+        // 「任务条显示在 ▸」排在「设置…」上面：它是一条随手切的设置，而下面两条是
+        // 「进另一个界面」的入口。内容与显隐都由 prepareMenuForPresentation 落。
+        taskbarScreenItem.submenu = taskbarScreenMenu
+        taskbarScreenItem.isHidden = true
+        menu.addItem(taskbarScreenItem)
+
         settingsItem.target = self
         settingsItem.keyEquivalentModifierMask = [.command]
         menu.addItem(settingsItem)
@@ -322,6 +364,31 @@ final class StatusMenuController: NSObject, NSMenuDelegate {
         nativeDockApplyItem.isHidden = true
         edgeSliderView.sync(delay: store.edgeAutoHideDelay)
         refreshEdgeSectionTitle()
+        rebuildTaskbarScreenMenu()
+    }
+
+    /// 重建「任务条显示在 ▸」。**只从 `prepareMenuForPresentation` 调**——它是唯一
+    /// 允许改行显隐的路径（菜单在屏时增删行会让任务条锚点漂移）。
+    private func rebuildTaskbarScreenMenu() {
+        let presentation = TaskbarScreenMenuPresentation(
+            placement: store.taskbarScreenPlacement,
+            connectedScreens: connectedScreensCache
+        )
+        taskbarScreenItem.isHidden = presentation.isHidden
+        taskbarScreenMenu.removeAllItems()
+        for item in presentation.items {
+            let menuItem = NSMenuItem(
+                title: item.title,
+                action: #selector(selectTaskbarScreen(_:)),
+                keyEquivalent: ""
+            )
+            menuItem.target = self
+            // uuid 走 representedObject（nil = 跟随鼠标）。**不能用 ClosureMenuItem**：
+            // `AppMenuFragments.swift` 只编进 app target，本文件在测试 target 也编译。
+            menuItem.representedObject = item.uuid
+            menuItem.state = item.isChecked ? .on : .off
+            taskbarScreenMenu.addItem(menuItem)
+        }
     }
 
     /// 系统读取在服务专用队列执行。任务条菜单按左上角定位，显示后改高度会让底边漂移，
@@ -515,6 +582,18 @@ final class StatusMenuController: NSObject, NSMenuDelegate {
             presentError(title: String(localized: "Couldn’t Change Open at Login"), message: error.localizedDescription)
         }
         refreshCheckmarks()
+    }
+
+    @objc private func selectTaskbarScreen(_ sender: NSMenuItem) {
+        guard let uuid = sender.representedObject as? String else {
+            store.setTaskbarScreenPlacement(.followMouse)
+            return
+        }
+        // name 只是展示快照：在场屏取去重后的展示名；重选那块断开的屏时沿用旧快照。
+        let name = connectedScreensCache.first(where: { $0.uuid == uuid })?.title
+            ?? store.taskbarScreenPlacement.pinnedSelection?.name
+            ?? ""
+        store.setTaskbarScreenPlacement(.pinned(PinnedScreenSelection(uuid: uuid, name: name)))
     }
 
     @objc private func openLoginItemsSettings() {

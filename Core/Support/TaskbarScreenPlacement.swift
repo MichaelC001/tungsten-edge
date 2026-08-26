@@ -83,3 +83,44 @@ enum TaskbarScreenResolution {
         }
     }
 }
+
+/// 状态菜单「任务条显示在 ▸」子菜单的纯展示模型（2026-08-26 入口从设置窗口搬到菜单）。
+/// 与 `LaunchAtLoginMenuPresentation` 同一房规：判定在这里、可单测，controller 只负责渲染。
+struct TaskbarScreenMenuPresentation {
+    struct Item: Equatable {
+        /// nil = 「跟随鼠标」；否则是那块屏的 display UUID。
+        let uuid: String?
+        let title: String
+        let isChecked: Bool
+    }
+
+    /// 整行（连同子菜单）不显示。
+    let isHidden: Bool
+    let items: [Item]
+
+    /// - Parameter connectedScreens: 当前在场的屏，`title` 已去重（`displayTitles`）。
+    init(placement: TaskbarScreenPlacement, connectedScreens: [(uuid: String, title: String)]) {
+        let pinned = placement.pinnedSelection
+        // 只有一块屏**且**当前不是固定档才隐藏。少了后半句会出死角：固定到外接屏后把它拔掉，
+        // 就只剩一块屏 → 整行消失 → 再也切不回「跟随鼠标」。
+        isHidden = connectedScreens.count < 2 && pinned == nil
+
+        var items: [Item] = [
+            Item(uuid: nil, title: String(localized: "Follow the mouse"), isChecked: pinned == nil)
+        ]
+        items += connectedScreens.map { screen in
+            Item(uuid: screen.uuid, title: screen.title, isChecked: pinned?.uuid == screen.uuid)
+        }
+        // 固定的屏此刻不在场：末尾补一项「XX（未连接）」并保持选中——选择不丢，接回自动生效。
+        if let pinned, !connectedScreens.contains(where: { $0.uuid == pinned.uuid }) {
+            items.append(
+                Item(
+                    uuid: pinned.uuid,
+                    title: String(format: String(localized: "%@ (disconnected)"), pinned.name),
+                    isChecked: true
+                )
+            )
+        }
+        self.items = items
+    }
+}
