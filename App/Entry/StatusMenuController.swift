@@ -102,7 +102,7 @@ final class StatusMenuController: NSObject, NSMenuDelegate {
     private let nativeDockApplyItem = NSMenuItem()
     private let nativeDockApplyRow = NativeDockApplyRowView()
     private let openNativeDockSettingsItem = NSMenuItem(title: String(localized: "Dock Settings…"), action: #selector(openNativeDockSettings), keyEquivalent: "")
-    /// 「任务条显示在 ▸」：二级子菜单，「跟随鼠标」+ 每块在场屏一项（owner 2026-08-26 把这个
+    /// 「钨极 Dock 栏显示在 ▸」：二级子菜单，「跟随鼠标」+ 每块在场屏一项（owner 2026-08-26 把这个
     /// 设置从设置窗口搬到菜单，不两边都放）。做成子菜单是为了**主菜单只多一行、高度恒定**——
     /// 屏幕数变化不会改主菜单高度，任务条那条按左上角定位的路径就不会漂。
     /// 整行的显隐只允许在 `prepareMenuForPresentation` 翻转（菜单开着时增删行的老规矩）。
@@ -277,7 +277,7 @@ final class StatusMenuController: NSObject, NSMenuDelegate {
         // 「设置…」和「退出」归为底部一组（owner 2026-08-03）：菜单栏应用的普遍习惯是
         // 把这类"进另一个界面"的入口放在下面，上面留给随手切的开关。
         // 登录项 / 检查更新 / 版本号已于 2026-08-24 去重，只留设置窗口。
-        // 「任务条显示在 ▸」排在「设置…」上面：它是一条随手切的设置，而下面两条是
+        // 「钨极 Dock 栏显示在 ▸」排在「设置…」上面：它是一条随手切的设置，而下面两条是
         // 「进另一个界面」的入口。内容与显隐都由 prepareMenuForPresentation 落。
         taskbarScreenItem.submenu = taskbarScreenMenu
         taskbarScreenItem.isHidden = true
@@ -367,7 +367,7 @@ final class StatusMenuController: NSObject, NSMenuDelegate {
         rebuildTaskbarScreenMenu()
     }
 
-    /// 重建「任务条显示在 ▸」。**只从 `prepareMenuForPresentation` 调**——它是唯一
+    /// 重建「钨极 Dock 栏显示在 ▸」。**只从 `prepareMenuForPresentation` 调**——它是唯一
     /// 允许改行显隐的路径（菜单在屏时增删行会让任务条锚点漂移）。
     private func rebuildTaskbarScreenMenu() {
         let presentation = TaskbarScreenMenuPresentation(

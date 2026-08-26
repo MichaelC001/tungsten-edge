@@ -84,7 +84,7 @@ enum TaskbarScreenResolution {
     }
 }
 
-/// 状态菜单「任务条显示在 ▸」子菜单的纯展示模型（2026-08-26 入口从设置窗口搬到菜单）。
+/// 状态菜单「钨极 Dock 栏显示在 ▸」子菜单的纯展示模型（2026-08-26 入口从设置窗口搬到菜单）。
 /// 与 `LaunchAtLoginMenuPresentation` 同一房规：判定在这里、可单测，controller 只负责渲染。
 struct TaskbarScreenMenuPresentation {
     struct Item: Equatable {
