@@ -93,12 +93,14 @@ macOS suppresses key events from global event taps while Secure Input is active,
 ### Option 2 — Homebrew (for technical users)
 
 ```bash
-brew tap moonbai-studio/tungsten-edge
-brew trust moonbai-studio/tungsten-edge
-brew install --cask tungsten-edge
+brew install --cask moonbai-studio/tungsten-edge/tungsten-edge
 ```
 
-> The `brew trust` step is required for any third-party tap.
+> One command is enough — Homebrew taps the repository, trusts the cask and installs it.
+> If you would rather use the short token `brew install --cask tungsten-edge` later, run
+> `brew tap moonbai-studio/tungsten-edge` and `brew trust moonbai-studio/tungsten-edge` first:
+> without the tap name on the command line, the short token fails with
+> `Refusing to load cask ... from untrusted tap`.
 
 ## Grant Accessibility permission
 
@@ -169,6 +171,8 @@ To keep the Dock from ever reappearing, drag the Dock slider in the status menu 
 
 ## Community
 
+**Issues vs Discussions** — [Issues](https://github.com/moonbai-studio/tungsten-edge/issues) are for bug reports and concrete feature requests. For questions about how to use Tungsten Edge, installation help or general discussion, please use [Discussions](https://github.com/moonbai-studio/tungsten-edge/discussions).
+
 **WeChat Group**
 
 <img src="assets/wechat-group.png" alt="Tungsten Edge WeChat group QR code" width="280" />
@@ -177,7 +181,7 @@ The QR code is updated weekly. If it has expired, please leave a message in [Iss
 
 Tungsten Edge recognizes and thanks the [LINUX DO](https://linux.do/) community for providing a place for discussion and feedback.
 
-If Tungsten Edge is useful to you, a GitHub star helps more than it looks: at **225 stars** the project qualifies for the official Homebrew cask registry — after which installing it is a single `brew install` for everyone, with no `tap` or `trust` step.
+If Tungsten Edge is useful to you, a GitHub star helps more than it looks: at **225 stars** the project qualifies for the official Homebrew cask registry — after which `brew install --cask tungsten-edge` works for everyone, with no repository name to type.
 
 ## Pricing
 

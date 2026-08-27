@@ -92,12 +92,13 @@ macOS 在密码框等场景启用 Secure Input 时，不会把键盘事件交给
 ### 方式二：Homebrew（技术用户）
 
 ```bash
-brew tap moonbai-studio/tungsten-edge
-brew trust moonbai-studio/tungsten-edge
-brew install --cask tungsten-edge
+brew install --cask moonbai-studio/tungsten-edge/tungsten-edge
 ```
 
-> `brew trust` 这步是必须的——Homebrew 对所有第三方 tap 都要求手动确认信任，否则直接拒绝安装。
+> 一条就够——Homebrew 会自动添加 tap、把这个 cask 记入信任表，然后安装。
+> 想以后用短名 `brew install --cask tungsten-edge`，先运行 `brew tap moonbai-studio/tungsten-edge`
+> 和 `brew trust moonbai-studio/tungsten-edge`：命令行里不带 tap 名时，短名会报
+> `Refusing to load cask ... from untrusted tap`。
 
 ## 开启辅助功能权限
 
@@ -158,6 +159,8 @@ brew install --cask tungsten-edge
 
 ## 社区
 
+**Issues 与 Discussions 的分工** —— [Issues](https://github.com/moonbai-studio/tungsten-edge/issues) 只收 bug 报告和明确的功能请求。用法问题、安装求助和其他交流，请到 [Discussions](https://github.com/moonbai-studio/tungsten-edge/discussions)。
+
 **微信交流群**
 
 <img src="assets/wechat-group.png" alt="钨极 Dock 微信交流群二维码" width="280" />
@@ -166,7 +169,7 @@ brew install --cask tungsten-edge
 
 钨极认可并感谢 [LINUX DO](https://linux.do/) 社区提供的交流与反馈。
 
-如果钨极对你有用，点一颗 GitHub Star 比看起来更有用：到 **225 星**，钨极就够格进入 Homebrew 官方 cask 源——此后所有人安装只需一条 `brew install`，不再需要 `tap` 和 `trust`。
+如果钨极对你有用，点一颗 GitHub Star 比看起来更有用：到 **225 星**，钨极就够格进入 Homebrew 官方 cask 源——此后所有人只需 `brew install --cask tungsten-edge`，不用再写仓库全名。
 
 ## 价格
 
