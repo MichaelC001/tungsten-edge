@@ -1,4 +1,5 @@
 import AppKit
+import CoreServices
 import SwiftUI
 
 /// A chip that represents an app by bundle identifier rather than a concrete window.
@@ -440,10 +441,45 @@ enum AppDisplayNameResolver {
             guard let url = NSWorkspace.shared.urlForApplication(withBundleIdentifier: bundleID) else {
                 return nil
             }
-            return Bundle(url: url)?.localizedInfoDictionary?["CFBundleDisplayName"] as? String
-                ?? Bundle(url: url)?.infoDictionary?["CFBundleName"] as? String
-                ?? url.deletingPathExtension().lastPathComponent
+            return notRunningDisplayName(at: url)
         }
+    }
+
+    /// 未启动应用的显示名。**必须和运行中的 `localizedName` 同源**，否则同一个 app 会在
+    /// 「未启动 → 启动 → 退出」之间来回换名字（v0.9.6 用户反馈：中文系统下「系统设置」
+    /// 未启动时显示 System Settings）。
+    ///
+    /// 顺序就是依据强度，2026-08-27 在真 .app 里逐个实测过（CLI 里测不准，命令行进程的
+    /// 首选语言是 en，见 `Docs/05-known-platform-quirks.md`）：
+    /// 1. Spotlight 的 `kMDItemDisplayName` 跟**系统语言**走，和 `localizedName` 同源；
+    ///    `Bundle` 那条链跟的是**本进程**的首选语言，被「语言与地区 ▸ App」单独改过就会分叉。
+    /// 2. Spotlight 索引关掉时才落到包内。这里两个键都要试：「系统设置」这类系统应用没有
+    ///    `zh-Hans.lproj`，中文名只存在 `InfoPlist.loctable`，而 loctable 里只有
+    ///    `CFBundleName`——原实现在本地化字典里只问 `CFBundleDisplayName`，落空后直接跳到
+    ///    **未本地化**的 `CFBundleName`，这就是那条 bug 的直接成因。
+    private static func notRunningDisplayName(at url: URL) -> String? {
+        if let item = MDItemCreateWithURL(nil, url as CFURL),
+           let spotlight = sanitizedDisplayName(MDItemCopyAttribute(item, kMDItemDisplayName) as? String) {
+            return spotlight
+        }
+        let bundle = Bundle(url: url)
+        for dict in [bundle?.localizedInfoDictionary, bundle?.infoDictionary] {
+            for key in ["CFBundleDisplayName", "CFBundleName"] {
+                if let name = sanitizedDisplayName(dict?[key] as? String) { return name }
+            }
+        }
+        return url.deletingPathExtension().lastPathComponent
+    }
+
+    /// Finder 的「显示所有文件扩展名」打开时，上面几条来源会带 `.app` 后缀；气泡里不该出现。
+    private static func sanitizedDisplayName(_ raw: String?) -> String? {
+        guard var name = raw?.trimmingCharacters(in: .whitespacesAndNewlines), !name.isEmpty else {
+            return nil
+        }
+        if name.hasSuffix(".app"), name.count > 4 {
+            name = String(name.dropLast(4)).trimmingCharacters(in: .whitespacesAndNewlines)
+        }
+        return name.isEmpty ? nil : name
     }
 
     static func invalidateDisplayName(for bundleID: String) {
