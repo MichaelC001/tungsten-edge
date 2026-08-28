@@ -235,7 +235,7 @@ struct DrawerView: View {
     private var emptyHint: some View {
         Text("Drag apps here")
             .font(.system(size: 11))
-            .foregroundStyle(theme.labelInactive.color)
+            .foregroundStyle(theme.effectiveLabelInactive.color)
             .multilineTextAlignment(.center)
             .fixedSize(horizontal: false, vertical: true)
             .frame(width: 5 * 44 * 0.7 + 4 * 8)

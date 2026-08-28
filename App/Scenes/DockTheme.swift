@@ -38,6 +38,19 @@ extension DockThemeTokens {
     var drawsEffectiveThickness: Bool {
         DockEffectSwitches.thicknessEnabled(from: DockEffectSwitches.environment) && drawsPanelThickness
     }
+
+    /// 实际生效的标题卡药丸底色：`DOCK_CHIP_PILL_FILL` 覆盖表里的值。
+    /// 和上面几个不同，这里的默认值**就是已签收的观感**，环境变量只是不重编译的调参出口
+    ///（同 `DOCK_DRAG_FLIGHT_MS`），不是「未验收效果 opt-in」那一类。
+    var effectiveChipPillFill: DockTintPair {
+        DockEffectSwitches.chipPillFill(from: DockEffectSwitches.environment, candidate: chipPillFill)
+    }
+
+    /// 实际生效的「不在当前桌面」标题色：`DOCK_LABEL_INACTIVE` 覆盖表里的值。
+    /// 必须和 `effectiveChipPillFill` 一起调，理由见 `chipPillFill` 的注释。
+    var effectiveLabelInactive: DockTint {
+        DockEffectSwitches.labelInactive(from: DockEffectSwitches.environment, candidate: labelInactive)
+    }
 }
 
 enum DockEffectSwitches {
@@ -62,6 +75,41 @@ enum DockEffectSwitches {
         environment["DOCK_PANEL_THICKNESS"]?.trimmingCharacters(in: .whitespacesAndNewlines) == "1"
     }
 
+    /// `DOCK_CHIP_PILL_FILL=<常态>[,<悬停态>]`，两个都是 0…1 的不透明度。
+    /// 只给一个数时悬停态按表里既有的 **×1.4** 关系推出来。未设 / 非数字 / 越界 → 回落到表里的值。
+    /// 基色恒为白：方向必须和黑字相反（`DockThemeTokens.chipPillFill`），不给「改成加黑」的出口。
+    static func chipPillFill(from environment: [String: String], candidate: DockTintPair) -> DockTintPair {
+        guard let raw = environment["DOCK_CHIP_PILL_FILL"]?
+            .trimmingCharacters(in: .whitespacesAndNewlines),
+              !raw.isEmpty else { return candidate }
+        let parts = raw.split(separator: ",", omittingEmptySubsequences: false)
+            .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+        guard (1...2).contains(parts.count), let normal = opacity(parts[0]) else { return candidate }
+        let emphasized: Double
+        if parts.count == 2 {
+            guard let parsed = opacity(parts[1]) else { return candidate }
+            emphasized = parsed
+        } else {
+            emphasized = min(normal * 1.4, 1)
+        }
+        return DockTintPair(normal: .white(normal), emphasized: .white(emphasized))
+    }
+
+    /// `DOCK_LABEL_INACTIVE=<不透明度>`（0…1）。未设 / 非数字 / 越界 → 回落到表里的值。
+    /// 基色恒为黑，同上。
+    static func labelInactive(from environment: [String: String], candidate: DockTint) -> DockTint {
+        guard let raw = environment["DOCK_LABEL_INACTIVE"]?
+            .trimmingCharacters(in: .whitespacesAndNewlines),
+              let value = opacity(raw) else { return candidate }
+        return .black(value)
+    }
+
+    /// 0…1 的不透明度解析。空串 / 非数字 / 越界一律 `nil`，由调用方回落。
+    private static func opacity(_ raw: String) -> Double? {
+        guard !raw.isEmpty, let value = Double(raw), value >= 0, value <= 1 else { return nil }
+        return value
+    }
+
     /// 调参诊断：只有真的设了某个开关才打一行，打的是**解析后**的值——
     /// 名字或数字写错（被回落）当场就看得出来，不会拿着一张其实没生效的对照图瞎比。
     static func logActiveOverrides(material: DockPanelMaterial, saturation: Double, thickness: Bool) {
@@ -73,6 +121,14 @@ enum DockEffectSwitches {
         }
         if let raw = environment["DOCK_PANEL_THICKNESS"] {
             print("[panel] DOCK_PANEL_THICKNESS=\"\(raw)\" → 厚度层\(thickness ? "开" : "关")")
+        }
+        // 这两个不属于底板，但调对比度时和上面几个一起看，所以打在同一处。
+        if let raw = environment["DOCK_CHIP_PILL_FILL"] {
+            let pair = DockThemeTokens.standard.effectiveChipPillFill
+            print("[panel] DOCK_CHIP_PILL_FILL=\"\(raw)\" → 实际生效 常态 \(pair.normal.opacity) / 悬停 \(pair.emphasized.opacity)")
+        }
+        if let raw = environment["DOCK_LABEL_INACTIVE"] {
+            print("[panel] DOCK_LABEL_INACTIVE=\"\(raw)\" → 实际生效 \(DockThemeTokens.standard.effectiveLabelInactive.opacity)")
         }
     }
 }

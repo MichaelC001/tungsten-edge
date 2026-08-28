@@ -2072,7 +2072,7 @@ struct ChipView: View {
                 showsHover: showsHover
             )
             shape
-                .fill(theme.chipPillFill.color(emphasisProgress: Double(progress)))
+                .fill(theme.effectiveChipPillFill.color(emphasisProgress: Double(progress)))
                 .overlay(
                     shape.strokeBorder(
                         theme.chipPillRimStyle(emphasisProgress: Double(progress)),
@@ -2085,7 +2085,7 @@ struct ChipView: View {
 
     private var multiWindowChip: some View {
         // 图标恒为原色（不按状态淡化，owner 2026-08-02）；「在不在桌面上」只由标题颜色表达。
-        let titleColor: Color = effectiveIsOnDesktop ? theme.labelActive.color : theme.labelInactive.color
+        let titleColor: Color = effectiveIsOnDesktop ? theme.labelActive.color : theme.effectiveLabelInactive.color
         let capturedDisplayTitle = displayTitle
         // **可动画标量只包住药丸的底和描边，不包整张卡。**
         //

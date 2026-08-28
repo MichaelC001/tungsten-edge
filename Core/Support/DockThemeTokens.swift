@@ -220,10 +220,19 @@ struct DockThemeTokens: Equatable {
     ///
     /// **方向必须和文字相反。** 底板是透的、亮度跟着**壁纸**走，而文字颜色是固定的黑；
     /// 两者同向就等于把对比度抹平。2026-08-16 之前这里是「加黑 0.05」——当年为了
-    /// 「让卡看起来像张卡」调的，不是为了读得清，正好同向。现在是 owner 从
-    /// 0.10 / 0.12 / 0.13 三次实机对比里定下的加白 0.13。
+    /// 「让卡看起来像张卡」调的，不是为了读得清，正好同向。**别按那个直觉改回加黑。**
     ///
-    /// 卡片的「像张卡」由 `chipPillRimTop` 那圈描边承担，不靠填充。
+    /// ⚠️ **提亮这里救不了 `labelInactive` 那档灰字，两个值必须成对调。**
+    /// 半透明黑字画在药丸上，字的亮度 = 药丸亮度 ×(1−α)，药丸一亮字跟着一起亮：
+    /// 灰字 α=0.45 时，底板 110 → 对比 2.13，药丸提到 145 才 2.57、提到 180 也只有 2.82；
+    /// 同一底板把灰字自己从 0.45 加深到 0.62 一步就到 2.8+。提亮药丸主要赚的是
+    /// `labelActive`（黑 0.85 几乎不透，底板亮多少它就赚多少）。
+    ///
+    /// 现值 0.24 是 2026-08-28「深色壁纸下看不清」那轮定的，owner 当天实机签收
+    ///（此前 0.13，是 owner 2026-08-16 从 0.10 / 0.12 / 0.13 里挑的，只在浅色壁纸上比过）。
+    /// 悬停档保持 ×1.4 的既有关系。调参出口：`DOCK_CHIP_PILL_FILL`。
+    ///
+    /// 卡片的「像张卡」由 `chipPillRimTop` 那圈描边承担，不靠填充——所以描边必须比填充亮。
     let chipPillFill: DockTintPair
     let chipPillRimTop: DockTintPair
     let chipPillRimBottom: DockTint
@@ -233,6 +242,12 @@ struct DockThemeTokens: Equatable {
     /// 窗口标题（该窗口在桌面上可见时）。
     let labelActive: DockTint
     /// 窗口标题（已最小化 / 隐藏时）。
+    ///
+    /// 它是整条上对比度最脆的一处：半透明黑字，底板亮度跟壁纸走。深色壁纸下 0.45 会直接化掉
+    /// （owner 2026-08-28 报），而**提亮药丸救不了它**——原因见 `chipPillFill` 的注释。
+    /// 现值 0.62，owner 2026-08-28 实机签收。再加深就开始吃掉「在不在当前桌面」这个深浅区分，
+    /// 别越过 `labelActive` 0.85。
+    /// 调参出口：`DOCK_LABEL_INACTIVE`。
     let labelInactive: DockTint
     /// 悬停时冒出的名字（窗口 chip / 抽屉图标 / 文件夹名 / 中转格）。
     let labelHover: DockTint
@@ -362,12 +377,12 @@ extension DockThemeTokens {
         panelMaterial: .popover,
 
         // owner 2026-08-16 实机比过 0.10 / 0.12 / 0.13，定 0.13。悬停态 ×1.4。
-        chipPillFill: DockTintPair(normal: .white(0.13), emphasized: .white(0.182)),
+        chipPillFill: DockTintPair(normal: .white(0.24), emphasized: .white(0.336)),
         chipPillRimTop: DockTintPair(normal: .white(0.55), emphasized: .white(0.7)),
         chipPillRimBottom: .black(0.1),
 
         labelActive: .black(0.85),
-        labelInactive: .black(0.45),
+        labelInactive: .black(0.62),
         labelHover: .black(0.75),
         labelSubtitle: .black(0.55),
         labelHalo: DockShadow(tint: .white(0.70), radius: 1.5, y: 0),

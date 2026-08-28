@@ -128,6 +128,29 @@ final class DockThemeTests: XCTestCase {
                              "悬停态要比常态更浓")
     }
 
+    /// **描边必须比填充亮。** 卡片的「像张卡」靠 `chipPillRimTop` 那圈边，不靠填充；
+    /// 2026-08-28 为了深色壁纸下的可读性把填充从 0.13 提到 0.24，再往上提就会把边吃掉，
+    /// 卡片退化成一块糊在条上的白板。要继续提填充，得先把描边一起提。
+    func testChipPillRimStaysBrighterThanTheFill() {
+        XCTAssertEqual(theme.chipPillRimTop.normal.base, .white)
+        XCTAssertGreaterThan(theme.chipPillRimTop.normal.opacity, theme.chipPillFill.normal.opacity,
+                             "常态：描边要亮于填充")
+        XCTAssertGreaterThan(theme.chipPillRimTop.emphasized.opacity, theme.chipPillFill.emphasized.opacity,
+                             "悬停态：描边要亮于填充")
+    }
+
+    /// **药丸底和「不在桌面」那档文字是一对，别只调其中一个。**
+    /// 半透明黑字画在药丸上，字的亮度 = 药丸亮度 ×(1−α)，提亮药丸时字跟着一起亮——
+    /// 所以提药丸救的是 `labelActive`（几乎不透），救不了 `labelInactive`。
+    /// 这条锁的是「灰字别淡回去」：它必须明显比一半更实，否则深色壁纸下就化掉了
+    ///（owner 2026-08-28 报的就是 0.45 那一版）。
+    func testInactiveLabelStaysReadableOnADarkBackdrop() {
+        XCTAssertGreaterThanOrEqual(theme.labelInactive.opacity, 0.55,
+                                    "灰字太淡，深色壁纸下会化掉——提亮药丸补不回来")
+        XCTAssertLessThan(theme.labelInactive.opacity, theme.labelActive.opacity,
+                          "还得比在桌面那档淡，「在不在当前桌面」全靠这个深浅差")
+    }
+
     /// 裸文字（没有药丸兜底的那些）的光晕同样取文字的反方向，`y = 0`：
     /// 要的是包住字的一圈，不是投影。
     func testLabelHaloOpposesTheTextColour() {
@@ -217,6 +240,55 @@ final class DockThemeTests: XCTestCase {
 
     func testMaterialAllCoversEveryCase() {
         XCTAssertEqual(DockPanelMaterial.all.count, 14, "系统材质候选共 14 种；新增 case 时同步这里")
+    }
+
+    // MARK: - 对比度调参出口
+    //
+    // 这两个和上面的「效果开关」不是一回事：默认值**就是已签收的观感**，环境变量只是不重编译
+    // 就能来回切的调参出口（同 `DOCK_DRAG_FLIGHT_MS`）。所以断的是「没设 / 乱填一律回落到表里」，
+    // 不是「默认关」。
+
+    func testContrastOverridesFallBackToTheTable() {
+        let pair = DockTintPair(normal: .white(0.24), emphasized: .white(0.336))
+        XCTAssertEqual(DockEffectSwitches.chipPillFill(from: [:], candidate: pair), pair)
+        XCTAssertEqual(DockEffectSwitches.labelInactive(from: [:], candidate: .black(0.62)), .black(0.62))
+        for bad in ["", "  ", "abc", "-0.1", "1.2", "0.2,", "0.2,abc", "0.2,0.3,0.4"] {
+            XCTAssertEqual(DockEffectSwitches.chipPillFill(
+                from: ["DOCK_CHIP_PILL_FILL": bad], candidate: pair), pair, "非法值「\(bad)」要回落")
+            XCTAssertEqual(DockEffectSwitches.labelInactive(
+                from: ["DOCK_LABEL_INACTIVE": bad], candidate: .black(0.62)), .black(0.62),
+                "非法值「\(bad)」要回落")
+        }
+    }
+
+    func testChipPillFillOverrideParses() {
+        let pair = DockTintPair(normal: .white(0.24), emphasized: .white(0.336))
+        // 只给一个数 → 悬停态按表里既有的 ×1.4 推出来。
+        XCTAssertEqual(DockEffectSwitches.chipPillFill(
+            from: ["DOCK_CHIP_PILL_FILL": " 0.3 "], candidate: pair),
+            DockTintPair(normal: .white(0.3), emphasized: .white(0.3 * 1.4)))
+        XCTAssertEqual(DockEffectSwitches.chipPillFill(
+            from: ["DOCK_CHIP_PILL_FILL": "0.18, 0.4"], candidate: pair),
+            DockTintPair(normal: .white(0.18), emphasized: .white(0.4)))
+        // ×1.4 推出来的值不许溢出 1.0。
+        XCTAssertEqual(DockEffectSwitches.chipPillFill(
+            from: ["DOCK_CHIP_PILL_FILL": "0.9"], candidate: pair).emphasized, .white(1))
+    }
+
+    func testLabelInactiveOverrideParses() {
+        XCTAssertEqual(DockEffectSwitches.labelInactive(
+            from: ["DOCK_LABEL_INACTIVE": " 0.55 "], candidate: .black(0.62)), .black(0.55))
+    }
+
+    /// 覆盖值的**基色不给出口**：药丸恒为白、文字恒为黑，方向不能靠环境变量翻过来
+    ///（翻过来就是把对比度抹平，见 `DockThemeTokens.chipPillFill` 的注释）。
+    func testContrastOverridesCannotFlipTheDirection() {
+        let pair = DockEffectSwitches.chipPillFill(
+            from: ["DOCK_CHIP_PILL_FILL": "0.3"], candidate: theme.chipPillFill)
+        XCTAssertEqual(pair.normal.base, .white)
+        XCTAssertEqual(pair.emphasized.base, .white)
+        XCTAssertEqual(DockEffectSwitches.labelInactive(
+            from: ["DOCK_LABEL_INACTIVE": "0.5"], candidate: theme.labelInactive).base, .black)
     }
 }
 
