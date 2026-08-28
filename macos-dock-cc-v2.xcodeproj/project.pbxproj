@@ -146,6 +146,8 @@
 		B74000000000000000000011 /* SubscriptionSubmitterTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = B74000000000000000000013 /* SubscriptionSubmitterTests.swift */; };
 		B75000000000000000000001 /* WelcomeGuideDecision.swift in Sources */ = {isa = PBXBuildFile; fileRef = B75000000000000000000003 /* WelcomeGuideDecision.swift */; };
 		B75000000000000000000002 /* WelcomeGuideDecision.swift in Sources */ = {isa = PBXBuildFile; fileRef = B75000000000000000000003 /* WelcomeGuideDecision.swift */; };
+		B75000000000000000000031 /* WelcomeGuideSelection.swift in Sources */ = {isa = PBXBuildFile; fileRef = B75000000000000000000033 /* WelcomeGuideSelection.swift */; };
+		B75000000000000000000032 /* WelcomeGuideSelection.swift in Sources */ = {isa = PBXBuildFile; fileRef = B75000000000000000000033 /* WelcomeGuideSelection.swift */; };
 		B75000000000000000000011 /* WelcomeGuideView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B75000000000000000000013 /* WelcomeGuideView.swift */; };
 		B75000000000000000000021 /* WelcomeGuideDecisionTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = B75000000000000000000023 /* WelcomeGuideDecisionTests.swift */; };
 		A00000000000000000009D01 /* WindowTitleTooltip.swift in Sources */ = {isa = PBXBuildFile; fileRef = A00000000000000000009D00 /* WindowTitleTooltip.swift */; };
@@ -644,6 +646,7 @@
 		B74000000000000000000003 /* SubscriptionSubmitter.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SubscriptionSubmitter.swift; sourceTree = "<group>"; };
 		B74000000000000000000013 /* SubscriptionSubmitterTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SubscriptionSubmitterTests.swift; sourceTree = "<group>"; };
 		B75000000000000000000003 /* WelcomeGuideDecision.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WelcomeGuideDecision.swift; sourceTree = "<group>"; };
+		B75000000000000000000033 /* WelcomeGuideSelection.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WelcomeGuideSelection.swift; sourceTree = "<group>"; };
 		B75000000000000000000013 /* WelcomeGuideView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WelcomeGuideView.swift; sourceTree = "<group>"; };
 		B75000000000000000000023 /* WelcomeGuideDecisionTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WelcomeGuideDecisionTests.swift; sourceTree = "<group>"; };
 		A00000000000000000000059 /* macos-dock-cc-v2Tests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = "macos-dock-cc-v2Tests.xctest"; sourceTree = BUILT_PRODUCTS_DIR; };
@@ -846,6 +849,7 @@
 				B72000000000000000000013 /* InstallationRecord.swift */,
 				B78000000000000000000003 /* LicenseVerifier.swift */,
 				B75000000000000000000003 /* WelcomeGuideDecision.swift */,
+				B75000000000000000000033 /* WelcomeGuideSelection.swift */,
 				C90000000000000000000005 /* ClickLatencyTrace.swift */,
 				A00000000000000000009AB0 /* HoverTrace.swift */,
 				A0000000000000000000FB00 /* DockThemeTokens.swift */,
@@ -1394,6 +1398,7 @@
 					B72000000000000000000011 /* InstallationRecord.swift in Sources */,
 					B78000000000000000000001 /* LicenseVerifier.swift in Sources */,
 					B75000000000000000000001 /* WelcomeGuideDecision.swift in Sources */,
+					B75000000000000000000031 /* WelcomeGuideSelection.swift in Sources */,
 					B75000000000000000000011 /* WelcomeGuideView.swift in Sources */,
 					C90000000000000000000006 /* ClickLatencyTrace.swift in Sources */,
 				A00000000000000000009AB1 /* HoverTrace.swift in Sources */,
@@ -1578,6 +1583,7 @@
 				B72000000000000000000012 /* InstallationRecord.swift in Sources */,
 				B78000000000000000000002 /* LicenseVerifier.swift in Sources */,
 				B75000000000000000000002 /* WelcomeGuideDecision.swift in Sources */,
+				B75000000000000000000032 /* WelcomeGuideSelection.swift in Sources */,
 				A0000000000000000000FB02 /* DockThemeTokens.swift in Sources */,
 				E20000000000000000000002 /* DockLiquidGlassConfiguration.swift in Sources */,
 				A0000000000000000000FC02 /* DockTheme.swift in Sources */,

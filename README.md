@@ -152,9 +152,10 @@ Writing Dock preferences requires a non-sandboxed build, because sandboxed apps 
 
 ## Recommended setup (align the minimize animation to the bottom)
 
-> On first run, if the Dock is not already set to hide itself, Tungsten Edge offers to do it for
-> you — one click. You will not see that prompt if you have already hidden the Dock. The rest of
-> this section is the manual route, plus the suggestions the prompt does not cover.
+> On first run, if the Dock is not already set to hide itself, Tungsten Edge offers three
+> checkboxes — hide the Dock, use the scale minimize effect, and minimize windows into their app
+> icon — all ticked, applied in one click. You will not see that prompt if you have already hidden
+> the Dock; the rest of this section is the manual route.
 
 
 If your Dock lives on the **side or top** of the screen, minimizing a window flies the animation toward the Dock — out of sync with this bottom taskbar. Move the Dock back to the **bottom** and set it to auto-hide; the minimize animation will then shrink toward the bottom, matching Tungsten Edge:
@@ -162,6 +163,11 @@ If your Dock lives on the **side or top** of the screen, minimizing a window fli
 - **System Settings → Desktop & Dock → Position on screen → Bottom**, and turn on **Automatically hide and show the Dock**.
 
 To keep the Dock from ever reappearing, drag the Dock slider in the status menu to `Never Wake`: hovering at the screen edge will no longer wake it.
+
+Two more settings under **System Settings → Desktop & Dock** pair well with a bottom taskbar:
+
+- **Minimize windows using → Scale effect.** The genie effect sweeps the window all the way down across Tungsten Edge; scaling is quicker and stays out of the way.
+- **Minimize windows into application icon → on.** Minimized windows still show as chips on Tungsten Edge, so there is no need for a second copy at the right end of the Dock.
 
 ## Status
 

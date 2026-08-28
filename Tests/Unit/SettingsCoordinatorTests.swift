@@ -105,6 +105,51 @@ final class SettingsCoordinatorTests: XCTestCase {
         XCTAssertEqual(store.nativeDockAutoHideDelay, 0.8)
     }
 
+    /// 只勾了最小化那两条时：一次系统状态都不该读，镜像一个字不该动。
+    /// 读了就意味着「写完 autohide 之后它变成什么」，可这一轮根本没碰 autohide。
+    func testMinimizeOnlyRecommendationsSkipReadbackAndLeaveMirrorAlone() async {
+        let store = makeStore(nativeDelay: 0.3)
+        let native = NativeDockServiceStub(states: [
+            NativeDockAutohideState(enabled: true, delay: 0.9),
+            NativeDockAutohideState(enabled: true, delay: 0.9),
+        ])
+        let coordinator = makeCoordinator(store: store, native: native)
+
+        let recommendations = WelcomeGuideSelection(
+            hidesDock: false,
+            usesScaleMinimizeEffect: true,
+            minimizesIntoAppIcon: true
+        ).recommendations(hideDelay: AppSettingsStore.neverWakeDelay)
+        let outcome = await coordinator.applyNativeDock(recommendations: recommendations)
+
+        XCTAssertEqual(native.appliedRecommendations, [recommendations])
+        XCTAssertTrue(native.appliedDelays.isEmpty)
+        XCTAssertEqual(native.states.count, 2, "一条系统状态都不该被消费")
+        XCTAssertNil(outcome.error)
+        XCTAssertEqual(outcome.resolvedDelay, 0.3)
+        XCTAssertEqual(store.nativeDockAutoHideDelay, 0.3)
+    }
+
+    /// 三条全勾：最小化两项一起写，autohide 那一半仍走四象限回读。
+    func testFullRecommendationsWriteEverythingAndStillResolveMirror() async {
+        let store = makeStore(nativeDelay: AppSettingsStore.neverHideDelay)
+        let native = NativeDockServiceStub(states: [
+            NativeDockAutohideState(enabled: false, delay: nil),
+            NativeDockAutohideState(enabled: true, delay: 999.0),
+        ])
+        let coordinator = makeCoordinator(store: store, native: native)
+
+        let recommendations = WelcomeGuideSelection.recommended
+            .recommendations(hideDelay: AppSettingsStore.neverWakeDelay)
+        let outcome = await coordinator.applyNativeDock(recommendations: recommendations)
+
+        XCTAssertEqual(native.appliedRecommendations, [recommendations])
+        XCTAssertEqual(recommendations.autoHideDelay, AppSettingsStore.neverWakeDelay)
+        XCTAssertNil(outcome.error)
+        XCTAssertEqual(outcome.resolvedDelay, AppSettingsStore.neverWakeDelay)
+        XCTAssertEqual(store.nativeDockAutoHideDelay, AppSettingsStore.neverWakeDelay)
+    }
+
     func testSandboxUnavailableDoesNotWriteOrChangeMirror() async {
         let store = makeStore(nativeDelay: 0.5)
         let native = NativeDockServiceStub(isAvailable: false)
@@ -320,6 +365,7 @@ private final class NativeDockServiceStub: NativeDockPreferencesServicing {
     var states: [NativeDockAutohideState?]
     var applyError: Error?
     var appliedDelays: [Double] = []
+    var appliedRecommendations: [NativeDockRecommendations] = []
 
     init(isAvailable: Bool = true, states: [NativeDockAutohideState?] = []) {
         self.isAvailable = isAvailable
@@ -328,6 +374,12 @@ private final class NativeDockServiceStub: NativeDockPreferencesServicing {
 
     func apply(delay: Double) throws {
         appliedDelays.append(delay)
+        if let applyError { throw applyError }
+    }
+
+    func apply(recommendations: NativeDockRecommendations) throws {
+        appliedRecommendations.append(recommendations)
+        if let delay = recommendations.autoHideDelay { appliedDelays.append(delay) }
         if let applyError { throw applyError }
     }
 
@@ -394,12 +446,18 @@ private final class ControlledNativeDockService: NativeDockPreferencesServicing 
     let isAvailable = true
     private let reader: ControlledNativeDockStateReader
     private(set) var appliedDelays: [Double] = []
+    private(set) var appliedRecommendations: [NativeDockRecommendations] = []
 
     init(reader: ControlledNativeDockStateReader) {
         self.reader = reader
     }
 
     func apply(delay: Double) throws { appliedDelays.append(delay) }
+
+    func apply(recommendations: NativeDockRecommendations) throws {
+        appliedRecommendations.append(recommendations)
+        if let delay = recommendations.autoHideDelay { appliedDelays.append(delay) }
+    }
     func currentAutohideState() async -> NativeDockAutohideState? { await reader.read() }
     func openSystemSettings() -> Bool { true }
 }

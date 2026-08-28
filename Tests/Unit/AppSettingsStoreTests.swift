@@ -236,6 +236,48 @@ final class AppSettingsStoreTests: XCTestCase {
         XCTAssertEqual(neverWake[1].arguments, ["write", "com.apple.dock", "autohide-delay", "-float", "999.0"])
     }
 
+    /// 引导那一屏的批量写入：**末尾只有一条 `killall Dock`**。每项各重启一次的话，
+    /// 用户会看到屏幕连闪三下。
+    @MainActor
+    func testWelcomeRecommendationCommandsRestartDockExactlyOnce() {
+        let all = NativeDockPreferencesService.commands(for: NativeDockRecommendations(
+            autoHideDelay: AppSettingsStore.neverWakeDelay,
+            minimizeEffectScale: true,
+            minimizeIntoAppIcon: true
+        ))
+        XCTAssertEqual(all.count, 5)
+        XCTAssertEqual(all[0].arguments, ["write", "com.apple.dock", "autohide", "-bool", "true"])
+        XCTAssertEqual(all[1].arguments, ["write", "com.apple.dock", "autohide-delay", "-float", "999.0"])
+        XCTAssertEqual(all[2].arguments, ["write", "com.apple.dock", "mineffect", "-string", "scale"])
+        XCTAssertEqual(all[3].arguments, ["write", "com.apple.dock", "minimize-to-application", "-bool", "true"])
+        XCTAssertEqual(all[4].executable, "/usr/bin/killall")
+        XCTAssertEqual(all.filter { $0.executable == "/usr/bin/killall" }.count, 1)
+    }
+
+    /// 没勾「隐藏系统 Dock」时一个 autohide 键都不许写——不碰和写默认值不是一回事。
+    @MainActor
+    func testMinimizeOnlyRecommendationCommandsSkipAutohideKeys() {
+        let minimizeOnly = NativeDockPreferencesService.commands(for: NativeDockRecommendations(
+            autoHideDelay: nil,
+            minimizeEffectScale: true,
+            minimizeIntoAppIcon: true
+        ))
+        XCTAssertEqual(minimizeOnly.count, 3)
+        XCTAssertFalse(minimizeOnly.contains { $0.arguments.contains("autohide") })
+        XCTAssertFalse(minimizeOnly.contains { $0.arguments.contains("autohide-delay") })
+        XCTAssertEqual(minimizeOnly.last?.executable, "/usr/bin/killall")
+    }
+
+    /// 一条都没勾：不写、不重启、不闪。
+    @MainActor
+    func testEmptyRecommendationCommandsAreNoOp() {
+        XCTAssertTrue(NativeDockPreferencesService.commands(for: NativeDockRecommendations(
+            autoHideDelay: nil,
+            minimizeEffectScale: false,
+            minimizeIntoAppIcon: false
+        )).isEmpty)
+    }
+
     @MainActor
     func testNativeDockPreferenceServiceDoesNotRunWhenSandboxed() {
         var didRun = false

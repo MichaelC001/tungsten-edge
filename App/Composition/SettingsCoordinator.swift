@@ -205,6 +205,16 @@ final class SettingsCoordinator: ObservableObject {
     /// （四象限见 `AutoHideToggleMenuModel.resolvedStoreDelay`）。这里**不弹窗**：
     /// 弹窗归调用方，两套界面的弹法不一样（菜单用 NSAlert，设置窗口用附着式 alert）。
     func applyNativeDock(target: Double) async -> NativeDockApplyOutcome {
+        await applyNativeDock(recommendations: NativeDockRecommendations(
+            autoHideDelay: target,
+            minimizeEffectScale: false,
+            minimizeIntoAppIcon: false
+        ))
+    }
+
+    /// 引导那一屏的批量写入。**四象限回读只对 `autohide` 那一半负责**：只勾了最小化两项时
+    /// 一次系统状态都不读、镜像一个字不动——没动 autohide 就没有「写完之后它变成什么」可解析。
+    func applyNativeDock(recommendations: NativeDockRecommendations) async -> NativeDockApplyOutcome {
         guard nativeDockPreferencesService.isAvailable else {
             return NativeDockApplyOutcome(
                 resolvedDelay: store.nativeDockAutoHideDelay,
@@ -216,13 +226,21 @@ final class SettingsCoordinator: ObservableObject {
         nativeDockRefreshGeneration &+= 1
         defer { nativeDockWriteInFlight = false }
 
-        let previousState = await nativeDockPreferencesService.currentAutohideState()
-        let previous = reconcileNativeDockMirror(using: previousState)
+        var previous: Double?
+        if recommendations.autoHideDelay != nil {
+            let previousState = await nativeDockPreferencesService.currentAutohideState()
+            previous = reconcileNativeDockMirror(using: previousState)
+        }
+
         var writeError: Error?
         do {
-            try nativeDockPreferencesService.apply(delay: target)
+            try nativeDockPreferencesService.apply(recommendations: recommendations)
         } catch {
             writeError = error
+        }
+
+        guard let target = recommendations.autoHideDelay, let previous else {
+            return NativeDockApplyOutcome(resolvedDelay: store.nativeDockAutoHideDelay, error: writeError)
         }
 
         let readback = await nativeDockPreferencesService.currentAutohideState()

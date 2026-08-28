@@ -86,4 +86,68 @@ final class WelcomeGuideDecisionTests: XCTestCase {
             .skipAndMarkSeen
         )
     }
+
+    // MARK: - 勾选 → 要写哪几个键
+
+    /// 这一步最容易把两个最小化选项接反，而只构造 `NativeDockRecommendations` 的测试抓不到，
+    /// 所以四种组合逐字段断言。
+    func testFullSelectionMapsToAllThreeWrites() {
+        let recommendations = WelcomeGuideSelection.recommended.recommendations(hideDelay: 999)
+        XCTAssertEqual(recommendations.autoHideDelay, 999)
+        XCTAssertTrue(recommendations.minimizeEffectScale)
+        XCTAssertTrue(recommendations.minimizeIntoAppIcon)
+        XCTAssertFalse(recommendations.isEmpty)
+    }
+
+    func testHideOnlySelectionLeavesMinimizeKeysUntouched() {
+        let recommendations = WelcomeGuideSelection(
+            hidesDock: true,
+            usesScaleMinimizeEffect: false,
+            minimizesIntoAppIcon: false
+        ).recommendations(hideDelay: 999)
+        XCTAssertEqual(recommendations.autoHideDelay, 999)
+        XCTAssertFalse(recommendations.minimizeEffectScale)
+        XCTAssertFalse(recommendations.minimizeIntoAppIcon)
+    }
+
+    /// 不勾隐藏 = **完全不碰** autohide（nil），不是「写个默认值」。
+    func testMinimizeOnlySelectionCarriesNoAutoHideDelay() {
+        let recommendations = WelcomeGuideSelection(
+            hidesDock: false,
+            usesScaleMinimizeEffect: true,
+            minimizesIntoAppIcon: true
+        ).recommendations(hideDelay: 999)
+        XCTAssertNil(recommendations.autoHideDelay)
+        XCTAssertTrue(recommendations.minimizeEffectScale)
+        XCTAssertTrue(recommendations.minimizeIntoAppIcon)
+    }
+
+    /// 两个最小化选项各自独立，别接反。
+    func testEachMinimizeOptionMapsToItsOwnField() {
+        let scaleOnly = WelcomeGuideSelection(
+            hidesDock: false,
+            usesScaleMinimizeEffect: true,
+            minimizesIntoAppIcon: false
+        ).recommendations(hideDelay: 999)
+        XCTAssertTrue(scaleOnly.minimizeEffectScale)
+        XCTAssertFalse(scaleOnly.minimizeIntoAppIcon)
+
+        let iconOnly = WelcomeGuideSelection(
+            hidesDock: false,
+            usesScaleMinimizeEffect: false,
+            minimizesIntoAppIcon: true
+        ).recommendations(hideDelay: 999)
+        XCTAssertFalse(iconOnly.minimizeEffectScale)
+        XCTAssertTrue(iconOnly.minimizeIntoAppIcon)
+    }
+
+    func testEmptySelectionMapsToEmptyRecommendations() {
+        let selection = WelcomeGuideSelection(
+            hidesDock: false,
+            usesScaleMinimizeEffect: false,
+            minimizesIntoAppIcon: false
+        )
+        XCTAssertTrue(selection.isEmpty)
+        XCTAssertTrue(selection.recommendations(hideDelay: 999).isEmpty)
+    }
 }

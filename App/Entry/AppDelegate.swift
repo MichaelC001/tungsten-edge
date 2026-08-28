@@ -317,7 +317,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
 
         let content = WelcomeGuideWindowContent(
-            onHideDock: { [weak self] in self?.applyRecommendedDockSetting() },
+            onApply: { [weak self] selection in self?.applyWelcomeSelection(selection) },
             onDismiss: { [weak self] in self?.dismissWelcomeGuide() }
         )
         let hosting = NSHostingView(rootView: content)
@@ -336,7 +336,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         welcomeWindow = window
 
         // 高度量法同权限引导：根视图外面套了 ScrollView，得用一次性探针量不加滚动时的自然高度。
-        let probe = NSHostingView(rootView: WelcomeGuideView(onHideDock: {}, onDismiss: {}))
+        let probe = NSHostingView(rootView: WelcomeGuideView(onApply: { _ in }, onDismiss: {}))
         probe.setFrameSize(NSSize(width: WelcomeGuideView.contentWidth, height: 0))
         probe.layoutSubtreeIfNeeded()
         let available = (window.screen ?? NSScreen.main)?.visibleFrame.height ?? 900
@@ -354,18 +354,23 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         NSApp.activate(ignoringOtherApps: true)
     }
 
-    /// 「帮我隐藏」：把系统 Dock 设成自动隐藏 + 不唤醒（owner 2026-08-20 定的推荐档位）。
+    /// 「应用推荐设置」：按用户勾了哪几条写系统 Dock 偏好。隐藏那一档是自动隐藏 + 不唤醒
+    /// （owner 2026-08-20 定的推荐档位）。
     ///
-    /// 走 `applyNativeDock(target:)` 这个唯一写入口，四象限回读和镜像同步都是白拿的；
-    /// 别在这里另起一条 defaults 写入。
-    private func applyRecommendedDockSetting() {
+    /// 走 `applyNativeDock(recommendations:)` 这个唯一写入口，四象限回读和镜像同步都是白拿的；
+    /// 别在这里另起一条 defaults 写入。三条合成一次 `killall Dock`，屏幕只闪一次。
+    private func applyWelcomeSelection(_ selection: WelcomeGuideSelection) {
         settingsStore.setHasSeenWelcome(true)
         closeWelcomeWindow()
+
+        let recommendations = selection.recommendations(hideDelay: AppSettingsStore.neverWakeDelay)
+        // 一条都没勾时按钮本就置灰，这是兜底：什么都不写，也就不该重启 Dock 让屏幕白闪一下。
+        guard !recommendations.isEmpty else { return }
 
         Task { @MainActor [weak self] in
             guard let self else { return }
             let outcome = await self.settingsCoordinator.applyNativeDock(
-                target: AppSettingsStore.neverWakeDelay
+                recommendations: recommendations
             )
             guard let error = outcome.error else { return }
             let alert = NSAlert()
@@ -810,7 +815,7 @@ extension AppDelegate: NSWindowDelegate {
     ///
     /// 程序主动关窗那条路（`closeWelcomeWindow()`）不会走到这里：它先把 `welcomeWindow`
     /// 置 nil、把 delegate 摘掉，然后才 `close()`。所以这个回调只代表「用户自己关的」，
-    /// 不会和 `applyRecommendedDockSetting()` / `dismissWelcomeGuide()` 重复标记。
+    /// 不会和 `applyWelcomeSelection(_:)` / `dismissWelcomeGuide()` 重复标记。
     func windowWillClose(_ notification: Notification) {
         guard let window = notification.object as? NSWindow, window === welcomeWindow else { return }
         welcomeWindow = nil

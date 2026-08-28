@@ -348,6 +348,22 @@
         }
       }
     },
+    "Apply Recommended Settings": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Apply Recommended Settings"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "应用推荐设置"
+          }
+        }
+      }
+    },
     "Apply “%@” (the Dock will restart)": {
       "comment": "%@ 是滑块档位名，如 Always Visible / 0.5s",
       "localizations": {
@@ -1419,34 +1435,19 @@
         }
       }
     },
-    "Hide the Dock": {
+    "Hide the Dock (auto-hide, and don’t wake it at the bottom edge)": {
+      "comment": "「不唤醒」是 owner 2026-08-20 定的推荐档位（对应 AppSettingsStore.neverWakeDelay）。",
       "localizations": {
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Hide the Dock"
+            "value": "Hide the Dock (auto-hide, and don’t wake it at the bottom edge)"
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "帮我隐藏"
-          }
-        }
-      }
-    },
-    "Hide the Dock First": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Hide the Dock First"
-          }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "先把系统 Dock 收起来"
+            "value": "隐藏系统 Dock（自动隐藏，且不在底边唤醒）"
           }
         }
       }
@@ -1809,6 +1810,23 @@
           "stringUnit": {
             "state": "translated",
             "value": "Minimize"
+          }
+        }
+      }
+    },
+    "Minimize windows into their app icon": {
+      "comment": "owner 2026-08-28 定的推荐值，写 com.apple.dock minimize-to-application = true。中文照抄系统设置里的原话。",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Minimize windows into their app icon"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "将窗口最小化至应用程序图标"
           }
         }
       }
@@ -2573,6 +2591,22 @@
           "stringUnit": {
             "state": "translated",
             "value": "Recent Folders"
+          }
+        }
+      }
+    },
+    "Recommended Dock Settings": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Recommended Dock Settings"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "系统 Dock 推荐设置"
           }
         }
       }
@@ -3369,6 +3403,23 @@
         }
       }
     },
+    "The screen will flash once when you apply this.": {
+      "comment": "整屏**唯一**的闪屏预告——owner 2026-08-28 看过实机后把说明文字全删，只留下这一句。别把它挪回段落里，也别让它随勾选状态出现/消失（引导窗高度只在建窗时量一次）。",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "The screen will flash once when you apply this."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "应用时屏幕会闪一下"
+          }
+        }
+      }
+    },
     "The subscription server returned an invalid response.": {
       "localizations": {
         "zh-Hans": {
@@ -3515,23 +3566,6 @@
         }
       }
     },
-    "This sets the Dock to hide itself and stay hidden, so it won’t pop up when you move the pointer to the bottom edge. The Dock restarts, so the screen will flash once.": {
-      "comment": "「不唤醒」是 owner 2026-08-20 定的推荐档位（对应 AppSettingsStore.neverWakeDelay）。文案要把「会闪一下」说在前面——用户没预期的闪烁会被当成 bug。",
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "This sets the Dock to hide itself and stay hidden, so it won’t pop up when you move the pointer to the bottom edge. The Dock restarts, so the screen will flash once."
-          }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "点下面的按钮，钨极会把系统 Dock 设成自动隐藏，而且鼠标碰到底边也不会把它唤出来。写入时系统 Dock 会重启一下，屏幕会闪一次。"
-          }
-        }
-      }
-    },
     "This will only take a moment.": {
       "localizations": {
         "zh-Hans": {
@@ -3662,38 +3696,6 @@
           "stringUnit": {
             "state": "translated",
             "value": "Tungsten Edge (%@ to show/hide)"
-          }
-        }
-      }
-    },
-    "Tungsten Edge and the Dock both live along the bottom edge of the screen, so they cover each other up.": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Tungsten Edge and the Dock both live along the bottom edge of the screen, so they cover each other up."
-          }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "钨极和系统 Dock 都住在屏幕底边，会互相遮挡。"
-          }
-        }
-      }
-    },
-    "Tungsten Edge is ready. One suggestion before you start.": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Tungsten Edge is ready. One suggestion before you start."
-          }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "钨极已经就位。开始用之前，有一条建议。"
           }
         }
       }
@@ -3859,6 +3861,23 @@
           "stringUnit": {
             "state": "translated",
             "value": "Use at least one of Command, Control or Option."
+          }
+        }
+      }
+    },
+    "Use the scale effect when minimizing": {
+      "comment": "owner 2026-08-28 定的推荐值，写 com.apple.dock mineffect = scale。中文用系统设置里的原词「缩放效果」。",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Use the scale effect when minimizing"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "最小化窗口时用「缩放效果」"
           }
         }
       }

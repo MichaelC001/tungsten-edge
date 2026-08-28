@@ -19,6 +19,8 @@ struct NativeDockAutohideState: Equatable {
 protocol NativeDockPreferencesServicing {
     var isAvailable: Bool { get }
     func apply(delay: Double) throws
+    /// 首次引导那一屏的一次性写入：三项各自可选，**整批只重启一次 Dock**（屏幕只闪一次）。
+    func apply(recommendations: NativeDockRecommendations) throws
     /// 系统 Dock 当前的自动隐藏状态。nil = 读不到（沙箱等），调用方回退本地存值推导。
     /// 必须读系统实际值：用户随时可用 ⌥⌘D / 系统设置改它，本地存值会过期。
     func currentAutohideState() async -> NativeDockAutohideState?
@@ -148,16 +150,46 @@ final class NativeDockPreferencesService: NativeDockPreferencesServicing {
         }
     }
 
-    static func autohideCommands(enabled: Bool) -> [(executable: String, arguments: [String])] {
-        [
-            ("/usr/bin/defaults", ["write", "com.apple.dock", "autohide", "-bool", enabled ? "true" : "false"]),
-            ("/usr/bin/killall", ["Dock"]),
-        ]
+    func apply(recommendations: NativeDockRecommendations) throws {
+        guard isAvailable else { throw NativeDockPreferencesError.sandboxed }
+        for command in Self.commands(for: recommendations) {
+            try runner(command.executable, command.arguments)
+        }
     }
 
+    static let restartDockCommand: (executable: String, arguments: [String]) = ("/usr/bin/killall", ["Dock"])
+
     static func commands(for delay: Double) -> [(executable: String, arguments: [String])] {
+        autohideWriteCommands(for: delay) + [restartDockCommand]
+    }
+
+    /// 引导那一屏：三项各自可选，命令按 autohide → mineffect → minimize-to-application 排，
+    /// **末尾只追加一条 `killall Dock`**。每写一项就重启一次的话，用户会看到屏幕连闪三下。
+    /// 一项都没勾就返回空数组——不写、不重启、不闪。
+    static func commands(for recommendations: NativeDockRecommendations) -> [(executable: String, arguments: [String])] {
+        guard !recommendations.isEmpty else { return [] }
+
+        var commands: [(executable: String, arguments: [String])] = []
+        if let delay = recommendations.autoHideDelay {
+            commands += autohideWriteCommands(for: delay)
+        }
+        if recommendations.minimizeEffectScale {
+            commands.append(("/usr/bin/defaults", ["write", "com.apple.dock", "mineffect", "-string", "scale"]))
+        }
+        if recommendations.minimizeIntoAppIcon {
+            commands.append(("/usr/bin/defaults", ["write", "com.apple.dock", "minimize-to-application", "-bool", "true"]))
+        }
+        return commands + [restartDockCommand]
+    }
+
+    /// 只有写入部分，不含 `killall`——好让多组写入合并成一次重启。
+    private static func autohideWriteCommands(enabled: Bool) -> [(executable: String, arguments: [String])] {
+        [("/usr/bin/defaults", ["write", "com.apple.dock", "autohide", "-bool", enabled ? "true" : "false"])]
+    }
+
+    private static func autohideWriteCommands(for delay: Double) -> [(executable: String, arguments: [String])] {
         if delay <= AppSettingsStore.neverHideDelay {
-            return autohideCommands(enabled: false)
+            return autohideWriteCommands(enabled: false)
         }
 
         let effectiveDelay = delay >= AppSettingsStore.neverWakeDelay
@@ -166,7 +198,6 @@ final class NativeDockPreferencesService: NativeDockPreferencesServicing {
         return [
             ("/usr/bin/defaults", ["write", "com.apple.dock", "autohide", "-bool", "true"]),
             ("/usr/bin/defaults", ["write", "com.apple.dock", "autohide-delay", "-float", String(format: "%.1f", effectiveDelay)]),
-            ("/usr/bin/killall", ["Dock"]),
         ]
     }
 
