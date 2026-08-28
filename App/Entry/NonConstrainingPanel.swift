@@ -22,6 +22,14 @@ final class ManualPanelHost {
     var fittingSize: NSSize { contentView.fittingSize }
 }
 
+/// 七扇悬浮面板共用的窗口行为集合。**必须只有这一处字面量**：
+/// issue #19 的修复要把这套值原样重新赋一遍来补回「常驻所有桌面」的成员资格，
+/// 复原的值和创建时的值一旦分叉，修复就会静默地把面板改成另一种行为。
+enum PanelCollectionBehavior {
+    static let standard: NSWindow.CollectionBehavior =
+        [.canJoinAllSpaces, .stationary, .ignoresCycle, .fullScreenAuxiliary]
+}
+
 /// 关闭 AppKit 的窗口自动约束。系统默认会把靠近/跨越屏幕边缘的窗口挪回"当前屏"可用区内（避开菜单栏）。
 /// 多屏**共享边**场景下这会致命：把任务条放到上方屏底部时，窗口原点 y 落在下方屏那一侧，系统就拿下方屏
 /// 来约束，把整窗按到下方屏菜单栏正下方 → 任务条/胶囊跑到错误的屏（2026-06-23 三屏 bug 根因；实测 y=970

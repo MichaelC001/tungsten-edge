@@ -9,7 +9,8 @@ import os.lock
 ///
 /// **显示器必须按 `CGDisplayCreateUUIDFromDisplayID` 的 UUID 匹配，不能按数组顺序**
 /// （`Docs/05` 明文，多屏下顺序不稳）。
-private enum ManagedSpaceLayoutReader {
+/// （`PanelCoordinator` 的「常驻所有桌面」成员资格修复是第二个消费者，故不再是 private。）
+enum ManagedSpaceLayoutReader {
     private typealias MainConnectionIDFn = @convention(c) () -> Int32
     private typealias CopySpacesFn = @convention(c) (Int32) -> CFArray?
 
@@ -65,6 +66,41 @@ private enum ManagedSpaceLayoutReader {
 
     private static func spaceID(_ dict: [String: Any]) -> Int? {
         (dict["ManagedSpaceID"] as? Int) ?? (dict["id64"] as? Int)
+    }
+}
+
+/// 「这扇窗现在属于哪些空间」。issue #19 的修复靠它读回验收——只赋一遍
+/// `collectionBehavior` 不保证成功，不读回就不知道修没修好。
+///
+/// selector `0x7` = 取全部空间（与 Dock / WindowServer 内部用法一致）。开销与
+/// `SLSCopyManagedDisplaySpaces` 同量级（`Docs/05` 实测 0.132ms/次），只在面板显隐
+/// 与空间切换时调，不在事件路径上。
+enum WindowSpaceMembershipReader {
+    private typealias MainConnectionIDFn = @convention(c) () -> Int32
+    private typealias CopySpacesForWindowsFn = @convention(c) (Int32, Int32, CFArray) -> CFArray?
+
+    private static let symbols: (cid: Int32, copy: CopySpacesForWindowsFn)? = {
+        guard let handle = dlopen(
+            "/System/Library/PrivateFrameworks/SkyLight.framework/SkyLight",
+            RTLD_LAZY
+        ),
+            let cidSym = dlsym(handle, "SLSMainConnectionID"),
+            let copySym = dlsym(handle, "SLSCopySpacesForWindows")
+        else { return nil }
+        let cid = unsafeBitCast(cidSym, to: MainConnectionIDFn.self)()
+        return (cid, unsafeBitCast(copySym, to: CopySpacesForWindowsFn.self))
+    }()
+
+    /// 读不到（符号缺失 / 窗口号无效）返回 nil —— 调用方必须把它当作「不知道」，
+    /// 而不是「什么空间都不属于」，否则一次读失败会触发一轮无谓的修复。
+    static func spaceIDs(forWindowNumber windowNumber: Int) -> [Int]? {
+        guard windowNumber > 0, let symbols else { return nil }
+        guard let raw = symbols.copy(
+            symbols.cid,
+            0x7,
+            [NSNumber(value: windowNumber)] as CFArray
+        ) as? [NSNumber] else { return nil }
+        return raw.map(\.intValue)
     }
 }
 

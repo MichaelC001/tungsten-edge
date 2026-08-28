@@ -68,6 +68,33 @@ enum FullscreenWindowClassifier {
     }
 }
 
+/// 「常驻所有桌面」的成员资格修复（issue #19）。
+///
+/// macOS 会在**一个全屏空间被销毁的那一刻，把当时处于隐藏状态的 `.canJoinAllSpaces` 窗口
+/// 重新只挂到当前那个桌面上**，其余桌面从此看不到它。2026-08-28 用一个 80 行、与本项目
+/// 无关的独立实验复现（`scratch/space_membership_lab2.swift`），所以这不是钨极的 bug，
+/// 但受害的正是我们「进全屏 orderOut / 退全屏 orderFrontRegardless」这套让位机制。
+///
+/// 补不回来的做法（都实测过）：`orderFrontRegardless`、把同样的 `collectionBehavior`
+/// 再赋一遍、`orderOut` + 重设 + `orderFront`。**有效的唯一形状是：换成别的值 → 让它过一轮
+/// runloop → 再赋回**，而且**单次不保证成功**（3 轮实验里有 1 轮要修两次），所以必须
+/// 读回验收 + 重试，不能一发了事。
+enum AllSpacesMembership {
+    static let maxRepairAttempts = 3
+    /// 赋回之后等多久再读回验收。实测 120ms 足够 WindowServer 落定。
+    static let verifyDelay: TimeInterval = 0.12
+
+    /// 这扇窗还缺哪些普通桌面（全屏空间不算——窗口本来就不该常驻在别人的全屏空间上）。
+    /// 空数组 = 健康。`desktopSpaceIDs` 少于 2 个时永远返回空：单桌面谈不上「丢桌面」。
+    static func missingSpaceIDs(windowSpaceIDs: [Int], desktopSpaceIDs: [Int]) -> [Int] {
+        guard desktopSpaceIDs.count > 1 else { return [] }
+        let owned = Set(windowSpaceIDs)
+        return desktopSpaceIDs.filter { !owned.contains($0) }.sorted()
+    }
+
+    static func shouldRetry(attempt: Int) -> Bool { attempt < maxRepairAttempts }
+}
+
 enum EdgeAutoHideInhibitor: Hashable {
     case dragging
     case drawerOpen

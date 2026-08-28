@@ -1607,7 +1607,7 @@ final class DragController: ObservableObject {
         let panel = NonConstrainingPanel(contentRect: frame,
                             styleMask: [.borderless, .nonactivatingPanel],
                             backing: .buffered, defer: false)
-        panel.collectionBehavior = [.canJoinAllSpaces, .stationary, .ignoresCycle, .fullScreenAuxiliary]
+        panel.collectionBehavior = PanelCollectionBehavior.standard
         panel.isFloatingPanel = true
         // **层级必须在 `isFloatingPanel` 之后设，而且要比任务条/抽屉/胶囊（都是 `.floating`）高一级。**
         // 原来写在前面的 `.popUpMenu` 被 `isFloatingPanel = true` 静默改回了 `.floating`（AppKit 语义：

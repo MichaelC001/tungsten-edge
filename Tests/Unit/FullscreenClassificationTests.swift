@@ -52,4 +52,47 @@ final class FullscreenClassificationTests: XCTestCase {
         XCTAssertFalse(FullscreenWindowClassifier.isFullscreen(
             role: "AXWindow", isAXFullscreen: false, windowFrame: nil, screenCGFrame: screen))
     }
+
+    // MARK: - 常驻所有桌面的成员资格（issue #19）
+
+    func testMembershipIsHealthyWhenWindowCoversEveryDesktop() {
+        XCTAssertEqual(
+            AllSpacesMembership.missingSpaceIDs(windowSpaceIDs: [1, 3, 1020], desktopSpaceIDs: [1, 3, 1020]),
+            [])
+    }
+
+    // 这就是 issue #19 的症状：退全屏之后只剩当前桌面
+    func testMembershipCollapsedToCurrentDesktopIsReported() {
+        XCTAssertEqual(
+            AllSpacesMembership.missingSpaceIDs(windowSpaceIDs: [1], desktopSpaceIDs: [1, 3, 1020]),
+            [3, 1020])
+    }
+
+    // 窗口多挂了一个全屏空间不算问题（进全屏那一瞬间就是这个样子）
+    func testExtraFullscreenSpaceMembershipIsNotAProblem() {
+        XCTAssertEqual(
+            AllSpacesMembership.missingSpaceIDs(windowSpaceIDs: [1, 3, 1013], desktopSpaceIDs: [1, 3]),
+            [])
+    }
+
+    // 单桌面谈不上「丢桌面」，永远不要触发修复
+    func testSingleDesktopNeverReportsMissing() {
+        XCTAssertEqual(
+            AllSpacesMembership.missingSpaceIDs(windowSpaceIDs: [], desktopSpaceIDs: [1]),
+            [])
+    }
+
+    func testEmptyDesktopListNeverReportsMissing() {
+        XCTAssertEqual(
+            AllSpacesMembership.missingSpaceIDs(windowSpaceIDs: [1], desktopSpaceIDs: []),
+            [])
+    }
+
+    // 修复单次不保证成功，必须允许重试，但不能无限重试
+    func testRepairRetriesAreBounded() {
+        XCTAssertTrue(AllSpacesMembership.shouldRetry(attempt: 0))
+        XCTAssertTrue(AllSpacesMembership.shouldRetry(attempt: 2))
+        XCTAssertFalse(AllSpacesMembership.shouldRetry(attempt: 3))
+        XCTAssertFalse(AllSpacesMembership.shouldRetry(attempt: 4))
+    }
 }

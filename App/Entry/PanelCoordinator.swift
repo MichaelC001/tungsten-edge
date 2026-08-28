@@ -294,6 +294,11 @@ final class PanelCoordinator: NSObject {
     private var fullscreenSpaceIntentGeneration: UInt64?
     private var fullscreenSpaceIntentTimer: Timer?
     private var fullscreenSpaceIntentVerdictTimer: Timer?
+    /// 「常驻所有桌面」成员资格修复（issue #19）。见 `AllSpacesMembership` 的机制说明。
+    /// 关掉用 `DOCK_SPACE_MEMBERSHIP_REPAIR=0`。
+    private static let spaceMembershipRepairEnabled =
+        ProcessInfo.processInfo.environment["DOCK_SPACE_MEMBERSHIP_REPAIR"] != "0"
+    private var spaceMembershipRepairInFlight = false
     private var lastActiveApplicationPID: pid_t?
     private var visibilityState = PanelVisibilityState()
     private var panelsAreVisible = true
@@ -478,7 +483,7 @@ final class PanelCoordinator: NSObject {
                 contentRect: NSRect(origin: .zero, size: lastDrawerSize)
             )
             panel.level = .floating
-            panel.collectionBehavior = [.canJoinAllSpaces, .stationary, .ignoresCycle, .fullScreenAuxiliary]
+            panel.collectionBehavior = PanelCollectionBehavior.standard
             panel.isFloatingPanel = true
             panel.isMovable = false
             panel.isOpaque = false
@@ -705,7 +710,7 @@ final class PanelCoordinator: NSObject {
                 contentRect: NSRect(origin: .zero, size: lastPopupSize)
             )
             panel.level = .floating
-            panel.collectionBehavior = [.canJoinAllSpaces, .stationary, .ignoresCycle, .fullScreenAuxiliary]
+            panel.collectionBehavior = PanelCollectionBehavior.standard
             panel.isFloatingPanel = true
             panel.isMovable = false
             panel.isOpaque = false
@@ -1196,7 +1201,7 @@ final class PanelCoordinator: NSObject {
         } else {
             let created = makeFloatingPanel(contentRect: .zero)
             created.level = .floating
-            created.collectionBehavior = [.canJoinAllSpaces, .stationary, .ignoresCycle, .fullScreenAuxiliary]
+            created.collectionBehavior = PanelCollectionBehavior.standard
             created.isFloatingPanel = true
             created.isMovable = false
             created.isOpaque = false
@@ -1412,7 +1417,7 @@ final class PanelCoordinator: NSObject {
                 defer: false
             )
         panel.level = .floating
-        panel.collectionBehavior = [.canJoinAllSpaces, .stationary, .ignoresCycle, .fullScreenAuxiliary]
+        panel.collectionBehavior = PanelCollectionBehavior.standard
         panel.isFloatingPanel = true
         panel.isMovable = false
         panel.isOpaque = false
@@ -1471,7 +1476,7 @@ final class PanelCoordinator: NSObject {
             defer: false
         )
         panel.level = .floating
-        panel.collectionBehavior = [.canJoinAllSpaces, .stationary, .ignoresCycle, .fullScreenAuxiliary]
+        panel.collectionBehavior = PanelCollectionBehavior.standard
         panel.isFloatingPanel = true
         panel.isMovable = false
         panel.isOpaque = false
@@ -1561,7 +1566,7 @@ final class PanelCoordinator: NSObject {
                                              height: capsuleWidth + Self.shadowPadding * 2))
         )
         panel.level = .floating
-        panel.collectionBehavior = [.canJoinAllSpaces, .stationary, .ignoresCycle, .fullScreenAuxiliary]
+        panel.collectionBehavior = PanelCollectionBehavior.standard
         panel.isFloatingPanel = true
         panel.isMovable = false
         panel.isOpaque = false
@@ -1981,6 +1986,8 @@ final class PanelCoordinator: NSObject {
                 source: "space-ax"
             )
         }
+        // 兜底：显隐路径之外也可能丢成员资格（issue #19），换桌面是用户唯一会察觉的时刻。
+        repairAllSpacesMembershipIfNeeded()
     }
 
     @objc private func handleAppActivated(_ note: Notification) {
@@ -2057,6 +2064,63 @@ final class PanelCoordinator: NSObject {
         }
     }
 
+    // MARK: - 常驻所有桌面的成员资格修复（issue #19）
+
+    /// 必须在每个桌面上都在的面板。抽屉 / 文件夹弹窗 / 悬停气泡是瞬时面板——下次弹出时
+    /// `orderFrontRegardless` 自然落到当前桌面，用户永远不会在别的桌面上等它们，故不参与修复。
+    private var allSpacesPanels: [NSPanel] {
+        [dockGlassBackgroundPanel, dockPanel, capsulePanel].compactMap { $0 }
+    }
+
+    /// 读回成员资格，把「本该在所有桌面上、实际只剩当前桌面」的面板补回去。
+    ///
+    /// 机制与为什么只有这一种形状管用，见 `AllSpacesMembership`。这里三件事一件都不能省：
+    /// ① 先读回再决定动不动手——健康时零副作用；② 换值必须隔一轮 runloop 再赋回，
+    /// 同一轮里改回去等于没改；③ 赋回之后还要再读一次，**单次修复不保证成功**。
+    private func repairAllSpacesMembershipIfNeeded(attempt: Int = 1) {
+        guard Self.spaceMembershipRepairEnabled, !isSuspendedForPermissionLoss else { return }
+        if attempt == 1 && spaceMembershipRepairInFlight { return }
+        guard let dock = dockPanel else { return }
+
+        guard let uuid = DisplayIdentity.uuidString(for: panelCurrentScreen(panel: dock)),
+              let layout = ManagedSpaceLayoutReader.layout(forDisplayUUID: uuid) else {
+            spaceMembershipRepairInFlight = false
+            return
+        }
+        let desktops = layout.orderedSpaceIDs.filter { !layout.fullscreenSpaceIDs.contains($0) }
+
+        let broken = allSpacesPanels.filter { panel in
+            guard let owned = WindowSpaceMembershipReader.spaceIDs(forWindowNumber: panel.windowNumber)
+            else { return false }   // 读不到 = 不知道，不能当成「丢了」
+            return !AllSpacesMembership.missingSpaceIDs(
+                windowSpaceIDs: owned,
+                desktopSpaceIDs: desktops
+            ).isEmpty
+        }
+        guard !broken.isEmpty else {
+            if attempt > 1 {
+                logger.info("[space-membership] repaired attempts=\(attempt - 1, privacy: .public)")
+            }
+            spaceMembershipRepairInFlight = false
+            return
+        }
+        guard AllSpacesMembership.shouldRetry(attempt: attempt - 1) else {
+            logger.error("[space-membership] give up after \(attempt - 1, privacy: .public) attempts")
+            spaceMembershipRepairInFlight = false
+            return
+        }
+
+        spaceMembershipRepairInFlight = true
+        for panel in broken { panel.collectionBehavior = [] }
+        DispatchQueue.main.async { [weak self] in
+            guard let self else { return }
+            for panel in broken { panel.collectionBehavior = PanelCollectionBehavior.standard }
+            DispatchQueue.main.asyncAfter(deadline: .now() + AllSpacesMembership.verifyDelay) { [weak self] in
+                self?.repairAllSpacesMembershipIfNeeded(attempt: attempt + 1)
+            }
+        }
+    }
+
     private func fullscreenReconcileIfNeeded() {
         guard visibilityState.hideReasons.contains(.fullscreen) else { return }
         triggerAsyncFullscreenCheck()
@@ -2086,7 +2150,7 @@ final class PanelCoordinator: NSObject {
                 closeFolderPopup()
                 dismissWindowTitleTooltip(suppressCurrentUntilExit: true)
                 reconcilePanelVisibility()
-                logger.info("[fullscreen] active=true")
+                logFullscreenVerdict(true, source: source)
                 return
             }
             // **不能采信空间切换那一刻的 false 判定**——2026-08-09 实测：桌面→全屏时
@@ -2140,7 +2204,21 @@ final class PanelCoordinator: NSObject {
             visibilityState.setFullscreen(false)
         }
         reconcilePanelVisibility()
-        logger.info("[fullscreen] active=\(isFullscreen, privacy: .public)")
+        logFullscreenVerdict(isFullscreen, source: source)
+    }
+
+    /// 任务条被藏/被放出来时的唯一取证行。**必须带 source 和隐藏理由**：用户报「任务条不见了」时，
+    /// 只有这两项能区分是哪条判定动的手（issue #19 就是因为只打 active= 而无从下手）。
+    private func logFullscreenVerdict(_ isFullscreen: Bool, source: String) {
+        let reasons = visibilityState.hideReasons
+        var parts: [String] = []
+        if reasons.contains(.fullscreen) { parts.append("fullscreen") }
+        if reasons.contains(.fullscreenTransitionPending) { parts.append("pending") }
+        if reasons.contains(.edgeAutoHide) { parts.append("edge") }
+        let reasonText = parts.isEmpty ? "none" : parts.joined(separator: "+")
+        logger.info(
+            "[fullscreen] active=\(isFullscreen, privacy: .public) source=\(source, privacy: .public) reasons=\(reasonText, privacy: .public) pid=\(self.lastActiveApplicationPID ?? -1, privacy: .public)"
+        )
     }
 
     private func beginFullscreenIntent(_ request: FullscreenIntentRequest) {
@@ -2951,6 +3029,9 @@ final class PanelCoordinator: NSObject {
             orderDockSurfaceFront()
             capsulePanel?.orderFrontRegardless()
             if drawerWantsOpen { drawerPanel?.orderFrontRegardless() }
+            // 藏起来的这段时间里可能有全屏空间被销毁，系统会顺手把面板从别的桌面上摘掉
+            // （issue #19）。健康时这里只是一次 SkyLight 读，不做任何事。
+            repairAllSpacesMembershipIfNeeded()
         } else {
             if visibilityState.hideReasons.contains(.fullscreen) { closeDrawer() }
             closeFolderPopup()
