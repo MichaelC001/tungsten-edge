@@ -2957,6 +2957,22 @@
         }
       }
     },
+    "Show Setup Guide Again": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "重新打开新手引导"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Show Setup Guide Again"
+          }
+        }
+      }
+    },
     "Show Shelf": {
       "localizations": {
         "zh-Hans": {

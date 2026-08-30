@@ -47,6 +47,11 @@ final class StatusMenuController: NSObject, NSMenuDelegate {
     private let onShowDebugConsole: () -> Void
     private let onExportDebugSnapshot: () -> Void
     private let onShowSettings: () -> Void
+    /// 重开首次引导（那扇写系统 Dock 推荐设置的窗）。存量用户是唯一受众：`hasSeenWelcome`
+    /// 一旦置位引导永不再弹，删键也没用——决策函数看到系统 Dock 已自动隐藏就跳过并把键写回。
+    /// 所以这条闭包必须直通 `showWelcomeWindow()`，绕过 `presentWelcomeGuideIfNeeded()`。
+    /// （反馈 `1999d66d` 触发了 `Docs/27` 记的复议条件「有人反馈用了很久才知道有这两条建议」。）
+    private let onShowWelcomeGuide: () -> Void
     /// 菜单开 / 关。任务条的边缘自动隐藏要在菜单开着时停摆，否则空闲计时照跑，
     /// 任务条会从弹出的菜单底下缩掉（同 `folderPopupOpen`）。走闭包是因为
     /// `PanelCoordinator` 在权限引导完成前根本不存在。
@@ -102,6 +107,8 @@ final class StatusMenuController: NSObject, NSMenuDelegate {
     private let nativeDockApplyItem = NSMenuItem()
     private let nativeDockApplyRow = NativeDockApplyRowView()
     private let openNativeDockSettingsItem = NSMenuItem(title: String(localized: "Dock Settings…"), action: #selector(openNativeDockSettings), keyEquivalent: "")
+    /// 「重新打开新手引导」：恒在（菜单开着时不许增删行），归底部「进另一个界面」组。
+    private let showWelcomeGuideItem = NSMenuItem(title: String(localized: "Show Setup Guide Again"), action: #selector(showWelcomeGuide), keyEquivalent: "")
     /// 「钨极 Dock 栏显示在 ▸」：二级子菜单，「跟随鼠标」+ 每块在场屏一项（owner 2026-08-26 把这个
     /// 设置从设置窗口搬到菜单，不两边都放）。做成子菜单是为了**主菜单只多一行、高度恒定**——
     /// 屏幕数变化不会改主菜单高度，任务条那条按左上角定位的路径就不会漂。
@@ -120,6 +127,7 @@ final class StatusMenuController: NSObject, NSMenuDelegate {
          onShowDebugConsole: @escaping () -> Void,
          onExportDebugSnapshot: @escaping () -> Void,
          onShowSettings: @escaping () -> Void,
+         onShowWelcomeGuide: @escaping () -> Void,
          onMenuVisibilityChanged: @escaping (Bool) -> Void = { _ in },
          onQuit: @escaping () -> Void,
          hotKeyGlyphs: @escaping () -> String,
@@ -131,6 +139,7 @@ final class StatusMenuController: NSObject, NSMenuDelegate {
         self.onShowDebugConsole = onShowDebugConsole
         self.onExportDebugSnapshot = onExportDebugSnapshot
         self.onShowSettings = onShowSettings
+        self.onShowWelcomeGuide = onShowWelcomeGuide
         self.onMenuVisibilityChanged = onMenuVisibilityChanged
         self.onQuit = onQuit
         self.hotKeyGlyphs = hotKeyGlyphs
@@ -291,6 +300,12 @@ final class StatusMenuController: NSObject, NSMenuDelegate {
         //（owner 2026-08-03；原先它是那组的末行，和下一组的首行看起来像一对）。
         openNativeDockSettingsItem.target = self
         menu.addItem(openNativeDockSettingsItem)
+
+        // 「重新打开新手引导」也是"打开另一个界面"，紧跟系统 Dock 设置入口。
+        // 放菜单不放设置窗口：settings.md 明文设置窗口不承载任何 native-Dock 表面，
+        // 而引导那扇窗的主体就是写系统 Dock 偏好。
+        showWelcomeGuideItem.target = self
+        menu.addItem(showWelcomeGuideItem)
 
         installUpdateItem.target = self
         installUpdateItem.isHidden = true
@@ -657,6 +672,11 @@ final class StatusMenuController: NSObject, NSMenuDelegate {
     @objc private func showSettings() {
         menu.cancelTrackingWithoutAnimation()
         DispatchQueue.main.async { [onShowSettings] in onShowSettings() }
+    }
+    @objc private func showWelcomeGuide() {
+        // 同「设置…」：开窗动作出菜单跟踪循环再做。
+        menu.cancelTrackingWithoutAnimation()
+        DispatchQueue.main.async { [onShowWelcomeGuide] in onShowWelcomeGuide() }
     }
     @objc private func quit() { onQuit() }
 }
