@@ -18,20 +18,7 @@ Ready-to-run builds live on the [official website](https://tungstenedge.app). Th
 
 ## Demo
 
-**Multi-window management**
-
-<img src="assets/multi-window.gif" alt="Multi-window management" width="100%" />
-
-<table>
-  <tr>
-    <td align="center"><b>App drawer &amp; launcher</b></td>
-    <td align="center"><b>Drag to organize</b></td>
-  </tr>
-  <tr>
-    <td><img src="assets/launcher.gif" alt="App drawer &amp; launcher" /></td>
-    <td><img src="assets/drag-reorder.gif" alt="Drag to organize" /></td>
-  </tr>
-</table>
+<img src="assets/demo.gif" alt="Tungsten Edge taskbar demo" width="100%" />
 
 ---
 

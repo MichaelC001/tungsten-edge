@@ -18,20 +18,7 @@
 
 ## 演示
 
-**多窗口管理**
-
-<img src="assets/multi-window.gif" alt="多窗口管理" width="100%" />
-
-<table>
-  <tr>
-    <td align="center"><b>启动台功能</b></td>
-    <td align="center"><b>随意拖拽</b></td>
-  </tr>
-  <tr>
-    <td><img src="assets/launcher.gif" alt="启动台功能" /></td>
-    <td><img src="assets/drag-reorder.gif" alt="随意拖拽" /></td>
-  </tr>
-</table>
+<img src="assets/demo.gif" alt="钨极 Dock 栏演示" width="100%" />
 
 ---
 
