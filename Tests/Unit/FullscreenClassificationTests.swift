@@ -35,6 +35,33 @@ final class FullscreenClassificationTests: XCTestCase {
             role: "AXWindow", isAXFullscreen: true, windowFrame: otherScreen, screenCGFrame: screen))
     }
 
+    // 全屏幕拼贴（真分屏）：AXFullScreen=true 但只有半屏宽（2026-08-30 实测形状按比例缩到测试屏）。
+    // 修掉的正是旧宽度条款（width > screen×0.7）把它误否、任务条盖在分屏内容上。
+    func testSplitViewTileOnThisScreenIsFullscreen() {
+        let leftTile = CGRect(x: 0, y: 20, width: 754, height: 962)
+        XCTAssertTrue(FullscreenWindowClassifier.isFullscreen(
+            role: "AXWindow", isAXFullscreen: true, windowFrame: leftTile, screenCGFrame: screen))
+        let rightTile = CGRect(x: 756, y: 20, width: 756, height: 962)
+        XCTAssertTrue(FullscreenWindowClassifier.isFullscreen(
+            role: "AXWindow", isAXFullscreen: true, windowFrame: rightTile, screenCGFrame: screen))
+    }
+
+    // 多屏护栏的接棒者：窗口主体在邻屏、只蹭进本屏几十点，不得判为本屏的全屏。
+    // 旧宽度条款曾顺带挡住这类窗口；换成面积归属后由本用例钉住这个行为。
+    func testFullscreenWindowMostlyOnNeighborScreenIsNotFullscreenHere() {
+        let mostlyElsewhere = CGRect(x: 1480, y: -200, width: 1920, height: 1080)
+        XCTAssertFalse(FullscreenWindowClassifier.isFullscreen(
+            role: "AXWindow", isAXFullscreen: true, windowFrame: mostlyElsewhere, screenCGFrame: screen))
+    }
+
+    // 桌面平铺（26 的默认「分屏」）：半宽但 AXFullScreen=false，走 frame 兜底，不得判为全屏——
+    // 它是普通桌面上的普通窗口，条照常显示（那一半的遮挡归避让议题，不归隐藏）。
+    func testDesktopTiledHalfWindowIsNotFullscreen() {
+        let tiled = CGRect(x: 756, y: 20, width: 756, height: 962)
+        XCTAssertFalse(FullscreenWindowClassifier.isFullscreen(
+            role: "AXWindow", isAXFullscreen: false, windowFrame: tiled, screenCGFrame: screen))
+    }
+
     // 无 AXFullScreen 标志的无边框全屏（游戏/HTML5）仍走 frame≈整屏兜底
     func testBorderlessScreenSizedWindowIsFullscreen() {
         let nearScreen = screen.insetBy(dx: 2, dy: 2)

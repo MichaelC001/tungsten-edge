@@ -52,7 +52,13 @@ enum FullscreenWindowClassifier {
 
         if isAXFullscreen {
             guard let wf = windowFrame else { return true }
-            return wf.intersects(screenCGFrame) && wf.width > screenCGFrame.width * 0.7
+            // 归属判据（面积主体在本屏），不是宽度判据。原来的 `width > screen × 0.7` 兼任
+            // 多屏护栏，但把**全屏幕拼贴（真分屏）的半宽 tile 误否**——2026-08-30 实测
+            // （macOS 26.5.2，`scratch/space-probe-20260830-2106.log`）：分屏 tile 报
+            // AXFullScreen=true、frame=(0,40 1278×1400)，1278 < 2560×0.7 被否，任务条
+            // 因此盖在分屏内容上（0.9.10 反馈 `02525cc5`）。面积归属保住护栏的本意：
+            // 同日实测另一块屏上的全屏窗口与本屏不相交，照样拦下。
+            return mostlyBelongsToScreen(wf, screenCGFrame)
         }
 
         // Fallback: frame ≈ full screen (games / HTML5 that skip the AXFullScreen flag)
@@ -65,6 +71,19 @@ enum FullscreenWindowClassifier {
         }
 
         return false
+    }
+
+    /// 窗口面积的一半以上落在这块屏上才算「属于本屏」。纯 CGRect 数学——
+    /// `FullscreenIntentMonitor.readAXState` 也调本判定，结果在事件 tap 线程上消费，
+    /// 这里不允许出现 AX / AppKit / 日志（见 panels-and-screens 规则）。
+    /// 与 `WindowLiftAvoidance` 里私有的同名方法是同一个面积法，刻意不共享——
+    /// 避让那份冻结在自己的规则文件里，两边耦合反而让改动更危险。
+    private static func mostlyBelongsToScreen(_ frame: CGRect, _ screen: CGRect) -> Bool {
+        let frameArea = frame.width * frame.height
+        guard frameArea > 0 else { return false }
+        let overlap = frame.intersection(screen)
+        guard !overlap.isNull, !overlap.isEmpty else { return false }
+        return overlap.width * overlap.height >= frameArea * 0.5
     }
 }
 
