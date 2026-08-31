@@ -119,6 +119,12 @@ final class PanelCoordinator: NSObject {
     ///
     /// SwiftUI 侧那两句 `.materialActiveAppearance(.active)` / `.environment(\.appearsActive,)`
     /// **顶不掉这一层**——它们管的是视图环境，窗口状态得在窗口上解决。
+    /// 实验开关：`DOCK_PANEL_LEVEL=<raw>` 覆盖三块任务条面板的窗口层级（默认 .floating=3）。
+    /// 用途：验证「层级足够高的窗口（系统 Dock=20、菜单栏更高）是否免于被 WindowServer
+    /// 烤进桌面滑动的过渡快照」——2026-08-30 连拍实锤了灰罩 = 条被烤进两侧快照后叠加滑动。
+    private static let panelLevelOverride: NSWindow.Level? = ProcessInfo.processInfo
+        .environment["DOCK_PANEL_LEVEL"].flatMap(Int.init).map { NSWindow.Level(rawValue: $0) }
+
     private func makeFloatingPanel(contentRect: NSRect) -> NonConstrainingPanel {
         let styleMask: NSWindow.StyleMask = [.borderless, .nonactivatingPanel]
         return usesLiquidGlass
@@ -294,6 +300,9 @@ final class PanelCoordinator: NSObject {
     private var fullscreenSpaceIntentGeneration: UInt64?
     private var fullscreenSpaceIntentTimer: Timer?
     private var fullscreenSpaceIntentVerdictTimer: Timer?
+    /// 上一次隐藏是不是因为全屏。是 → 下次揭示走 0.18s 淡入（全屏回归的入场动画）；
+    /// 否 → 边缘自动隐藏的唤出保持即时。只在 applyPanelVisibility / 预测隐藏两处写。
+    private var lastHideWasForFullscreen = false
     /// 「常驻所有桌面」成员资格修复（issue #19）。见 `AllSpacesMembership` 的机制说明。
     /// 关掉用 `DOCK_SPACE_MEMBERSHIP_REPAIR=0`。
     private static let spaceMembershipRepairEnabled =
@@ -1419,6 +1428,8 @@ final class PanelCoordinator: NSObject {
         panel.level = .floating
         panel.collectionBehavior = PanelCollectionBehavior.standard
         panel.isFloatingPanel = true
+        // isFloatingPanel=true 会把 level 重置回 .floating，实验覆盖必须在它之后。
+        if let level = Self.panelLevelOverride { panel.level = level }
         panel.isMovable = false
         panel.isOpaque = false
         panel.backgroundColor = NSColor(white: 1.0, alpha: 0.0)
@@ -1478,6 +1489,8 @@ final class PanelCoordinator: NSObject {
         panel.level = .floating
         panel.collectionBehavior = PanelCollectionBehavior.standard
         panel.isFloatingPanel = true
+        // isFloatingPanel=true 会把 level 重置回 .floating，实验覆盖必须在它之后。
+        if let level = Self.panelLevelOverride { panel.level = level }
         panel.isMovable = false
         panel.isOpaque = false
         panel.backgroundColor = .clear
@@ -1568,6 +1581,8 @@ final class PanelCoordinator: NSObject {
         panel.level = .floating
         panel.collectionBehavior = PanelCollectionBehavior.standard
         panel.isFloatingPanel = true
+        // isFloatingPanel=true 会把 level 重置回 .floating，实验覆盖必须在它之后。
+        if let level = Self.panelLevelOverride { panel.level = level }
         panel.isMovable = false
         panel.isOpaque = false
         panel.backgroundColor = NSColor(white: 1.0, alpha: 0.0)
@@ -2295,6 +2310,8 @@ final class PanelCoordinator: NSObject {
         dismissWindowTitleTooltip(suppressCurrentUntilExit: true)
 
         panelsAreVisible = false
+        // 预测路径也是「因全屏而藏」：之后的揭示同样走淡入。
+        lastHideWasForFullscreen = true
         // 全屏预测的快速隐藏路径不经过 applyPanelVisibility，角标门控要单独通知。
         badgeStore.setTaskbarVisible(false)
         orderDockSurfaceOut()
@@ -2327,7 +2344,32 @@ final class PanelCoordinator: NSObject {
         fullscreenProbeGeneration &+= 1
         visibilityState.beginFullscreenTransition(generation: generation)
 
-        orderOutPanelsForFullscreenPrediction()
+        // 淡出再藏（owner 2026-08-30 的入场/退场动画诉求）。**只有这条空间路径可以淡**：
+        // 方向键领先空间切换 ~550ms、三指滑 ~950–1130ms（实测），0.15s 淡出完成时离
+        // WindowServer 抓过渡快照还有充足余量；绿键路径领先只有几十 ms，必须维持
+        // 同步瞬时 orderOut。handoff 在淡出调度后立即返回，输入不被阻塞。
+        // 逻辑态立刻置「已藏」：不然本函数末尾的异步 reconcile 会看到 shouldShow=false、
+        // panelsAreVisible=true，直接走硬 orderOut 把淡出绕过去。视觉上的 orderOut 等淡出完。
+        panelsAreVisible = false
+        lastHideWasForFullscreen = true
+        badgeStore.setTaskbarVisible(false)
+        let fadingPanels = [dockGlassBackgroundPanel, dockPanel, capsulePanel].compactMap { $0 }
+        NSAnimationContext.runAnimationGroup({ ctx in
+            ctx.duration = 0.15
+            for panel in fadingPanels { panel.animator().alphaValue = 0 }
+        }, completionHandler: { [weak self] in
+            Task { @MainActor [weak self] in
+                guard let self else { return }
+                // 淡出期间预测可能已被取消（超时/终审否决），那时条不该藏——恢复 alpha 即可。
+                guard self.fullscreenSpaceIntentGeneration == generation else {
+                    for panel in fadingPanels { panel.alphaValue = 1 }
+                    return
+                }
+                self.orderOutPanelsForFullscreenPrediction()
+                // 藏好后 alpha 归位：下一次显示（无论哪条路径）不带残值。
+                for panel in fadingPanels { panel.alphaValue = 1 }
+            }
+        })
         fullscreenIntentLogger.notice(
             "space-pending generation=\(generation, privacy: .public) direction=\(direction.rawValue, privacy: .public)"
         )
@@ -2368,6 +2410,7 @@ final class PanelCoordinator: NSObject {
         fullscreenSpaceIntentVerdictTimer?.invalidate()
         fullscreenSpaceIntentVerdictTimer = nil
     }
+
 
     /// 空间已经切完，但那一刻的 CG 判定不可信。等和 `FullscreenSpaceHold` 同一个 120ms，
     /// 再用 CG（不行就 AX 兜底）给最终判定；只有最终判定说"不是全屏"才撤销预测。
@@ -2459,22 +2502,17 @@ final class PanelCoordinator: NSObject {
             return
         }
         fullscreenSpaceHoldTimer = nil
+        // 120ms 时的 CG true 不再是终点：退出全屏方向 CG 滞后 0.4~0.8s（2026-08-30 实测，
+        // `Docs/05`），此刻的 true 很可能仍是过渡残影，照它收口就回到「等 5 秒对账」。
+        // 一律让终审 AX 定夺——AX 在退出动画开始时就已翻 false（同日实测，比 CG 早），
+        // 是这个方向唯一可信的信号。全→全切换的代价是多一次 AX 读、确认晚 ~百 ms，
+        // 期间条本来就藏着。CG 读数保留进 source 供取证区分两条路径。
         let cgFullscreen = checkFullscreenViaCGSync()
-        if cgFullscreen {
-            applyFullscreenVisibility(
-                true,
-                source: "space-hold-delayed-cg",
-                pid: hold.pid,
-                screenCGFrame: hold.screenCGFrame,
-                expectedSpaceHoldGeneration: generation
-            )
-            return
-        }
         triggerAsyncFullscreenCheck(
             pid: hold.pid,
             expectedSpaceHoldGeneration: generation,
             isFinalSpaceHoldWindowedConfirmation: true,
-            source: "space-hold-final-ax"
+            source: cgFullscreen ? "space-hold-final-ax-cgtrue" : "space-hold-final-ax"
         )
     }
 
@@ -3026,18 +3064,36 @@ final class PanelCoordinator: NSObject {
         badgeStore.setTaskbarVisible(shouldShow)
         if Self.edgeHoverTraceEnabled { logEdgeHoverTrace(shouldShow: shouldShow) }
         if shouldShow {
+            // 全屏之后的回归淡入（owner 2026-08-30：硬弹出 vs 原生的入场动画）。
+            // 只给「因全屏藏过」的揭示做，边缘自动隐藏的唤出保持原来的即时手感。
+            let fadeIn = lastHideWasForFullscreen
+            lastHideWasForFullscreen = false
+            let fadingPanels = [dockGlassBackgroundPanel, dockPanel, capsulePanel].compactMap { $0 }
+            if fadeIn { for panel in fadingPanels { panel.alphaValue = 0 } }
             orderDockSurfaceFront()
             capsulePanel?.orderFrontRegardless()
             if drawerWantsOpen { drawerPanel?.orderFrontRegardless() }
+            if fadeIn {
+                NSAnimationContext.runAnimationGroup { ctx in
+                    // 0.32s + ease-out（owner 2026-08-31「淡入再缓一些、更柔和」）：
+                    // 前半段就明显可见（感知上更及时），收尾轻。淡出维持 0.15s 不动。
+                    ctx.duration = 0.32
+                    ctx.timingFunction = CAMediaTimingFunction(name: .easeOut)
+                    for panel in fadingPanels { panel.animator().alphaValue = 1 }
+                }
+            }
             // 藏起来的这段时间里可能有全屏空间被销毁，系统会顺手把面板从别的桌面上摘掉
             // （issue #19）。健康时这里只是一次 SkyLight 读，不做任何事。
             repairAllSpacesMembershipIfNeeded()
         } else {
-            if visibilityState.hideReasons.contains(.fullscreen) { closeDrawer() }
+            lastHideWasForFullscreen = visibilityState.hideReasons.contains(.fullscreen)
+            if lastHideWasForFullscreen { closeDrawer() }
             closeFolderPopup()
             dismissWindowTitleTooltip(suppressCurrentUntilExit: true)
             orderDockSurfaceOut()
             capsulePanel?.orderOut(nil)
+            // 淡入若被中途打断，alpha 可能停在半路；藏着的时候归 1，下次显示不带残值。
+            for panel in [dockGlassBackgroundPanel, dockPanel, capsulePanel] { panel?.alphaValue = 1 }
         }
     }
 

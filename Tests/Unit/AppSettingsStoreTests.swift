@@ -1119,7 +1119,11 @@ final class AppSettingsStoreTests: XCTestCase {
         XCTAssertFalse(FullscreenSpaceHoldDecision.shouldBegin(isFullscreen: true, hasInputIntent: true))
     }
 
-    func testFullscreenSpaceHoldSuppressesTransientFalseButAcceptsFullscreen() {
+    // 保持存续期间，**两个方向的瞬时裁决都不放行**。2026-08-30 前 true 是直接 .apply 的，
+    // 结果退全屏瞬间 CG 滞后报出的假 true 销毁了 120ms 保持、正确的 AX false 被 .stale 丢弃，
+    // 条要等 5 秒对账才回归（实测指纹见 Docs/05）。true 在保持期间本就无事可做——状态已是
+    // .fullscreen；一切等终审。
+    func testFullscreenSpaceHoldSuppressesTransientVerdictsInBothDirections() {
         XCTAssertEqual(
             FullscreenSpaceHoldDecision.disposition(
                 isFullscreenVerdict: false,
@@ -1135,6 +1139,44 @@ final class AppSettingsStoreTests: XCTestCase {
                 expectedGeneration: 4,
                 activeGeneration: 4,
                 isFinalWindowedConfirmation: false
+            ),
+            .hold
+        )
+    }
+
+    // 退全屏的完整剧本回归：空间切换臂起保持 → 过渡期 CG 假 true 不得灭保持 →
+    // 终审 false 放行揭示；终审 true（真·全→全切换）同样放行、维持隐藏。
+    func testFullscreenSpaceHoldExitScenarioRevealsOnFinalVerdictOnly() {
+        let g: UInt64 = 9
+        // 过渡期 space-cg true：保持
+        XCTAssertEqual(
+            FullscreenSpaceHoldDecision.disposition(
+                isFullscreenVerdict: true, expectedGeneration: g,
+                activeGeneration: g, isFinalWindowedConfirmation: false
+            ),
+            .hold
+        )
+        // 随后的 space-ax false（同代号，非终审）：仍保持
+        XCTAssertEqual(
+            FullscreenSpaceHoldDecision.disposition(
+                isFullscreenVerdict: false, expectedGeneration: g,
+                activeGeneration: g, isFinalWindowedConfirmation: false
+            ),
+            .hold
+        )
+        // 120ms 终审 false：放行 → 揭示
+        XCTAssertEqual(
+            FullscreenSpaceHoldDecision.disposition(
+                isFullscreenVerdict: false, expectedGeneration: g,
+                activeGeneration: g, isFinalWindowedConfirmation: true
+            ),
+            .apply
+        )
+        // 120ms 终审 true（全→全）：也放行 → 维持隐藏
+        XCTAssertEqual(
+            FullscreenSpaceHoldDecision.disposition(
+                isFullscreenVerdict: true, expectedGeneration: g,
+                activeGeneration: g, isFinalWindowedConfirmation: true
             ),
             .apply
         )

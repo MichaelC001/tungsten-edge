@@ -587,7 +587,21 @@ final class FullscreenIntentMonitor {
             object: nil,
             queue: .main
         ) { [weak self] _ in
-            Task { @MainActor [weak self] in self?.refreshSpaceLayout() }
+            Task { @MainActor [weak self] in
+                guard let self else { return }
+                // 空间刚切完：同一次滑动的减速尾巴还在继续投递手势事件，
+                // 清掉状态机，别让余波凑成新的一串。
+                self.swipeTracker.reset()
+                self.refreshSpaceLayout()
+                // 全屏空间在空间序里的排位要 ~420ms 才落定（实测 [1 3 4 F]→[1 F 3 4]），
+                // 切换瞬间读到的布局可能把两个方向的闸都关死——高速连滑时表现为
+                // 「一对失败（进闪 + 出迟到）然后自愈」（2026-08-31 实测）。0.6s 后再刷一次，
+                // 脏快照赶在下一次滑动前自愈。多刷无害（单次 0.132ms、幂等）。
+                Task { @MainActor [weak self] in
+                    try? await Task.sleep(nanoseconds: 600_000_000)
+                    self?.refreshSpaceLayout()
+                }
+            }
         }
         screenObserver = NotificationCenter.default.addObserver(
             forName: NSApplication.didChangeScreenParametersNotification,
@@ -680,7 +694,18 @@ final class FullscreenIntentMonitor {
             at: ProcessInfo.processInfo.systemUptime,
             naturalScrolling: context.naturalScrolling
         ) else { return }
-        guard context.layout.neighborIsFullscreen(direction) else {
+        var open = context.layout.neighborIsFullscreen(direction)
+        if !open {
+            // 闸关着可能只是缓存脏：空间切换后 ~420ms 内 SkyLight 的空间序还在重排，
+            // 切换瞬间刷进缓存的布局会把闸误关（2026-08-31 实测）。当场重读一次真值
+            // 再判——0.132ms、主线程、每串手势最多一次。仍关才是真的没得预测。
+            // 已试过并回退：再挂 250ms 复判补发——噪声手势的迟到预测也会被补发出去，
+            // 桌面上凭空藏一下条，闪烁不降反升。起滑落在脏窗口内的手势漏预测是
+            // 已接受的边界（正常节奏碰不到）。
+            refreshSpaceLayout()
+            open = atomicState.currentSpaceContext()?.layout.neighborIsFullscreen(direction) ?? false
+        }
+        guard open else {
             mainTrace("gate-closed-\(direction.rawValue)")
             return
         }

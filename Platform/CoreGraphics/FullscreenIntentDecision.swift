@@ -111,8 +111,16 @@ struct SpaceLayoutSnapshot: Equatable {
 
     /// 目标方向的相邻空间是不是全屏空间。**这道闸是整个预测隐藏的前提**：
     /// 没有它，在两个普通桌面之间切换也会把任务条藏一下，而那里本来什么问题都没有。
+    /// 「当前不在全屏空间」的前置是 2026-08-31 补的：全屏 → 全屏没有可藏的东西
+    /// （条本来就藏着），交给既有的保持机制。
+    ///
+    /// **反向（全屏 → 桌面的预测揭示）做过并撤销**（2026-08-31，owner 拍板「稳定优先」）：
+    /// 它靠猜手势，而全屏空间里三指手势远不止「滑回桌面」——误猜让条凭空冒在全屏画面上，
+    /// AX 读失败时还会卡住不收。滑回桌面 = 到达后经保持终审稳定淡入（~0.5s），不预测。
+    /// 复议条件：系统提供空间切换的**前置通知**（真信号，不是猜手势）。
     func neighborIsFullscreen(_ direction: SpaceSwitchDirection) -> Bool {
-        guard let index = orderedSpaceIDs.firstIndex(of: currentSpaceID) else { return false }
+        guard !fullscreenSpaceIDs.contains(currentSpaceID),
+              let index = orderedSpaceIDs.firstIndex(of: currentSpaceID) else { return false }
         let neighbor = direction == .right ? index + 1 : index - 1
         guard orderedSpaceIDs.indices.contains(neighbor) else { return false }
         return fullscreenSpaceIDs.contains(orderedSpaceIDs[neighbor])

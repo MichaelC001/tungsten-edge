@@ -335,6 +335,21 @@ final class FullscreenIntentDecisionTests: XCTestCase {
         XCTAssertFalse(layout(current: 99).hasAnyFullscreenNeighbor)     // 当前空间不在列表里
     }
 
+    // 2026-08-31 补：闸只属于「站在桌面上的人」。当前已在全屏空间时不预测——
+    // 条本来就藏着，没有可藏的东西；全屏→全屏交给既有的保持机制。
+    // （反向预测「全屏→桌面提前放条」做过并撤销，理由见 SpaceLayoutSnapshot 注释——
+    // 稳定优先，owner 拍板；别只删这条测试就把它加回来。）
+    func testGateNeverOpensWhileStandingInAFullscreenSpace() {
+        // 站在全屏空间 3：两侧都是桌面，闸也不开
+        XCTAssertFalse(layout(current: 3).neighborIsFullscreen(.left))
+        XCTAssertFalse(layout(current: 3).neighborIsFullscreen(.right))
+        XCTAssertFalse(layout(current: 3).hasAnyFullscreenNeighbor)
+        // 全屏挨着全屏（3、4 都是全屏）：从 3 往右同样不开
+        XCTAssertFalse(layout(current: 3, fullscreen: [3, 4]).neighborIsFullscreen(.right))
+        // 站在桌面 2 往右照常开（原有行为不受影响）
+        XCTAssertTrue(layout(current: 2).neighborIsFullscreen(.right))
+    }
+
     // MARK: - 三指水平滑动
 
     /// 实测映射（14/14 一致）：自然滚动下**手指向左滑去右边的空间**。

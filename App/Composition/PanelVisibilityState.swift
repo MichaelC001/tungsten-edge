@@ -31,7 +31,14 @@ enum FullscreenSpaceHoldDecision {
             return expectedGeneration == nil ? .apply : .stale
         }
         guard expectedGeneration == activeGeneration else { return .stale }
-        if isFullscreenVerdict || isFinalWindowedConfirmation { return .apply }
+        // 保持存续期间，**非终审裁决一律不放行**——true 也不行。原来的写法
+        // （true 即 .apply）会让退出全屏瞬间 CG 滞后 0.4~0.8s 报出的假 true
+        // 把 120ms 确认保持连根销毁，随后正确的 AX false 因保持已亡被判 .stale
+        // 静默丢弃，条只能等 5 秒对账兜底——「退全屏 2~3 秒才回归」（2026-08-30
+        // 实测，指纹：space-cg true 后无 space-ax 行、揭示行距上条 ax 行 5.098s，
+        // `Docs/05`）。保持期间状态本就是 .fullscreen，true 无事可做；忍 120ms
+        // 让终审 CG+AX 定夺，全→全切换只是晚 120ms 确认、期间条本来就藏着。
+        if isFinalWindowedConfirmation { return .apply }
         return .hold
     }
 }
