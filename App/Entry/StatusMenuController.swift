@@ -244,7 +244,7 @@ final class StatusMenuController: NSObject, NSMenuDelegate {
         menu.addItem(edgeItem)
         menu.addItem(.separator())
 
-        nativeDockSectionItem.title = AutoHideToggleMenuModel.nativeDockSectionTitle
+        nativeDockSectionItem.attributedTitle = Self.sectionTitle(AutoHideToggleMenuModel.nativeDockSectionTitle)
         nativeDockSectionItem.isEnabled = false
         menu.addItem(nativeDockSectionItem)
 
@@ -453,9 +453,11 @@ final class StatusMenuController: NSObject, NSMenuDelegate {
     /// 组标题**不设 `keyEquivalent`**：禁用行设了会被菜单捕获，还会让它看起来能点。
     /// ⌥⇧⌘D 只以纯文字写进标题，且只在 Carbon 注册成功时才提——注册失败时按不出来，写上去是骗人。
     private func refreshEdgeSectionTitle() {
-        edgeSectionItem.title = AutoHideToggleMenuModel.edgeSectionTitle(
-            isHotKeyRegistered: isToggleHotKeyRegistered(),
-            glyphs: hotKeyGlyphs()
+        edgeSectionItem.attributedTitle = Self.sectionTitle(
+            AutoHideToggleMenuModel.edgeSectionTitle(
+                isHotKeyRegistered: isToggleHotKeyRegistered(),
+                glyphs: hotKeyGlyphs()
+            )
         )
     }
 
@@ -546,6 +548,24 @@ final class StatusMenuController: NSObject, NSMenuDelegate {
             installUpdateItem.setAccessibilityLabel(nil)
             if allowsLayoutChange { installUpdateItem.isHidden = true }
         }
+    }
+
+    /// 两条分组标题的样式。**必须走 `attributedTitle`**：组标题是 `action: nil` 的 disabled 项，
+    /// 没有 `textColor` 可设，系统按 disabled 画成菜单里最淡的一档，owner 2026-09-01 嫌太灰。
+    /// 加深到 `secondaryLabelColor`——比可点的菜单项弱，但看得清；**不要为了变黑把它改成
+    /// enabled**，那样鼠标划过会高亮成蓝条，而组标题不高亮是对的（owner 2026-08-04）。
+    ///
+    /// ⚠️ 字体必须显式给：`attributedTitle` 不给就掉成系统默认字号（同 `pendingUpdateTitle`）。
+    /// ⚠️ 设了 `attributedTitle` 之后**再赋 `title` 不生效**——所以 `refreshEdgeSectionTitle()`
+    /// 也得走这里，两处调用点不能只改一处。
+    private static func sectionTitle(_ text: String) -> NSAttributedString {
+        NSAttributedString(
+            string: text,
+            attributes: [
+                .font: NSFont.menuFont(ofSize: 0),
+                .foregroundColor: NSColor.secondaryLabelColor
+            ]
+        )
     }
 
     /// 「安装 X.Y.Z…」+ 右上角一个红点。
@@ -748,6 +768,12 @@ final class PreferenceSliderMenuItemView: NSView {
     /// 别把这个透明度做到字重上：加粗会让标签宽度变化、两端文字左右跳动。
     static let activeEndpointColor = NSColor.controlAccentColor.withAlphaComponent(0.7)
 
+    /// 未选中那一端的小字颜色。**四个使用点必须都引用它**（左右各一次初始化 + `updateDisplay`
+    /// 里左右各一次），散成四份字面量时漏改一份只有「拖到端点再拖回来」才看得见。
+    /// 2026-09-01 由三级标签色深一档到这里（owner 嫌整块太灰）。
+    /// 端点**圆点**的空心描边不跟着动——那是图形不是文字。
+    static let inactiveEndpointColor = NSColor.secondaryLabelColor
+
     /// 用户已经动过滑块、还没提交。菜单显示后补读系统真值时要看它——正在拖的手不能被跳一下。
     var hasDraft: Bool { commitTracker.hasPending }
 
@@ -810,13 +836,13 @@ final class PreferenceSliderMenuItemView: NSView {
         addSubview(delayLabel)
 
         leftEndpointLabel.font = .systemFont(ofSize: 9)
-        leftEndpointLabel.textColor = .tertiaryLabelColor
+        leftEndpointLabel.textColor = Self.inactiveEndpointColor
         leftEndpointLabel.alignment = .center
         leftEndpointLabel.setAccessibilityElement(false)
         addSubview(leftEndpointLabel)
 
         rightEndpointLabel.font = .systemFont(ofSize: 9)
-        rightEndpointLabel.textColor = .tertiaryLabelColor
+        rightEndpointLabel.textColor = Self.inactiveEndpointColor
         rightEndpointLabel.alignment = .center
         rightEndpointLabel.setAccessibilityElement(false)
         addSubview(rightEndpointLabel)
@@ -911,8 +937,8 @@ final class PreferenceSliderMenuItemView: NSView {
         delayLabel.isHidden = isAtLeftEnd || isAtRightEnd
         leftEndpointDot.isOn = isAtLeftEnd
         rightEndpointDot.isOn = isAtRightEnd
-        leftEndpointLabel.textColor = isAtLeftEnd ? Self.activeEndpointColor : .tertiaryLabelColor
-        rightEndpointLabel.textColor = isAtRightEnd ? Self.activeEndpointColor : .tertiaryLabelColor
+        leftEndpointLabel.textColor = isAtLeftEnd ? Self.activeEndpointColor : Self.inactiveEndpointColor
+        rightEndpointLabel.textColor = isAtRightEnd ? Self.activeEndpointColor : Self.inactiveEndpointColor
         setAccessibilityLabel("\(accessibilityTitle)，\(displayString)")
         setAccessibilityValue(displayString)
         slider.displayString = displayString
