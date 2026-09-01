@@ -79,8 +79,11 @@ final class AppSettingsStore: ObservableObject {
     @Published private(set) var dockSize: DockSize
     /// 悬停效果档位。只影响条内 chip 的悬停视觉，静息布局逐像素不变（因此无需 relayout）。
     @Published private(set) var hoverStyle: HoverStyle
-    /// 最大化窗口避让任务条（菜单「最大化窗口避开任务条」）。**默认关**——
-    /// 这个功能会真的去改写别人应用的窗口尺寸，没主动选过的人不该被改。
+    /// 最大化窗口避让任务条（菜单「最大化窗口避开任务条」）。
+    /// **全新安装播种为开，老用户维持关**（owner 2026-09-01；此前所有人默认关）——
+    /// 它配的是同一轮定的「任务条默认常驻」：常驻会压住最大化窗口的底边，避让正好补上。
+    /// 但这个功能会真的去改写**别人应用**的窗口尺寸，所以不能因为一次升级就替老用户打开，
+    /// 播种走 `seedWindowLiftEnabledForFreshInstall()`，见那里的注释。
     @Published private(set) var windowLiftEnabled: Bool
     /// 标准绿灯 / Control-Command-F 输入投递前预测隐藏任务条，默认开启。
     @Published private(set) var fullscreenIntentEnabled: Bool
@@ -138,8 +141,10 @@ final class AppSettingsStore: ObservableObject {
 
         launchAtLogin = defaults.bool(forKey: Keys.launchAtLogin)
         showShelf = defaults.bool(forKey: Keys.showShelf)
-        // 有意**不**进上面的 register：缺键即 false 正好是我们要的默认关。
-        // 注册一个 false 只会让人误以为它跟 showShelf 一样是「默认开」。
+        // 有意**不**进上面的 register：缺键即 false = 老用户维持关。
+        // 全新安装那一次由 `seedWindowLiftEnabledForFreshInstall()` 显式写成 true——
+        // register 一个 true 会把**所有**从没碰过这个开关的老用户一并打开，而这个功能
+        // 会改写别人应用的窗口尺寸，不能靠一次升级静默生效。
         windowLiftEnabled = defaults.bool(forKey: Keys.windowLiftEnabled)
         // 同样有意不进 register：缺键即 false = 还没订阅过。
         hasSubscribed = defaults.bool(forKey: Keys.hasSubscribed)
@@ -283,6 +288,19 @@ final class AppSettingsStore: ObservableObject {
         guard showShelf != value else { return }
         showShelf = value
         defaults.set(value, forKey: Keys.showShelf)
+    }
+
+    /// 全新安装把「最大化窗口避开 Dock 栏」播种为开（owner 2026-09-01）。
+    ///
+    /// **只允许 `AppDelegate` 在判定为全新安装时调一次**：判据是 `InstallationRecord`
+    /// 的首装键在本次启动**之前**是否存在——老用户机器上它早就有值，只有全新安装那一次是空的，
+    /// 所以不需要再新建一个播种标记键（也就没有新的数据边界）。⚠️ 调用点必须排在
+    /// `recordFirstLaunchIfNeeded()` **之前**取那个判据，写完再问就永远是「老用户」。
+    ///
+    /// 键已存在 = 用户自己拨过（哪怕拨成关），一律尊重，不覆盖。
+    func seedWindowLiftEnabledForFreshInstall() {
+        guard defaults.object(forKey: Keys.windowLiftEnabled) == nil else { return }
+        setWindowLiftEnabled(true)
     }
 
     func setWindowLiftEnabled(_ value: Bool) {

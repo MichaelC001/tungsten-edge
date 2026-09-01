@@ -146,11 +146,12 @@ final class AppSettingsStoreTests: XCTestCase {
     }
 
     @MainActor
-    func testWindowLiftEnabledDefaultsToOffAndPersists() {
+    func testWindowLiftEnabledStaysOffForUpgradersAndPersists() {
         let defaults = makeDefaults()
-        // 默认关是**拍板过的**，不是漏注册的默认值：最大化避让会真的改写别人应用的窗口尺寸，
-        // 没主动选过的人不该被改。别顺手把它「修」成 true（理由与复议条件见 Docs/27）。
-        XCTAssertFalse(AppSettingsStore(defaults: defaults).windowLiftEnabled, "默认不动用户窗口，由用户主动开")
+        // 缺键即关是**拍板过的**，不是漏注册：最大化避让会真的改写别人应用的窗口尺寸，
+        // 不能靠一次升级替老用户打开。全新安装那一次由 seed 方法显式写开（见下一条测试），
+        // 别顺手把它「修」成 register: true——那会把所有老用户一并打开。
+        XCTAssertFalse(AppSettingsStore(defaults: defaults).windowLiftEnabled, "升级上来的老用户维持关")
 
         let store = AppSettingsStore(defaults: defaults)
         store.setWindowLiftEnabled(true)
@@ -159,6 +160,28 @@ final class AppSettingsStoreTests: XCTestCase {
 
         store.setWindowLiftEnabled(false)
         XCTAssertFalse(AppSettingsStore(defaults: defaults).windowLiftEnabled)
+    }
+
+    /// 全新安装播种为开（owner 2026-09-01），且**只在键从未写过时**播种。
+    func testWindowLiftSeedOnlyAppliesWhenTheUserNeverTouchedIt() {
+        let fresh = makeDefaults()
+        let store = AppSettingsStore(defaults: fresh)
+        store.seedWindowLiftEnabledForFreshInstall()
+        XCTAssertTrue(store.windowLiftEnabled, "全新安装播种为开")
+        XCTAssertTrue(AppSettingsStore(defaults: fresh).windowLiftEnabled, "要落盘")
+
+        // 用户自己关过：即使 seed 再被调到，也不许覆盖他的选择。
+        let chosen = makeDefaults()
+        let existing = AppSettingsStore(defaults: chosen)
+        existing.setWindowLiftEnabled(true)
+        existing.setWindowLiftEnabled(false)
+        existing.seedWindowLiftEnabledForFreshInstall()
+        XCTAssertFalse(existing.windowLiftEnabled, "键已存在 = 用户拨过，尊重")
+
+        // 幂等：播种后再调一次不改变任何东西。
+        store.setWindowLiftEnabled(false)
+        store.seedWindowLiftEnabledForFreshInstall()
+        XCTAssertFalse(store.windowLiftEnabled)
     }
 
     @MainActor

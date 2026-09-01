@@ -121,7 +121,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // 首装时间戳：**故意放在所有分支判断之前**，搬家引导、权限引导、正常启动都要记。
         // 这三条分支的用户都是真的运行过钨极的人，将来转收费判定老用户时不该把谁漏掉。
         // 只写一次、之后永不覆盖，理由见 `InstallationRecord`。
+        //
+        // ⚠️ 顺序承重：**先取「是不是全新安装」，再写首装键**。写完再问永远得到「老用户」，
+        // 下面那条播种就再也不会对任何人生效（静默失效，没有任何报错）。
+        let isFreshInstall = InstallationRecord.firstLaunchDate() == nil
         InstallationRecord.recordFirstLaunchIfNeeded()
+        // 全新安装把最大化避让播种为开；老用户维持关（它会改写别人应用的窗口尺寸，
+        // 不能靠一次升级静默打开）。理由见 `AppSettingsStore.seedWindowLiftEnabledForFreshInstall`。
+        if isFreshInstall {
+            settingsStore.seedWindowLiftEnabledForFreshInstall()
+        }
 
         // **无条件钉死浅色，这一句不能省。** 产品固定浅色（owner 2026-08-16 删掉深色模式），
         // 而 `NSVisualEffectView` 和 Liquid Glass 跟的是**窗口的 effectiveAppearance**、
