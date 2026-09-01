@@ -144,10 +144,13 @@ struct SettingsWindowContent: View {
     // 登录时启动 2026-08-24 当天两度搬家：随去重进过设置窗口，owner 复议后定为
     // **只在状态栏菜单（第一项）**。这里不再放它，也不再需要 didBecomeActive 刷新。
 
-    /// 界面语言（2026-08-24，反转 8-17「不做语言开关」，见 `Docs/27`）。写**应用自己域**的
-    /// `AppleLanguages`（与 macOS 13+ 逐 App 语言同一个键），「跟随系统」= 删键；重启生效。
+    /// 界面语言（2026-08-24 加，2026-09-01 由三档收成两档、删掉「跟随系统」，见 `Docs/27`）。
+    /// 写**应用自己域**的 `AppleLanguages`（与 macOS 13+ 逐 App 语言同一个键），重启生效。
     /// 读现状必须走 `CFPreferencesCopyAppValue`——`array(forKey:)` 会继承全局域，
-    /// 分不清「跟随系统」和「显式设置」（`AppLanguageOption` 注释是权威）。
+    /// 分不清「没设过」和「显式设置」（`AppLanguageOption` 注释是权威）。
+    ///
+    /// ⚠️ 没设过语言的人键是不存在的，此时选单显示的是**推断值**（当前实际加载的那份
+    /// `.lproj`）。**这条读取路径绝不许回写**：一回写就等于替所有从没选过的用户把语言钉死。
     @ViewBuilder
     private var languageRow: some View {
         settingRow(note: String(localized: "The language change takes effect after Tungsten Edge restarts.")) {
@@ -170,16 +173,21 @@ struct SettingsWindowContent: View {
     private static func currentLanguageOption() -> AppLanguageOption {
         let bundleID = (Bundle.main.bundleIdentifier ?? "") as CFString
         let value = CFPreferencesCopyAppValue("AppleLanguages" as CFString, bundleID) as? [String]
-        return AppLanguageOption.current(appDomainValue: value)
+        return AppLanguageOption.current(
+            appDomainValue: value,
+            // 真正加载的那份 .lproj——比推断系统语言准：用户在系统设置里给钨极单独设了
+            // 第三种语言时界面实际回落英文，这里就答 English。
+            effectiveLocalization: Bundle.main.preferredLocalizations.first ?? "en"
+        )
     }
 
+    /// 选中的档**一律写键**，哪怕点的就是当前显示的那一档——那一档可能只是推断值（键不存在），
+    /// 用户点它的意思是「固定成这个」，不写就还在跟着系统跑。但界面语言没真的变时**不弹重启提示**：
+    /// 什么都没变还要人重启是打扰。
     private func applyLanguage(_ option: AppLanguageOption) {
-        guard option != Self.currentLanguageOption() else { return }
-        if let value = option.appleLanguagesValue {
-            UserDefaults.standard.set(value, forKey: "AppleLanguages")
-        } else {
-            UserDefaults.standard.removeObject(forKey: "AppleLanguages")
-        }
+        let previous = Self.currentLanguageOption()
+        UserDefaults.standard.set(option.appleLanguagesValue, forKey: "AppleLanguages")
+        guard option != previous else { return }
         presentedAlert = SettingsAlert(
             title: String(localized: "Language"),
             message: String(localized: "The language change takes effect after Tungsten Edge restarts."),

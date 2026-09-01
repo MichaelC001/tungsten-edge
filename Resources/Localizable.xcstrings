@@ -3136,23 +3136,6 @@
         }
       }
     },
-    "System": {
-      "comment": "语言选单第一档（术语表：System 不是 Auto）",
-      "localizations": {
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "跟随系统"
-          }
-        },
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "System"
-          }
-        }
-      }
-    },
     "System Preferences > Security & Privacy > Privacy > Accessibility": {
       "comment": "macOS 12 的权限路径，必须与英文系统界面的原词一致",
       "localizations": {
