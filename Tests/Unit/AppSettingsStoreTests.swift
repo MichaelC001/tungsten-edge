@@ -3,17 +3,34 @@ import XCTest
 
 @MainActor
 final class AppSettingsStoreTests: XCTestCase {
-    func testFreshDefaultsKeepFiniteDelaysWhenLegacyEnabledKeysAreMissing() {
+    /// 全新安装：钨极自己那条**默认常驻**（owner 2026-09-01），系统 Dock 的镜像种子仍是 1.0。
+    func testFreshInstallDefaultsToAlwaysVisibleForTheTaskbar() {
         let defaults = makeDefaults()
 
         let store = AppSettingsStore(defaults: defaults)
 
+        XCTAssertEqual(store.edgeAutoHideDelay, AppSettingsStore.neverHideDelay)
+        XCTAssertEqual(AppSettingsStore.sliderIndexFromDelay(store.edgeAutoHideDelay), 0)
         XCTAssertEqual(store.nativeDockAutoHideDelay, 1.0)
-        XCTAssertEqual(store.edgeAutoHideDelay, 0.1)
         XCTAssertEqual(AppSettingsStore.sliderIndexFromDelay(store.nativeDockAutoHideDelay), 10)
-        XCTAssertEqual(AppSettingsStore.sliderIndexFromDelay(store.edgeAutoHideDelay), 1)
         XCTAssertNil(defaults.object(forKey: "com.tungsten.edge.autoHide.nativeDock.enabled"))
         XCTAssertNil(defaults.object(forKey: "com.tungsten.edge.autoHide.edge.enabled"))
+    }
+
+    /// ⚠️ 默认改成常驻之后**最容易踩的一处**：remembered 必须仍是有限档。
+    /// 它要是跟着变成 `-1`，⌥⇧⌘D 就是从常驻切到常驻——快捷键当场变成空操作。
+    func testFreshInstallRemembersAFiniteDelayToToggleBackTo() {
+        let defaults = makeDefaults()
+
+        let store = AppSettingsStore(defaults: defaults)
+
+        XCTAssertEqual(store.lastEnabledEdgeAutoHideDelay, AppSettingsStore.defaultEnabledEdgeAutoHideDelay)
+        XCTAssertNotEqual(store.lastEnabledEdgeAutoHideDelay, AppSettingsStore.neverHideDelay)
+
+        store.toggleEdgeAutoHideMode()
+        XCTAssertEqual(store.edgeAutoHideDelay, AppSettingsStore.defaultEnabledEdgeAutoHideDelay, "常驻 → 自动隐藏")
+        store.toggleEdgeAutoHideMode()
+        XCTAssertEqual(store.edgeAutoHideDelay, AppSettingsStore.neverHideDelay, "再按一次切回常驻")
     }
 
     func testLegacyDisabledEnabledKeyMigratesToNeverHideOnlyWhenKeyExists() {
@@ -115,17 +132,17 @@ final class AppSettingsStoreTests: XCTestCase {
     }
 
     @MainActor
-    func testHoverStyleDefaultsToStandardAndPersists() {
+    func testHoverStyleDefaultsToQuietAndPersists() {
         let defaults = makeDefaults()
-        XCTAssertEqual(AppSettingsStore(defaults: defaults).hoverStyle, .standard, "默认保持现有悬停手感，升级用户零变化")
+        XCTAssertEqual(AppSettingsStore(defaults: defaults).hoverStyle, .quiet, "全新安装不弹应用名气泡（owner 2026-09-01）")
 
         let store = AppSettingsStore(defaults: defaults)
-        store.setHoverStyle(.quiet)
-        XCTAssertEqual(store.hoverStyle, .quiet)
-        XCTAssertEqual(AppSettingsStore(defaults: defaults).hoverStyle, .quiet, "档位要跨重启保持")
-
         store.setHoverStyle(.standard)
-        XCTAssertEqual(AppSettingsStore(defaults: defaults).hoverStyle, .standard)
+        XCTAssertEqual(store.hoverStyle, .standard)
+        XCTAssertEqual(AppSettingsStore(defaults: defaults).hoverStyle, .standard, "档位要跨重启保持")
+
+        store.setHoverStyle(.quiet)
+        XCTAssertEqual(AppSettingsStore(defaults: defaults).hoverStyle, .quiet)
     }
 
     @MainActor
@@ -159,15 +176,15 @@ final class AppSettingsStoreTests: XCTestCase {
     }
 
     @MainActor
-    func testHoverStyleRewritesCorruptStoredValueToStandard() {
+    func testHoverStyleRewritesCorruptStoredValueToTheDefault() {
         let defaults = makeDefaults()
         defaults.set("silent", forKey: "com.tungsten.edge.hoverStyle")
-        XCTAssertEqual(AppSettingsStore(defaults: defaults).hoverStyle, .standard)
+        XCTAssertEqual(AppSettingsStore(defaults: defaults).hoverStyle, HoverStyle.default)
         // 同 dockSize：必须**立刻重写**，否则每次启动都要重走一遍回退，存值和菜单勾选也一直对不上。
-        XCTAssertEqual(defaults.string(forKey: "com.tungsten.edge.hoverStyle"), HoverStyle.standard.rawValue)
+        XCTAssertEqual(defaults.string(forKey: "com.tungsten.edge.hoverStyle"), HoverStyle.default.rawValue)
 
         defaults.set(7, forKey: "com.tungsten.edge.hoverStyle")
-        XCTAssertEqual(AppSettingsStore(defaults: defaults).hoverStyle, .standard, "类型不对也要回退")
+        XCTAssertEqual(AppSettingsStore(defaults: defaults).hoverStyle, HoverStyle.default, "类型不对也要回退")
     }
 
     @MainActor
@@ -188,7 +205,8 @@ final class AppSettingsStoreTests: XCTestCase {
     func testHoverStyleRawValuesAreStableAcrossReleases() {
         // 同 dockSize：raw value 进了 UserDefaults，改名等于把所有老用户悄悄重置回标准档。
         XCTAssertEqual(HoverStyle.allCases.map(\.rawValue), ["standard", "quiet"])
-        XCTAssertEqual(HoverStyle.default, .standard)
+        // 全新安装默认不弹应用名气泡（owner 2026-09-01，此前是 .standard）。
+        XCTAssertEqual(HoverStyle.default, .quiet)
         // isExpressive 是所有 chip 视图的唯一判据，也是菜单勾选态的判据，反了就是整档失效。
         XCTAssertTrue(HoverStyle.standard.isExpressive)
         XCTAssertFalse(HoverStyle.quiet.isExpressive)
@@ -529,10 +547,10 @@ final class AppSettingsStoreTests: XCTestCase {
         defaults.set(AppSettingsStore.neverHideDelay, forKey: "com.tungsten.edge.autoHide.edge.delay")
         let store = AppSettingsStore(defaults: defaults)
 
-        XCTAssertEqual(store.lastEnabledEdgeAutoHideDelay, AppSettingsStore.defaultEdgeAutoHideDelay)
+        XCTAssertEqual(store.lastEnabledEdgeAutoHideDelay, AppSettingsStore.defaultEnabledEdgeAutoHideDelay)
 
         store.toggleEdgeAutoHideMode()
-        XCTAssertEqual(store.edgeAutoHideDelay, AppSettingsStore.defaultEdgeAutoHideDelay)
+        XCTAssertEqual(store.edgeAutoHideDelay, AppSettingsStore.defaultEnabledEdgeAutoHideDelay)
     }
 
     func testRememberedSeedsFromCurrentFiniteValueOverStaleStoredValue() {
@@ -565,7 +583,7 @@ final class AppSettingsStoreTests: XCTestCase {
 
             let store = AppSettingsStore(defaults: defaults)
 
-            XCTAssertEqual(store.lastEnabledEdgeAutoHideDelay, AppSettingsStore.defaultEdgeAutoHideDelay, "corrupt=\(corrupt)")
+            XCTAssertEqual(store.lastEnabledEdgeAutoHideDelay, AppSettingsStore.defaultEnabledEdgeAutoHideDelay, "corrupt=\(corrupt)")
         }
     }
 
@@ -576,10 +594,10 @@ final class AppSettingsStoreTests: XCTestCase {
 
         let store = AppSettingsStore(defaults: defaults)
         XCTAssertEqual(store.edgeAutoHideDelay, AppSettingsStore.neverHideDelay)
-        XCTAssertEqual(store.lastEnabledEdgeAutoHideDelay, AppSettingsStore.defaultEdgeAutoHideDelay)
+        XCTAssertEqual(store.lastEnabledEdgeAutoHideDelay, AppSettingsStore.defaultEnabledEdgeAutoHideDelay)
 
         store.toggleEdgeAutoHideMode()
-        XCTAssertEqual(store.edgeAutoHideDelay, AppSettingsStore.defaultEdgeAutoHideDelay)
+        XCTAssertEqual(store.edgeAutoHideDelay, AppSettingsStore.defaultEnabledEdgeAutoHideDelay)
     }
 
     func testCrossStoreRebuildKeepsRememberedDelay() {
@@ -613,7 +631,7 @@ final class AppSettingsStoreTests: XCTestCase {
     }
 
     func testSnapDelayReturnsFallbackForNonFiniteInput() {
-        XCTAssertEqual(AppSettingsStore.snapDelay(.nan), AppSettingsStore.defaultEdgeAutoHideDelay)
+        XCTAssertEqual(AppSettingsStore.snapDelay(.nan), AppSettingsStore.defaultEnabledEdgeAutoHideDelay)
         XCTAssertEqual(AppSettingsStore.snapDelay(.infinity, fallbackForNonFinite: 1.0), 1.0)
         XCTAssertEqual(AppSettingsStore.snapDelay(-.infinity, fallbackForNonFinite: 2.0), 2.0)
     }
@@ -631,16 +649,16 @@ final class AppSettingsStoreTests: XCTestCase {
         let store = AppSettingsStore(defaults: defaults)
 
         XCTAssertEqual(store.nativeDockAutoHideDelay, AppSettingsStore.defaultNativeDockAutoHideDelay)
-        XCTAssertEqual(store.edgeAutoHideDelay, AppSettingsStore.defaultEdgeAutoHideDelay)
+        XCTAssertEqual(store.edgeAutoHideDelay, AppSettingsStore.defaultEnabledEdgeAutoHideDelay)
         XCTAssertEqual(defaults.double(forKey: "com.tungsten.edge.autoHide.nativeDock.delay"), 1.0)
         XCTAssertEqual(defaults.double(forKey: "com.tungsten.edge.autoHide.edge.delay"), 0.1)
     }
 
     func testSanitizedLastEnabledDelayNeverReturnsResident() {
-        XCTAssertEqual(AppSettingsStore.sanitizedLastEnabledDelay(nil), AppSettingsStore.defaultEdgeAutoHideDelay)
-        XCTAssertEqual(AppSettingsStore.sanitizedLastEnabledDelay(.nan), AppSettingsStore.defaultEdgeAutoHideDelay)
-        XCTAssertEqual(AppSettingsStore.sanitizedLastEnabledDelay(AppSettingsStore.neverHideDelay), AppSettingsStore.defaultEdgeAutoHideDelay)
-        XCTAssertEqual(AppSettingsStore.sanitizedLastEnabledDelay(-50.0), AppSettingsStore.defaultEdgeAutoHideDelay)
+        XCTAssertEqual(AppSettingsStore.sanitizedLastEnabledDelay(nil), AppSettingsStore.defaultEnabledEdgeAutoHideDelay)
+        XCTAssertEqual(AppSettingsStore.sanitizedLastEnabledDelay(.nan), AppSettingsStore.defaultEnabledEdgeAutoHideDelay)
+        XCTAssertEqual(AppSettingsStore.sanitizedLastEnabledDelay(AppSettingsStore.neverHideDelay), AppSettingsStore.defaultEnabledEdgeAutoHideDelay)
+        XCTAssertEqual(AppSettingsStore.sanitizedLastEnabledDelay(-50.0), AppSettingsStore.defaultEnabledEdgeAutoHideDelay)
         XCTAssertEqual(AppSettingsStore.sanitizedLastEnabledDelay(0.05), AppSettingsStore.finiteDelayMin)
         XCTAssertEqual(AppSettingsStore.sanitizedLastEnabledDelay(2.0), 2.0)
         XCTAssertEqual(AppSettingsStore.sanitizedLastEnabledDelay(AppSettingsStore.neverWakeDelay), AppSettingsStore.neverWakeDelay)

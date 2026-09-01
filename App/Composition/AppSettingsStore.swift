@@ -18,7 +18,9 @@ enum HoverStyle: String, CaseIterable {
     case standard
     case quiet
 
-    static let `default` = HoverStyle.standard
+    /// **默认 `.quiet`**（owner 2026-09-01 定，此前是 `.standard`）：全新装上时鼠标划过
+    /// 任务条不弹应用名气泡，只有轻微放大。老用户键里已有值，不受影响。
+    static let `default` = HoverStyle.quiet
 
     /// 悬停是否产生**表现型**变化（名字气泡、文件夹格放大）。chip 视图统一用它做判据，
     /// 不各自比 case；菜单的勾选态也读它（`.on` ⟺ `isExpressive`）。
@@ -59,7 +61,16 @@ final class AppSettingsStore: ObservableObject {
     static let sliderIndexMax = 31
     // nonisolated：要在 snapDelay 的默认参数（nonisolated 求值上下文）里引用。
     nonisolated static let defaultNativeDockAutoHideDelay: Double = 1.0
-    nonisolated static let defaultEdgeAutoHideDelay: Double = 0.1
+    /// **全新安装时钨极自己那条的档位：常驻**（owner 2026-09-01 定，此前是 0.1 秒唤醒的自动隐藏）。
+    /// 只用在 `register` 那一处。
+    ///
+    /// ⚠️ **和下面那个是两个常量，永远不许合并。** 这个是「首次装上是什么样」，
+    /// 下面那个是「自动隐藏开着时用哪一档」——后者必须是**有限值**，被两处兜底依赖：
+    /// remembered 值不许是 `-1`（否则 ⌥⇧⌘D 从常驻切走还是常驻，快捷键变空操作），
+    /// `snapDelay` 的非有限兜底也不许是 `-1`（否则 NaN 会被解释成「常驻」这个哨兵）。
+    nonisolated static let firstRunEdgeAutoHideDelay: Double = AppSettingsStore.neverHideDelay
+    /// 自动隐藏**开着**时的默认档，也是 remembered 与非有限值的兜底。见上面那条 ⚠️。
+    nonisolated static let defaultEnabledEdgeAutoHideDelay: Double = 0.1
 
     @Published private(set) var launchAtLogin: Bool
     /// 中转格是否显示在固定文件夹区头位。关掉后它不再渲染，暂存的文件不受影响。
@@ -121,7 +132,8 @@ final class AppSettingsStore: ObservableObject {
             Keys.showShelf: true,
             Keys.fullscreenIntentEnabled: true,
             Keys.nativeDockAutoHideDelay: Self.defaultNativeDockAutoHideDelay,
-            Keys.edgeAutoHideDelay: Self.defaultEdgeAutoHideDelay,
+            // 首次安装 = 常驻；remembered 的种子仍是有限档，见常量注释。
+            Keys.edgeAutoHideDelay: Self.firstRunEdgeAutoHideDelay,
         ])
 
         launchAtLogin = defaults.bool(forKey: Keys.launchAtLogin)
@@ -177,13 +189,13 @@ final class AppSettingsStore: ObservableObject {
         }
         let edgeDelay = Self.sanitizedStoredDelay(
             defaults.object(forKey: Keys.edgeAutoHideDelay),
-            fallback: Self.defaultEdgeAutoHideDelay
+            fallback: Self.defaultEnabledEdgeAutoHideDelay
         )
         edgeAutoHideDelay = edgeDelay
         if edgeDelay == Self.neverHideDelay {
             lastEnabledEdgeAutoHideDelay = Self.sanitizedLastEnabledDelay(
                 Self.storedNumericValue(defaults.object(forKey: Keys.edgeAutoHideLastEnabledDelay)),
-                fallback: Self.defaultEdgeAutoHideDelay
+                fallback: Self.defaultEnabledEdgeAutoHideDelay
             )
         } else {
             lastEnabledEdgeAutoHideDelay = edgeDelay
@@ -326,7 +338,7 @@ final class AppSettingsStore: ObservableObject {
 
     func setEdgeAutoHideDelay(_ value: Double) {
         guard value.isFinite else { return }
-        let snapped = Self.snapDelay(value, fallbackForNonFinite: Self.defaultEdgeAutoHideDelay)
+        let snapped = Self.snapDelay(value, fallbackForNonFinite: Self.defaultEnabledEdgeAutoHideDelay)
         // remembered 同步先于 active 去重：active 未变时也要修正 remembered。
         if snapped != Self.neverHideDelay, lastEnabledEdgeAutoHideDelay != snapped {
             lastEnabledEdgeAutoHideDelay = snapped
@@ -368,7 +380,7 @@ final class AppSettingsStore: ObservableObject {
         return Int(((clamped - finiteDelayMin) / delayStep).rounded()) + 1
     }
 
-    static func snapDelay(_ value: Double, fallbackForNonFinite fallback: Double = AppSettingsStore.defaultEdgeAutoHideDelay) -> Double {
+    static func snapDelay(_ value: Double, fallbackForNonFinite fallback: Double = AppSettingsStore.defaultEnabledEdgeAutoHideDelay) -> Double {
         // NaN/±inf 穿透到下面的 Int(...) 转换会直接 crash（NaN 的比较全为 false，clamp 不生效）。
         guard value.isFinite else { return fallback }
         if value <= neverHideDelay { return neverHideDelay }
@@ -386,7 +398,7 @@ final class AppSettingsStore: ObservableObject {
 
     /// remembered 值的防御收口：缺失、类型错误、非有限、吸附后为常驻，一律回退默认档位
     /// （edge 组 0.1，系统 Dock 组 1.0）。
-    static func sanitizedLastEnabledDelay(_ value: Double?, fallback: Double = AppSettingsStore.defaultEdgeAutoHideDelay) -> Double {
+    static func sanitizedLastEnabledDelay(_ value: Double?, fallback: Double = AppSettingsStore.defaultEnabledEdgeAutoHideDelay) -> Double {
         guard let value, value.isFinite else { return fallback }
         let snapped = snapDelay(value, fallbackForNonFinite: fallback)
         return snapped == neverHideDelay ? fallback : snapped
