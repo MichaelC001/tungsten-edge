@@ -14,6 +14,9 @@ struct SettingsWindowView: View {
     @ObservedObject var coordinator: SettingsCoordinator
     @ObservedObject var licenseStore: LicenseStore
     @ObservedObject var tabState: SettingsTabState
+    /// 「通用」页那颗「重新打开新手引导」按钮的动作。**不给默认值**：这里没有任何测试
+    /// 会检查 SwiftUI 调用点，给了默认值就等于让"漏传"编译通过（AGENTS.md 的 no-default 铁律）。
+    let onShowWelcomeGuide: () -> Void
 
     var body: some View {
         // ScrollView 保留作小屏兜底：每页正常都短于一屏，量高把窗口撑到内容高度，滚动不出现。
@@ -24,7 +27,8 @@ struct SettingsWindowView: View {
                 store: store,
                 coordinator: coordinator,
                 licenseStore: licenseStore,
-                tabState: tabState
+                tabState: tabState,
+                onShowWelcomeGuide: onShowWelcomeGuide
             )
         }
         .frame(width: Self.contentWidth)
@@ -36,6 +40,7 @@ struct SettingsWindowContent: View {
     @ObservedObject var coordinator: SettingsCoordinator
     @ObservedObject var licenseStore: LicenseStore
     @ObservedObject var tabState: SettingsTabState
+    let onShowWelcomeGuide: () -> Void
 
     @State private var presentedAlert: SettingsAlert?
     @State private var subscriptionEmail = ""
@@ -51,7 +56,6 @@ struct SettingsWindowContent: View {
         Group {
             switch tabState.selected {
             case .general: generalPane
-            case .taskbar: taskbarPane
             case .advanced: advancedPane
             case .license: licensePane
             case .feedback: feedbackPane
@@ -82,45 +86,16 @@ struct SettingsWindowContent: View {
     // 分区标题行随分页取消（窗口标题承担）。页体全部是**本根视图**的计算属性——
     // 草稿 @State（presentedAlert / 订阅邮箱 / 授权码 / 反馈正文与联系方式）必须留在根上，
     // 下放进页级子视图 = 切页即清空（settings.md 有对应规则）。
+    /// 「通用」页。四行控件**一律靠左起**（owner 2026-09-01 从三个排版方向里选的这个）：
+    /// 谁都不许用 `Spacer()` 把自己的控件推到右边缘，一页里出现两种对齐就开始显乱。
     @ViewBuilder
     private var generalPane: some View {
         settingsPane {
             languageRow
             hotKeyRow
             scrollReverserRow
+            welcomeGuideRow
         }
-    }
-
-    @ViewBuilder
-    private var taskbarPane: some View {
-        settingsPane {
-                settingRow(note: String(localized: "Adds a spot on the taskbar for parking files. Dropping a file there doesn’t move or copy it — Tungsten Edge just remembers where it lives.")) {
-                    Toggle("Show Shelf", isOn: binding(get: { store.showShelf }, set: store.setShowShelf))
-                }
-
-                settingRow(note: String(localized: "When off, moving the pointer across the taskbar no longer shows app names.")) {
-                    Toggle(
-                        "Show app name on hover",
-                        isOn: binding(get: { store.hoverStyle.isExpressive }) {
-                            store.setHoverStyle($0 ? .standard : .quiet)
-                        }
-                    )
-                }
-
-                settingRow(note: String(localized: "Lifts the bottom edge of a screen-filling window above the taskbar. This resizes other apps’ windows, so it is off by default.")) {
-                    Toggle(
-                        "Keep maximized windows above the taskbar",
-                        isOn: binding(get: { store.windowLiftEnabled }, set: store.setWindowLiftEnabled)
-                    )
-                }
-
-                Picker("Taskbar Size", selection: binding(get: { store.dockSize }, set: store.setDockSize)) {
-                    ForEach(DockSize.allCases, id: \.self) { size in
-                        Text(size.title).tag(size)
-                    }
-                }
-                .pickerStyle(.segmented)
-            }
     }
 
     // 「高级」= 需要额外能力、默认就对、基本不用碰的开关。单独一页不是为了藏，
@@ -147,6 +122,8 @@ struct SettingsWindowContent: View {
     private var licensePane: some View {
         settingsPane {
             licenseRow
+            subscriptionRow
+            githubStarRow
         }
     }
 
@@ -161,8 +138,6 @@ struct SettingsWindowContent: View {
     private var aboutPane: some View {
         settingsPane {
             aboutRow
-            subscriptionRow
-            githubStarRow
         }
     }
 
@@ -227,12 +202,14 @@ struct SettingsWindowContent: View {
     /// 显隐任务条快捷键：录制框 + 自定义过才出现的「恢复默认」。行高恒定
     ///（录制态只换文案不换尺寸，按钮出现在同一行内），所以不用给
     /// `SettingsWindowController.sessionSubscriptions` 加 sink。
+    ///
+    /// ⚠️ **不要在这行里放 `Spacer()`**：录制框会被推到 560pt 宽的最右边，而同页其他三行
+    /// 的控件都紧挨着自己的标签，一页里就出现四种对齐（owner 2026-09-01 反馈「拥挤又乱」）。
     @ViewBuilder
     private var hotKeyRow: some View {
         settingRow(note: String(localized: "Toggles the taskbar between always visible and your last auto-hide delay. Default: ⌥⇧⌘D.")) {
             HStack(spacing: 10) {
                 Text("Show/hide taskbar shortcut")
-                Spacer()
                 HotKeyRecorder(
                     currentGlyphs: store.edgeToggleShortcut?.glyphs
                         ?? GlobalHotKeyShortcut.edgeAutoHideMode.displayGlyphs,
@@ -261,6 +238,20 @@ struct SettingsWindowContent: View {
                 "Reverse mouse scroll direction",
                 isOn: binding(get: { store.scrollReverserEnabled }, set: store.setScrollReverserEnabled)
             )
+        }
+    }
+
+    /// 重开首次引导（那扇写系统 Dock 推荐设置的窗）。2026-09-01 从状态栏菜单搬来
+    /// （owner 拍板）：它是"打开另一个界面"的入口，不是随手切的开关。
+    /// 放「通用」页最后一行——前三条是设置，它是入口。
+    ///
+    /// ⚠️ 闭包直通 `AppDelegate.showWelcomeWindow()`，**绝不能改成走
+    /// `presentWelcomeGuideIfNeeded()`、也不能靠删 `hasSeenWelcome`**：那条决策函数对
+    /// 「系统 Dock 已自动隐藏」的存量用户恰好会跳过并把键写回，而存量用户正是这个入口的全部受众。
+    @ViewBuilder
+    private var welcomeGuideRow: some View {
+        settingRow(note: String(localized: "Walks you through the first-launch recommendations again, including hiding the Dock.")) {
+            Button("Show Setup Guide Again") { onShowWelcomeGuide() }
         }
     }
 
@@ -536,15 +527,16 @@ struct SettingsWindowContent: View {
         }
     }
 
-    /// 「原始用户，永久免费」的留邮箱入口。
+    /// 「原始用户，永久免费」的留邮箱入口。住在「授权」页（2026-09-01 从「关于」搬来，
+    /// owner 拍板）：紧挨着上面那句「1.0 才开放发放、原始用户届时收到永久免费授权码」。
     ///
     /// ⚠️ 标题和正文与官网 tungstenedge.app 的订阅区**逐字同源**（owner 逐句敲定的公开承诺），
     /// 不要在这里"改得更适合 App"——两处说法一旦分叉，将来兑现承诺时就会有人拿着不同的
     /// 版本来对质。
     ///
     /// ⚠️ 结果一律走 `SettingsAlert`，**不要**改成在区块里就地长出成功/失败文案：
-    /// `SettingsWindowController.resizeToFitKeepingTopEdge()` 只在 `present()` 和
-    /// `launchAtLoginState` 变化时重新量高度，就地加一行不会让窗口跟着变高，只会变成可滚动。
+    /// `SettingsWindowController.resizeToFitKeepingTopEdge()` 只在 `present()` 和几个
+    /// `@Published` 订阅里重新量高度，就地加一行不会让窗口跟着变高，只会变成可滚动。
     @ViewBuilder
     private var subscriptionRow: some View {
         Divider()
@@ -587,7 +579,8 @@ struct SettingsWindowContent: View {
     }
 
     /// GitHub 的 Star 请求。**常驻**，和有没有订阅过无关——所以它是 `subscriptionRow` 的
-    /// 同级兄弟，不塞进那个 if/else 里。
+    /// 同级兄弟，不塞进那个 if/else 里。2026-09-01 跟着订阅块一起搬到「授权」页：
+    /// 下面第 2 条那个"比订阅正文更淡"的调子是相对订阅块定的，两者必须相邻才成立。
     ///
     /// ⚠️ 调子沿用官网 tungstenedge.app 订阅区那段（`index.html` 里的 `.sub-star`）已经定死的
     /// 三条规矩，别在这里重新发挥：
@@ -625,10 +618,13 @@ struct SettingsWindowContent: View {
     }
 
     /// 一页的行容器。分区标题随 2026-08-24 分页取消（窗口标题承担），只剩统一行距。
+    ///
+    /// 行距 20 是和 `settingRow` 的 3 配对的：**20 : 3 的对比**才让「一行设置 + 它下面那句
+    /// 灰色说明」读成一个整体。原先是 12 : 3，四段文字糊成一片（owner 2026-09-01）。
     private func settingsPane<Content: View>(
         @ViewBuilder content: () -> Content
     ) -> some View {
-        VStack(alignment: .leading, spacing: 12) {
+        VStack(alignment: .leading, spacing: 20) {
             content()
         }
         .frame(maxWidth: .infinity, alignment: .leading)

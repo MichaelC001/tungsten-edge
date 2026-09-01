@@ -47,11 +47,6 @@ final class StatusMenuController: NSObject, NSMenuDelegate {
     private let onShowDebugConsole: () -> Void
     private let onExportDebugSnapshot: () -> Void
     private let onShowSettings: () -> Void
-    /// 重开首次引导（那扇写系统 Dock 推荐设置的窗）。存量用户是唯一受众：`hasSeenWelcome`
-    /// 一旦置位引导永不再弹，删键也没用——决策函数看到系统 Dock 已自动隐藏就跳过并把键写回。
-    /// 所以这条闭包必须直通 `showWelcomeWindow()`，绕过 `presentWelcomeGuideIfNeeded()`。
-    /// （反馈 `1999d66d` 触发了 `Docs/27` 记的复议条件「有人反馈用了很久才知道有这两条建议」。）
-    private let onShowWelcomeGuide: () -> Void
     /// 菜单开 / 关。任务条的边缘自动隐藏要在菜单开着时停摆，否则空闲计时照跑，
     /// 任务条会从弹出的菜单底下缩掉（同 `folderPopupOpen`）。走闭包是因为
     /// `PanelCoordinator` 在权限引导完成前根本不存在。
@@ -94,9 +89,10 @@ final class StatusMenuController: NSObject, NSMenuDelegate {
     private let installUpdateItem = NSMenuItem(title: "", action: #selector(installPendingUpdate), keyEquivalent: "")
     /// 钨极组的分组标题，恒不可点（title 在 refreshEdgeSectionTitle 里随热键注册状态落）。
     private let edgeSectionItem = NSMenuItem(title: "", action: nil, keyEquivalent: "")
-    // 中转站 / 悬停 / 最大化避让 / 任务条大小**只在设置窗口里**（owner 2026-08-03）；
-    // 登录项 / 检查更新 / 版本号也于 2026-08-24 移去设置窗口（菜单去重，owner 拍板）。
-    // 菜单保留的是真正需要随手切的东西：两条唤醒滑块。
+    // 中转站 / 悬停显示应用名 / 最大化避让 / 任务条大小 2026-09-01 从设置窗口搬回菜单
+    // （owner 拍板，反转 2026-08-03 的分工）：它们是调外观时随手要切的，为此开一次窗不值。
+    // 四项并进钨极组（不另起帽子），与「钨极 Dock 栏显示在 ▸」同组。
+    // 登录项 / 检查更新 / 版本号仍按 2026-08-24 的去重结果：只在设置窗口。
 
     /// 分组标题，恒不可点（title 在 configureMenu 里落）。
     private let nativeDockSectionItem = NSMenuItem(title: "", action: nil, keyEquivalent: "")
@@ -107,8 +103,6 @@ final class StatusMenuController: NSObject, NSMenuDelegate {
     private let nativeDockApplyItem = NSMenuItem()
     private let nativeDockApplyRow = NativeDockApplyRowView()
     private let openNativeDockSettingsItem = NSMenuItem(title: String(localized: "Dock Settings…"), action: #selector(openNativeDockSettings), keyEquivalent: "")
-    /// 「重新打开新手引导」：恒在（菜单开着时不许增删行），归底部「进另一个界面」组。
-    private let showWelcomeGuideItem = NSMenuItem(title: String(localized: "Show Setup Guide Again"), action: #selector(showWelcomeGuide), keyEquivalent: "")
     /// 「钨极 Dock 栏显示在 ▸」：二级子菜单，「跟随鼠标」+ 每块在场屏一项（owner 2026-08-26 把这个
     /// 设置从设置窗口搬到菜单，不两边都放）。做成子菜单是为了**主菜单只多一行、高度恒定**——
     /// 屏幕数变化不会改主菜单高度，任务条那条按左上角定位的路径就不会漂。
@@ -118,6 +112,14 @@ final class StatusMenuController: NSObject, NSMenuDelegate {
     /// 子菜单一开一关会被当成主菜单开关，提前解除边缘自动隐藏抑制。内容改为在父菜单
     /// 显示前（`prepareMenuForPresentation`）建好。
     private let taskbarScreenMenu = NSMenu()
+    /// 「Dock 栏大小 ▸」：四档静态子菜单，`configureMenu` 建一次，之后只翻勾选。
+    /// 做成子菜单而不是四行平铺，同「显示在 ▸」的理由：主菜单只多一行。
+    private let dockSizeItem = NSMenuItem(title: String(localized: "Taskbar Size"), action: nil, keyEquivalent: "")
+    private let dockSizeMenu = NSMenu()
+    /// 下面三条是普通勾选项，**恒在**（菜单开着时不许增删行），勾选状态由 refreshCheckmarks 落。
+    private let showShelfItem = NSMenuItem(title: String(localized: "Show Shelf"), action: #selector(toggleShowShelf), keyEquivalent: "")
+    private let hoverNameItem = NSMenuItem(title: String(localized: "Show app name on hover"), action: #selector(toggleHoverName), keyEquivalent: "")
+    private let windowLiftItem = NSMenuItem(title: String(localized: "Keep maximized windows above the taskbar"), action: #selector(toggleWindowLift), keyEquivalent: "")
     private let nativeDockSliderView: PreferenceSliderMenuItemView
     private let edgeSliderView: PreferenceSliderMenuItemView
 
@@ -127,7 +129,6 @@ final class StatusMenuController: NSObject, NSMenuDelegate {
          onShowDebugConsole: @escaping () -> Void,
          onExportDebugSnapshot: @escaping () -> Void,
          onShowSettings: @escaping () -> Void,
-         onShowWelcomeGuide: @escaping () -> Void,
          onMenuVisibilityChanged: @escaping (Bool) -> Void = { _ in },
          onQuit: @escaping () -> Void,
          hotKeyGlyphs: @escaping () -> String,
@@ -139,7 +140,6 @@ final class StatusMenuController: NSObject, NSMenuDelegate {
         self.onShowDebugConsole = onShowDebugConsole
         self.onExportDebugSnapshot = onExportDebugSnapshot
         self.onShowSettings = onShowSettings
-        self.onShowWelcomeGuide = onShowWelcomeGuide
         self.onMenuVisibilityChanged = onMenuVisibilityChanged
         self.onQuit = onQuit
         self.hotKeyGlyphs = hotKeyGlyphs
@@ -269,6 +269,38 @@ final class StatusMenuController: NSObject, NSMenuDelegate {
         menu.addItem(nativeDockApplyItem)
 
         menu.addItem(.separator())
+
+        // 任务条自身的五项（owner 2026-09-01，当天两次拍板的结果）：**独立成块、不挂组标题**，
+        // 排在两条唤醒滑块之后。先并进钨极组试过，owner 看实机后要它离开滑块自成一块。
+        // 没有帽子，就靠上下两条分隔线与前后区分——所以这一块**不要再插别的东西**：
+        // 一旦混进与任务条无关的行，读者就只能靠文案自己猜它归谁管了。
+        // `taskbarScreenItem` 的显隐仍只在 `prepareMenuForPresentation` 翻转
+        //（菜单在屏时增删行会让任务条弹出路径的锚点漂移）。
+        taskbarScreenItem.submenu = taskbarScreenMenu
+        taskbarScreenItem.isHidden = true
+        menu.addItem(taskbarScreenItem)
+
+        // 大小子菜单是静态的四档，建一次即可；勾选交给 refreshCheckmarks。
+        for size in DockSize.allCases {
+            let sizeItem = NSMenuItem(title: size.title, action: #selector(selectDockSize(_:)), keyEquivalent: "")
+            sizeItem.target = self
+            // rawValue 走 representedObject。**不能用 `ClosureMenuItem`**：
+            // `AppMenuFragments.swift` 只编进 app target，本文件在测试 target 也编译。
+            sizeItem.representedObject = size.rawValue
+            dockSizeMenu.addItem(sizeItem)
+        }
+        dockSizeItem.submenu = dockSizeMenu
+        menu.addItem(dockSizeItem)
+
+        // 三个开关。设置窗口里它们各带一行灰色说明，菜单里没有副标题的位置，
+        // 说明随搬家一并删除（owner 2026-09-01 拍板接受这个代价）。
+        showShelfItem.target = self
+        menu.addItem(showShelfItem)
+        hoverNameItem.target = self
+        menu.addItem(hoverNameItem)
+        windowLiftItem.target = self
+        menu.addItem(windowLiftItem)
+        menu.addItem(.separator())
         #if DEBUG
         let debugMenu = NSMenu()
         let showDebug = NSMenuItem(title: String(localized: "Show Debug Console"), action: #selector(showDebugConsole), keyEquivalent: "")
@@ -286,12 +318,6 @@ final class StatusMenuController: NSObject, NSMenuDelegate {
         // 「设置…」和「退出」归为底部一组（owner 2026-08-03）：菜单栏应用的普遍习惯是
         // 把这类"进另一个界面"的入口放在下面，上面留给随手切的开关。
         // 登录项 / 检查更新 / 版本号已于 2026-08-24 去重，只留设置窗口。
-        // 「钨极 Dock 栏显示在 ▸」排在「设置…」上面：它是一条随手切的设置，而下面两条是
-        // 「进另一个界面」的入口。内容与显隐都由 prepareMenuForPresentation 落。
-        taskbarScreenItem.submenu = taskbarScreenMenu
-        taskbarScreenItem.isHidden = true
-        menu.addItem(taskbarScreenItem)
-
         settingsItem.target = self
         settingsItem.keyEquivalentModifierMask = [.command]
         menu.addItem(settingsItem)
@@ -300,12 +326,6 @@ final class StatusMenuController: NSObject, NSMenuDelegate {
         //（owner 2026-08-03；原先它是那组的末行，和下一组的首行看起来像一对）。
         openNativeDockSettingsItem.target = self
         menu.addItem(openNativeDockSettingsItem)
-
-        // 「重新打开新手引导」也是"打开另一个界面"，紧跟系统 Dock 设置入口。
-        // 放菜单不放设置窗口：settings.md 明文设置窗口不承载任何 native-Dock 表面，
-        // 而引导那扇窗的主体就是写系统 Dock 偏好。
-        showWelcomeGuideItem.target = self
-        menu.addItem(showWelcomeGuideItem)
 
         installUpdateItem.target = self
         installUpdateItem.isHidden = true
@@ -473,6 +493,19 @@ final class StatusMenuController: NSObject, NSMenuDelegate {
     /// 可以，异步真值回来时**不可以**——理由见 `refreshLaunchAtLoginState`。
     private func refreshCheckmarks(allowsLayoutChange: Bool = true) {
         refreshLaunchAtLoginState(allowsLayoutChange: allowsLayoutChange)
+        refreshTaskbarPreferenceStates()
+    }
+
+    /// 钨极组四项的勾选。**只改 `state`，不增删行也不翻 `isHidden`**，
+    /// 所以菜单开着时调用也安全（不受 `allowsLayoutChange` 约束）。
+    private func refreshTaskbarPreferenceStates() {
+        showShelfItem.state = store.showShelf ? .on : .off
+        hoverNameItem.state = store.hoverStyle.isExpressive ? .on : .off
+        windowLiftItem.state = store.windowLiftEnabled ? .on : .off
+        let current = store.dockSize.rawValue
+        for item in dockSizeMenu.items {
+            item.state = (item.representedObject as? String) == current ? .on : .off
+        }
     }
 
     private func refreshLaunchAtLoginState(allowsLayoutChange: Bool) {
@@ -611,6 +644,29 @@ final class StatusMenuController: NSObject, NSMenuDelegate {
         store.setTaskbarScreenPlacement(.pinned(PinnedScreenSelection(uuid: uuid, name: name)))
     }
 
+    @objc private func selectDockSize(_ sender: NSMenuItem) {
+        guard let raw = sender.representedObject as? String, let size = DockSize(rawValue: raw) else { return }
+        store.setDockSize(size)
+        refreshCheckmarks()
+    }
+
+    @objc private func toggleShowShelf() {
+        store.setShowShelf(!store.showShelf)
+        refreshCheckmarks()
+    }
+
+    /// 悬停显示应用名 = `hoverStyle` 的两档（`.standard` 显示 / `.quiet` 不显示），
+    /// 不是独立的布尔字段——设置窗口那版也是这么读写的，别在这里另开一个镜像。
+    @objc private func toggleHoverName() {
+        store.setHoverStyle(store.hoverStyle.isExpressive ? .quiet : .standard)
+        refreshCheckmarks()
+    }
+
+    @objc private func toggleWindowLift() {
+        store.setWindowLiftEnabled(!store.windowLiftEnabled)
+        refreshCheckmarks()
+    }
+
     @objc private func openLoginItemsSettings() {
         settingsCoordinator.openLoginItemsSettings()
     }
@@ -672,11 +728,6 @@ final class StatusMenuController: NSObject, NSMenuDelegate {
     @objc private func showSettings() {
         menu.cancelTrackingWithoutAnimation()
         DispatchQueue.main.async { [onShowSettings] in onShowSettings() }
-    }
-    @objc private func showWelcomeGuide() {
-        // 同「设置…」：开窗动作出菜单跟踪循环再做。
-        menu.cancelTrackingWithoutAnimation()
-        DispatchQueue.main.async { [onShowWelcomeGuide] in onShowWelcomeGuide() }
     }
     @objc private func quit() { onQuit() }
 }

@@ -216,22 +216,6 @@
         }
       }
     },
-    "Adds a spot on the taskbar for parking files. Dropping a file there doesn’t move or copy it — Tungsten Edge just remembers where it lives.": {
-      "localizations": {
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Dock 栏上多一个临时存放文件的格子。拖进去的文件不会被移动或复制，只是记住位置。"
-          }
-        },
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Adds a spot on the taskbar for parking files. Dropping a file there doesn’t move or copy it — Tungsten Edge just remembers where it lives."
-          }
-        }
-      }
-    },
     "Advanced": {
       "localizations": {
         "zh-Hans": {
@@ -1732,22 +1716,6 @@
         }
       }
     },
-    "Lifts the bottom edge of a screen-filling window above the taskbar. This resizes other apps’ windows, so it is off by default.": {
-      "localizations": {
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "把铺满屏幕的窗口底边抬到 Dock 栏上方。这会改动其他应用的窗口尺寸，所以默认关闭。"
-          }
-        },
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Lifts the bottom edge of a screen-filling window above the taskbar. This resizes other apps’ windows, so it is off by default."
-          }
-        }
-      }
-    },
     "Medium": {
       "localizations": {
         "zh-Hans": {
@@ -3022,7 +2990,7 @@
       }
     },
     "Show taskbar on": {
-      "comment": "设置「任务条」页 Picker 标签",
+      "comment": "状态栏菜单 · 钨极组的多屏放置子菜单标题",
       "localizations": {
         "zh-Hans": {
           "stringUnit": {
@@ -3220,7 +3188,7 @@
       }
     },
     "Taskbar": {
-      "comment": "设置窗口的分组名",
+      "comment": "钨极自己的窗口在窗口列表里的标题兜底（WindowDisplayTitle）",
       "localizations": {
         "zh-Hans": {
           "stringUnit": {
@@ -3964,6 +3932,23 @@
         }
       }
     },
+    "Walks you through the first-launch recommendations again, including hiding the Dock.": {
+      "comment": "设置窗口 · 通用页「重新打开新手引导」的说明",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "重新过一遍首次启动时的引导，包括隐藏系统 Dock 那几条推荐设置。"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Walks you through the first-launch recommendations again, including hiding the Dock."
+          }
+        }
+      }
+    },
     "Want the Dock back?": {
       "localizations": {
         "en": {
@@ -4027,22 +4012,6 @@
           "stringUnit": {
             "state": "translated",
             "value": "What went wrong? What did you do when it happened? Paste any details that might help."
-          }
-        }
-      }
-    },
-    "When off, moving the pointer across the taskbar no longer shows app names.": {
-      "localizations": {
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "关闭后，鼠标划过 Dock 栏不再有放大和名称提示。"
-          }
-        },
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "When off, moving the pointer across the taskbar no longer shows app names."
           }
         }
       }

@@ -7,6 +7,9 @@ final class SettingsWindowController: NSObject, NSWindowDelegate {
     private let store: AppSettingsStore
     private let coordinator: SettingsCoordinator
     private let licenseStore: LicenseStore
+    /// 「通用」页那颗「重新打开新手引导」按钮。闭包注入：引导窗归 `AppDelegate` 开
+    /// （必须直通 `showWelcomeWindow()`，见那边的注释）。
+    private let onShowWelcomeGuide: () -> Void
     private var window: NSWindow?
     private var hostingView: NSHostingView<SettingsWindowView>?
     private var sessionSubscriptions: Set<AnyCancellable> = []
@@ -16,10 +19,16 @@ final class SettingsWindowController: NSObject, NSWindowDelegate {
     /// 量高探针必须共享它，否则量的是别的页。有意不跨重启持久化。
     private let tabState = SettingsTabState()
 
-    init(store: AppSettingsStore, coordinator: SettingsCoordinator, licenseStore: LicenseStore) {
+    init(
+        store: AppSettingsStore,
+        coordinator: SettingsCoordinator,
+        licenseStore: LicenseStore,
+        onShowWelcomeGuide: @escaping () -> Void
+    ) {
         self.store = store
         self.coordinator = coordinator
         self.licenseStore = licenseStore
+        self.onShowWelcomeGuide = onShowWelcomeGuide
     }
 
     func present() {
@@ -33,7 +42,8 @@ final class SettingsWindowController: NSObject, NSWindowDelegate {
                 store: store,
                 coordinator: coordinator,
                 licenseStore: licenseStore,
-                tabState: tabState
+                tabState: tabState,
+                onShowWelcomeGuide: onShowWelcomeGuide
             )
         )
         window.contentView = host
@@ -43,11 +53,18 @@ final class SettingsWindowController: NSObject, NSWindowDelegate {
         window.toolbar?.selectedItemIdentifier = NSToolbarItem.Identifier(tabState.selected.rawValue)
 
         sessionSubscriptions.removeAll()
-        // 登录项 2026-08-24 起只在状态栏菜单，设置窗口没有会变高矮的登录行了，
-        // 它那条量高订阅随之删除；剩下的唯一订阅是授权状态。
-        // 激活成功后授权区块少掉输入框那一行，窗口得跟着收缩。少了这条订阅，
-        // 内容原地变矮不会重新量高度，只会在窗口里留一片空白。
+        // 登录项 2026-08-24 起只在状态栏菜单，设置窗口没有会变高矮的登录行了，它那条量高订阅随之删除。
+        // 剩下两条都在「授权」页：激活成功后少掉输入框那一行，留完邮箱后订阅块塌成一行。
+        // 少了订阅，内容原地变矮不会重新量高度，只会在窗口里留一片空白。
         licenseStore.$state
+            .dropFirst()
+            .sink { [weak self] _ in
+                DispatchQueue.main.async { self?.resizeToFitKeepingTopEdge() }
+            }
+            .store(in: &sessionSubscriptions)
+        // 订阅块 2026-09-01 从「关于」搬到「授权」页。留完邮箱后整块塌成一行，
+        // 这一页原地变矮——不补这条 sink 就只会在窗口里留一片空白。
+        store.$hasSubscribed
             .dropFirst()
             .sink { [weak self] _ in
                 DispatchQueue.main.async { self?.resizeToFitKeepingTopEdge() }
@@ -130,7 +147,8 @@ final class SettingsWindowController: NSObject, NSWindowDelegate {
                 store: store,
                 coordinator: coordinator,
                 licenseStore: licenseStore,
-                tabState: tabState
+                tabState: tabState,
+                onShowWelcomeGuide: onShowWelcomeGuide
             )
         )
         probe.setFrameSize(NSSize(width: SettingsWindowView.contentWidth, height: 0))

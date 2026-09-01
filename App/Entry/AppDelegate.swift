@@ -59,7 +59,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private lazy var settingsWindowController = SettingsWindowController(
         store: settingsStore,
         coordinator: settingsCoordinator,
-        licenseStore: licenseStore
+        licenseStore: licenseStore,
+        // 直通 showWelcomeWindow()，不走 presentWelcomeGuideIfNeeded()——那条对
+        // hasSeenWelcome 已置位的存量用户永远静默跳过，而存量用户正是这个入口的全部受众。
+        // 入口 2026-09-01 从状态栏菜单搬进设置卡「通用」页（owner 拍板）；直通这一点不变。
+        onShowWelcomeGuide: { [weak self] in self?.showWelcomeWindow() }
     )
     /// 常驻切换全局快捷键。回调只切设置（经 settingsStore），不经过 panelCoordinator——
     /// 后者在权限引导完成前是 nil，settingsStore 从 AppDelegate 构造起即存在。
@@ -95,9 +99,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         onShowDebugConsole: { [weak self] in self?.showDebugConsole() },
         onExportDebugSnapshot: { [weak self] in self?.exportDebugSnapshot() },
         onShowSettings: { [weak self] in self?.openSettings(nil) },
-        // 直通 showWelcomeWindow()，不走 presentWelcomeGuideIfNeeded()——那条对
-        // hasSeenWelcome 已置位的存量用户永远静默跳过，而存量用户正是这个入口的全部受众。
-        onShowWelcomeGuide: { [weak self] in self?.showWelcomeWindow() },
         onMenuVisibilityChanged: { [weak self] isOpen in
             self?.panelCoordinator?.setTaskbarMenuOpen(isOpen)
         },
