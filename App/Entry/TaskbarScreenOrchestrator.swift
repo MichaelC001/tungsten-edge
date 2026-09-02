@@ -37,6 +37,7 @@ final class TaskbarScreenOrchestrator: NSObject, WindowLiftAvoidanceHost {
     private let keptAppStore: KeptAppStore
     private let runningApplicationStore: RunningApplicationStore
     private let appMembershipController: AppMembershipController
+    private let displayTopologyStore: DisplayTopologyStore
     private let logger = Logger(subsystem: "com.caye.macosdockcc.v2", category: "taskbar-screens")
 
     var onAddFolder: () -> Void = {} {
@@ -78,7 +79,8 @@ final class TaskbarScreenOrchestrator: NSObject, WindowLiftAvoidanceHost {
          shelfStore: ShelfStore,
          keptAppStore: KeptAppStore,
          runningApplicationStore: RunningApplicationStore,
-         appMembershipController: AppMembershipController) {
+         appMembershipController: AppMembershipController,
+         displayTopologyStore: DisplayTopologyStore) {
         self.runtime = runtime
         self.drawerStore = drawerStore
         self.messagingStore = messagingStore
@@ -92,6 +94,7 @@ final class TaskbarScreenOrchestrator: NSObject, WindowLiftAvoidanceHost {
         self.keptAppStore = keptAppStore
         self.runningApplicationStore = runningApplicationStore
         self.appMembershipController = appMembershipController
+        self.displayTopologyStore = displayTopologyStore
         self.dragController = DragController(
             drawerStore: drawerStore,
             messagingStore: messagingStore,
@@ -243,7 +246,8 @@ final class TaskbarScreenOrchestrator: NSObject, WindowLiftAvoidanceHost {
             shelfStore: shelfStore,
             keptAppStore: keptAppStore,
             runningApplicationStore: runningApplicationStore,
-            appMembershipController: appMembershipController
+            appMembershipController: appMembershipController,
+            displayTopologyStore: displayTopologyStore
         )
         coordinator.onAddFolder = onAddFolder
         coordinator.onRequestTaskbarMenu = onRequestTaskbarMenu
@@ -334,6 +338,10 @@ final class TaskbarScreenOrchestrator: NSObject, WindowLiftAvoidanceHost {
         // 抽屉图标落进任务条（精确落点 + 降级路径都触发）→ 关闭抽屉（关着的单元是空操作）。
         dragController.onDrawerToStripCompleted = { [weak self] _ in
             self?.units.forEach { $0.coordinator.closeDrawerAfterAction() }
+        }
+        // 跨屏投放（③④）：卡松在另一块屏的任务条上 → 窗口搬到那块屏（只搬不置前）/ 无窗口图标改住那块屏。
+        dragController.onCrossStripDrop = { [runtime] payload, displayUUID in
+            runtime.handleCrossStripDrop(payload: payload, toDisplayUUID: displayUUID)
         }
     }
 

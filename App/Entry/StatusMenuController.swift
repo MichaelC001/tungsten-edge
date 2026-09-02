@@ -411,18 +411,29 @@ final class StatusMenuController: NSObject, NSMenuDelegate {
         )
         taskbarScreenItem.isHidden = presentation.isHidden
         taskbarScreenMenu.removeAllItems()
-        for item in presentation.items {
-            let menuItem = NSMenuItem(
-                title: item.title,
-                action: #selector(selectTaskbarScreen(_:)),
-                keyEquivalent: ""
-            )
-            menuItem.target = self
-            // 选择以 token 字符串走 representedObject。**不能用 ClosureMenuItem**：
-            // `AppMenuFragments.swift` 只编进 app target，本文件在测试 target 也编译。
-            menuItem.representedObject = item.selection.token
-            menuItem.state = item.isChecked ? .on : .off
-            taskbarScreenMenu.addItem(menuItem)
+        for row in presentation.rows {
+            switch row {
+            case .header(let title):
+                // 组标题同主菜单那两条：disabled + attributedTitle（二级标签色），不设 keyEquivalent。
+                let header = NSMenuItem(title: "", action: nil, keyEquivalent: "")
+                header.attributedTitle = Self.sectionTitle(title)
+                header.isEnabled = false
+                taskbarScreenMenu.addItem(header)
+            case .separator:
+                taskbarScreenMenu.addItem(.separator())
+            case .option(let item):
+                let menuItem = NSMenuItem(
+                    title: item.title,
+                    action: #selector(selectTaskbarScreen(_:)),
+                    keyEquivalent: ""
+                )
+                menuItem.target = self
+                // 选择以 token 字符串走 representedObject。**不能用 ClosureMenuItem**：
+                // `AppMenuFragments.swift` 只编进 app target，本文件在测试 target 也编译。
+                menuItem.representedObject = item.selection.token
+                menuItem.state = item.isChecked ? .on : .off
+                taskbarScreenMenu.addItem(menuItem)
+            }
         }
     }
 

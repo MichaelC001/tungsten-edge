@@ -7,8 +7,11 @@ import os
 @MainActor
 final class AppDelegate: NSObject, NSApplicationDelegate {
     private let inventoryLog = WindowInventoryAnomalyLog()
+    /// 在场屏幕表的唯一来源：窗口清单（归属键）与任务条投影（多屏 ④ 按屏过滤）都读它。
+    let displayTopologyStore = DisplayTopologyStore()
     private(set) lazy var runtime = AppRuntime(
         inventoryLog: inventoryLog,
+        displayTableProvider: { [displayTopologyStore] in displayTopologyStore.table },
         isAccessibilityTrusted: { [weak self] in self?.cachedAccessibilityTrusted ?? false }
     )
     let drawerStore = DrawerStore()
@@ -545,7 +548,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             shelfStore: shelfStore,
             keptAppStore: keptAppStore,
             runningApplicationStore: runningApplicationStore,
-            appMembershipController: appMembershipController
+            appMembershipController: appMembershipController,
+            displayTopologyStore: displayTopologyStore
         )
         panelCoordinator = coordinator
         runtime.onToggleDrawer = { [weak coordinator] in coordinator?.toggleDrawer() }

@@ -38,6 +38,19 @@ final class CGWindowSnapshotTests: XCTestCase {
         XCTAssertEqual(snapshot.alphaByWindowID, [11: 1, 12: 0])
     }
 
+    /// 多屏 ④ 的 tick 遍历靠 `kCGWindowBounds`；只收 layer-0、缺 bounds 的不进映射。
+    func testParseCapturesBoundsByLayerZeroWindowID() {
+        let rect = CGRect(x: 1200, y: 40, width: 800, height: 600)
+        let snapshot = AppTrackerCGWindowSnapshot.parse([
+            windowInfo(id: 11, layer: 0, isOnScreen: true, pid: 100, bounds: rect),
+            windowInfo(id: 12, layer: 0, isOnScreen: false, pid: 100, bounds: nil),
+            windowInfo(id: 13, layer: 1, isOnScreen: true, pid: 100, bounds: rect),
+        ])
+
+        XCTAssertEqual(snapshot.boundsByWindowID, [11: rect])
+        XCTAssertTrue(AppTrackerCGWindowSnapshot.failed.boundsByWindowID.isEmpty)
+    }
+
     func testParseTreatsMissingOnScreenFlagAsNotOnScreen() {
         let snapshot = AppTrackerCGWindowSnapshot.parse([
             windowInfo(id: 21, layer: 0, isOnScreen: nil, pid: 100),
@@ -89,7 +102,8 @@ final class CGWindowSnapshotTests: XCTestCase {
         layer: Int,
         isOnScreen: Bool?,
         pid: Int?,
-        alpha: Double? = nil
+        alpha: Double? = nil,
+        bounds: CGRect? = nil
     ) -> [String: Any] {
         var info: [String: Any] = [
             kCGWindowNumber as String: id,
@@ -103,6 +117,9 @@ final class CGWindowSnapshotTests: XCTestCase {
         }
         if let alpha {
             info[kCGWindowAlpha as String] = alpha
+        }
+        if let bounds {
+            info[kCGWindowBounds as String] = bounds.dictionaryRepresentation
         }
         return info
     }

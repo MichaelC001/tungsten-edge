@@ -105,6 +105,7 @@ struct DockStripView: View {
     @EnvironmentObject var folderCoverStore: PinnedFolderCoverStore
     @EnvironmentObject var shelfStore: ShelfStore
     @EnvironmentObject var settingsStore: AppSettingsStore
+    @EnvironmentObject var displayTopologyStore: DisplayTopologyStore
 
     /// 这条任务条的底板是不是原生 Liquid Glass。由 `PanelCoordinator` 在建面板时一次定死
     /// （背景窗口建成功才为 true），**显式传入、没有默认值**：同 `scale` / `hoverStyle`，
@@ -113,6 +114,10 @@ struct DockStripView: View {
     /// 本条任务条在 `DragController` 里的表面身份（多屏 ③④ 下每块屏一条、内容相同，见
     /// `DragController.activeStripSurfaceID`）。**显式传入、无默认值**：漏传就是两条同时写回落点。
     let stripSurfaceID: String
+    /// 本条所在的屏（③④ 的固定单元传 display UUID；①② 的跟随单元传 nil）。多屏 ④ 下只画属于
+    /// 这块屏的窗口卡。**显式传入、无默认值**：漏传就是每块屏都画全部窗口、④ 静默退化成 ③。
+    /// ③↔④ 切换不重建单元（key 列表相同），所以是否过滤看 `settingsStore.taskbarScreenPlacement`。
+    let displayUUID: String?
 
     /// 本条是不是当前拖动的活动表面。没人认领（抽屉起拖尚未转正）时人人可动——谁的条框含着指针谁转正并认领。
     private var ownsActiveDrag: Bool {
@@ -334,9 +339,49 @@ struct DockStripView: View {
         if HoverTrace.isEnabled, dragController.carriedPayload != nil {
             HoverTrace.liveOrder(orderedLive.map(\.id))
         }
+        // 多屏 ④：按屏过滤**只在这里、只在顺序层之后**。上面喂给 `reconciled` 的 `liveOrderIDs` 和
+        // `reconcileLiveOrder` 喂给 `sync` 的都是全集——各屏一致，共享顺序层才不会把别的屏的卡
+        // 打成缺席（5s 后踢出记忆）、拖动重排也不会当帧截断。启动器类（保留占位、`app-*` 兜底卡、
+        // 消息区、文件夹、中转站）每屏都在；归属未知 / 所在屏已拔 → 只落主屏。
+        let displayFilter: StripDisplayFilter = {
+            guard settingsStore.taskbarScreenPlacement == .allScreensPerDisplay, let displayUUID else {
+                return .unfiltered
+            }
+            let table = displayTopologyStore.table
+            return StripDisplayFilter(scope: displayUUID, connectedUUIDs: table.connectedUUIDs,
+                                      primaryUUID: table.primaryUUID)
+        }()
+        // ④ 下正在拖动 / 归位飞行的那张窗口卡画在**认领**的那条上（指针悬上 B 条时 B 接管，B 开空槽、
+        // A 合拢），不看归属键——归属键在松手搬完窗口之后才换。
+        let carriedStripID = dragController.carriedPayload.flatMap { $0.source == .strip ? $0.id : nil }
+        let claimedStrip = dragController.activeStripSurfaceID
+        // 有运行圆点但没窗口的（应用级兜底卡、在运行却只剩占位的保留应用）只落主屏；
+        // 没运行的占位是纯启动器，每屏都在（owner 2026-09-02：有圆点 = 只在一条上）。
+        let renderedLive = orderedLive.filter { entry in
+            let subject: StripDisplayFilter.Subject
+            switch entry {
+            case let .window(item):
+                subject = item.isAppLevelFallback
+                    ? .runningWithoutWindow(displayUUID: runtime.noWindowHomeByBundle[item.bundleIdentifier ?? ""]
+                                                         ?? item.displayUUID)
+                    : .window(displayUUID: item.displayUUID)
+            case let .keptApp(bid):
+                subject = runningIDs.contains(bid)
+                    ? .runningWithoutWindow(displayUUID: runtime.noWindowHomeByBundle[bid]
+                                                         ?? snapshotByBundle[bid]?.first?.displayUUID)
+                    : .launcher
+            default:
+                return true
+            }
+            // 拖动中 / 归位飞行的那张卡按认领画（启动器类每屏都在，不用改）。
+            if displayFilter.scope != nil, subject != .launcher, entry.id == carriedStripID, let claimedStrip {
+                return claimedStrip == stripSurfaceID
+            }
+            return displayFilter.shows(subject)
+        }
         let folderEntries = (settingsStore.showShelf ? [StripEntry.shelf] : [])
             + pinnedFolderStore.folderPaths.map { StripEntry.pinnedFolder(path: $0) }
-        var zones = [messaging, folderEntries, orderedLive].filter { !$0.isEmpty }
+        var zones = [messaging, folderEntries, renderedLive].filter { !$0.isEmpty }
         var entries: [StripEntry] = []
         if !zones.isEmpty {
             entries = zones.removeFirst()
@@ -549,6 +594,7 @@ struct DockStripView: View {
         // 而那正是「动一下鼠标就打翻整条任务条」的来源（实测 1.2 秒拖动 46 次整条重算）。
         // `onReceive` 照跑闭包，但不给本视图建立依赖——只有下面这些副作用真的改了什么才重画。
         .onReceive(dragController.pointerMoves) { _ in
+            updateCrossStripHover()               // 认领换手（跨屏拖窗）要在门控之前判
             guard ownsActiveDrag else { return }   // 别的屏上那条正拖着：本条不写回任何东西
             updateDrawerToMessagingRelease(projection: projection)
             updateDrawerToStripConvert(projection: projection)
@@ -567,6 +613,7 @@ struct DockStripView: View {
             guard ownsActiveDrag else { return }
             performCarrierClick(payload, projection: freshProjection())
         }
+
         // 转正那一刻上面那个闭包手里的 projection 还是**旧的**（app 还在抽屉里），代表卡/让位卡都算不出来。
         // 光靠鼠标驱动就意味着「光标停在边界不动 = 一直双影」。store 一变就再算一次，把那一帧补上。
         .onChange(of: projection.liveOrderIDs) { _ in
@@ -1141,6 +1188,29 @@ struct DockStripView: View {
     private func blockTarget(atX x: CGFloat, excluding block: Set<String>) -> (id: String, after: Bool)? {
         StripBlockLanding.target(pointerX: x,
                                  frames: chipFrames.filter { !block.contains($0.key) })
+    }
+
+    /// 跨屏拖窗（多屏 ③④）：拖着任务条卡（窗口卡 / 没窗口的兜底卡 / 保留占位）的指针进了本条的判定框 → 本条接管认领（空槽在这儿开、
+    /// 重排落这儿、落点锚点由这儿报）；离开本条判定框（迟滞带外）且本条不是起拖那条 → 交还起拖那条。
+    /// 进 / 出阈值与抽屉转正那套相同。松手时认领若不在起拖那条上 = 跨屏投放（`DragController.endDrag`）。
+    private func updateCrossStripHover() {
+        let dc = dragController
+        guard let p = dc.draggingPayload, p.source == .strip,
+              dc.conversion == nil, let origin = dc.originStripSurfaceID,
+              stripRootScreenRect != .zero else { return }
+        let g = dc.globalLocation
+        let r = stripRootScreenRect
+        let rightReach = metrics.capsuleGap + metrics.capsuleWidth
+        let enter      = g.x >= r.minX - 8  && g.x <= r.maxX + rightReach
+                      && g.y >= r.minY - 8  && g.y <= r.maxY + 16
+        let clearlyOut = g.x < r.minX - 24  || g.x > r.maxX + rightReach + 16
+                      || g.y < r.minY - 24  || g.y > r.maxY + 40
+        let active = dc.activeStripSurfaceID
+        if enter, active != stripSurfaceID {
+            dc.claimStripSurface(stripSurfaceID, displayUUID: displayUUID)
+        } else if clearlyOut, active == stripSurfaceID, stripSurfaceID != origin {
+            dc.claimStripSurface(origin)
+        }
     }
 
     /// 进/出任务条区驱动转正/还原（迟滞防边界抖）。

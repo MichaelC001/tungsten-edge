@@ -22,6 +22,10 @@ struct DrawerView: View {
     /// 每个面板都是独立的 hosting 根视图，漏传就会出现「这个面板是玻璃、旁边那个还是
     /// 毛玻璃」这种一眼可见的不一致。
     let usesLiquidGlass: Bool
+    /// 本抽屉面板此刻开着没有。**显式传入、无默认值**：③④ 下每块屏各有一个抽屉视图，关掉的那个
+    /// 还留着过期的 `drawerRootScreenRect`，不问这一句就会按旧位置把别的屏抽屉里的转正判成「已拖出」
+    /// 而撤销——两个视图互相翻转换态，还在布局过程里改 `@Published`，2026-09-02 实机直接崩。
+    let isDrawerOpen: () -> Bool
     /// 点击 app 图标执行「唤出」或「启动」后回调。由 PanelCoordinator 注入，用于关闭抽屉。
     /// 「最小化（前台 → 收起）」不触发——抽屉保持打开。右键菜单、拖动操作同样不触发。
     var onPrimaryAction: () -> Void = {}
@@ -173,7 +177,10 @@ struct DrawerView: View {
         }
         .onChange(of: dragController.draggingPayload?.id) { id in
             if id == nil { convertedCarrierID = nil }   // 拖动结束：下一次同一应用再进来要重新换图
-            updateStripDropPreview()
+            // `onChange` 跑在 SwiftUI 的布局 / 提交过程里，这里面改 `DragController` 的 `@Published`
+            //（转正 / 撤销）会让 AppKit 在 `_postWindowNeedsUpdateConstraints` 抛异常（2026-09-02 崩溃）。
+            // 推到下一轮 run loop 再判。
+            DispatchQueue.main.async { updateStripDropPreview() }
         }
         // 归位飞行途中点了一下抽屉图标 = 点了这个格子：走格子自己的默认左键行为（同一份静态逻辑）。
         .onReceive(dragController.carrierClicks) { payload in
@@ -441,7 +448,8 @@ struct DrawerView: View {
     /// 底边/侧边留容差：载体相对鼠标有抓取偏移,鼠标常落在抽屉底边附近,容差让贴边也能稳定判"进了抽屉体"。
     private func updateStripDropPreview() {
         let dc = dragController
-        guard dc.draggingPayload != nil, drawerRootScreenRect != .zero else { return }
+        // 只有**开着的**抽屉才有资格转正 / 撤销（理由见 `isDrawerOpen`）。
+        guard dc.draggingPayload != nil, drawerRootScreenRect != .zero, isDrawerOpen() else { return }
         let g = dc.globalLocation
         let r = drawerRootScreenRect
         // 进入阈值松（容差大,好进）；撤销阈值更靠外（迟滞带,防边缘反复转正/撤销 → 抽屉一胀一缩抖）。

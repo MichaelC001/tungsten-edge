@@ -16,6 +16,9 @@ struct WindowRecord: Hashable, Sendable {
     /// 并以它作为卡片的稳定 id（切标签 / 后台标签来去都不换身份证 → 卡片不跳不裂）。
     /// 默认空串 = 退化为按 `id` 各自独立（兼容未赋值路径）。
     var groupID: String
+    /// 窗口在哪块屏（display UUID，粗粒度归属键；多屏 ④ 按它过滤窗口卡）。nil = 清单读不到位置
+    /// （兜底卡、还没读到帧）——落主屏由投影层决定，这里不猜。最小化 / 隐藏期间冻结在最后可见的屏。
+    var displayUUID: String?
 
     init(
         id: WindowID,
@@ -27,7 +30,8 @@ struct WindowRecord: Hashable, Sendable {
         status: WindowStatus,
         cgWindowID: CGWindowID? = nil,
         isOnDesktop: Bool = false,
-        groupID: String = ""
+        groupID: String = "",
+        displayUUID: String? = nil
     ) {
         self.id = id
         self.appID = appID
@@ -39,6 +43,7 @@ struct WindowRecord: Hashable, Sendable {
         self.cgWindowID = cgWindowID
         self.isOnDesktop = isOnDesktop
         self.groupID = groupID.isEmpty ? id.rawValue : groupID
+        self.displayUUID = displayUUID
     }
 }
 

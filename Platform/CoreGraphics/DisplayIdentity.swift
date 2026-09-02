@@ -16,6 +16,28 @@ enum DisplayIdentity {
         return CFUUIDCreateString(nil, uuid.takeRetainedValue()) as String?
     }
 
+    /// 在场屏幕表：每块能读出 UUID 的屏的 Quartz 帧 + 主屏（`NSScreen.screens.first`，菜单栏那块；
+    /// **不是** `NSScreen.main`，那个跟着 key 窗口跑）。喂给 `WindowDisplayAttribution` / `StripDisplayFilter`。
+    /// 屏参数变化时算一次（`DisplayTopologyStore`），别在热路径上现算。
+    @MainActor
+    static func attributionTable() -> WindowDisplayAttribution.Table {
+        let screens = NSScreen.screens
+        let primaryHeight = screens.first?.frame.maxY ?? 0
+        let displays: [WindowDisplayAttribution.Display] = screens.compactMap { screen in
+            guard let uuid = uuidString(for: screen) else { return nil }
+            return WindowDisplayAttribution.Display(
+                uuid: uuid,
+                cgFrame: WindowLiftAvoidance.quartzFrame(fromAppKit: screen.frame, primaryScreenHeight: primaryHeight),
+                visibleCGFrame: WindowLiftAvoidance.quartzFrame(fromAppKit: screen.visibleFrame,
+                                                                primaryScreenHeight: primaryHeight)
+            )
+        }
+        return WindowDisplayAttribution.Table(
+            displays: displays,
+            primaryUUID: screens.first.flatMap { uuidString(for: $0) }
+        )
+    }
+
     /// 在场的屏 →（display UUID, 去重后的展示名）。读不出 UUID 的屏不进列表（固定不了它）。
     /// **有系统 I/O（`localizedName` 会读 IODisplay），别在菜单弹出路径上现算**——
     /// 调用方应在屏幕参数变化时缓存一份（`StatusMenuController` 即如此）。

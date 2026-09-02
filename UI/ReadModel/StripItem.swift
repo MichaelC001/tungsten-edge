@@ -30,6 +30,8 @@ struct StripItem: Hashable {
     let bounds: CGRect?
     /// Current representative process id.
     let pid: Int32
+    /// Which display the representative window sits on (coarse key; nil = unknown). Live fact only.
+    let displayUUID: String?
     /// Window the显隐类动作 (toggle/activate/minimize/hide/newWindow) routes to, and the key
     /// the乐观态 overlay is read/written under. For a 原生标签组 this is the focused (active)
     /// tab; for a plain window it equals `id`.
@@ -75,6 +77,7 @@ struct StripItem: Hashable {
         self.cgWindowID = representative.cgWindowID
         self.bounds = representative.bounds
         self.pid = representative.pid
+        self.displayUUID = representative.displayUUID
     }
 
     init(record: WindowRecord, sameAppCardCount: Int = 1) {

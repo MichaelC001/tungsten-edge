@@ -244,6 +244,7 @@ final class PanelCoordinator: NSObject {
     private var dragInhibitorSubscription: AnyCancellable?
     private var edgeDelaySubscription: AnyCancellable?
     private var taskbarScreenPlacementSubscription: AnyCancellable?
+    private var displayTopologySubscription: AnyCancellable?
     private var showShelfSubscription: AnyCancellable?
     private var dockSizeSubscription: AnyCancellable?
     /// 换档事务代次：吞掉换档过程中被其它路径排队的动画布局（见 beginDockSizeChange）。
@@ -333,6 +334,12 @@ final class PanelCoordinator: NSObject {
     let unitPlacement: TaskbarUnitPlacement
     /// 本单元那条 strip 在共享 `DragController` 里的表面身份（见 `DragController.activeStripSurfaceID`）。
     private let stripSurfaceID = "strip-" + UUID().uuidString
+    private let displayTopologyStore: DisplayTopologyStore
+    /// ③④ 的固定单元知道自己是哪块屏；①② 的跟随单元为 nil（④ 下的按屏过滤对它不生效）。
+    private var fixedUnitDisplayUUID: String? {
+        if case .fixed(let uuid) = unitPlacement { return uuid }
+        return nil
+    }
 
     init(placement: TaskbarUnitPlacement,
          dragController: DragController,
@@ -348,7 +355,8 @@ final class PanelCoordinator: NSObject {
          shelfStore: ShelfStore,
          keptAppStore: KeptAppStore,
          runningApplicationStore: RunningApplicationStore,
-         appMembershipController: AppMembershipController) {
+         appMembershipController: AppMembershipController,
+         displayTopologyStore: DisplayTopologyStore) {
         self.unitPlacement = placement
         self.dragController = dragController
         self.runtime = runtime
@@ -364,6 +372,7 @@ final class PanelCoordinator: NSObject {
         self.keptAppStore = keptAppStore
         self.runningApplicationStore = runningApplicationStore
         self.appMembershipController = appMembershipController
+        self.displayTopologyStore = displayTopologyStore
         super.init()
     }
 
@@ -541,6 +550,7 @@ final class PanelCoordinator: NSObject {
         // 每次打开都换一份新内容视图 → DrawerView 的 onAppear 重新触发淡入缩放,并拿到当前 maxContentHeight。
         let hosting = NSHostingView(rootView: DrawerView(maxContentHeight: maxContentHeight,
                                                          usesLiquidGlass: usesLiquidGlass,
+                                                         isDrawerOpen: { [weak self] in self?.drawerPanel?.isVisible == true },
                                                          onPrimaryAction: { [weak self] in self?.closeDrawerAfterAction() })
             .environmentObject(runtime).environmentObject(drawerStore).environmentObject(messagingStore)
             .environmentObject(drawerOrderStore).environmentObject(dragController)
@@ -1421,6 +1431,7 @@ final class PanelCoordinator: NSObject {
         let hosting = NSHostingView(rootView: DockStripView(
             usesLiquidGlass: usesLiquidGlass,
             stripSurfaceID: stripSurfaceID,
+            displayUUID: fixedUnitDisplayUUID,
             onFolderPopupToggle: { [weak self] path, anchorRect in
                 self?.toggleFolderPopup(path: path, anchorVisibleRect: anchorRect)
             },
@@ -1437,7 +1448,7 @@ final class PanelCoordinator: NSObject {
             onRequestTaskbarMenu: { [weak self] event, view in
                 self?.onRequestTaskbarMenu?(event, view)
             }
-        ).environmentObject(runtime).environmentObject(drawerStore).environmentObject(messagingStore).environmentObject(badgeStore).environmentObject(stripOrderStore).environmentObject(pinnedFolderStore).environmentObject(folderCoverStore).environmentObject(shelfStore).environmentObject(dragController).environmentObject(keptAppStore).environmentObject(runningApplicationStore).environmentObject(appMembershipController).environmentObject(settingsStore))
+        ).environmentObject(runtime).environmentObject(drawerStore).environmentObject(messagingStore).environmentObject(badgeStore).environmentObject(stripOrderStore).environmentObject(pinnedFolderStore).environmentObject(folderCoverStore).environmentObject(shelfStore).environmentObject(dragController).environmentObject(keptAppStore).environmentObject(runningApplicationStore).environmentObject(appMembershipController).environmentObject(settingsStore).environmentObject(displayTopologyStore))
         hosting.autoresizingMask = [.width, .height]
         // Prevent NSHostingView from adding its own opaque background over the blur
         hosting.wantsLayer = true
@@ -1717,6 +1728,17 @@ final class PanelCoordinator: NSObject {
                 }
                 self.onHoverMonitorsNeedReconcile?()
                 self.reconcilePanelVisibility()
+                // ③↔④ 不重建单元，只换投影层的过滤集合：SwiftUI 重画后没有别的路径回到这里量宽
+                //（owner 2026-09-02 首轮验收：切档后条长不变，要再点一下窗口才适应）。等这一轮布局跑完再量。
+                DispatchQueue.main.async { [weak self] in self?.relayout(animated: true) }
+            }
+        // 屏表变了（拔插 / 换主屏）：④ 下渲染集合会变（别的屏的卡落回主屏），同样要重新量宽。
+        displayTopologySubscription = displayTopologyStore.$table
+            .removeDuplicates()
+            .dropFirst()
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self] _ in
+                DispatchQueue.main.async { [weak self] in self?.relayout(animated: true) }
             }
         // 中转格显隐会改变任务条内容宽度：只让 chip 消失不重排，面板会停在旧宽度，
         // 胶囊和打开着的抽屉也跟着停在旧位置。relayout 必须等 SwiftUI 这一轮布局跑完

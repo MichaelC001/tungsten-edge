@@ -77,6 +77,10 @@ final class DragController: ObservableObject {
     /// **存成 `let`，不要每次调用现 erase**：SwiftUI 的 `onReceive` 换了 publisher 实例就会重订阅，
     /// 而 `CurrentValueSubject` 一订阅就补发当前值，等于每次 body 都白跑一遍副作用。
     let pointerMoves: AnyPublisher<CGPoint, Never>
+    /// 跨屏投放（多屏 ③④，owner 2026-09-02）：任务条卡松手时认领在**别的** strip 上（指针悬在那条上时
+    /// 它已接管，见 `DockStripView.updateCrossStripHover`）→ 窗口卡：窗口搬到那条所在的屏；没窗口的
+    /// 兜底卡 / 保留占位：那个 app 的「无窗口图标住哪块屏」改成那块屏。编排层接到 `AppRuntime.handleCrossStripDrop`。
+    var onCrossStripDrop: ((DragPayload, String) -> Void)?
 
     private(set) var grabOffset: CGSize = .zero
     private(set) var carrierScreenFrame: CGRect = .zero
@@ -316,7 +320,7 @@ final class DragController: ObservableObject {
         beginHoverHold(for: current.payload)   // 先按住悬停，再让卡显形——顺序反了就抖一下
         landing = nil            // ← 条 / 抽屉在本轮 SwiftUI 提交里让卡显形
         convertedChipID = nil    // 转正那张卡的空槽撑到这里为止，和 `landing` 同一轮放开
-        activeStripSurfaceID = nil
+        clearStripClaims()
         retireCarrierAfterHandoff()
     }
 
@@ -522,7 +526,7 @@ final class DragController: ObservableObject {
         flightTimeline = nil
         carrierRetiring = false
         convertedChipID = nil
-        activeStripSurfaceID = nil
+        clearStripClaims()
         guard landing != nil else { return }
         landing = nil
         retireCarrier()
@@ -598,9 +602,26 @@ final class DragController: ObservableObject {
     /// 抽屉起拖的在转正那一刻由指针所在的 strip 认领，撤销转正即放手；落地结束或中止时清空。
     /// **不是 `@Published`**——只在起拖 / 落定各变一次，不值得让整条任务条重算。
     private(set) var activeStripSurfaceID: String?
+    /// 起拖那条 strip（抽屉起拖为 nil）。跨屏投放的判据 = 松手时 `activeStripSurfaceID != originStripSurfaceID`。
+    private(set) var originStripSurfaceID: String?
+    /// 当前认领那条 strip 固定的屏（`claimStripSurface(_:displayUUID:)` 带进来），跨屏投放搬窗口用。
+    private(set) var activeStripDisplayUUID: String?
+    /// 认领换手时 +1。`activeStripSurfaceID` 刻意不是 `@Published`，但 ④ 下投影层要按认领决定
+    /// 拖动中的那张卡画在哪条上（`DockStripView.makeProjection`），换手得让各条重算一次——
+    /// 换手只在指针跨条时发生，不是每帧。
+    @Published private(set) var stripClaimGeneration = 0
 
-    func claimStripSurface(_ id: String) {
+    func claimStripSurface(_ id: String, displayUUID: String? = nil) {
+        activeStripDisplayUUID = displayUUID
+        guard activeStripSurfaceID != id else { return }
         activeStripSurfaceID = id
+        stripClaimGeneration &+= 1
+    }
+
+    private func clearStripClaims() {
+        activeStripSurfaceID = nil
+        originStripSurfaceID = nil
+        activeStripDisplayUUID = nil
     }
 
     func setConvertedRepresentative(_ item: StripItem?, chipID: String?) {
@@ -805,6 +826,8 @@ final class DragController: ObservableObject {
         abortLanding()
         endHoverHold()
         activeStripSurfaceID = stripSurfaceID   // 放在 abortLanding 之后：中止上一趟飞行会清掉认领
+        originStripSurfaceID = stripSurfaceID
+        activeStripDisplayUUID = nil
         let started = CACurrentMediaTime()
         dragBeganAt = started
         let hadCarrier = carrierPanel != nil
@@ -1047,7 +1070,16 @@ final class DragController: ObservableObject {
                                                   isConvertedToStrip: converted,
                                                   isOverDropZone: external,
                                                   isMessagingMember: messagingStore.contains(p.bundleID))
+        // 跨屏投放（多屏 ③④）：松手时认领在**别的** strip 上（那条早在指针悬上去时就接管了：
+        // 空槽、重排、落点锚点都是它的）→ 飞行照常飞向它报的槽位，窗口搬到那块屏。
+        let crossStripDisplayUUID = crossStripDropDisplayUUID(for: p, external: external)
+        if crossStripDisplayUUID != nil {
+            HoverTrace.dragHandoff("crossStrip", msSinceBegin: (CACurrentMediaTime() - dragBeganAt) * 1000)
+        }
         teardown(landing: plannedLanding(for: p, folderZone: folderZone))
+        if let crossStripDisplayUUID {
+            onCrossStripDrop?(p, crossStripDisplayUUID)
+        }
         switch p.source {
         case .folder:
             onFolderDragEnded?(p.id, folderZone)
@@ -1158,6 +1190,15 @@ final class DragController: ObservableObject {
         return Landing(token: landingToken, payload: payload, kind: .returnToSlot, flight: flight)
     }
 
+    /// 跨屏投放的判定：任务条卡、没在收纳投放区、没有进行中的跨面板转换、且此刻认领的 strip 不是
+    /// 起拖那条。①② 只有一条 strip，永远 nil。返回目标 strip 固定的屏。
+    private func crossStripDropDisplayUUID(for payload: DragPayload, external: Bool) -> String? {
+        guard !external, conversion == nil, payload.source == .strip,
+              let origin = originStripSurfaceID, let active = activeStripSurfaceID,
+              active != origin else { return nil }
+        return activeStripDisplayUUID
+    }
+
     /// 这次松手会不会收进抽屉（= `endDrag` 里 `.strip` 的 `external` 支 / `.messaging` 的 `.stashMessagingChip` 支）。
     private func willStash(_ payload: DragPayload) -> Bool {
         switch payload.source {
@@ -1183,7 +1224,7 @@ final class DragController: ObservableObject {
         // 当场清掉的话，卡片立刻全不透明显形、而载体还在飞 = 双影。由 `finishLanding` / `abortLanding` 清。
         if flight == nil {
             convertedChipID = nil
-            activeStripSurfaceID = nil
+            clearStripClaims()
         }
         folderDragZone = nil
         folderDropGeometry = nil

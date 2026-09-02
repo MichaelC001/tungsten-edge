@@ -9,7 +9,7 @@ enum TaskbarScreenMode: String {
     case pinned
     /// ③ 所有屏都显示、内容相同。
     case allScreens
-    /// ④ 所有屏都显示、各屏只显示本屏窗口（里程碑二；模型先到位，菜单行随实现一起上）。
+    /// ④ 所有屏都显示、各屏只显示本屏窗口。
     case allScreensPerDisplay
 }
 
@@ -157,9 +157,24 @@ struct TaskbarScreenMenuPresentation {
         let isChecked: Bool
     }
 
+    /// 子菜单的一行：灰色组标题（不可点）/ 分隔线 / 可选项。两组 + 组标题是 owner 2026-09-02 定的形态
+    ///（五行平铺时「所有屏幕」和「所有屏幕，各屏只显示本屏窗口」两行意义不清）。
+    enum Row: Equatable {
+        case header(String)
+        case separator
+        case option(Item)
+    }
+
     /// 整行（连同子菜单）不显示。
     let isHidden: Bool
-    let items: [Item]
+    let rows: [Row]
+    /// 可选项（按出现顺序），给测试 / 老调用方。
+    var items: [Item] {
+        rows.compactMap { row in
+            if case let .option(item) = row { return item }
+            return nil
+        }
+    }
 
     /// - Parameter connectedScreens: 当前在场的屏，`title` 已去重（`displayTitles`）。
     init(placement: TaskbarScreenPlacement, connectedScreens: [(uuid: String, title: String)]) {
@@ -168,47 +183,43 @@ struct TaskbarScreenMenuPresentation {
         // 固定到外接屏后把它拔掉 / 开着「所有屏幕」拔到只剩一块，整行消失 → 再也切不回「跟随鼠标」。
         isHidden = connectedScreens.count < 2 && pinned == nil && !placement.showsOnEveryDisplay
 
-        var items: [Item] = [
-            Item(
+        // 第一组：只在一块屏上（跟随鼠标 / 固定到某屏）。
+        var rows: [Row] = [
+            .header(String(localized: "On one display")),
+            .option(Item(
                 selection: .followMouse,
                 title: String(localized: "Follow the mouse"),
                 isChecked: placement == .followMouse
-            )
+            ))
         ]
-        items += connectedScreens.map { screen in
-            Item(
+        rows += connectedScreens.map { screen in
+            .option(Item(
                 selection: .screen(uuid: screen.uuid),
                 title: screen.title,
                 isChecked: pinned?.uuid == screen.uuid
-            )
+            ))
         }
-        items.append(
-            Item(
-                selection: .allScreens,
-                title: String(localized: "All displays"),
-                isChecked: placement == .allScreens
-            )
-        )
-        // ④ 行随里程碑二一起出现；在那之前只有当存的值已经是 ④（新版本写的）才显示，免得没有勾选项。
-        if placement == .allScreensPerDisplay {
-            items.append(
-                Item(
-                    selection: .allScreensPerDisplay,
-                    title: String(localized: "All displays, each showing only its own windows"),
-                    isChecked: true
-                )
-            )
-        }
-        // 固定的屏此刻不在场：末尾补一项「XX（未连接）」并保持选中——选择不丢，接回自动生效。
+        // 固定的屏此刻不在场：第一组末尾补一项「XX（未连接）」并保持选中——选择不丢，接回自动生效。
         if let pinned, !connectedScreens.contains(where: { $0.uuid == pinned.uuid }) {
-            items.append(
-                Item(
-                    selection: .screen(uuid: pinned.uuid),
-                    title: String(format: String(localized: "%@ (disconnected)"), pinned.name),
-                    isChecked: true
-                )
-            )
+            rows.append(.option(Item(
+                selection: .screen(uuid: pinned.uuid),
+                title: String(format: String(localized: "%@ (disconnected)"), pinned.name),
+                isChecked: true
+            )))
         }
-        self.items = items
+        // 第二组：每块屏各一条（③ 内容相同 / ④ 各屏只显示本屏窗口）。
+        rows.append(.separator)
+        rows.append(.header(String(localized: "One taskbar per display")))
+        rows.append(.option(Item(
+            selection: .allScreens,
+            title: String(localized: "Show all windows"),
+            isChecked: placement == .allScreens
+        )))
+        rows.append(.option(Item(
+            selection: .allScreensPerDisplay,
+            title: String(localized: "Show only this display's windows"),
+            isChecked: placement == .allScreensPerDisplay
+        )))
+        self.rows = rows
     }
 }

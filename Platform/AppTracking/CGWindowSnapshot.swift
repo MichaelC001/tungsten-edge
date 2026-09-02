@@ -8,6 +8,9 @@ struct AppTrackerCGWindowSnapshot: Equatable {
     let windowIDsByPID: [pid_t: Set<CGWindowID>]
     /// AX inventory 没有透明度属性；按同轮 CG window id 补齐，供 admission 的 alpha=0 过滤使用。
     let alphaByWindowID: [CGWindowID: Double]
+    /// layer-0 窗口的 `kCGWindowBounds`（Quartz 全局坐标）。多屏 ④ 的 5s tick 用它给**所有**座位
+    /// 重算「在哪块屏」——包括被跳读门控跳过、没有 AX 读的 pid。只做屏归属，不替代 AX 帧。
+    let boundsByWindowID: [CGWindowID: CGRect]
     /// CG 查询本身失败（返回 nil）。与「真的没有 layer-0 窗口」是两回事：任何拿本快照当
     /// 「没变化」判据的门控（周期跳读、补扫门控）见此标志必须放弃跳过、走全量路径。
     /// 既有消费方不读它，失败时的下游行为与从前逐位一致。
@@ -18,12 +21,14 @@ struct AppTrackerCGWindowSnapshot: Equatable {
         onScreenWindowIDs: Set<CGWindowID>,
         windowIDsByPID: [pid_t: Set<CGWindowID>],
         alphaByWindowID: [CGWindowID: Double],
+        boundsByWindowID: [CGWindowID: CGRect] = [:],
         captureFailed: Bool = false
     ) {
         self.allWindowIDs = allWindowIDs
         self.onScreenWindowIDs = onScreenWindowIDs
         self.windowIDsByPID = windowIDsByPID
         self.alphaByWindowID = alphaByWindowID
+        self.boundsByWindowID = boundsByWindowID
         self.captureFailed = captureFailed
     }
 
@@ -33,6 +38,7 @@ struct AppTrackerCGWindowSnapshot: Equatable {
             onScreenWindowIDs: [],
             windowIDsByPID: [:],
             alphaByWindowID: [:],
+            boundsByWindowID: [:],
             captureFailed: true
         )
     }
@@ -59,6 +65,7 @@ struct AppTrackerCGWindowSnapshot: Equatable {
         var onScreenWindowIDs: Set<CGWindowID> = []
         var windowIDsByPID: [pid_t: Set<CGWindowID>] = [:]
         var alphaByWindowID: [CGWindowID: Double] = [:]
+        var boundsByWindowID: [CGWindowID: CGRect] = [:]
 
         for info in windowInfo {
             guard let windowID = layerZeroWindowID(in: info) else { continue }
@@ -72,13 +79,18 @@ struct AppTrackerCGWindowSnapshot: Equatable {
             if let alpha = (info[kCGWindowAlpha as String] as? NSNumber)?.doubleValue {
                 alphaByWindowID[windowID] = alpha
             }
+            if let dict = info[kCGWindowBounds as String] as? NSDictionary,
+               let rect = CGRect(dictionaryRepresentation: dict) {
+                boundsByWindowID[windowID] = rect
+            }
         }
 
         return AppTrackerCGWindowSnapshot(
             allWindowIDs: allWindowIDs,
             onScreenWindowIDs: onScreenWindowIDs,
             windowIDsByPID: windowIDsByPID,
-            alphaByWindowID: alphaByWindowID
+            alphaByWindowID: alphaByWindowID,
+            boundsByWindowID: boundsByWindowID
         )
     }
 

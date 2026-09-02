@@ -18,6 +18,10 @@ struct AppEntry {
     /// Pass B 折叠判定第二级用它兜住「成员历史被 dock 重启清零」的缺口；每轮从活信号重建，
     /// 不依赖持久化。判定用上一轮的池（最小化爆发瞬间所有标签涌进 AX，本轮现算会是空的）。
     var shadowTabCgIDs: Set<CGWindowID> = []
+    /// 这个 app 的窗口最后在哪块屏（display UUID）。窗口全关后「在运行但没窗口」的兜底卡落在这儿
+    ///（多屏 ④：有圆点的图标只在一条上，owner 2026-09-02）；把那张卡拖到另一块屏的条上也写这里
+    ///（`noteNoWindowHome`）。会话内记忆，不持久化；nil → 投影层落主屏。
+    var lastWindowDisplayUUID: String? = nil
 }
 
 /// 一个**物理窗口座位**（单座位模型）。`cgWindowID` 是它**当前**的可见标签（= 动作落点），会随
@@ -46,6 +50,16 @@ struct WindowEntry {
     /// 竞态」两类折叠失效（分裂 bug 根治）。防 cgID 复用误折叠：真销毁(tombstone)时全局清除、
     /// 每轮对账与 CG 全列表求交集；拽出(tear-out)被赶走的标签【不】记入（它是独立窗口了）。
     var formerCgIDs: Set<CGWindowID> = []
+    /// 窗口在哪块屏（display UUID，粗粒度归属键，`WindowDisplayAttribution`）。**只在座位可见时更新**
+    /// （AX 读到 min=false 且 app 未隐藏；5s tick 的 CG bounds 遍历；屏参数变化时按已存帧重算），
+    /// 最小化 / ⌘H 期间冻结在最后可见的屏（多屏 ④「最小化的卡留在原屏」）。进 `seatSignature`，
+    /// **坐标本身永不进指纹**——否则每移动一像素都重建整条。
+    var displayUUID: String? = nil
+    /// 跨屏拖窗的乐观更新后**冻结**归属键：AX 写帧还在动作队列上飞，这期间落地的读（前台
+    /// 轮询 / tick 的 CG 遍历）看到的还是旧位置，不冻结就会把卡弹回来源屏再跳回去。
+    /// `.distantFuture` = 钉死到它下次在 AX 里可见为止（AX 拿不到句柄、搬不动的离屏 / 幽灵窗口：
+    /// 拖到别的条上就当「改住址」，CG 里那份旧坐标不作数）。
+    var displayUUIDHoldUntil: Date? = nil
 }
 
 protocol AppTrackerProcessProviding: Sendable {
@@ -131,6 +145,10 @@ final class AppTracker: ObservableObject {
     /// 周期对账跳读门控（DOCK_RECONCILE_SKIP=0 关闭）。只作用于批读路径；旧同步路径不受影响。
     private let reconcileSkipEnabled: Bool
     private let uptimeProvider: () -> TimeInterval
+    /// 在场屏幕表（`DisplayTopologyStore` 那张），屏参数变化时刷新缓存；测试注入固定表。
+    private let displayTableProvider: @MainActor () -> WindowDisplayAttribution.Table
+    private var displayTable: WindowDisplayAttribution.Table
+    private var screenParametersObserver: NSObjectProtocol?
 
     /// 跳读门控的 per-pid 状态。由**任何来源**的成功全读在 reconcileSeats 尾部刷新
     ///（前台 pid 因 2Hz 前台轮询天然常新、可被周期 tick 跳过）；AX/workspace 事件置脏。
@@ -201,9 +219,12 @@ final class AppTracker: ObservableObject {
         scanGateEnabled: Bool = ProcessInfo.processInfo.environment["DOCK_SCAN_GATE"] != "0",
         frontmostCacheEnabled: Bool = ProcessInfo.processInfo.environment["DOCK_FRONTMOST_CACHE"] != "0",
         cgSnapshotReuseEnabled: Bool = ProcessInfo.processInfo.environment["DOCK_CG_SNAPSHOT_REUSE"] != "0",
-        uptimeProvider: @escaping () -> TimeInterval = { ProcessInfo.processInfo.systemUptime }
+        uptimeProvider: @escaping () -> TimeInterval = { ProcessInfo.processInfo.systemUptime },
+        displayTableProvider: @escaping @MainActor () -> WindowDisplayAttribution.Table = { .empty }
     ) {
         self.inventoryLog = inventoryLog
+        self.displayTableProvider = displayTableProvider
+        self.displayTable = displayTableProvider()
         self.reader = reader
         self.processProvider = processProvider
         self.cgSnapshotProvider = cgSnapshotProvider
@@ -228,6 +249,15 @@ final class AppTracker: ObservableObject {
         )))
         // 通知先订阅再 seed：seed 期间的启动/退出事件不再漏（addApp 有 apps[pid] == nil guard，重复准入安全）。
         subscribeWorkspaceNotifications()
+        // 屏参数变化：跳一拍再刷，让 `DisplayTopologyStore` 的同步观察者先把表换好。
+        screenParametersObserver = NotificationCenter.default.addObserver(
+            forName: NSApplication.didChangeScreenParametersNotification,
+            object: nil,
+            queue: .main
+        ) { [weak self] _ in
+            Task { @MainActor [weak self] in self?.handleScreenParametersChanged() }
+        }
+        displayTable = displayTableProvider()
         seedRunningApps()
         startReconcileTimer()
         startFrontmostPollTimer()
@@ -245,6 +275,10 @@ final class AppTracker: ObservableObject {
         reconcileTimer = nil
         frontmostPollTimer?.invalidate()
         frontmostPollTimer = nil
+        if let screenParametersObserver {
+            NotificationCenter.default.removeObserver(screenParametersObserver)
+            self.screenParametersObserver = nil
+        }
         for obs in workspaceObservers {
             NSWorkspace.shared.notificationCenter.removeObserver(obs)
         }
@@ -398,12 +432,33 @@ final class AppTracker: ObservableObject {
         // 随之出列，防 cgID 复用后被误折叠进旧座位。wasEverVisible = 座位此前是否可见过（延续时
         // 继承）；本次以 min=false 现身也算——幽灵座位永远凑不齐这个标记（自愈判定的头号门槛）。
         func make(token: String, _ s: AXWindowSnapshot, previousTitle: String? = nil,
-                  history: Set<CGWindowID> = [], wasEverVisible: Bool = false) -> WindowEntry {
-            WindowEntry(cgWindowID: s.cgWindowID!, token: token,
-                        title: s.titleRead.resolvedTitle(previousTitle: previousTitle),
-                        bounds: s.bounds, isMinimized: s.isMinimized, isFocused: s.isFocusedWindow,
-                        everSeenVisible: wasEverVisible || !s.isMinimized,
-                        formerCgIDs: history.subtracting([s.cgWindowID!]).intersection(cgIDs))
+                  history: Set<CGWindowID> = [], wasEverVisible: Bool = false,
+                  previousDisplayUUID: String? = nil, previousHoldUntil: Date? = nil) -> WindowEntry {
+            // 归属键只在可见时跟着帧走；最小化 / 隐藏沿用上一座位的值（冻结在最后可见的屏）；
+            // 跨屏拖窗的乐观键在冻结期内也不动；钉死的（`.distantFuture`）要等这次 AX 真读到可见帧才放开。
+            let visible = !s.isMinimized && !app.isHidden
+            let fresh = visible ? WindowDisplayAttribution.displayUUID(for: s.bounds, table: displayTable) : nil
+            let sticky = previousHoldUntil == .distantFuture
+            let held = !sticky && (previousHoldUntil.map { $0 > now } ?? false)
+            let displayUUID: String?
+            let holdUntil: Date?
+            if sticky {
+                displayUUID = fresh ?? previousDisplayUUID
+                holdUntil = fresh == nil ? previousHoldUntil : nil
+            } else if held {
+                displayUUID = previousDisplayUUID
+                holdUntil = previousHoldUntil
+            } else {
+                displayUUID = fresh ?? previousDisplayUUID
+                holdUntil = nil
+            }
+            return WindowEntry(cgWindowID: s.cgWindowID!, token: token,
+                               title: s.titleRead.resolvedTitle(previousTitle: previousTitle),
+                               bounds: s.bounds, isMinimized: s.isMinimized, isFocused: s.isFocusedWindow,
+                               everSeenVisible: wasEverVisible || !s.isMinimized,
+                               formerCgIDs: history.subtracting([s.cgWindowID!]).intersection(cgIDs),
+                               displayUUID: displayUUID,
+                               displayUUIDHoldUntil: holdUntil)
         }
         // 某 frame 当前有几个老座位认领（>1 = 窗口重叠歧义，切标签顶替时跳过，保守不误并）
         func seatsAtFrame(_ key: String) -> Int {
@@ -437,7 +492,9 @@ final class AppTracker: ObservableObject {
                    }), let yc = Y.cgWindowID {
                     // 座位留旧 frame、顶替成 Y，token 不变。X 被赶出成独立窗口 → 【不】记入历史
                     place(make(token: seat.token, Y, history: seat.formerCgIDs,
-                               wasEverVisible: seat.everSeenVisible))
+                               wasEverVisible: seat.everSeenVisible,
+                               previousDisplayUUID: seat.displayUUID,
+                               previousHoldUntil: seat.displayUUIDHoldUntil))
                     usedEligible.insert(yc)
                     observers[pid]?.registerWindow(Y.element, cgWindowID: yc)   // 接手新 activeCgID 必须订阅，理由见下面顶替分支
                     tearOutCgIDs.insert(X)
@@ -456,7 +513,9 @@ final class AppTracker: ObservableObject {
                     }
                     place(make(token: seat.token, snapX, previousTitle: seat.title,
                                history: seat.formerCgIDs,
-                               wasEverVisible: seat.everSeenVisible))
+                               wasEverVisible: seat.everSeenVisible,
+                               previousDisplayUUID: seat.displayUUID,
+                               previousHoldUntil: seat.displayUUIDHoldUntil))
                     usedEligible.insert(X)
                 }
             } else {
@@ -478,7 +537,9 @@ final class AppTracker: ObservableObject {
                     var history = seat.formerCgIDs
                     if !isTombstoned(X) { history.insert(X) }
                     place(make(token: seat.token, Y, history: history,
-                               wasEverVisible: seat.everSeenVisible))
+                               wasEverVisible: seat.everSeenVisible,
+                               previousDisplayUUID: seat.displayUUID,
+                               previousHoldUntil: seat.displayUUIDHoldUntil))
                     usedEligible.insert(yc)
                     // 接手的 Y 必须在这里订阅每窗口通知（destroy/min/demin/title 只在接手 activeCgID 的三处订阅：新建座位、顶替、拖出替换）。
                     // 否则 Y 关掉时没有 destroy 通知 → 没有 tombstone；Ghostty 关掉的窗口还赖在 CG 全列表里，
@@ -853,12 +914,120 @@ final class AppTracker: ObservableObject {
         }
     }
 
-    /// 座位集合的轻量指纹（顺序 + token + 标题 + 最小化/焦点），用来判断这次对账有没有实际变化。
+    /// 座位集合的轻量指纹（顺序 + token + 标题 + 最小化/焦点 + 所在屏），用来判断这次对账有没有实际变化。
+    /// 所在屏是粗粒度的 display UUID；**坐标本身永不进指纹**。
     private func seatSignature(_ app: AppEntry) -> String {
         app.windowOrder.map { id -> String in
             let e = app.windowsByID[id]
-            return "\(id):\(e?.token ?? ""):\(e?.title ?? ""):\(e?.isMinimized == true ? 1 : 0):\(e?.isFocused == true ? 1 : 0)"
+            return "\(id):\(e?.token ?? ""):\(e?.title ?? ""):\(e?.isMinimized == true ? 1 : 0):\(e?.isFocused == true ? 1 : 0):\(e?.displayUUID ?? "")"
         }.joined(separator: "|")
+    }
+
+    // MARK: - Display attribution（多屏 ④）
+
+    /// 5s tick：按 CG bounds 给**所有**可见座位重算所在屏——覆盖被跳读门控跳过、没有 AX 读的 pid
+    /// （非前台 app 的窗口被挪到另一块屏，最多 5s 换屏）。只改归属键，**不碰 `bounds`**（那是 AX 帧，
+    /// `frameKey` / `seatsAtFrame` 靠它）、不碰跳读门控状态。CG 读不到 / 不沾任何屏 → 保留旧键。
+    private func refreshDisplayAttributionFromCG(_ cgSnapshot: AppTrackerCGWindowSnapshot) -> Bool {
+        guard !cgSnapshot.boundsByWindowID.isEmpty, !displayTable.displays.isEmpty else { return false }
+        let now = Date()
+        var changed = false
+        for pid in appOrder {
+            guard let app = apps[pid], !app.isHidden else { continue }
+            for cgID in app.windowOrder {
+                guard let seat = app.windowsByID[cgID], !seat.isMinimized,
+                      !(seat.displayUUIDHoldUntil.map { $0 > now } ?? false),
+                      let rect = cgSnapshot.boundsByWindowID[cgID],
+                      let key = WindowDisplayAttribution.displayUUID(for: rect, table: displayTable),
+                      key != seat.displayUUID else { continue }
+                apps[pid]?.windowsByID[cgID]?.displayUUID = key
+                changed = true
+            }
+        }
+        return changed
+    }
+
+    /// 屏参数变化（拔插 / 换主屏 / 排列变）：换屏表，可见座位按已存 AX 帧重算；算不出的保留旧键
+    /// （投影层会把指向已拔屏的键落到主屏）。不读 AX、不拍 CG。
+    private func handleScreenParametersChanged() {
+        displayTable = displayTableProvider()
+        let now = Date()
+        var changed = false
+        for pid in appOrder {
+            guard let app = apps[pid], !app.isHidden else { continue }
+            for cgID in app.windowOrder {
+                guard let seat = app.windowsByID[cgID], !seat.isMinimized,
+                      !(seat.displayUUIDHoldUntil.map { $0 > now } ?? false),
+                      let key = WindowDisplayAttribution.displayUUID(for: seat.bounds, table: displayTable),
+                      key != seat.displayUUID else { continue }
+                apps[pid]?.windowsByID[cgID]?.displayUUID = key
+                changed = true
+            }
+        }
+        if changed { rebuildSnapshot(onScreenCGIDs: lastOnScreenCGIDs) }
+    }
+
+    /// 跨屏拖窗（`AppRuntime.moveWindow`）的乐观更新：用户动作直接写归属键并发布，卡当场跳到目标条，
+    /// 不等下一次读。`.brief` 冻结 `displayMoveHold` 这么久（AX 写帧在动作队列上飞，期间落地的读还看着旧位置）；
+    /// `.untilVisible` 钉死到它下次在 AX 里可见（AX 拿不到句柄的离屏 / 幽灵窗口：拖动 = 改住址）；
+    /// 写失败由调用方用旧键 `.none` 回滚（真值随后由 AX / CG 读校正）。只认在册座位。
+    static let displayMoveHold: TimeInterval = 1.5
+
+    enum DisplayKeyHold { case none, brief, untilVisible }
+
+    /// 「在运行但没窗口」的兜底卡 / 运行中的保留占位被拖到另一块屏的条上：这个 bundle 下所有进程的
+    /// 「窗口最后在哪块屏」都改成那块屏并发布（同一 bundle 的兜底卡只有一张，按 bundle 记才不会换 pid 就丢）。
+    func noteNoWindowHome(bundleID: String, displayUUID: String) {
+        guard !bundleID.isEmpty else { return }
+        var changed = false
+        var matched = 0
+        for pid in appOrder where apps[pid]?.bundleIdentifier == bundleID {
+            matched += 1
+            guard apps[pid]?.lastWindowDisplayUUID != displayUUID else { continue }
+            apps[pid]?.lastWindowDisplayUUID = displayUUID
+            changed = true
+        }
+        if Self.displayTraceEnabled {
+            displayTraceLogger.info("noteNoWindowHome bundle=\(bundleID, privacy: .public) to=\(displayUUID, privacy: .public) matchedPIDs=\(matched) changed=\(changed)")
+        }
+        if changed { rebuildSnapshot(onScreenCGIDs: lastOnScreenCGIDs) }
+    }
+
+    /// 跨屏拖窗的 AX 写帧失败后的裁决：窗口此刻在屏上（用户看得见的真窗口）→ 回滚到来源屏；
+    /// 不在屏上（离屏 / 幽灵座位）→ 没东西可搬，当「改住址」钉死到目标屏。
+    enum FailedMoveVerdict: Equatable { case rolledBack, pinnedToTarget, seatGone }
+
+    @discardableResult
+    func resolveFailedWindowMove(pid: pid_t, cgWindowID: CGWindowID, target: String, previous: String?) -> FailedMoveVerdict {
+        guard apps[pid]?.windowsByID[cgWindowID] != nil else { return .seatGone }
+        if lastOnScreenCGIDs.contains(cgWindowID) {
+            noteWindowMoved(pid: pid, cgWindowID: cgWindowID, displayUUID: previous, hold: .none)
+            return .rolledBack
+        }
+        noteWindowMoved(pid: pid, cgWindowID: cgWindowID, displayUUID: target, hold: .untilVisible)
+        return .pinnedToTarget
+    }
+
+    private static let displayTraceEnabled = ProcessInfo.processInfo.environment["DOCK_DISPLAY_TRACE"] == "1"
+    private let displayTraceLogger = Logger(subsystem: "com.caye.macosdockcc.v2", category: "display-trace")
+
+    @discardableResult
+    func noteWindowMoved(pid: pid_t, cgWindowID: CGWindowID, displayUUID: String?, hold: DisplayKeyHold = .brief) -> Bool {
+        guard let seat = apps[pid]?.windowsByID[cgWindowID] else { return false }
+        let holdUntil: Date?
+        switch hold {
+        case .none: holdUntil = nil
+        case .brief: holdUntil = Date().addingTimeInterval(Self.displayMoveHold)
+        case .untilVisible: holdUntil = .distantFuture
+        }
+        apps[pid]?.windowsByID[cgWindowID]?.displayUUIDHoldUntil = holdUntil
+        if Self.displayTraceEnabled {
+            displayTraceLogger.info("noteWindowMoved pid=\(pid) cg=\(cgWindowID) \(seat.displayUUID ?? "nil", privacy: .public) → \(displayUUID ?? "nil", privacy: .public) hold=\(String(describing: hold), privacy: .public)")
+        }
+        guard seat.displayUUID != displayUUID else { return true }
+        apps[pid]?.windowsByID[cgWindowID]?.displayUUID = displayUUID
+        rebuildSnapshot(onScreenCGIDs: lastOnScreenCGIDs)
+        return true
     }
 
     // MARK: - Seed
@@ -1589,6 +1758,8 @@ final class AppTracker: ObservableObject {
 
         // Snapshot CG window state once for the entire reconcile pass.
         let cgSnapshot = cgSnapshotProvider()
+        // 多屏 ④：所有可见座位按本轮 CG bounds 换屏（跳读的 pid 也覆盖到）。
+        if !cgSnapshot.captureFailed, refreshDisplayAttributionFromCG(cgSnapshot) { changed = true }
 
         if let timeout = periodicReconcileTimeout, eventAXAsyncEnabled {
             // 死进程清扫的删除立即上屏，不等批读落地。
@@ -1972,6 +2143,14 @@ final class AppTracker: ObservableObject {
             }
         ).map { ($0.pid, $0) })
 
+        // 记住每个 app 的窗口最后在哪块屏：有座位时跟着第一个有归属键的座位走，没座位时保留。
+        for pid in appOrder {
+            guard let app = apps[pid],
+                  let home = app.windowOrder.compactMap({ app.windowsByID[$0]?.displayUUID }).first,
+                  home != app.lastWindowDisplayUUID else { continue }
+            apps[pid]?.lastWindowDisplayUUID = home
+        }
+
         for pid in appOrder {
             guard let app = apps[pid] else { continue }
 
@@ -1987,7 +2166,8 @@ final class AppTracker: ObservableObject {
                     bounds: nil,
                     status: app.isHidden ? .hidden : .inactive,
                     isOnDesktop: pid == frontmostPID,
-                    groupID: id.rawValue   // 兜底卡自成一组，永不并入别人
+                    groupID: id.rawValue,   // 兜底卡自成一组，永不并入别人
+                    displayUUID: app.lastWindowDisplayUUID
                 )
                 orderedWindowIDs.append(id)
             } else {
@@ -2007,7 +2187,8 @@ final class AppTracker: ObservableObject {
                         status: windowStatus(isHidden: app.isHidden, isMinimized: seat.isMinimized, isFocused: seat.isFocused, pid: pid, frontmostPID: frontmostPID),
                         cgWindowID: cgID,
                         isOnDesktop: !seat.isMinimized && !app.isHidden,
-                        groupID: seat.token
+                        groupID: seat.token,
+                        displayUUID: seat.displayUUID
                     )
                     orderedWindowIDs.append(id)
                 }
@@ -2080,8 +2261,17 @@ final class AppTracker: ObservableObject {
         handleWindowDestroyed(pid: pid, cgWindowID: cgWindowID)
     }
 
-    func rebuildSnapshotForTesting() {
-        rebuildSnapshot(onScreenCGIDs: [])
+    func rebuildSnapshotForTesting(onScreenCGIDs: Set<CGWindowID> = []) {
+        rebuildSnapshot(onScreenCGIDs: onScreenCGIDs)
+    }
+
+    @discardableResult
+    func refreshDisplayAttributionFromCGForTesting(cgSnapshot: AppTrackerCGWindowSnapshot) -> Bool {
+        refreshDisplayAttributionFromCG(cgSnapshot)
+    }
+
+    func screenParametersChangedForTesting() {
+        handleScreenParametersChanged()
     }
 
     func hasPendingEventReadForTesting(pid: pid_t) -> Bool {

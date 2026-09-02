@@ -28,6 +28,13 @@ final class AppRuntime: ObservableObject {
     /// 乐观状态 overlay（见 OptimisticWindowState 注释）。UI 渲染与 toggle 规划
     /// 优先读这里；快照兑现预测或超时（静默回弹）后清除。
     @Published private(set) var optimisticStatesByWindowID: [String: OptimisticWindowState] = [:]
+    /// 「在运行但没窗口」图标的显式住址（多屏 ④：bundleID → display UUID，会话内、不持久化）。
+    /// 由跨屏拖动写入；**不放进窗口清单**——清单里可能根本没有这个 app 的条目（零座位的保留应用走
+    /// 占位显示），写进清单就落空、卡回主屏（owner 2026-09-02 第四轮）。这个 app 一有真窗口就清掉，
+    /// 之后由清单里「窗口最后所在的屏」接管。投影层：显式住址 > 清单里的最后所在屏 > 主屏。
+    @Published private(set) var noWindowHomeByBundle: [String: String] = [:]
+    private static let displayTraceEnabled = ProcessInfo.processInfo.environment["DOCK_DISPLAY_TRACE"] == "1"
+    private let displayTraceLogger = Logger(subsystem: "com.caye.macosdockcc.v2", category: "display-trace")
     /// 「窗口出现门控」（2026-06-18）：用户从抽屉点击启动的 app，在它拿到真窗口
     /// 之前先记在这里。抽屉据此把它**留在启动区继续弹跳**，不在「进程一出现」就提前
     /// 停跳 / 提前跳进运行区（GUI app 进程就绪 ≠ UI 就绪）。.regular 应用等真窗口；
@@ -65,6 +72,7 @@ final class AppRuntime: ObservableObject {
     private var launchSessions = LaunchSessionTokenRegistry<LaunchSession>()
 
     private let tracker: AppTracker
+    private let displayTableProvider: @MainActor () -> WindowDisplayAttribution.Table
     private let intentPipeline = IntentPipeline(actionPlanning: LifecycleActionPlanner())
     private let actionExecutor = PlatformActionExecutor()
     private let isAccessibilityTrusted: () -> Bool
@@ -89,9 +97,13 @@ final class AppRuntime: ObservableObject {
     init(
         inventoryLog: WindowInventoryAnomalyLog = WindowInventoryAnomalyLog(),
         debugState: DebugRuntimeState? = nil,
+        displayTableProvider: @escaping @MainActor () -> WindowDisplayAttribution.Table = {
+            DisplayIdentity.attributionTable()
+        },
         isAccessibilityTrusted: @escaping () -> Bool = { PermissionService().hasRequiredPermissions() }
     ) {
-        tracker = AppTracker(inventoryLog: inventoryLog)
+        tracker = AppTracker(inventoryLog: inventoryLog, displayTableProvider: displayTableProvider)
+        self.displayTableProvider = displayTableProvider
         self.debugState = debugState ?? DebugRuntimeState()
         self.isAccessibilityTrusted = isAccessibilityTrusted
     }
@@ -157,6 +169,73 @@ final class AppRuntime: ObservableObject {
     func close(windowID: String) { trigger(.close(WindowID(rawValue: windowID))) }
     func quit(windowID: String) { trigger(.quit(WindowID(rawValue: windowID))) }
     func newWindow(windowID: String) { trigger(.newWindow(WindowID(rawValue: windowID))) }
+
+    /// 跨屏投放的分派：真窗口卡 → 搬窗口；`app-*` 兜底卡 / 保留占位（没有窗口可搬）→ 改这个 app
+    /// 「无窗口图标住哪块屏」的会话记忆（`AppTracker.noteNoWindowHome`），④ 下那张卡随即换条。
+    func handleCrossStripDrop(payload: DragPayload, toDisplayUUID uuid: String) {
+        if let item = payload.item, !item.isAppLevelFallback {
+            if Self.displayTraceEnabled {
+                displayTraceLogger.info("drop window id=\(item.id, privacy: .public) pid=\(item.pid) cg=\(item.cgWindowID ?? 0) from=\(item.displayUUID ?? "nil", privacy: .public) to=\(uuid, privacy: .public)")
+            }
+            moveWindow(item: item, toDisplayUUID: uuid)
+        } else {
+            if Self.displayTraceEnabled {
+                displayTraceLogger.info("drop no-window bundle=\(payload.bundleID, privacy: .public) id=\(payload.id, privacy: .public) to=\(uuid, privacy: .public)")
+            }
+            guard !payload.bundleID.isEmpty else { return }
+            noWindowHomeByBundle[payload.bundleID] = uuid
+            tracker.noteNoWindowHome(bundleID: payload.bundleID, displayUUID: uuid)
+        }
+    }
+
+    /// 跨屏拖窗（多屏 ③④，owner 2026-09-02）：窗口图标松在另一块屏的任务条上 → 窗口搬到那块屏，
+    /// **只搬不置前**。先乐观改清单里的归属键（卡当场跳到目标条），再在动作队列上写 AX 帧
+    ///（`AXWindowReader.setFrame`，项目里唯一的几何写入口）；写不成就把键改回去（卡飞回来源条）。
+    /// 标签组只搬代表窗口；全屏 / 不可写的窗口就是「写不成」。
+    func moveWindow(item: StripItem, toDisplayUUID uuid: String) {
+        guard !item.isAppLevelFallback, let cgWindowID = item.cgWindowID, cgWindowID != 0 else { return }
+        let table = displayTableProvider()
+        guard let target = table.displays.first(where: { $0.uuid == uuid }) else { return }
+        let source = table.displays.first { $0.uuid == item.displayUUID }
+        let pid = pid_t(item.pid)
+        let previous = item.displayUUID
+        let noted = tracker.noteWindowMoved(pid: pid, cgWindowID: cgWindowID, displayUUID: uuid)
+        if Self.displayTraceEnabled {
+            displayTraceLogger.info("moveWindow optimistic noted=\(noted) pid=\(pid) cg=\(cgWindowID) to=\(uuid, privacy: .public)")
+        }
+        guard noted else { return }
+        let trace = Self.displayTraceEnabled ? displayTraceLogger : nil
+        Self.actionQueue.async { [weak self] in
+            let reader = AXWindowReader()
+            // AX 里根本找不到这扇窗（关完窗口后赖在 CG 里的离屏 / 幽灵窗口，卡看着就是「有圆点没窗口」）：
+            // 没有东西可搬，拖动的含义就是「改住址」——把键钉在目标屏，直到它下次真的在 AX 里可见。
+            guard let handle = reader.captureHandle(forPID: pid, cgWindowID: cgWindowID, messagingTimeout: 0.1),
+                  let current = reader.frame(of: handle.element, messagingTimeout: 0.1) else {
+                trace?.info("moveWindow no AX handle pid=\(pid) cg=\(cgWindowID) → pin untilVisible")
+                Task { @MainActor [weak self] in
+                    self?.tracker.noteWindowMoved(pid: pid, cgWindowID: cgWindowID, displayUUID: uuid, hold: .untilVisible)
+                }
+                return
+            }
+            let frame = WindowDisplayMove.targetFrame(window: current, from: source, to: target)
+            let result = reader.setFrame(frame, for: handle.element,
+                                         messagingTimeout: 0.1,
+                                         verificationTolerance: 2,
+                                         restoreOnFailureTo: current)
+            if case .success = result {
+                trace?.info("moveWindow setFrame ok pid=\(pid) cg=\(cgWindowID) frame=\(String(describing: frame), privacy: .public)")
+                return
+            }
+            trace?.info("moveWindow setFrame failed pid=\(pid) cg=\(cgWindowID) result=\(String(describing: result), privacy: .public)")
+            // 写不成：窗口在屏上（用户看得见的真窗口，全屏 / 不可写）→ 回滚，卡飞回来源条；
+            // 不在屏上（离屏 / 幽灵）→ 当「改住址」钉死到目标屏。由清单按 on-screen 集合判。
+            Task { @MainActor [weak self] in
+                guard let self else { return }
+                let verdict = self.tracker.resolveFailedWindowMove(pid: pid, cgWindowID: cgWindowID, target: uuid, previous: previous)
+                trace?.info("moveWindow failed → \(String(describing: verdict), privacy: .public)")
+            }
+        }
+    }
 
     // MARK: - Private
 
@@ -814,6 +893,14 @@ final class AppRuntime: ObservableObject {
 
     private func handleSnapshotUpdate(_ newSnapshot: DockSnapshot) {
         if snapshot != newSnapshot { snapshot = newSnapshot }
+        // 显式住址只管「没窗口」的那段：这个 app 一有真窗口就清掉，之后由清单里「窗口最后所在的屏」接管。
+        if !noWindowHomeByBundle.isEmpty {
+            for record in newSnapshot.windows.values where record.cgWindowID != nil {
+                if let bid = record.bundleIdentifier, noWindowHomeByBundle[bid] != nil {
+                    noWindowHomeByBundle.removeValue(forKey: bid)
+                }
+            }
+        }
         reconcileLaunchingStates(with: newSnapshot)
         let trusted = isAccessibilityTrusted()
         if hasRequiredPermissions != trusted { hasRequiredPermissions = trusted }
