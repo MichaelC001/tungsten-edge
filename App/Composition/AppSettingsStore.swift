@@ -162,6 +162,10 @@ final class AppSettingsStore: ObservableObject {
         switch defaults.string(forKey: Keys.taskbarScreenMode) {
         case nil, TaskbarScreenMode.followMouse.rawValue:
             taskbarScreenPlacement = .followMouse
+        case TaskbarScreenMode.allScreens.rawValue:
+            taskbarScreenPlacement = .allScreens
+        case TaskbarScreenMode.allScreensPerDisplay.rawValue:
+            taskbarScreenPlacement = .allScreensPerDisplay
         case TaskbarScreenMode.pinned.rawValue:
             if let pinnedSelection {
                 taskbarScreenPlacement = .pinned(pinnedSelection)
@@ -453,7 +457,7 @@ private enum Keys {
     /// 自定义显隐快捷键（字典：keyCode / modifiers / glyphs）。缺键 = 默认 ⌥⇧⌘D。
     static let edgeToggleShortcut = "com.tungsten.edge.hotKey.edgeAutoHideMode"
     static let scrollReverserEnabled = "com.tungsten.edge.scrollReverserEnabled"
-    /// 任务条显示位置（followMouse / pinned，将来加 allScreens）。缺键 = followMouse。
+    /// 任务条显示位置（followMouse / pinned / allScreens / allScreensPerDisplay）。缺键 = followMouse。
     /// ⚠️ 旧的 `com.tungsten.edge.displayMode`（早期「单屏/多屏」档，已随功能删除）是孤儿键，
     /// **永不再读**（`Docs/05`）——新功能只认下面这两个键。
     static let taskbarScreenMode = "com.tungsten.edge.taskbarScreen.mode"

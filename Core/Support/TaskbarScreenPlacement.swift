@@ -1,11 +1,16 @@
 import Foundation
 
-/// 任务条屏幕安放模式（多屏显示第一步，2026-08-26）。
-/// rawValue 即 UserDefaults 持久化值；将来的「所有屏幕」档在这里加 case。
+/// 任务条屏幕安放模式（多屏路线四档：2026-08-26 上 ②，2026-09-02 立项 ③④）。
+/// rawValue 即 UserDefaults 持久化值。老版本读到不认识的 rawValue 会按 followMouse 跑
+/// 且**不改写键**（`AppSettingsStore`），所以新档位只加不改名。
 /// **与已删除的旧 `com.tungsten.edge.displayMode` 键无关**——那个键是孤儿键，永不再读。
 enum TaskbarScreenMode: String {
     case followMouse
     case pinned
+    /// ③ 所有屏都显示、内容相同。
+    case allScreens
+    /// ④ 所有屏都显示、各屏只显示本屏窗口（里程碑二；模型先到位，菜单行随实现一起上）。
+    case allScreensPerDisplay
 }
 
 /// 固定屏的持久化身份。`uuid` 来自 `CGDisplayCreateUUIDFromDisplayID`（基于 EDID，
@@ -20,25 +25,45 @@ struct PinnedScreenSelection: Equatable {
 enum TaskbarScreenPlacement: Equatable {
     case followMouse
     case pinned(PinnedScreenSelection)
+    case allScreens
+    case allScreensPerDisplay
 
-    /// 悬停切屏（底边停留搬 dock）只在跟随鼠标档生效。
+    /// 悬停切屏（底边停留搬 dock）只在跟随鼠标档生效——所有屏都有条时没有东西要搬。
     var allowsHoverScreenSwitching: Bool {
         self == .followMouse
+    }
+
+    /// ③④：每块已连接屏各一个任务条单元。
+    var showsOnEveryDisplay: Bool {
+        switch self {
+        case .allScreens, .allScreensPerDisplay: return true
+        case .followMouse, .pinned: return false
+        }
     }
 
     var mode: TaskbarScreenMode {
         switch self {
         case .followMouse: return .followMouse
         case .pinned: return .pinned
+        case .allScreens: return .allScreens
+        case .allScreensPerDisplay: return .allScreensPerDisplay
         }
     }
 
     var pinnedSelection: PinnedScreenSelection? {
         switch self {
-        case .followMouse: return nil
         case .pinned(let selection): return selection
+        case .followMouse, .allScreens, .allScreensPerDisplay: return nil
         }
     }
+}
+
+/// 单个任务条单元（一个 `PanelCoordinator`）的安放。①② 下唯一的单元 `.followSettings`
+/// 读设置自己决定；③④ 下编排层给每块屏建一个 `.fixed` 单元——它的行为**就是**固定档
+///（不切屏、只在本屏底边唤醒、本屏缺席暂回主屏），只是屏由编排层指定而不是由设置指定。
+enum TaskbarUnitPlacement: Equatable {
+    case followSettings
+    case fixed(displayUUID: String)
 }
 
 /// 固定屏 → 当前屏幕集合的纯解析。运行时不存任何额外状态：每次屏幕参数变化 /
@@ -87,9 +112,47 @@ enum TaskbarScreenResolution {
 /// 状态菜单「钨极 Dock 栏显示在 ▸」子菜单的纯展示模型（2026-08-26 入口从设置窗口搬到菜单）。
 /// 与 `LaunchAtLoginMenuPresentation` 同一房规：判定在这里、可单测，controller 只负责渲染。
 struct TaskbarScreenMenuPresentation {
+    /// 一行代表的选择。`token` 是给 `NSMenuItem.representedObject` 用的字符串往返
+    /// （controller 在测试 target 也编译，不能用 ClosureMenuItem）。
+    enum Selection: Equatable {
+        case followMouse
+        case screen(uuid: String)
+        case allScreens
+        case allScreensPerDisplay
+
+        private static let screenPrefix = "screen:"
+
+        var token: String {
+            switch self {
+            case .followMouse: return "followMouse"
+            case .allScreens: return "allScreens"
+            case .allScreensPerDisplay: return "allScreensPerDisplay"
+            case .screen(let uuid): return Self.screenPrefix + uuid
+            }
+        }
+
+        init?(token: String) {
+            switch token {
+            case "followMouse": self = .followMouse
+            case "allScreens": self = .allScreens
+            case "allScreensPerDisplay": self = .allScreensPerDisplay
+            default:
+                guard token.hasPrefix(Self.screenPrefix) else { return nil }
+                let uuid = String(token.dropFirst(Self.screenPrefix.count))
+                guard !uuid.isEmpty else { return nil }
+                self = .screen(uuid: uuid)
+            }
+        }
+
+        /// 便于旧测试 / 调用方按屏 UUID 取值；非屏幕行为 nil。
+        var screenUUID: String? {
+            if case .screen(let uuid) = self { return uuid }
+            return nil
+        }
+    }
+
     struct Item: Equatable {
-        /// nil = 「跟随鼠标」；否则是那块屏的 display UUID。
-        let uuid: String?
+        let selection: Selection
         let title: String
         let isChecked: Bool
     }
@@ -101,21 +164,46 @@ struct TaskbarScreenMenuPresentation {
     /// - Parameter connectedScreens: 当前在场的屏，`title` 已去重（`displayTitles`）。
     init(placement: TaskbarScreenPlacement, connectedScreens: [(uuid: String, title: String)]) {
         let pinned = placement.pinnedSelection
-        // 只有一块屏**且**当前不是固定档才隐藏。少了后半句会出死角：固定到外接屏后把它拔掉，
-        // 就只剩一块屏 → 整行消失 → 再也切不回「跟随鼠标」。
-        isHidden = connectedScreens.count < 2 && pinned == nil
+        // 只有一块屏**且**当前既不是固定档也不是所有屏档才隐藏。少了后半句会出死角：
+        // 固定到外接屏后把它拔掉 / 开着「所有屏幕」拔到只剩一块，整行消失 → 再也切不回「跟随鼠标」。
+        isHidden = connectedScreens.count < 2 && pinned == nil && !placement.showsOnEveryDisplay
 
         var items: [Item] = [
-            Item(uuid: nil, title: String(localized: "Follow the mouse"), isChecked: pinned == nil)
+            Item(
+                selection: .followMouse,
+                title: String(localized: "Follow the mouse"),
+                isChecked: placement == .followMouse
+            )
         ]
         items += connectedScreens.map { screen in
-            Item(uuid: screen.uuid, title: screen.title, isChecked: pinned?.uuid == screen.uuid)
+            Item(
+                selection: .screen(uuid: screen.uuid),
+                title: screen.title,
+                isChecked: pinned?.uuid == screen.uuid
+            )
+        }
+        items.append(
+            Item(
+                selection: .allScreens,
+                title: String(localized: "All displays"),
+                isChecked: placement == .allScreens
+            )
+        )
+        // ④ 行随里程碑二一起出现；在那之前只有当存的值已经是 ④（新版本写的）才显示，免得没有勾选项。
+        if placement == .allScreensPerDisplay {
+            items.append(
+                Item(
+                    selection: .allScreensPerDisplay,
+                    title: String(localized: "All displays, each showing only its own windows"),
+                    isChecked: true
+                )
+            )
         }
         // 固定的屏此刻不在场：末尾补一项「XX（未连接）」并保持选中——选择不丢，接回自动生效。
         if let pinned, !connectedScreens.contains(where: { $0.uuid == pinned.uuid }) {
             items.append(
                 Item(
-                    uuid: pinned.uuid,
+                    selection: .screen(uuid: pinned.uuid),
                     title: String(format: String(localized: "%@ (disconnected)"), pinned.name),
                     isChecked: true
                 )

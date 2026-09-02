@@ -57,8 +57,8 @@ final class DragControllerConversionTests: XCTestCase {
                                scale: 1)
     }
 
-    private func begin(_ source: DragSource, _ bid: String, at point: CGPoint) {
-        controller.beginDrag(payload: payload(source, bid), startScreenLocation: point,
+    private func begin(_ source: DragSource, _ bid: String, at point: CGPoint, surface: String? = nil) {
+        controller.beginDrag(payload: payload(source, bid), stripSurfaceID: surface, startScreenLocation: point,
                              grabOffset: .zero, sourceScreenRect: .zero, pose: .resting,
                              snapshot: stubSnapshot())
     }
@@ -77,6 +77,25 @@ final class DragControllerConversionTests: XCTestCase {
         while !condition() && Date() < until {
             RunLoop.main.run(mode: .default, before: Date(timeIntervalSinceNow: 0.005))
         }
+    }
+
+    // MARK: - 活动 strip 表面（多屏 ③④：多条内容相同的任务条只有一条能写回）
+
+    func testStripSurfaceClaimClearsOnCancelAndOnRevert() {
+        begin(.strip, "com.example.a", at: outsideZone, surface: "strip-A")
+        XCTAssertEqual(controller.activeStripSurfaceID, "strip-A")
+        controller.cancelDrag()
+        XCTAssertNil(controller.activeStripSurfaceID, "取消 = 拖动结束，认领必须清空，否则下一次抽屉起拖没人能转正")
+
+        drawer.add("com.example.b")
+        begin(.drawer, "com.example.b", at: outsideZone)
+        XCTAssertNil(controller.activeStripSurfaceID, "抽屉起拖尚未转正：没人认领，哪条 strip 含着指针都可以转正")
+        controller.claimStripSurface("strip-B")
+        controller.convertDrawerToStrip()
+        XCTAssertEqual(controller.activeStripSurfaceID, "strip-B")
+        controller.revertDrawerToStrip()
+        XCTAssertNil(controller.activeStripSurfaceID, "撤销转正即放手认领")
+        controller.cancelDrag()
     }
 
     // MARK: - 起拖 / 落地的交接顺序（两头都必须「先新后旧」）

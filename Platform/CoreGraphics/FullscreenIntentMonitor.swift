@@ -107,7 +107,7 @@ enum WindowSpaceMembershipReader {
 private final class FullscreenIntentAtomicState {
     private var lock = os_unfair_lock_s()
     private var snapshot: FullscreenIntentSnapshot?
-    private var spaceLayout: SpaceLayoutSnapshot?
+    private var spaceLayouts: SpaceLayoutDirectory?
     private var naturalScrolling = true
     private var tapEnabled = false
 
@@ -115,20 +115,20 @@ private final class FullscreenIntentAtomicState {
         withLock { tapEnabled ? snapshot : nil }
     }
 
-    /// 事件线程读：返回 nil 表示「这块屏两侧都没有全屏空间」，调用方可以直接跳过，
+    /// 事件线程读：返回 nil 表示「没有一块屏的两侧有全屏空间」，调用方可以直接跳过，
     /// 连 `NSEvent` 转换都不必做——手势事件一秒两百个，这个提前退出是常态路径。
-    func currentSpaceContext() -> (layout: SpaceLayoutSnapshot, naturalScrolling: Bool)? {
+    func currentSpaceContext() -> (layouts: SpaceLayoutDirectory, naturalScrolling: Bool)? {
         withLock {
-            guard tapEnabled, let spaceLayout, spaceLayout.hasAnyFullscreenNeighbor else {
+            guard tapEnabled, let spaceLayouts, spaceLayouts.hasAnyFullscreenNeighbor else {
                 return nil
             }
-            return (spaceLayout, naturalScrolling)
+            return (spaceLayouts, naturalScrolling)
         }
     }
 
-    func replaceSpaceLayout(_ value: SpaceLayoutSnapshot?, naturalScrolling: Bool) {
+    func replaceSpaceLayout(_ value: SpaceLayoutDirectory?, naturalScrolling: Bool) {
         withLock {
-            spaceLayout = value
+            spaceLayouts = value
             self.naturalScrolling = naturalScrolling
         }
     }
@@ -137,7 +137,7 @@ private final class FullscreenIntentAtomicState {
         withLock { snapshot = value }
     }
 
-    func updatePanelScreen(_ frame: CGRect?) {
+    func updatePanelScreens(_ frames: Set<CGRect>) {
         withLock {
             guard let current = snapshot else { return }
             snapshot = FullscreenIntentSnapshot(
@@ -147,7 +147,7 @@ private final class FullscreenIntentAtomicState {
                 buttonFrame: current.buttonFrame,
                 windowFrame: current.windowFrame,
                 screenCGFrame: current.screenCGFrame,
-                panelScreenCGFrame: frame,
+                panelScreenCGFrames: frames,
                 isFullscreen: current.isFullscreen,
                 buttonEnabled: current.buttonEnabled
             )
@@ -177,7 +177,7 @@ private final class FullscreenIntentEventBridge {
     private let state: FullscreenIntentAtomicState
     private let logger: Logger
     private let onIntent: (FullscreenIntentRequest) -> Void
-    private let onSpaceSwitchIntent: (SpaceSwitchDirection) -> Void
+    private let onSpaceSwitchIntent: (SpaceSwitchDirection, _ displayUUID: String) -> Void
     private let onGestureSample: (CGEvent) -> Void
     private let spaceSwitchEnabled: Bool
     private var gestureHopLock = os_unfair_lock_s()
@@ -204,7 +204,7 @@ private final class FullscreenIntentEventBridge {
         logger: Logger,
         spaceSwitchEnabled: Bool,
         onIntent: @escaping (FullscreenIntentRequest) -> Void,
-        onSpaceSwitchIntent: @escaping (SpaceSwitchDirection) -> Void,
+        onSpaceSwitchIntent: @escaping (SpaceSwitchDirection, _ displayUUID: String) -> Void,
         onGestureSample: @escaping (CGEvent) -> Void
     ) {
         self.state = state
@@ -297,12 +297,18 @@ private final class FullscreenIntentEventBridge {
     }
 
     private func handleSpaceSwitch(direction: SpaceSwitchDirection, label: String) {
+        // 事件线程只做并集闸（任一显示器该方向有全屏空间）；落在哪块屏在主线程交接体里定
+        //（键盘焦点屏读不到，多块候选时取鼠标所在屏）。
         guard let context = state.currentSpaceContext(),
-              context.layout.neighborIsFullscreen(direction) else {
+              !context.layouts.displays(withFullscreenNeighbor: direction).isEmpty else {
             return
         }
         performHandoff(label: label, pid: nil) { [weak self] in
-            self?.onSpaceSwitchIntent(direction)
+            guard let self else { return }
+            let target = self.state.currentSpaceContext()?.layouts
+                .arrowTarget(direction, mouseLocation: NSEvent.mouseLocation)
+            guard let target else { return }
+            self.onSpaceSwitchIntent(direction, target.displayUUID)
         }
     }
 
@@ -498,7 +504,8 @@ final class FullscreenIntentMonitor {
     )
     private let atomicState = FullscreenIntentAtomicState()
     private let onIntent: (FullscreenIntentRequest) -> Void
-    private let onSpaceSwitchIntent: (SpaceSwitchDirection) -> Void
+    /// 方向 + 要预测隐藏的那块显示器的 UUID（空间切换按显示器发生）。
+    private let onSpaceSwitchIntent: (SpaceSwitchDirection, _ displayUUID: String) -> Void
     private let onContextChange: (ContextChange) -> Void
     private let spaceSwitchEnabled: Bool
     private lazy var bridge = FullscreenIntentEventBridge(
@@ -506,9 +513,9 @@ final class FullscreenIntentMonitor {
         logger: logger,
         spaceSwitchEnabled: spaceSwitchEnabled,
         onIntent: { [weak self] request in self?.accept(request) },
-        onSpaceSwitchIntent: { [weak self] direction in
+        onSpaceSwitchIntent: { [weak self] direction, displayUUID in
             guard let self, self.started else { return }
-            self.onSpaceSwitchIntent(direction)
+            self.onSpaceSwitchIntent(direction, displayUUID)
         },
         onGestureSample: { [weak self] event in
             // 触控点只有在主线程现造 NSEvent 才读得到（见 handleGesture 的注释）。
@@ -529,7 +536,8 @@ final class FullscreenIntentMonitor {
     private var focusedElement: AXUIElement?
     private var focusedWindowID: CGWindowID?
     private var activePID: pid_t?
-    private var panelScreenCGFrame: CGRect?
+    /// 有任务条的屏的 CG frame 集合（③④ 下多块）。
+    private var panelScreenCGFrames: Set<CGRect> = []
     private var observationGeneration: UInt64 = 0
     private var cacheGeneration: UInt64 = 0
     private var refreshCoalescer = FullscreenIntentRefreshCoalescer()
@@ -537,13 +545,12 @@ final class FullscreenIntentMonitor {
     private var swipeTracker = SpaceSwipeTracker()
     private var spaceObserver: NSObjectProtocol?
     private var screenObserver: NSObjectProtocol?
-    private var panelScreen: NSScreen?
     private var started = false
 
     init(
         spaceSwitchEnabled: Bool = ProcessInfo.processInfo.environment["DOCK_SPACE_INTENT"] != "0",
         onIntent: @escaping (FullscreenIntentRequest) -> Void,
-        onSpaceSwitchIntent: @escaping (SpaceSwitchDirection) -> Void,
+        onSpaceSwitchIntent: @escaping (SpaceSwitchDirection, _ displayUUID: String) -> Void,
         onContextChange: @escaping (ContextChange) -> Void
     ) {
         self.spaceSwitchEnabled = spaceSwitchEnabled
@@ -552,19 +559,21 @@ final class FullscreenIntentMonitor {
         self.onContextChange = onContextChange
     }
 
-    /// 空间布局快照：只在空间切换 / 屏幕参数变化 / 任务条换屏时重读（单次约 0.132ms）。
+    /// 空间布局快照：只在空间切换 / 屏幕参数变化时重读（每块屏约 0.132ms）。
     /// 事件线程只读缓存，永远不在 tap 回调里调 SkyLight。
+    /// **对所有显示器读**（不只有任务条的那些）：空间切换按显示器发生，预测先要定位到那块屏；
+    /// 按 UUID 匹配，不按数组顺序。
     func refreshSpaceLayout() {
         guard started, spaceSwitchEnabled else { return }
         let natural = UserDefaults.standard.object(forKey: "com.apple.swipescrolldirection")
             .map { ($0 as? Bool) ?? true } ?? true
-        guard let screen = panelScreen ?? NSScreen.main,
-              let uuid = ManagedSpaceLayoutReader.displayUUIDString(for: screen) else {
-            atomicState.replaceSpaceLayout(nil, naturalScrolling: natural)
-            return
+        let entries: [SpaceLayoutDirectory.Entry] = NSScreen.screens.compactMap { screen in
+            guard let uuid = ManagedSpaceLayoutReader.displayUUIDString(for: screen),
+                  let layout = ManagedSpaceLayoutReader.layout(forDisplayUUID: uuid) else { return nil }
+            return SpaceLayoutDirectory.Entry(displayUUID: uuid, appKitFrame: screen.frame, layout: layout)
         }
         atomicState.replaceSpaceLayout(
-            ManagedSpaceLayoutReader.layout(forDisplayUUID: uuid),
+            entries.isEmpty ? nil : SpaceLayoutDirectory(entries: entries),
             naturalScrolling: natural
         )
     }
@@ -641,13 +650,11 @@ final class FullscreenIntentMonitor {
         tapThread.stop()
     }
 
-    func updatePanelScreen(_ frame: CGRect?, screen: NSScreen? = nil) {
-        panelScreenCGFrame = frame
-        atomicState.updatePanelScreen(frame)
-        if let screen, screen !== panelScreen {
-            panelScreen = screen
-            refreshSpaceLayout()
-        }
+    /// 编排层在任一单元换屏 / 建拆单元后喂进全部有任务条的屏。集合没变时是空操作。
+    func updatePanelScreens(_ frames: Set<CGRect>) {
+        guard frames != panelScreenCGFrames else { return }
+        panelScreenCGFrames = frames
+        atomicState.updatePanelScreens(frames)
     }
 
     private static let mainTraceEnabled =
@@ -694,7 +701,12 @@ final class FullscreenIntentMonitor {
             at: ProcessInfo.processInfo.systemUptime,
             naturalScrolling: context.naturalScrolling
         ) else { return }
-        var open = context.layout.neighborIsFullscreen(direction)
+        // 三指滑动作用于光标所在的显示器：先定位到那块屏的布局，再判相邻空间。
+        let mouse = NSEvent.mouseLocation
+        guard let entry = context.layouts.entry(containing: mouse) else {
+            return mainTrace("no-display-under-mouse")
+        }
+        var open = entry.layout.neighborIsFullscreen(direction)
         if !open {
             // 闸关着可能只是缓存脏：空间切换后 ~420ms 内 SkyLight 的空间序还在重排，
             // 切换瞬间刷进缓存的布局会把闸误关（2026-08-31 实测）。当场重读一次真值
@@ -703,14 +715,16 @@ final class FullscreenIntentMonitor {
             // 桌面上凭空藏一下条，闪烁不降反升。起滑落在脏窗口内的手势漏预测是
             // 已接受的边界（正常节奏碰不到）。
             refreshSpaceLayout()
-            open = atomicState.currentSpaceContext()?.layout.neighborIsFullscreen(direction) ?? false
+            open = atomicState.currentSpaceContext()?.layouts
+                .entry(forDisplayUUID: entry.displayUUID)?.layout
+                .neighborIsFullscreen(direction) ?? false
         }
         guard open else {
             mainTrace("gate-closed-\(direction.rawValue)")
             return
         }
         logger.notice("space-swipe direction=\(direction.rawValue, privacy: .public)")
-        onSpaceSwitchIntent(direction)
+        onSpaceSwitchIntent(direction, entry.displayUUID)
     }
 
     private func accept(_ request: FullscreenIntentRequest) {
@@ -814,7 +828,7 @@ final class FullscreenIntentMonitor {
                     buttonFrame: result.buttonFrame,
                     windowFrame: result.windowFrame,
                     screenCGFrame: result.screenCGFrame,
-                    panelScreenCGFrame: panelScreenCGFrame,
+                    panelScreenCGFrames: panelScreenCGFrames,
                     isFullscreen: result.isFullscreen,
                     buttonEnabled: result.buttonEnabled
                 ))

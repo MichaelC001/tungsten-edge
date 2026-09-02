@@ -35,12 +35,12 @@ final class FullscreenIntentDecisionTests: XCTestCase {
             location: point, flags: [], snapshot: makeSnapshot(isFullscreen: true)
         ))
         XCTAssertNil(FullscreenIntentDecision.greenButtonRequest(
-            location: point, flags: [], snapshot: makeSnapshot(panelScreen: nil)
+            location: point, flags: [], snapshot: makeSnapshot(panelScreens: [])
         ))
         XCTAssertNil(FullscreenIntentDecision.greenButtonRequest(
             location: point,
             flags: [],
-            snapshot: makeSnapshot(panelScreen: CGRect(x: 1512, y: 0, width: 1920, height: 1080))
+            snapshot: makeSnapshot(panelScreens: [CGRect(x: 1512, y: 0, width: 1920, height: 1080)])
         ))
         XCTAssertNil(FullscreenIntentDecision.greenButtonRequest(
             location: point, flags: [], snapshot: nil
@@ -399,7 +399,7 @@ final class FullscreenIntentDecisionTests: XCTestCase {
         focusedWindowID: CGWindowID = 456,
         buttonEnabled: Bool = true,
         isFullscreen: Bool = false,
-        panelScreen: CGRect? = CGRect(x: 0, y: 0, width: 1512, height: 982)
+        panelScreens: Set<CGRect> = [CGRect(x: 0, y: 0, width: 1512, height: 982)]
     ) -> FullscreenIntentSnapshot {
         FullscreenIntentSnapshot(
             generation: generation,
@@ -408,10 +408,67 @@ final class FullscreenIntentDecisionTests: XCTestCase {
             buttonFrame: CGRect(x: 100, y: 100, width: 40, height: 20),
             windowFrame: CGRect(x: 80, y: 80, width: 900, height: 700),
             screenCGFrame: screen,
-            panelScreenCGFrame: panelScreen,
+            panelScreenCGFrames: panelScreens,
             isFullscreen: isFullscreen,
             buttonEnabled: buttonEnabled
         )
     }
 
+
+    // MARK: - 多屏（2026-09-02）
+
+    /// ③ 下多块屏都有条：焦点窗口所在屏只要在集合里就发请求。
+    func testGreenButtonRequestFiresWhenScreenIsAnyPanelScreen() {
+        let other = CGRect(x: 1512, y: 0, width: 1920, height: 1080)
+        let request = FullscreenIntentDecision.greenButtonRequest(
+            location: CGPoint(x: 110, y: 110),
+            flags: [],
+            snapshot: makeSnapshot(panelScreens: [other, screen])
+        )
+        XCTAssertNotNil(request)
+    }
+
+    private func layout(current: Int, ordered: [Int], fullscreen: Set<Int>) -> SpaceLayoutSnapshot {
+        SpaceLayoutSnapshot(orderedSpaceIDs: ordered, fullscreenSpaceIDs: fullscreen, currentSpaceID: current)
+    }
+
+    func testSpaceLayoutDirectoryLocatesDisplayUnderPointAndArrowTarget() {
+        let a = SpaceLayoutDirectory.Entry(
+            displayUUID: "A",
+            appKitFrame: CGRect(x: 0, y: 0, width: 1512, height: 982),
+            layout: layout(current: 1, ordered: [1, 2], fullscreen: [])
+        )
+        let b = SpaceLayoutDirectory.Entry(
+            displayUUID: "B",
+            appKitFrame: CGRect(x: 1512, y: 0, width: 1920, height: 1080),
+            layout: layout(current: 3, ordered: [3, 4], fullscreen: [4])
+        )
+        let directory = SpaceLayoutDirectory(entries: [a, b])
+        XCTAssertTrue(directory.hasAnyFullscreenNeighbor)
+        XCTAssertEqual(directory.entry(containing: CGPoint(x: 100, y: 100))?.displayUUID, "A")
+        XCTAssertEqual(directory.entry(containing: CGPoint(x: 2000, y: 100))?.displayUUID, "B")
+        XCTAssertNil(directory.entry(containing: CGPoint(x: -5, y: 5)))
+        XCTAssertEqual(directory.displays(withFullscreenNeighbor: .right).map(\.displayUUID), ["B"])
+        // 唯一候选：鼠标在 A 上也落 B。
+        XCTAssertEqual(directory.arrowTarget(.right, mouseLocation: CGPoint(x: 100, y: 100))?.displayUUID, "B")
+        XCTAssertNil(directory.arrowTarget(.left, mouseLocation: CGPoint(x: 100, y: 100)))
+    }
+
+    func testSpaceLayoutDirectoryArrowTargetPrefersMouseDisplayAmongCandidates() {
+        let a = SpaceLayoutDirectory.Entry(
+            displayUUID: "A",
+            appKitFrame: CGRect(x: 0, y: 0, width: 1512, height: 982),
+            layout: layout(current: 1, ordered: [1, 2], fullscreen: [2])
+        )
+        let b = SpaceLayoutDirectory.Entry(
+            displayUUID: "B",
+            appKitFrame: CGRect(x: 1512, y: 0, width: 1920, height: 1080),
+            layout: layout(current: 3, ordered: [3, 4], fullscreen: [4])
+        )
+        let directory = SpaceLayoutDirectory(entries: [a, b])
+        XCTAssertEqual(directory.arrowTarget(.right, mouseLocation: CGPoint(x: 2000, y: 50))?.displayUUID, "B")
+        XCTAssertEqual(directory.arrowTarget(.right, mouseLocation: CGPoint(x: 10, y: 50))?.displayUUID, "A")
+        // 鼠标不在任何候选上 → 第一块。
+        XCTAssertEqual(directory.arrowTarget(.right, mouseLocation: CGPoint(x: -100, y: -100))?.displayUUID, "A")
+    }
 }

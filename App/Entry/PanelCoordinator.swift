@@ -175,7 +175,9 @@ final class PanelCoordinator: NSObject {
     private var drawerContentHost: NSView?
     /// 跨面板拖动（拖卡进抽屉 路线 C）的唯一权威：载体面板 + 鼠标监视器 + 落点收尾都在它里面。
     /// 必须在 setupDockPanel/setupCapsulePanel 之前建好，因为要注入进这两个面板的 hosting。
-    private var dragController: DragController!
+    /// 跨面板拖动权威。**整个进程只有一个**，由编排层创建、注入给每个单元
+    ///（③④ 下 N 条任务条共用：投放区是各单元的并集，载体面板本来就按屏一套）。
+    let dragController: DragController
     /// 权限丢失后的挂起态。刻意**不**复用 `visibilityState.hideReasons`——
     /// 那套是给全屏和边缘自动隐藏用的，混进来会让底边唤醒把面板又拉回屏幕。
     private var isSuspendedForPermissionLoss = false
@@ -242,7 +244,6 @@ final class PanelCoordinator: NSObject {
     private var dragInhibitorSubscription: AnyCancellable?
     private var edgeDelaySubscription: AnyCancellable?
     private var taskbarScreenPlacementSubscription: AnyCancellable?
-    private var fullscreenIntentEnabledSubscription: AnyCancellable?
     private var showShelfSubscription: AnyCancellable?
     private var dockSizeSubscription: AnyCancellable?
     /// 换档事务代次：吞掉换档过程中被其它路径排队的动画布局（见 beginDockSizeChange）。
@@ -286,7 +287,9 @@ final class PanelCoordinator: NSObject {
         category: "FullscreenIntent"
     )
     private var fullscreenReconcileTimer: Timer?
-    private var fullscreenIntentMonitor: FullscreenIntentMonitor?
+    /// 编排层持有唯一的 `FullscreenIntentMonitor`（session 事件 tap），把请求路由进来；
+    /// 这个标志 = 「路由已接通」，替代原来的 `fullscreenIntentMonitor != nil` 守卫。
+    private var fullscreenIntentRoutingEnabled = false
     private var fullscreenIntentTimeoutTimer: Timer?
     private var fullscreenIntentGeneration: UInt64 = 0
     private var fullscreenIntentTransaction: FullscreenIntentTransaction?
@@ -315,10 +318,25 @@ final class PanelCoordinator: NSObject {
     private var edgeWakeTimer: Timer?
     private var edgeWakeTargetScreen: NSScreen?
     private var edgeWakeRequiresHotZone = true
-    private var hoverLocalMouseMonitor: Any?
-    private var hoverGlobalMouseMonitor: Any?
+    /// 编排层持有的鼠标监视器需要重估（边缘隐藏开关 / 显示位置 / 屏幕集合变了）。
+    var onHoverMonitorsNeedReconcile: (() -> Void)?
+    /// 本单元的面板换了屏（或首次布局）。编排层据此把所有单元的屏集合喂给全屏意图 tap。
+    var onPanelScreenChanged: (() -> Void)?
+    /// 本单元的逻辑显隐变了（含预测隐藏的快速路径）。编排层做角标门控的「任一可见」合并。
+    var onLogicalVisibilityChanged: ((Bool) -> Void)?
+    /// 本单元即将打开一个附属面板。编排层据此关掉其他单元的同类面板（同时只开一个抽屉 / 弹窗 / 气泡）。
+    var onAccessoryWillOpen: ((PanelCoordinator, AccessoryKind) -> Void)?
 
-    init(runtime: AppRuntime,
+    enum AccessoryKind { case drawer, popup, tooltip }
+
+    /// 这个单元被安放在哪（见 `TaskbarUnitPlacement`）。③④ 下每屏一个 `.fixed` 单元。
+    let unitPlacement: TaskbarUnitPlacement
+    /// 本单元那条 strip 在共享 `DragController` 里的表面身份（见 `DragController.activeStripSurfaceID`）。
+    private let stripSurfaceID = "strip-" + UUID().uuidString
+
+    init(placement: TaskbarUnitPlacement,
+         dragController: DragController,
+         runtime: AppRuntime,
          drawerStore: DrawerStore,
          messagingStore: MessagingAppStore,
          badgeStore: BadgeStore,
@@ -331,6 +349,8 @@ final class PanelCoordinator: NSObject {
          keptAppStore: KeptAppStore,
          runningApplicationStore: RunningApplicationStore,
          appMembershipController: AppMembershipController) {
+        self.unitPlacement = placement
+        self.dragController = dragController
         self.runtime = runtime
         self.drawerStore = drawerStore
         self.messagingStore = messagingStore
@@ -348,7 +368,6 @@ final class PanelCoordinator: NSObject {
     }
 
     func start() {
-        setupDragController()
         setupDockPanel()
         setupCapsulePanel()
         presentInitialPanels()
@@ -363,14 +382,8 @@ final class PanelCoordinator: NSObject {
         subscribeSettings()
         subscribePinnedFolderStore()
         setupFullscreenMonitor()
-        reconcileFullscreenIntentMonitor()
-        setupHoverDiagnostics()
-        NotificationCenter.default.addObserver(
-            self,
-            selector: #selector(screenParametersChanged),
-            name: NSApplication.didChangeScreenParametersNotification,
-            object: nil
-        )
+        if Self.hoverVerboseLogging { logScreenMap() }
+        // 屏幕参数变化、鼠标监视器、全屏意图 tap 都由编排层统一持有并转发（③④ 多单元共用一份）。
     }
 
     deinit {
@@ -380,11 +393,10 @@ final class PanelCoordinator: NSObject {
         fullscreenSpaceIntentTimer?.invalidate()
         fullscreenSpaceIntentVerdictTimer?.invalidate()
         MainActor.assumeIsolated {
-            fullscreenIntentMonitor?.stop()
-            removeHoverMouseMonitors()
             dismissWindowTitleTooltip()
             tearDownTaskbarGlassBackground()
         }
+        hoverSwitchTimer?.invalidate()
         edgeIdleHideTimer?.invalidate()
         edgeWakeTimer?.invalidate()
         springOpenTimer?.invalidate()
@@ -407,11 +419,16 @@ final class PanelCoordinator: NSObject {
     /// 所以：拆视图树 → 关面板 → 让调用方释放本对象走 `deinit`。
     ///
     /// 不做对称的 resume：权限恢复后是整个进程重启，没有「恢复运行」这条路径。
-    func suspendAndRelease() {
+    ///
+    /// ③④ 下拔掉一块屏也走这里拆那块屏的单元（编排层调）。共享的拖动控制器 / 载体面板
+    /// **不在这里收**——那是全进程一份的，由编排层在真正挂起时收一次。
+    func tearDown() {
         guard !isSuspendedForPermissionLoss else { return }
         isSuspendedForPermissionLoss = true
-        fullscreenIntentMonitor?.stop()
-        fullscreenIntentMonitor = nil
+        fullscreenIntentRoutingEnabled = false
+        if let transaction = fullscreenIntentTransaction {
+            cancelFullscreenIntent(generation: transaction.generation, reason: "teardown")
+        }
         fullscreenIntentTimeoutTimer?.invalidate()
         fullscreenIntentTimeoutTimer = nil
         fullscreenSpaceHoldTimer?.invalidate()
@@ -419,13 +436,13 @@ final class PanelCoordinator: NSObject {
         fullscreenSpaceHold = nil
         clearFullscreenSpaceArrowIntent()
 
-        // 先回滚未提交的跨面板拖拽事务，再拆监视器；常驻的载体面板也要显式收掉。
-        dragController?.cancelDrag()
-        dragController?.closeCarrierSurfaces()
         closeDrawer()
         closeFolderPopup(immediately: true)
         dismissWindowTitleTooltip()
         cancelHoverSwitch()
+        cancelEdgeWake()
+        edgeIdleHideTimer?.invalidate()
+        edgeIdleHideTimer = nil
 
         // 换掉 contentView 触发 SwiftUI 拆树；单独强持有的 host 要先置空。
         dockContentHost = nil
@@ -450,6 +467,14 @@ final class PanelCoordinator: NSObject {
         // 「目标没变」而跳过，条就停在旧几何上。
         lastCommittedFrames = []
     }
+
+    /// 本单元的任务条此刻落在哪块屏（从面板坐标反推）。面板未建时 nil。
+    var currentScreen: NSScreen? {
+        dockPanel.map { panelCurrentScreen(panel: $0) }
+    }
+
+    /// 逻辑显隐（角标门控 / 编排层合并用）。
+    var isLogicallyVisible: Bool { panelsAreVisible }
 
     /// 最大化避让只在钨极常驻且真正可见时取得上下文；一次性返回完整几何，避免切屏时撕裂读取。
     func windowLiftAvoidanceContext() -> WindowLiftAvoidanceContext? {
@@ -482,6 +507,7 @@ final class PanelCoordinator: NSObject {
 
     private func openDrawer() {
         guard let mainPanel = dockPanel, capsulePanel != nil else { return }
+        onAccessoryWillOpen?(self, .drawer)
         drawerActionCloseToken += 1  // 旧点击排队的 delayed close 捕获旧 token，不匹配则丢弃
         drawerWantsOpen = true
         setAutoHideInhibitor(.drawerOpen, active: true)
@@ -572,7 +598,7 @@ final class PanelCoordinator: NSObject {
 
     /// 抽屉内点击 app 主操作后的延迟关闭。捕获 token，触发时三重确认才关：
     /// 1. token 匹配（排除抽屉在延迟期被重开的情况）；2. 抽屉仍是逻辑打开态；3. 无拖动进行中。
-    private func closeDrawerAfterAction() {
+    func closeDrawerAfterAction() {
         let token = drawerActionCloseToken
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) { [weak self] in
             guard let self,
@@ -584,7 +610,7 @@ final class PanelCoordinator: NSObject {
     }
 
     /// 可打断淡出关闭：立即摘监视器、动画 alpha→0,completion 里确认仍要关才 orderOut（淡出中又打开则不关）。
-    private func closeDrawer() {
+    func closeDrawer() {
         guard drawerWantsOpen else { return }
         drawerWantsOpen = false
         setAutoHideInhibitor(.drawerOpen, active: false)
@@ -702,6 +728,7 @@ final class PanelCoordinator: NSObject {
     /// （入参 = 网格可用高度上限）；调用方负责先做好各自的预载（首帧完整,AGENTS 护栏）。
     private func presentPopup(content: PopupContent, anchorVisibleRect: CGRect, makeHosting: (CGFloat) -> NSView) {
         guard let mainPanel = dockPanel else { return }
+        onAccessoryWillOpen?(self, .popup)
         // 可打断：面板可见时换内容**原地切换**——不 orderOut（根除黑一下的 blink），
         // 只撤旧监视器（随后重装），内容瞬换、帧滑向新目标。仅淡出中/未开时才走关闭路径。
         let isSwitching = folderPopupWantsOpen && (folderPopupPanel?.isVisible ?? false)
@@ -970,53 +997,7 @@ final class PanelCoordinator: NSObject {
             }
     }
 
-    // MARK: - Drag Controller (拖卡进抽屉 路线 C)
-
-    private func setupDragController() {
-        dragController = DragController(
-            drawerStore: drawerStore,
-            messagingStore: messagingStore,
-            keptAppStore: keptAppStore,
-            dropZonesProvider: { [weak self] source in self?.dragDropZones(for: source) ?? [] },
-            // 一块屏一套载体面板（`DragController.CarrierSurface`），按指针所在屏切换——
-            // 「显示器具有单独的空间」下一个窗口只属于一块屏，铺并集反而在另一块屏上画不出来。
-            screensProvider: { NSScreen.screens },
-            // 松在胶囊上收纳时图标吸进这里（胶囊可视帧，去掉投影边距）。
-            stashTargetProvider: { [weak self] in self?.capsuleVisibleFrame }
-        )
-        // 文件夹 chip 拖动落定：几何由 DockStripView 写入 DragController，最终 mouseUp/轮询兜底在
-        // endDrag 里回调到这里执行副作用。保持 .folder 与 strip/drawer 收纳语义隔离。
-        dragController.onFolderDragEnded = { [weak self] path, zone in
-            guard let self else { return }
-            switch zone {
-            case .folderZone:
-                break
-            case .outsideStrip:
-                self.pinnedFolderStore.remove(path)
-            case .liveZone:
-                self.pinnedFolderStore.remove(path)
-                NSWorkspace.shared.open(URL(fileURLWithPath: path))
-            }
-        }
-        // 抽屉拖回任务条·精确落点：成功松手落定时清顺序层的外部块暂存追踪（boundIDs 已是正常成员、留任务条）。
-        dragController.onDrawerToStripCommitted = { [stripOrderStore] _ in
-            stripOrderStore.commitExternalBlock()
-        }
-        // 抽屉拖回任务条·异常取消（cancelDrag）：回滚顺序层的外部块暂存（删 boundIDs + 清 absentSince + 清暂存）。
-        dragController.onDrawerToStripCancelled = { [stripOrderStore] in
-            stripOrderStore.cancelExternalBlock()
-        }
-        // 抽屉图标落进任务条（精确落点 + 降级路径都触发）→ 关闭抽屉。
-        dragController.onDrawerToStripCompleted = { [weak self] _ in
-            self?.closeDrawerAfterAction()
-        }
-        // 载体面板提前建好，别让用户的第一次拖动付那 20ms + 一次 39ms 主线程卡顿
-        // （理由与实测见 `DragController.prewarmCarrier`）。**排到下一轮 run loop**：
-        // 启动是一整笔首帧事务，不能往里塞额外的 SwiftUI 布局。
-        DispatchQueue.main.async { [weak dragController] in
-            dragController?.prewarmCarrier()
-        }
-    }
+    // MARK: - Drag Controller (拖卡进抽屉 路线 C)——控制器由编排层创建并注入，这里只提供几何
 
     /// 投放候选区（屏幕坐标），按拖动来源分：
     /// - `.strip` / `.messaging`（任务条卡/消息 chip 找收纳目标）= 胶囊可见内容区 + 8pt 容错（胶囊 frame 含
@@ -1024,12 +1005,12 @@ final class PanelCoordinator: NSObject {
     ///   "拖到附近就被收走"）；抽屉打开时叠加抽屉可见内容区。任务条本身不是它们的投放区。
     /// - `.drawer`（抽屉图标找移回目标）= 任务条 dock 面板可见内容区（减 shadowPadding）。
     /// 胶囊的可视帧（屏幕坐标，目标帧优先）。给 `DragController` 的「吸进胶囊」飞行当终点。
-    private var capsuleVisibleFrame: CGRect? {
+    var capsuleVisibleFrame: CGRect? {
         let frame = lastCapsuleTargetFrame != .zero ? lastCapsuleTargetFrame : capsulePanel?.frame
         return frame?.insetBy(dx: Self.shadowPadding, dy: Self.shadowPadding)
     }
 
-    private func dragDropZones(for source: DragSource) -> [CGRect] {
+    func dragDropZones(for source: DragSource) -> [CGRect] {
         // 读**目标** frame：动画中 live frame 是中途值,会和视觉/落点短暂错位（Codex 二审 P2）。目标未初始化时退回 live。
         func target(_ stored: NSRect, _ live: NSRect?) -> NSRect? { stored != .zero ? stored : live }
         switch source {
@@ -1200,6 +1181,7 @@ final class PanelCoordinator: NSObject {
 
     private func presentWindowTitleTooltip(_ request: WindowTitleTooltipRequest) {
         guard request.anchorVisibleRect != .zero else { return }
+        onAccessoryWillOpen?(self, .tooltip)
         let traceStart = CACurrentMediaTime()
         let traceCold = windowTitleTooltipPanel?.isVisible != true
         defer { HoverTrace.present(chipID: request.chipID, cold: traceCold,
@@ -1284,7 +1266,7 @@ final class PanelCoordinator: NSObject {
         }
     }
 
-    private func dismissWindowTitleTooltip(suppressCurrentUntilExit: Bool = false) {
+    func dismissWindowTitleTooltip(suppressCurrentUntilExit: Bool = false) {
         if suppressCurrentUntilExit, let chipID = windowTitleTooltipRequest?.chipID {
             windowTitleTooltipSuppressedChipID = chipID
         }
@@ -1438,6 +1420,7 @@ final class PanelCoordinator: NSObject {
 
         let hosting = NSHostingView(rootView: DockStripView(
             usesLiquidGlass: usesLiquidGlass,
+            stripSurfaceID: stripSurfaceID,
             onFolderPopupToggle: { [weak self] path, anchorRect in
                 self?.toggleFolderPopup(path: path, anchorVisibleRect: anchorRect)
             },
@@ -1717,7 +1700,7 @@ final class PanelCoordinator: NSObject {
             .receive(on: DispatchQueue.main)
             .sink { [weak self] _ in
                 self?.reconcilePanelVisibility()
-                self?.reconcileHoverMouseMonitors()  // 边缘隐藏开关变了：监视器是否还有存在的必要
+                self?.onHoverMonitorsNeedReconcile?()  // 边缘隐藏开关变了：监视器是否还有存在的必要
             }
         // 显示位置变化：dwell 作废；切到固定档立即搬到固定屏；监视器与唤醒武装按新档重估。
         // dropFirst——启动路径 setupDockPanel 已消费过持久化的档位。
@@ -1732,14 +1715,8 @@ final class PanelCoordinator: NSObject {
                    self.panelCurrentScreen(panel: panel) != home {
                     self.layoutPanels(contentWidth: self.lastDesiredWidth, on: home, animated: false)
                 }
-                self.reconcileHoverMouseMonitors()
+                self.onHoverMonitorsNeedReconcile?()
                 self.reconcilePanelVisibility()
-            }
-        fullscreenIntentEnabledSubscription = settingsStore.$fullscreenIntentEnabled
-            .removeDuplicates()
-            .receive(on: DispatchQueue.main)
-            .sink { [weak self] _ in
-                self?.reconcileFullscreenIntentMonitor()
             }
         // 中转格显隐会改变任务条内容宽度：只让 chip 消失不重排，面板会停在旧宽度，
         // 胶囊和打开着的抽屉也跟着停在旧位置。relayout 必须等 SwiftUI 这一轮布局跑完
@@ -1819,13 +1796,13 @@ final class PanelCoordinator: NSObject {
     private func layoutPanels(contentWidth: CGFloat, on screen: NSScreen, animated: Bool) {
         guard let dock = dockPanel, let capsule = capsulePanel else { return }
         let panelScreenCGFrame = Self.toCGRect(screen)
-        fullscreenIntentMonitor?.updatePanelScreen(panelScreenCGFrame, screen: screen)
         if let transaction = fullscreenIntentTransaction,
            transaction.screenCGFrame != panelScreenCGFrame {
             cancelFullscreenIntent(generation: transaction.generation, reason: "panel-screen-changed")
         }
         let anim = animated && didInitialLayout   // 首帧瞬时,别从初始位置滑过来
         didInitialLayout = true
+        onPanelScreenChanged?()
 
         let dockT = dockTargetFrame(contentWidth: contentWidth, on: screen)
         let capsuleT = capsuleTargetFrame(forDock: dockT, on: screen)
@@ -1912,8 +1889,9 @@ final class PanelCoordinator: NSObject {
         }
     }
 
-    @objc private func screenParametersChanged() {
-        dragController?.cancelDrag()   // 切屏/分辨率变 → 取消进行中的跨面板拖动，免得载体留在旧屏坐标
+    /// 由编排层在 `didChangeScreenParametersNotification` 时转发（它先按屏集合建 / 拆单元，再转给幸存者）。
+    /// 跨面板拖动的取消与监视器重估也由编排层做一次，这里不重复。
+    func screenParametersChanged() {
         cancelHoverSwitch()
         closeFolderPopup()             // 屏幕参数变了,旧锚点坐标作废
         dismissWindowTitleTooltip(suppressCurrentUntilExit: true)
@@ -1927,7 +1905,6 @@ final class PanelCoordinator: NSObject {
         relayout(animated: false)      // 切屏瞬时,不滑
         cancelFullscreenIntentIfContextChanged()
         reconcilePanelVisibility()
-        reconcileHoverMouseMonitors()  // 屏幕数量变了：单屏↔多屏切换监视器是否还有存在的必要
     }
 
     // MARK: - Fullscreen Monitor
@@ -1943,40 +1920,16 @@ final class PanelCoordinator: NSObject {
         fullscreenReconcileTimer?.tolerance = 0.5
     }
 
-    private func reconcileFullscreenIntentMonitor() {
-        let enabled = FullscreenIntentDecision.isEnabled(
-            settingEnabled: settingsStore.fullscreenIntentEnabled,
-            environment: ProcessInfo.processInfo.environment
-        )
-        guard enabled, !isSuspendedForPermissionLoss else {
-            fullscreenIntentMonitor?.stop()
-            fullscreenIntentMonitor = nil
-            if let transaction = fullscreenIntentTransaction {
-                cancelFullscreenIntent(generation: transaction.generation, reason: "disabled")
-            }
-            if let spaceGeneration = fullscreenSpaceIntentGeneration {
-                cancelFullscreenSpaceArrowIntent(generation: spaceGeneration, reason: "disabled")
-            }
-            return
+    /// 编排层接通 / 断开全屏意图路由。断开时取消在飞的预测（设置关掉、权限挂起、拆单元）。
+    func setFullscreenIntentRouting(enabled: Bool) {
+        fullscreenIntentRoutingEnabled = enabled && !isSuspendedForPermissionLoss
+        guard !fullscreenIntentRoutingEnabled else { return }
+        if let transaction = fullscreenIntentTransaction {
+            cancelFullscreenIntent(generation: transaction.generation, reason: "disabled")
         }
-        guard fullscreenIntentMonitor == nil else { return }
-        let monitor = FullscreenIntentMonitor(
-            onIntent: { [weak self] request in
-                self?.beginFullscreenIntent(request)
-            },
-            onSpaceSwitchIntent: { [weak self] direction in
-                self?.beginFullscreenSpaceIntent(direction: direction)
-            },
-            onContextChange: { [weak self] change in
-                self?.handleFullscreenIntentContextChange(change)
-            }
-        )
-        fullscreenIntentMonitor = monitor
-        monitor.updatePanelScreen(
-            currentPanelScreenCGFrame(),
-            screen: dockPanel.map { panelCurrentScreen(panel: $0) }
-        )
-        monitor.start()
+        if let spaceGeneration = fullscreenSpaceIntentGeneration {
+            cancelFullscreenSpaceArrowIntent(generation: spaceGeneration, reason: "disabled")
+        }
     }
 
     @objc private func handleSpaceChange() {
@@ -2059,15 +2012,45 @@ final class PanelCoordinator: NSObject {
         let expectedIntentGeneration = fullscreenIntentTransaction?.generation
         let expectedSpaceHoldGeneration = explicitSpaceHoldGeneration ?? fullscreenSpaceHold?.generation
         Task.detached { [weak self] in
-            let fullscreen = Self.detectFullscreenViaAX(pid: frontPID, screenCGFrame: screenCGFrame)
+            let verdict = Self.detectFullscreenViaAX(pid: frontPID, screenCGFrame: screenCGFrame)
             await MainActor.run { [weak self] in
                 guard let self else { return }
                 guard probeGeneration == self.fullscreenProbeGeneration else {
                     return
                 }
+                // 三态 → 交给现有 `applyFullscreenVisibility` 的仍是一个布尔；保持 / 120ms 确认 /
+                // 终审序列一概不变，变的只是「焦点窗口在别的屏上」时那个布尔从哪来：
+                // 多屏下（③④，以及固定档的条不在焦点屏时）AX 对本屏说不出话，改问 SkyLight
+                // 本屏的当前空间；读不到就是无信息——**不是 false**，否则 B 屏的条会冒到 B 的
+                // 全屏空间上。终审调用必须收尾，无信息时退回本屏的 CG 同步探测。
+                let fullscreen: Bool
+                let resolvedSource: String
+                switch verdict {
+                case .fullscreen:
+                    fullscreen = true
+                    resolvedSource = source
+                case .windowed:
+                    fullscreen = false
+                    resolvedSource = source
+                case .notOnThisScreen:
+                    guard Self.slsVerdictEnabled else {
+                        fullscreen = false
+                        resolvedSource = source
+                        break
+                    }
+                    if let fromSpace = self.fullscreenVerdictFromSpaceLayout() {
+                        fullscreen = fromSpace
+                        resolvedSource = "\(source)-sls"
+                    } else if isFinalSpaceHoldWindowedConfirmation || isFinalSpaceIntentVerdict {
+                        fullscreen = self.checkFullscreenViaCGSync()
+                        resolvedSource = "\(source)-cgfallback"
+                    } else {
+                        return
+                    }
+                }
                 self.applyFullscreenVisibility(
                     fullscreen,
-                    source: source,
+                    source: resolvedSource,
                     expectedIntentGeneration: expectedIntentGeneration,
                     pid: frontPID,
                     screenCGFrame: screenCGFrame,
@@ -2236,8 +2219,10 @@ final class PanelCoordinator: NSObject {
         )
     }
 
-    private func beginFullscreenIntent(_ request: FullscreenIntentRequest) {
-        guard fullscreenIntentMonitor != nil,
+    /// 编排层把 tap 的请求**广播**给每个单元；`screenCGFrame` 守卫让只有那块屏的单元动手
+    ///（一块屏进全屏只藏那块屏的条）。
+    func beginFullscreenIntent(_ request: FullscreenIntentRequest) {
+        guard fullscreenIntentRoutingEnabled,
               fullscreenIntentTransaction == nil,
               request.screenCGFrame == currentPanelScreenCGFrame(),
               lastActiveApplicationPID == request.pid else {
@@ -2304,7 +2289,7 @@ final class PanelCoordinator: NSObject {
         edgeIdleHideTimer = nil
         cancelEdgeWake()
 
-        dragController?.cancelDrag()
+        dragController.cancelDrag()
         closeDrawerImmediately()
         closeFolderPopup(immediately: true)
         dismissWindowTitleTooltip(suppressCurrentUntilExit: true)
@@ -2313,7 +2298,7 @@ final class PanelCoordinator: NSObject {
         // 预测路径也是「因全屏而藏」：之后的揭示同样走淡入。
         lastHideWasForFullscreen = true
         // 全屏预测的快速隐藏路径不经过 applyPanelVisibility，角标门控要单独通知。
-        badgeStore.setTaskbarVisible(false)
+        onLogicalVisibilityChanged?(false)
         orderDockSurfaceOut()
         capsulePanel?.orderOut(nil)
         drawerPanel?.orderOut(nil)
@@ -2329,8 +2314,8 @@ final class PanelCoordinator: NSObject {
     ///
     /// 触发条件里「目标方向的相邻空间必须是全屏空间」那道闸在 `FullscreenIntentMonitor`
     /// 里就判掉了，到这里的都是真要进全屏空间的。
-    private func beginFullscreenSpaceIntent(direction: SpaceSwitchDirection) {
-        guard fullscreenIntentMonitor != nil,
+    func beginFullscreenSpaceIntent(direction: SpaceSwitchDirection) {
+        guard fullscreenIntentRoutingEnabled,
               fullscreenIntentTransaction == nil,
               fullscreenSpaceIntentGeneration == nil,
               !isSuspendedForPermissionLoss,
@@ -2352,7 +2337,7 @@ final class PanelCoordinator: NSObject {
         // panelsAreVisible=true，直接走硬 orderOut 把淡出绕过去。视觉上的 orderOut 等淡出完。
         panelsAreVisible = false
         lastHideWasForFullscreen = true
-        badgeStore.setTaskbarVisible(false)
+        onLogicalVisibilityChanged?(false)
         let fadingPanels = [dockGlassBackgroundPanel, dockPanel, capsulePanel].compactMap { $0 }
         NSAnimationContext.runAnimationGroup({ ctx in
             ctx.duration = 0.15
@@ -2537,7 +2522,7 @@ final class PanelCoordinator: NSObject {
             && currentPanelScreenCGFrame() == transaction.screenCGFrame
     }
 
-    private func handleFullscreenIntentContextChange(
+    func handleFullscreenIntentContextChange(
         _ change: FullscreenIntentMonitor.ContextChange
     ) {
         if case let .activeApplication(pid) = change {
@@ -2558,7 +2543,7 @@ final class PanelCoordinator: NSObject {
         }
     }
 
-    private func currentPanelScreenCGFrame() -> CGRect? {
+    func currentPanelScreenCGFrame() -> CGRect? {
         guard let panel = dockPanel else { return nil }
         return Self.toCGRect(panelCurrentScreen(panel: panel))
     }
@@ -2593,14 +2578,15 @@ final class PanelCoordinator: NSObject {
         NSScreen.screens.first?.frame.maxY ?? NSScreen.main?.frame.maxY ?? 0
     }
 
-    nonisolated private static func detectFullscreenViaAX(pid: pid_t?, screenCGFrame: CGRect) -> Bool {
-        guard let pid else { return false }
+    /// 焦点窗口读不到（pid 为 nil / 无焦点窗口）仍是 `.windowed`——与三态引入前的 false 逐字等价。
+    nonisolated private static func detectFullscreenViaAX(pid: pid_t?, screenCGFrame: CGRect) -> FullscreenAXVerdict {
+        guard let pid else { return .windowed }
         let reader = AXWindowReader()
         let appElement = AXUIElementCreateApplication(pid)
         _ = AXUIElementSetMessagingTimeout(appElement, 0.5)
 
         guard let focused = reader.elementAttribute(kAXFocusedWindowAttribute as CFString, from: appElement) else {
-            return false
+            return .windowed
         }
         _ = AXUIElementSetMessagingTimeout(focused, 0.5)
 
@@ -2609,12 +2595,24 @@ final class PanelCoordinator: NSObject {
         // AX kAXPositionAttribute uses CG coordinates (top-left origin) — matches screenCGFrame directly
         let windowFrame = reader.frame(of: focused, maxAttempts: 1)
 
-        return FullscreenWindowClassifier.isFullscreen(
+        return FullscreenWindowClassifier.classify(
             role: role,
             isAXFullscreen: isAXFullscreen,
             windowFrame: windowFrame,
             screenCGFrame: screenCGFrame
         )
+    }
+
+    /// `DOCK_FULLSCREEN_SLS_VERDICT=0` → `.notOnThisScreen` 按老口径当 `.windowed`。
+    private static let slsVerdictEnabled = ProcessInfo.processInfo.environment["DOCK_FULLSCREEN_SLS_VERDICT"] != "0"
+
+    /// 焦点窗口在别的屏上时，本屏的条问 SkyLight「本屏当前空间是不是原生全屏空间」
+    ///（`type == 4`，按显示器隔离、0.13ms/次，`Docs/05`）。读不到 → nil = 「无信息」。
+    private func fullscreenVerdictFromSpaceLayout() -> Bool? {
+        guard let panel = dockPanel,
+              let uuid = DisplayIdentity.uuidString(for: panelCurrentScreen(panel: panel)),
+              let layout = ManagedSpaceLayoutReader.layout(forDisplayUUID: uuid) else { return nil }
+        return layout.fullscreenSpaceIDs.contains(layout.currentSpaceID)
     }
 
     // MARK: - HoverSwitch Diagnostics
@@ -2627,31 +2625,39 @@ final class PanelCoordinator: NSObject {
     /// 而不是 Logger/os_log——沙箱环境读不了 `log show`/`log stream`，只有落到重定向文件里的
     /// print() 能直接读回。AppDelegate 已对 stdout 做行缓冲（`setvbuf(stdout, nil, _IOLBF, 0)`），
     /// 这里不需要额外处理缓冲。
-    private static let edgeHoverTraceEnabled = ProcessInfo.processInfo.environment["DOCK_EDGEHOVER_TRACE"] == "1"
-    /// 菜单跟踪深度（子菜单会嵌套），0 = 当前没有菜单在跟踪。
-    private var menuTrackingDepth = 0
-    private static let menuHoverSuspensionEnabled = ProcessInfo.processInfo.environment["DOCK_MENU_HOVER_SUSPEND"] != "0"
+    static let edgeHoverTraceEnabled = ProcessInfo.processInfo.environment["DOCK_EDGEHOVER_TRACE"] == "1"
     private var hoverLastScreenIndex: Int? = nil
     private var hoverLastInHotZone: Bool? = nil
-    /// 监视器按需化 + 节流（DOCK_HOVER_MONITOR_LEAN=0 回退为常驻 + 每事件全量处理）。
-    private static let hoverMonitorLeanEnabled = ProcessInfo.processInfo.environment["DOCK_HOVER_MONITOR_LEAN"] != "0"
-    private var hoverPollThrottle = HoverPollThrottle(minInterval: 1.0 / 30.0)
     private var hoverSwitchTimer: Timer?
     private var hoverSwitchTargetScreen: NSScreen? = nil
 
     /// 任务条显示位置：悬停切屏（底边停留搬 dock）只在「跟随鼠标」档生效。
+    /// 编排层指定了屏的单元（③④）恒不切屏——所有屏都有条，没有东西要搬。
     private var hoverScreenSwitchingEnabled: Bool {
-        settingsStore.taskbarScreenPlacement.allowsHoverScreenSwitching
+        switch unitPlacement {
+        case .followSettings: return settingsStore.taskbarScreenPlacement.allowsHoverScreenSwitching
+        case .fixed: return false
+        }
     }
 
-    /// 固定档下把存的 display UUID 解析成当前的 NSScreen（固定屏缺席回落主屏 / 首屏）；
+    /// 这个单元要落在哪块屏的 display UUID：`.fixed` 用编排层给的；`.followSettings` 用设置里的固定屏；
+    /// 跟随鼠标档为 nil。
+    private var fixedDisplayUUID: String? {
+        switch unitPlacement {
+        case .fixed(let uuid): return uuid
+        case .followSettings: return settingsStore.taskbarScreenPlacement.pinnedSelection?.uuid
+        }
+    }
+
+    /// 固定档下把 display UUID 解析成当前的 NSScreen（固定屏缺席回落主屏 / 首屏）；
     /// 跟随鼠标档返回 nil。刻意**无持久运行态**：每次屏幕参数 / 设置变化都重解析一遍，
     /// 固定的屏一接回来自然搬回去，不需要任何「记住上次在哪」的状态机。
+    /// ③④ 的 `.fixed` 单元同样走这里：屏刚拔掉、编排层还没来得及拆它的那一瞬回落主屏，不会飞到 nil。
     private func resolvedPinnedScreen() -> NSScreen? {
-        guard let selection = settingsStore.taskbarScreenPlacement.pinnedSelection else { return nil }
+        guard let pinnedUUID = fixedDisplayUUID else { return nil }
         let screens = NSScreen.screens
         let outcome = TaskbarScreenResolution.resolve(
-            pinnedUUID: selection.uuid,
+            pinnedUUID: pinnedUUID,
             screenUUIDs: screens.map { DisplayIdentity.uuidString(for: $0) },
             mainIndex: NSScreen.main.flatMap { screens.firstIndex(of: $0) }
         )
@@ -2663,140 +2669,8 @@ final class PanelCoordinator: NSObject {
         }
     }
 
-    private func setupHoverDiagnostics() {
-        if Self.hoverVerboseLogging { logScreenMap() }
-        observeMenuTrackingForHoverSuspension()
-        reconcileHoverMouseMonitors()
-    }
-
-    /// 鼠标移动监视器只服务两件事：**多屏悬停切换**（单屏无对象；固定到某屏时也无对象）与
-    /// **边缘自动隐藏**（没开就没有计时对象）。都不成立时干脆不装——「指针每动一下进一次回调」
-    /// 的常驻成本归零；屏幕数或设置变化时重新评估（诊断开关 DOCK_EDGEHOVER_TRACE=1 强制常驻）。
-    private var hoverMonitorsNeeded: Bool {
-        guard Self.hoverMonitorLeanEnabled else { return true }
-        return (NSScreen.screens.count > 1 && hoverScreenSwitchingEnabled)
-            || settingsStore.edgeAutoHideEnabled
-            || Self.edgeHoverTraceEnabled
-    }
-
-    private func reconcileHoverMouseMonitors() {
-        guard menuTrackingDepth == 0 else { return }   // 菜单跟踪期间由挂起逻辑接管
-        if hoverMonitorsNeeded {
-            installHoverMouseMonitors()
-            pollMousePosition()
-        } else {
-            removeHoverMouseMonitors()
-        }
-    }
-
-    /// **菜单跟踪期间摘掉鼠标移动监视器**（owner 2026-08-04 报「菜单里两个选项之间来回晃有粘滞感」，
-    /// 状态栏菜单 / 任务条右键 / 图标右键三处都一样，而这三者唯一的共同点就是"由钨极弹出"）。
-    ///
-    /// `addGlobalMonitorForEvents` 在系统底层是一个事件拦截器，所有鼠标事件都要先过它。平时主循环
-    /// 在普通模式，它随到随处理，**所以别的应用的菜单不受影响**；但钨极自己弹菜单时主循环切进
-    /// 事件跟踪模式，这个拦截器的处理入口在该模式下不被服务，每个鼠标移动事件都要在拦截器里
-    /// 等到超时才继续送达——菜单高亮因此慢半拍。实测佐证：菜单开着时主线程 93% 阻塞在
-    /// `mach_msg2_trap` 干等事件，我们自己的代码 0 个采样，所以不是"没空处理"，是"事件来得晚"。
-    ///
-    /// 用 `NSMenu` 的应用级跟踪通知，一处覆盖全部菜单（chip 菜单是现搭的，没有别的公共钩子）。
-    /// 子菜单会让通知嵌套，所以按深度计数而不是布尔值。
-    /// 关掉这个优化：`DOCK_MENU_HOVER_SUSPEND=0`。
-    private func observeMenuTrackingForHoverSuspension() {
-        guard Self.menuHoverSuspensionEnabled else { return }
-        NotificationCenter.default.addObserver(
-            self,
-            selector: #selector(menuTrackingDidBegin),
-            name: NSMenu.didBeginTrackingNotification,
-            object: nil
-        )
-        NotificationCenter.default.addObserver(
-            self,
-            selector: #selector(menuTrackingDidEnd),
-            name: NSMenu.didEndTrackingNotification,
-            object: nil
-        )
-    }
-
-    @objc private func menuTrackingDidBegin() {
-        menuTrackingDepth += 1
-        guard menuTrackingDepth == 1 else { return }
-        suspendHoverMouseMonitors()
-    }
-
-    @objc private func menuTrackingDidEnd() {
-        menuTrackingDepth = max(0, menuTrackingDepth - 1)
-        guard menuTrackingDepth == 0 else { return }
-        // 装回来（若仍需要）并立刻补一次判断——摘掉的这段时间里鼠标可能已经跨屏或离开热区。
-        reconcileHoverMouseMonitors()
-    }
-
-    /// 只摘监视器，**不碰**唤醒/切屏状态——那些由 `removeHoverMouseMonitors` 在真正拆除时负责。
-    /// 菜单开着的这一两秒里把 `cancelEdgeWake()` 一起做掉的话，隐藏状态下打开状态栏菜单
-    /// 会顺手取消掉正在武装的底边唤醒，属于额外的行为改动。
-    private func suspendHoverMouseMonitors() {
-        if let monitor = hoverLocalMouseMonitor {
-            NSEvent.removeMonitor(monitor)
-            hoverLocalMouseMonitor = nil
-        }
-        if let monitor = hoverGlobalMouseMonitor {
-            NSEvent.removeMonitor(monitor)
-            hoverGlobalMouseMonitor = nil
-        }
-    }
-
-    private func installHoverMouseMonitors() {
-        let events: NSEvent.EventTypeMask = [.mouseMoved, .leftMouseDragged, .rightMouseDragged, .otherMouseDragged]
-        // 监视器回调在安装线程（主线程）送达，assumeIsolated 免去每事件一次 Task 分配。
-        if hoverLocalMouseMonitor == nil {
-            hoverLocalMouseMonitor = NSEvent.addLocalMonitorForEvents(matching: events) { [weak self] event in
-                MainActor.assumeIsolated { self?.hoverPollEventArrived() }
-                return event
-            }
-        }
-        if hoverGlobalMouseMonitor == nil {
-            hoverGlobalMouseMonitor = NSEvent.addGlobalMonitorForEvents(matching: events) { [weak self] _ in
-                MainActor.assumeIsolated { self?.hoverPollEventArrived() }
-            }
-        }
-    }
-
-    /// 每个鼠标移动事件都进这里（移动时可达上百 Hz）。节流到 ≤30Hz：悬停切换要 350ms 驻留、
-    /// 边缘唤醒对 33ms 无感；窗口内恰好停住的最后一个位置由 trailing 收尾补判，不丢热区进出。
-    private func hoverPollEventArrived() {
-        guard Self.hoverMonitorLeanEnabled else {
-            // 旧行为原样：每事件经一次主线程 Task 跳转后全量处理。
-            Task { @MainActor [weak self] in self?.pollMousePosition() }
-            return
-        }
-        switch hoverPollThrottle.eventArrived(now: CACurrentMediaTime()) {
-        case .run:
-            pollMousePosition()
-        case .scheduleTrailing(let after):
-            DispatchQueue.main.asyncAfter(deadline: .now() + after) { [weak self] in
-                MainActor.assumeIsolated {
-                    guard let self else { return }
-                    self.hoverPollThrottle.trailingFired(now: CACurrentMediaTime())
-                    self.pollMousePosition()
-                }
-            }
-        case .drop:
-            break
-        }
-    }
-
-    private func removeHoverMouseMonitors() {
-        if let monitor = hoverLocalMouseMonitor {
-            NSEvent.removeMonitor(monitor)
-            hoverLocalMouseMonitor = nil
-        }
-        if let monitor = hoverGlobalMouseMonitor {
-            NSEvent.removeMonitor(monitor)
-            hoverGlobalMouseMonitor = nil
-        }
-        hoverPollThrottle.reset()
-        cancelHoverSwitch()
-        cancelEdgeWake()
-    }
+    // 鼠标移动监视器（安装 / 节流 / 菜单跟踪期间挂起）整体在编排层 `TaskbarScreenOrchestrator`：
+    // 全进程一套，回调转发给每个单元的 `pollMousePosition()`。单元只保留探测与武装逻辑。
 
     private func logScreenMap() {
         let screens = NSScreen.screens
@@ -2807,7 +2681,8 @@ final class PanelCoordinator: NSObject {
         }
     }
 
-    private func pollMousePosition() {
+    /// 每次（节流后的）鼠标移动都进这里，由编排层转发。别的屏上的移动在 `handleBottomEdgeProbe` 廉价早退。
+    func pollMousePosition() {
         let mouse = NSEvent.mouseLocation
         let screens = NSScreen.screens
 
@@ -2850,7 +2725,7 @@ final class PanelCoordinator: NSObject {
 
     }
 
-    private func cancelHoverSwitch() {
+    func cancelHoverSwitch() {
         hoverSwitchTimer?.invalidate()
         hoverSwitchTimer = nil
         hoverSwitchTargetScreen = nil
@@ -3041,7 +2916,7 @@ final class PanelCoordinator: NSObject {
         reconcilePanelVisibility()
     }
 
-    private func cancelEdgeWake() {
+    func cancelEdgeWake() {
         edgeWakeTimer?.invalidate()
         edgeWakeTimer = nil
         edgeWakeTargetScreen = nil
@@ -3060,8 +2935,8 @@ final class PanelCoordinator: NSObject {
         let shouldShow = visibilityState.isVisible
         guard shouldShow != panelsAreVisible else { return }
         panelsAreVisible = shouldShow
-        // 角标轮询的零感知门控跟着任务条逻辑显隐走；恢复时 BadgeStore 会立即读一次。
-        badgeStore.setTaskbarVisible(shouldShow)
+        // 角标轮询的零感知门控跟着任务条逻辑显隐走（编排层按「任一单元可见」合并）；恢复时 BadgeStore 会立即读一次。
+        onLogicalVisibilityChanged?(shouldShow)
         if Self.edgeHoverTraceEnabled { logEdgeHoverTrace(shouldShow: shouldShow) }
         if shouldShow {
             // 全屏之后的回归淡入（owner 2026-08-30：硬弹出 vs 原生的入场动画）。

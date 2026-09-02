@@ -75,6 +75,18 @@ final class TaskbarScreenPlacementTests: XCTestCase {
         XCTAssertTrue(TaskbarScreenPlacement.followMouse.allowsHoverScreenSwitching)
         let pinned = TaskbarScreenPlacement.pinned(PinnedScreenSelection(uuid: "A", name: "LG"))
         XCTAssertFalse(pinned.allowsHoverScreenSwitching)
+        XCTAssertFalse(TaskbarScreenPlacement.allScreens.allowsHoverScreenSwitching)
+        XCTAssertFalse(TaskbarScreenPlacement.allScreensPerDisplay.allowsHoverScreenSwitching)
+    }
+
+    func testShowsOnEveryDisplayOnlyForAllScreensModes() {
+        XCTAssertFalse(TaskbarScreenPlacement.followMouse.showsOnEveryDisplay)
+        XCTAssertFalse(TaskbarScreenPlacement.pinned(PinnedScreenSelection(uuid: "A", name: "LG")).showsOnEveryDisplay)
+        XCTAssertTrue(TaskbarScreenPlacement.allScreens.showsOnEveryDisplay)
+        XCTAssertTrue(TaskbarScreenPlacement.allScreensPerDisplay.showsOnEveryDisplay)
+        XCTAssertEqual(TaskbarScreenPlacement.allScreens.mode, .allScreens)
+        XCTAssertEqual(TaskbarScreenPlacement.allScreensPerDisplay.mode, .allScreensPerDisplay)
+        XCTAssertNil(TaskbarScreenPlacement.allScreens.pinnedSelection)
     }
 
     func testModeAndSelectionAccessors() {
@@ -113,10 +125,13 @@ final class TaskbarScreenPlacementTests: XCTestCase {
 
     func testFollowMouseIsFirstItemAndCheckedWhenNotPinned() {
         let presentation = TaskbarScreenMenuPresentation(placement: .followMouse, connectedScreens: screens)
-        XCTAssertEqual(presentation.items.count, 3)
-        XCTAssertNil(presentation.items[0].uuid)
+        XCTAssertEqual(presentation.items.count, 4)
+        XCTAssertEqual(presentation.items[0].selection, .followMouse)
         XCTAssertTrue(presentation.items[0].isChecked)
-        XCTAssertEqual(presentation.items.map(\.uuid), [nil, "A", "B"])
+        XCTAssertEqual(
+            presentation.items.map(\.selection),
+            [.followMouse, .screen(uuid: "A"), .screen(uuid: "B"), .allScreens]
+        )
         XCTAssertEqual(presentation.items.filter(\.isChecked).count, 1)
     }
 
@@ -125,9 +140,9 @@ final class TaskbarScreenPlacementTests: XCTestCase {
             placement: .pinned(PinnedScreenSelection(uuid: "B", name: "LG HDR 4K")),
             connectedScreens: screens
         )
-        XCTAssertEqual(presentation.items.count, 3)
+        XCTAssertEqual(presentation.items.count, 4)
         XCTAssertFalse(presentation.items[0].isChecked)
-        XCTAssertEqual(presentation.items.filter(\.isChecked).map(\.uuid), ["B"])
+        XCTAssertEqual(presentation.items.filter(\.isChecked).map(\.selection), [.screen(uuid: "B")])
     }
 
     /// 固定的屏此刻不在场：末尾补一项且保持选中，选择不丢。
@@ -136,10 +151,47 @@ final class TaskbarScreenPlacementTests: XCTestCase {
             placement: .pinned(PinnedScreenSelection(uuid: "Z", name: "Dell U2720Q")),
             connectedScreens: screens
         )
-        XCTAssertEqual(presentation.items.count, 4)
-        XCTAssertEqual(presentation.items.last?.uuid, "Z")
-        XCTAssertEqual(presentation.items.filter(\.isChecked).map(\.uuid), ["Z"])
+        XCTAssertEqual(presentation.items.count, 5)
+        XCTAssertEqual(presentation.items.last?.selection, .screen(uuid: "Z"))
+        XCTAssertEqual(presentation.items.filter(\.isChecked).map(\.selection), [.screen(uuid: "Z")])
         // 文案随语言变，只锁住那块屏的名字被带进了标题。
         XCTAssertTrue(presentation.items.last?.title.contains("Dell U2720Q") == true)
+    }
+
+    // MARK: - ③④ 所有屏幕档（2026-09-02）
+
+    func testAllScreensIsTheOnlyCheckedItemAndSitsAfterScreens() {
+        let presentation = TaskbarScreenMenuPresentation(placement: .allScreens, connectedScreens: screens)
+        XCTAssertEqual(presentation.items.filter(\.isChecked).map(\.selection), [.allScreens])
+        XCTAssertEqual(presentation.items.last?.selection, .allScreens)
+    }
+
+    /// 开着「所有屏幕」拔到只剩一块屏：整行必须还在，否则切不回「跟随鼠标」。
+    func testMenuVisibleWithSingleScreenWhileAllScreens() {
+        let presentation = TaskbarScreenMenuPresentation(
+            placement: .allScreens,
+            connectedScreens: [(uuid: "A", title: "内建显示器")]
+        )
+        XCTAssertFalse(presentation.isHidden)
+    }
+
+    /// ④ 行随里程碑二上；在那之前只有存值已是 ④ 才显示（保证有勾选项）。
+    func testPerDisplayRowOnlyAppearsWhenSelected() {
+        let plain = TaskbarScreenMenuPresentation(placement: .followMouse, connectedScreens: screens)
+        XCTAssertFalse(plain.items.contains { $0.selection == .allScreensPerDisplay })
+        let selected = TaskbarScreenMenuPresentation(placement: .allScreensPerDisplay, connectedScreens: screens)
+        XCTAssertEqual(selected.items.filter(\.isChecked).map(\.selection), [.allScreensPerDisplay])
+    }
+
+    func testSelectionTokenRoundTrips() {
+        typealias Selection = TaskbarScreenMenuPresentation.Selection
+        let all: [Selection] = [.followMouse, .allScreens, .allScreensPerDisplay, .screen(uuid: "37D8832A-2D66-02CA-B9F7-8F30A301B230")]
+        for selection in all {
+            XCTAssertEqual(Selection(token: selection.token), selection)
+        }
+        XCTAssertNil(Selection(token: "screen:"))
+        XCTAssertNil(Selection(token: "garbage"))
+        XCTAssertEqual(Selection.screen(uuid: "A").screenUUID, "A")
+        XCTAssertNil(Selection.allScreens.screenUUID)
     }
 }

@@ -418,9 +418,9 @@ final class StatusMenuController: NSObject, NSMenuDelegate {
                 keyEquivalent: ""
             )
             menuItem.target = self
-            // uuid 走 representedObject（nil = 跟随鼠标）。**不能用 ClosureMenuItem**：
+            // 选择以 token 字符串走 representedObject。**不能用 ClosureMenuItem**：
             // `AppMenuFragments.swift` 只编进 app target，本文件在测试 target 也编译。
-            menuItem.representedObject = item.uuid
+            menuItem.representedObject = item.selection.token
             menuItem.state = item.isChecked ? .on : .off
             taskbarScreenMenu.addItem(menuItem)
         }
@@ -653,15 +653,22 @@ final class StatusMenuController: NSObject, NSMenuDelegate {
     }
 
     @objc private func selectTaskbarScreen(_ sender: NSMenuItem) {
-        guard let uuid = sender.representedObject as? String else {
+        guard let token = sender.representedObject as? String,
+              let selection = TaskbarScreenMenuPresentation.Selection(token: token) else { return }
+        switch selection {
+        case .followMouse:
             store.setTaskbarScreenPlacement(.followMouse)
-            return
+        case .allScreens:
+            store.setTaskbarScreenPlacement(.allScreens)
+        case .allScreensPerDisplay:
+            store.setTaskbarScreenPlacement(.allScreensPerDisplay)
+        case .screen(let uuid):
+            // name 只是展示快照：在场屏取去重后的展示名；重选那块断开的屏时沿用旧快照。
+            let name = connectedScreensCache.first(where: { $0.uuid == uuid })?.title
+                ?? store.taskbarScreenPlacement.pinnedSelection?.name
+                ?? ""
+            store.setTaskbarScreenPlacement(.pinned(PinnedScreenSelection(uuid: uuid, name: name)))
         }
-        // name 只是展示快照：在场屏取去重后的展示名；重选那块断开的屏时沿用旧快照。
-        let name = connectedScreensCache.first(where: { $0.uuid == uuid })?.title
-            ?? store.taskbarScreenPlacement.pinnedSelection?.name
-            ?? ""
-        store.setTaskbarScreenPlacement(.pinned(PinnedScreenSelection(uuid: uuid, name: name)))
     }
 
     @objc private func selectDockSize(_ sender: NSMenuItem) {

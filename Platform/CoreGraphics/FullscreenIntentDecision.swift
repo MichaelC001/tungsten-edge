@@ -14,7 +14,8 @@ struct FullscreenIntentSnapshot: Equatable {
     let buttonFrame: CGRect
     let windowFrame: CGRect
     let screenCGFrame: CGRect
-    let panelScreenCGFrame: CGRect?
+    /// 有任务条的屏（③④ 下是多块）。焦点窗口所在屏不在其中 → 没有条要藏，不发请求。
+    let panelScreenCGFrames: Set<CGRect>
     let isFullscreen: Bool
     let buttonEnabled: Bool
 }
@@ -47,7 +48,7 @@ enum FullscreenIntentDecision {
         guard let snapshot,
               snapshot.buttonEnabled,
               !snapshot.isFullscreen,
-              snapshot.panelScreenCGFrame == snapshot.screenCGFrame,
+              snapshot.panelScreenCGFrames.contains(snapshot.screenCGFrame),
               normalizedModifiers(flags).isEmpty,
               snapshot.buttonFrame.contains(location) else {
             return nil
@@ -64,7 +65,7 @@ enum FullscreenIntentDecision {
         guard let snapshot,
               snapshot.buttonEnabled,
               !snapshot.isFullscreen,
-              snapshot.panelScreenCGFrame == snapshot.screenCGFrame,
+              snapshot.panelScreenCGFrames.contains(snapshot.screenCGFrame),
               !isRepeat,
               keyCode == ansiFKeyCode,
               normalizedModifiers(flags) == [.maskCommand, .maskControl] else {
@@ -128,6 +129,46 @@ struct SpaceLayoutSnapshot: Equatable {
 
     var hasAnyFullscreenNeighbor: Bool {
         neighborIsFullscreen(.left) || neighborIsFullscreen(.right)
+    }
+}
+
+/// 所有显示器的空间布局目录（多屏任务条，2026-09-02）。空间切换按显示器发生：三指滑动作用于
+/// 光标所在的显示器，Control+←/→ 作用于键盘焦点所在的显示器；预测隐藏必须先定位到那一块屏。
+struct SpaceLayoutDirectory: Equatable {
+    struct Entry: Equatable {
+        let displayUUID: String
+        /// AppKit 坐标（`NSScreen.frame`），用来按 `NSEvent.mouseLocation` 定位显示器。
+        let appKitFrame: CGRect
+        let layout: SpaceLayoutSnapshot
+    }
+
+    let entries: [Entry]
+
+    /// 事件线程的快路径：任一显示器两侧有全屏空间才值得继续。
+    var hasAnyFullscreenNeighbor: Bool {
+        entries.contains { $0.layout.hasAnyFullscreenNeighbor }
+    }
+
+    func entry(containing point: CGPoint) -> Entry? {
+        entries.first { $0.appKitFrame.contains(point) }
+    }
+
+    func entry(forDisplayUUID uuid: String) -> Entry? {
+        entries.first { $0.displayUUID == uuid }
+    }
+
+    /// 目标方向相邻空间是全屏空间的显示器（Control+←/→ 路径的候选）。
+    func displays(withFullscreenNeighbor direction: SpaceSwitchDirection) -> [Entry] {
+        entries.filter { $0.layout.neighborIsFullscreen(direction) }
+    }
+
+    /// Control+←/→ 落在哪块显示器：唯一候选就是它；多块候选时取鼠标所在那块（键盘焦点屏读不到，
+    /// 鼠标是最好的近似）；都不含鼠标取第一块；没有候选 → nil（闸关）。
+    func arrowTarget(_ direction: SpaceSwitchDirection, mouseLocation: CGPoint) -> Entry? {
+        let candidates = displays(withFullscreenNeighbor: direction)
+        guard !candidates.isEmpty else { return nil }
+        if candidates.count == 1 { return candidates[0] }
+        return candidates.first { $0.appKitFrame.contains(mouseLocation) } ?? candidates[0]
     }
 }
 

@@ -232,6 +232,40 @@
         }
       }
     },
+    "All displays": {
+      "comment": "任务条显示位置 ③：所有屏都显示、内容相同",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "所有屏幕"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "All displays"
+          }
+        }
+      }
+    },
+    "All displays, each showing only its own windows": {
+      "comment": "任务条显示位置 ④：各屏只显示本屏窗口",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "所有屏幕，各屏只显示本屏窗口"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "All displays, each showing only its own windows"
+          }
+        }
+      }
+    },
     "All attachments together must be 40 MB or smaller.": {
       "comment": "反馈附件被拒 · 合计超 40MB",
       "localizations": {

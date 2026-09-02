@@ -53,6 +53,7 @@
 		D2000000000000000000006A /* StripBlockLandingTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = D10000000000000000000066 /* StripBlockLandingTests.swift */; };
 		A00000000000000000001040 /* AppDelegate.swift in Sources */ = {isa = PBXBuildFile; fileRef = A00000000000000000000066 /* AppDelegate.swift */; };
 		A00000000000000000001046 /* PanelCoordinator.swift in Sources */ = {isa = PBXBuildFile; fileRef = A0000000000000000000006C /* PanelCoordinator.swift */; };
+		B10000000000000000000122 /* TaskbarScreenOrchestrator.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10000000000000000000121 /* TaskbarScreenOrchestrator.swift */; };
 		A00000000000000000001041 /* DockStripView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A00000000000000000000067 /* DockStripView.swift */; };
 		A00000000000000000001044 /* DrawerView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A0000000000000000000006A /* DrawerView.swift */; };
 		A00000000000000000001045 /* DrawerStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = A0000000000000000000006B /* DrawerStore.swift */; };
@@ -100,12 +101,14 @@
 		B1000000000000000000010E /* MinimizeHandoffTarget.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1000000000000000000010D /* MinimizeHandoffTarget.swift */; };
 		B10000000000000000000113 /* MinimizeSettleGate.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10000000000000000000112 /* MinimizeSettleGate.swift */; };
 		B10000000000000000000118 /* TaskbarScreenPlacement.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10000000000000000000117 /* TaskbarScreenPlacement.swift */; };
+		B1000000000000000000011D /* TaskbarDisplaySet.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1000000000000000000011C /* TaskbarDisplaySet.swift */; };
 		A0000000000000000000FF02 /* LaunchGateDecision.swift in Sources */ = {isa = PBXBuildFile; fileRef = A0000000000000000000FF00 /* LaunchGateDecision.swift */; };
 		B10000000000000000000009 /* BadgeReadPlan.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10000000000000000000106 /* BadgeReadPlan.swift */; };
 		B1000000000000000000000F /* HoverPollThrottle.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10000000000000000000109 /* HoverPollThrottle.swift */; };
 		B1000000000000000000010F /* MinimizeHandoffTarget.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1000000000000000000010D /* MinimizeHandoffTarget.swift */; };
 		B10000000000000000000114 /* MinimizeSettleGate.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10000000000000000000112 /* MinimizeSettleGate.swift */; };
 		B10000000000000000000119 /* TaskbarScreenPlacement.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10000000000000000000117 /* TaskbarScreenPlacement.swift */; };
+		B1000000000000000000011E /* TaskbarDisplaySet.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1000000000000000000011C /* TaskbarDisplaySet.swift */; };
 		A0000000000000000000FF11 /* LaunchGateDecisionTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A0000000000000000000FF10 /* LaunchGateDecisionTests.swift */; };
 		A0000000000000000000FF21 /* AppLaunchTargetDecision.swift in Sources */ = {isa = PBXBuildFile; fileRef = A0000000000000000000FF20 /* AppLaunchTargetDecision.swift */; };
 		A0000000000000000000FF22 /* AppLaunchTargetDecision.swift in Sources */ = {isa = PBXBuildFile; fileRef = A0000000000000000000FF20 /* AppLaunchTargetDecision.swift */; };
@@ -381,6 +384,7 @@
 		B10000000000000000000111 /* MinimizeHandoffTargetTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10000000000000000000110 /* MinimizeHandoffTargetTests.swift */; };
 		B10000000000000000000116 /* MinimizeSettleGateTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10000000000000000000115 /* MinimizeSettleGateTests.swift */; };
 		B1000000000000000000011B /* TaskbarScreenPlacementTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1000000000000000000011A /* TaskbarScreenPlacementTests.swift */; };
+		B10000000000000000000120 /* TaskbarDisplaySetTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1000000000000000000011F /* TaskbarDisplaySetTests.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -483,6 +487,7 @@
 		B10000000000000000000110 /* MinimizeHandoffTargetTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MinimizeHandoffTargetTests.swift; sourceTree = "<group>"; };
 		B10000000000000000000115 /* MinimizeSettleGateTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MinimizeSettleGateTests.swift; sourceTree = "<group>"; };
 		B1000000000000000000011A /* TaskbarScreenPlacementTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TaskbarScreenPlacementTests.swift; sourceTree = "<group>"; };
+		B1000000000000000000011F /* TaskbarDisplaySetTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TaskbarDisplaySetTests.swift; sourceTree = "<group>"; };
 		A00000000000000000009700 /* DragConversionPlan.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DragConversionPlan.swift; sourceTree = "<group>"; };
 		A00000000000000000009750 /* NonConstrainingPanel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NonConstrainingPanel.swift; sourceTree = "<group>"; };
 		A00000000000000000000C00 /* ManualPanelHostTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ManualPanelHostTests.swift; sourceTree = "<group>"; };
@@ -505,6 +510,7 @@
 		A00000000000000000009730 /* DragControllerConversionTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DragControllerConversionTests.swift; sourceTree = "<group>"; };
 		A00000000000000000000066 /* AppDelegate.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppDelegate.swift; sourceTree = "<group>"; };
 		A0000000000000000000006C /* PanelCoordinator.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PanelCoordinator.swift; sourceTree = "<group>"; };
+		B10000000000000000000121 /* TaskbarScreenOrchestrator.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TaskbarScreenOrchestrator.swift; sourceTree = "<group>"; };
 		A00000000000000000000067 /* DockStripView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DockStripView.swift; sourceTree = "<group>"; };
 		A0000000000000000000006A /* DrawerView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DrawerView.swift; sourceTree = "<group>"; };
 		A0000000000000000000006B /* DrawerStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DrawerStore.swift; sourceTree = "<group>"; };
@@ -605,6 +611,7 @@
 		B1000000000000000000010D /* MinimizeHandoffTarget.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MinimizeHandoffTarget.swift; sourceTree = "<group>"; };
 		B10000000000000000000112 /* MinimizeSettleGate.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MinimizeSettleGate.swift; sourceTree = "<group>"; };
 		B10000000000000000000117 /* TaskbarScreenPlacement.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TaskbarScreenPlacement.swift; sourceTree = "<group>"; };
+		B1000000000000000000011C /* TaskbarDisplaySet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TaskbarDisplaySet.swift; sourceTree = "<group>"; };
 		A0000000000000000000FF20 /* AppLaunchTargetDecision.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppLaunchTargetDecision.swift; sourceTree = "<group>"; };
 		A00000000000000000009580 /* AppMembershipMenuPlan.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppMembershipMenuPlan.swift; sourceTree = "<group>"; };
 		A00000000000000000009410 /* LauncherMenuPlanTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LauncherMenuPlanTests.swift; sourceTree = "<group>"; };
@@ -711,6 +718,7 @@
 				A00000000000000000008020 /* StatusMenuController.swift */,
 				D10000000000000000000001 /* SettingsWindowController.swift */,
 				A0000000000000000000006C /* PanelCoordinator.swift */,
+				B10000000000000000000121 /* TaskbarScreenOrchestrator.swift */,
 				A00000000000000000009750 /* NonConstrainingPanel.swift */,
 			);
 			path = Entry;
@@ -844,6 +852,7 @@
 				B1000000000000000000010D /* MinimizeHandoffTarget.swift */,
 				B10000000000000000000112 /* MinimizeSettleGate.swift */,
 				B10000000000000000000117 /* TaskbarScreenPlacement.swift */,
+				B1000000000000000000011C /* TaskbarDisplaySet.swift */,
 				A0000000000000000000FF20 /* AppLaunchTargetDecision.swift */,
 				B72000000000000000000003 /* AppDisplayNameCache.swift */,
 				B72000000000000000000013 /* InstallationRecord.swift */,
@@ -1152,6 +1161,7 @@
 				B10000000000000000000110 /* MinimizeHandoffTargetTests.swift */,
 				B10000000000000000000115 /* MinimizeSettleGateTests.swift */,
 				B1000000000000000000011A /* TaskbarScreenPlacementTests.swift */,
+				B1000000000000000000011F /* TaskbarDisplaySetTests.swift */,
 				A00000000000000000009710 /* DragConversionPlanTests.swift */,
 				A00000000000000000000A110 /* MessagingZoneAdmissionTests.swift */,
 				A00000000000000000000D110 /* MessagingMainWindowDecisionTests.swift */,
@@ -1328,6 +1338,7 @@
 					D20000000000000000000009 /* ChipSnapshotter.swift in Sources */,
 					D20000000000000000000068 /* StripBlockLanding.swift in Sources */,
 					A00000000000000000001046 /* PanelCoordinator.swift in Sources */,
+					B10000000000000000000122 /* TaskbarScreenOrchestrator.swift in Sources */,
 					A00000000000000000001041 /* DockStripView.swift in Sources */,
 					A00000000000000000009D01 /* WindowTitleTooltip.swift in Sources */,
 					B71000000000000000000001 /* ScreenRectReader.swift in Sources */,
@@ -1393,6 +1404,7 @@
 					B1000000000000000000010E /* MinimizeHandoffTarget.swift in Sources */,
 					B10000000000000000000113 /* MinimizeSettleGate.swift in Sources */,
 					B10000000000000000000118 /* TaskbarScreenPlacement.swift in Sources */,
+					B1000000000000000000011D /* TaskbarDisplaySet.swift in Sources */,
 					A0000000000000000000FF21 /* AppLaunchTargetDecision.swift in Sources */,
 					B72000000000000000000001 /* AppDisplayNameCache.swift in Sources */,
 					B72000000000000000000011 /* InstallationRecord.swift in Sources */,
@@ -1578,6 +1590,7 @@
 				B1000000000000000000010F /* MinimizeHandoffTarget.swift in Sources */,
 				B10000000000000000000114 /* MinimizeSettleGate.swift in Sources */,
 				B10000000000000000000119 /* TaskbarScreenPlacement.swift in Sources */,
+				B1000000000000000000011E /* TaskbarDisplaySet.swift in Sources */,
 				A0000000000000000000FF22 /* AppLaunchTargetDecision.swift in Sources */,
 				B72000000000000000000002 /* AppDisplayNameCache.swift in Sources */,
 				B72000000000000000000012 /* InstallationRecord.swift in Sources */,
@@ -1672,6 +1685,7 @@
 					B10000000000000000000111 /* MinimizeHandoffTargetTests.swift in Sources */,
 					B10000000000000000000116 /* MinimizeSettleGateTests.swift in Sources */,
 					B1000000000000000000011B /* TaskbarScreenPlacementTests.swift in Sources */,
+					B10000000000000000000120 /* TaskbarDisplaySetTests.swift in Sources */,
 					A00000000000000000009702 /* DragConversionPlan.swift in Sources */,
 					A00000000000000000000A102 /* MessagingZoneAdmission.swift in Sources */,
 					A00000000000000000000D102 /* MessagingMainWindowDecision.swift in Sources */,

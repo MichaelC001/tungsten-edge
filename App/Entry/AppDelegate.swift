@@ -36,7 +36,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private(set) lazy var folderCoverStore = PinnedFolderCoverStore(
         sortOrderProvider: { [pinnedFolderStore] path in pinnedFolderStore.sortOrder(for: path) }
     )
-    private var panelCoordinator: PanelCoordinator?
+    private var panelCoordinator: TaskbarScreenOrchestrator?
     private var windowLiftAvoidanceController: WindowLiftAvoidanceController?
     private lazy var launchAtLoginService = LaunchAtLoginService()
     private lazy var nativeDockPreferencesService = NativeDockPreferencesService()
@@ -532,7 +532,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             )
         }
 
-        let coordinator = PanelCoordinator(
+        let coordinator = TaskbarScreenOrchestrator(
             runtime: runtime,
             drawerStore: drawerStore,
             messagingStore: messagingStore,

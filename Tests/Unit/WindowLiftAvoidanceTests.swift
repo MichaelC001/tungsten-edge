@@ -1362,4 +1362,28 @@ final class WindowLiftAvoidanceTests: XCTestCase {
             )
         )
     }
+
+    // MARK: - 多屏归属（③④）
+
+    func testOwningContextIndexPrefersMajorityThenLargestOverlap() {
+        let left = CGRect(x: 0, y: 0, width: 1512, height: 982)
+        let right = CGRect(x: 1512, y: 0, width: 1920, height: 1080)
+        XCTAssertEqual(
+            WindowLiftAvoidance.owningContextIndex(for: CGRect(x: 100, y: 100, width: 1200, height: 800), screenCGFrames: [left, right]),
+            0
+        )
+        XCTAssertEqual(
+            WindowLiftAvoidance.owningContextIndex(for: CGRect(x: 1600, y: 0, width: 1800, height: 1000), screenCGFrames: [left, right]),
+            1
+        )
+        // 跨屏、都不过半：重叠更大的那块。
+        XCTAssertEqual(
+            WindowLiftAvoidance.owningContextIndex(for: CGRect(x: 1000, y: 0, width: 1200, height: 900), screenCGFrames: [left, right]),
+            1
+        )
+        XCTAssertNil(
+            WindowLiftAvoidance.owningContextIndex(for: CGRect(x: 5000, y: 0, width: 100, height: 100), screenCGFrames: [left, right])
+        )
+        XCTAssertNil(WindowLiftAvoidance.owningContextIndex(for: .zero, screenCGFrames: [left]))
+    }
 }

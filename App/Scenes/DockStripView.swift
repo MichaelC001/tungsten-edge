@@ -110,6 +110,15 @@ struct DockStripView: View {
     /// （背景窗口建成功才为 true），**显式传入、没有默认值**：同 `scale` / `hoverStyle`，
     /// 漏传是编译错误。不要退回读全局静态量 —— SwiftUI 观察不到它，面板拆除后会读到旧值。
     let usesLiquidGlass: Bool
+    /// 本条任务条在 `DragController` 里的表面身份（多屏 ③④ 下每块屏一条、内容相同，见
+    /// `DragController.activeStripSurfaceID`）。**显式传入、无默认值**：漏传就是两条同时写回落点。
+    let stripSurfaceID: String
+
+    /// 本条是不是当前拖动的活动表面。没人认领（抽屉起拖尚未转正）时人人可动——谁的条框含着指针谁转正并认领。
+    private var ownsActiveDrag: Bool {
+        guard let active = dragController.activeStripSurfaceID else { return true }
+        return active == stripSurfaceID
+    }
 
     /// 当前尺寸档位派生的面板几何与缩放系数。**条内不写裸尺寸数字**——凡是随任务条一起
     /// 放大缩小的值都乘 `dockScale`；发丝线（分隔线宽、描边）保持 1pt 不缩。
@@ -358,7 +367,11 @@ struct DockStripView: View {
         let draggingID: String?
         // `carriedPayload` 而不是 `draggingPayload`：松手后还有 0.26 秒的归位飞行，
         // 那段时间原位必须继续空着，否则卡先显形、载体还在飞。
-        if let payload = dragController.hiddenSlotPayload,
+        // **只有拖动的那条 strip 空槽**（多屏 ③④ 下别的屏上同一张卡照常显示、跟着共享顺序层挪位，
+        // owner 2026-09-02 报「另一块屏对应图标消失」）。
+        if !ownsActiveDrag {
+            draggingID = nil
+        } else if let payload = dragController.hiddenSlotPayload,
            payload.source == .strip,
            liveOrderIDs.contains(payload.id) {
             draggingID = payload.id
@@ -536,6 +549,7 @@ struct DockStripView: View {
         // 而那正是「动一下鼠标就打翻整条任务条」的来源（实测 1.2 秒拖动 46 次整条重算）。
         // `onReceive` 照跑闭包，但不给本视图建立依赖——只有下面这些副作用真的改了什么才重画。
         .onReceive(dragController.pointerMoves) { _ in
+            guard ownsActiveDrag else { return }   // 别的屏上那条正拖着：本条不写回任何东西
             updateDrawerToMessagingRelease(projection: projection)
             updateDrawerToStripConvert(projection: projection)
             updateStripBlockReorder(projection: projection)
@@ -550,15 +564,18 @@ struct DockStripView: View {
         // 归位飞行途中点了一下图标 = 点了这张卡（owner 2026-08-19：「落地前点它没反应」）。
         // 按 entry 分派、逐字镜像 `stripEntryContent` 各分支的 tap；用**此刻**的投影，不用载荷里起拖时那份。
         .onReceive(dragController.carrierClicks) { payload in
+            guard ownsActiveDrag else { return }
             performCarrierClick(payload, projection: freshProjection())
         }
         // 转正那一刻上面那个闭包手里的 projection 还是**旧的**（app 还在抽屉里），代表卡/让位卡都算不出来。
         // 光靠鼠标驱动就意味着「光标停在边界不动 = 一直双影」。store 一变就再算一次，把那一帧补上。
         .onChange(of: projection.liveOrderIDs) { _ in
+            guard ownsActiveDrag else { return }
             syncConvertedCarrier(projection: freshProjection())
         }
         // 同上，消息区那一侧：释放那一刻手里的 projection 里还没有这张 chip。
         .onChange(of: projection.messagingIDs) { _ in
+            guard ownsActiveDrag else { return }
             syncReleasedMessagingCarrier(projection: freshProjection())
         }
         // 悬停压制的开关翻转时重判一次：起拖藏卡那一刻清掉旧悬停；落地按住期结束（指针动了）
@@ -635,6 +652,7 @@ struct DockStripView: View {
 
     /// 正在拖动的文件夹 chip path（nil = 没有）。拖动中原位隐藏成空位,副本由载体面板画。
     private var draggingFolderPath: String? {
+        guard ownsActiveDrag else { return nil }
         if let p = dragController.hiddenSlotPayload, p.source == .folder { return p.id }
         return nil
     }
@@ -926,6 +944,7 @@ struct DockStripView: View {
     /// 这张卡的帧**就是**它的最终槽位。转正进任务条那一支给 nil——松手会解冻条宽、
     /// 整条重新居中，落点在飞行途中还会漂。
     private func updateLandingAnchor() {
+        guard ownsActiveDrag else { return }
         let anchor: CGRect? = {
             // `carriedPayload`：飞行途中也要继续报，卡槽落定后 `DragController` 才纠得了偏。
             guard let p = dragController.carriedPayload, stripRootScreenRect != .zero else { return nil }
@@ -1156,6 +1175,7 @@ struct DockStripView: View {
             guard mode == .unstash || mode == .keepPlacement else { return }
             // 此刻本组窗口卡还没出现在 live 区，命中目标只在**已有**卡里找（exclude 空集即可）。
             let target = stripPoint(from: g).flatMap { blockTarget(atX: $0.x, excluding: []) }
+            dc.claimStripSurface(stripSurfaceID)   // 转正的这条从此独占写回，直到落地 / 撤销转正
             dc.convertDrawerToStrip()
             stripOrderStore.stageExternalBlock(bundleID: bid, relativeTo: target?.id, after: target?.after ?? false)
             HoverTrace.drawerToStripStage(bundleID: bid, target: target?.id, after: target?.after ?? false)
@@ -1170,6 +1190,7 @@ struct DockStripView: View {
     /// 正在拖动的消息区 chip 的 bundleID（nil = 没有）。起拖后原位 opacity 隐藏、布局空位保留
     /// （空位即落点反馈）。收纳预览期载荷来源翻成 .drawer,此值自动归 nil——chip 那时已从区里消失。
     private var draggingMessagingBundleID: String? {
+        guard ownsActiveDrag else { return nil }
         if let p = dragController.hiddenSlotPayload, p.source == .messaging { return p.bundleID }
         return nil
     }
@@ -1351,7 +1372,7 @@ struct DockStripView: View {
                                                           bundleID: item.bundleIdentifier ?? "",
                                                           item: item, visualKind: .stripChip,
                                                           canExternalDrop: DragController.canStash(item))
-                                dragController.beginDrag(payload: payload,
+                                dragController.beginDrag(payload: payload, stripSurfaceID: stripSurfaceID,
                                                          startScreenLocation: NSEvent.mouseLocation,
                                                          grabOffset: grab,
                                                          sourceScreenRect: slot.map(stripFrameToScreen) ?? .zero,
@@ -1398,7 +1419,7 @@ struct DockStripView: View {
                                                       bundleID: bid, item: nil,
                                                       visualKind: .messagingIcon,
                                                       canExternalDrop: true)
-                            dragController.beginDrag(payload: payload,
+                            dragController.beginDrag(payload: payload, stripSurfaceID: stripSurfaceID,
                                                      startScreenLocation: NSEvent.mouseLocation,
                                                      grabOffset: grab,
                                                      sourceScreenRect: slot.map(stripFrameToScreen) ?? .zero,
@@ -1440,7 +1461,7 @@ struct DockStripView: View {
                                                           bundleID: bid, item: nil,
                                                           visualKind: .keptAppIcon,
                                                           canExternalDrop: true)
-                                dragController.beginDrag(payload: payload,
+                                dragController.beginDrag(payload: payload, stripSurfaceID: stripSurfaceID,
                                                          startScreenLocation: NSEvent.mouseLocation,
                                                          grabOffset: grab,
                                                          sourceScreenRect: slot.map(stripFrameToScreen) ?? .zero,
@@ -1487,7 +1508,7 @@ struct DockStripView: View {
                                                           bundleID: "", item: nil,
                                                           visualKind: .folderChip,
                                                           canExternalDrop: false)
-                                dragController.beginDrag(payload: payload,
+                                dragController.beginDrag(payload: payload, stripSurfaceID: stripSurfaceID,
                                                          startScreenLocation: NSEvent.mouseLocation,
                                                          grabOffset: grab,
                                                          sourceScreenRect: slot.map(stripFrameToScreen) ?? .zero,

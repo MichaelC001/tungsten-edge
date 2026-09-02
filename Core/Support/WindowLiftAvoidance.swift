@@ -925,6 +925,24 @@ enum WindowLiftAvoidance {
         }
     }
 
+    /// 多屏（③④）下候选窗口归哪块屏：面积过半的那块；没有过半就取重叠最大的；一点不沾 → nil。
+    /// 跨屏窗口因此只属于一块屏，不会被两块屏的避让同时抬。**与 `Geometry.mostlyBelongsToScreen`
+    /// 同一面积法、刻意不共享**（那份是本类型的私有判据；`PanelVisibilityState` 里还有第三份，各归各的规则文件）。
+    static func owningContextIndex(for quartzFrame: CGRect, screenCGFrames: [CGRect]) -> Int? {
+        guard isValid(frame: quartzFrame) else { return nil }
+        let area = quartzFrame.width * quartzFrame.height
+        var best: (index: Int, overlap: CGFloat)?
+        for (index, screen) in screenCGFrames.enumerated() {
+            guard isValid(frame: screen) else { continue }
+            let overlap = quartzFrame.intersection(screen)
+            guard !overlap.isNull, !overlap.isEmpty else { continue }
+            let overlapArea = overlap.width * overlap.height
+            if overlapArea >= area * 0.5 { return index }
+            if best == nil || overlapArea > best!.overlap { best = (index, overlapArea) }
+        }
+        return best?.index
+    }
+
     private static func isValid(frame: CGRect) -> Bool {
         frame.minX.isFinite
             && frame.minY.isFinite

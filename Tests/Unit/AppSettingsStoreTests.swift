@@ -1306,16 +1306,44 @@ final class AppSettingsStoreTests: XCTestCase {
 
     func testTaskbarScreenPlacementUnknownModeDegradesWithoutRewritingKey() {
         let defaults = makeDefaults()
-        defaults.set("allScreens", forKey: "com.tungsten.edge.taskbarScreen.mode")
+        defaults.set("someFutureMode", forKey: "com.tungsten.edge.taskbarScreen.mode")
 
         let store = AppSettingsStore(defaults: defaults)
 
         XCTAssertEqual(store.taskbarScreenPlacement, .followMouse)
         XCTAssertEqual(
             defaults.string(forKey: "com.tungsten.edge.taskbarScreen.mode"),
-            "allScreens",
+            "someFutureMode",
             "将来版本的档被老版本读到时只降级运行，不毁掉用户的选择"
         )
+    }
+
+    func testTaskbarScreenPlacementAllScreensRoundTrips() {
+        let defaults = makeDefaults()
+        let store = AppSettingsStore(defaults: defaults)
+
+        store.setTaskbarScreenPlacement(.allScreens)
+
+        XCTAssertEqual(store.taskbarScreenPlacement, .allScreens)
+        XCTAssertEqual(defaults.string(forKey: "com.tungsten.edge.taskbarScreen.mode"), "allScreens")
+        XCTAssertEqual(AppSettingsStore(defaults: defaults).taskbarScreenPlacement, .allScreens)
+
+        store.setTaskbarScreenPlacement(.allScreensPerDisplay)
+        XCTAssertEqual(defaults.string(forKey: "com.tungsten.edge.taskbarScreen.mode"), "allScreensPerDisplay")
+        XCTAssertEqual(AppSettingsStore(defaults: defaults).taskbarScreenPlacement, .allScreensPerDisplay)
+    }
+
+    func testTaskbarScreenPlacementAllScreensKeepsPinnedSelectionRemembered() {
+        let defaults = makeDefaults()
+        let store = AppSettingsStore(defaults: defaults)
+        let selection = PinnedScreenSelection(uuid: "UUID-1", name: "LG HDR 4K")
+        store.setTaskbarScreenPlacement(.pinned(selection))
+
+        store.setTaskbarScreenPlacement(.allScreens)
+
+        XCTAssertNotNil(defaults.dictionary(forKey: "com.tungsten.edge.taskbarScreen.pinned"))
+        store.setTaskbarScreenPlacement(.pinned(selection))
+        XCTAssertEqual(AppSettingsStore(defaults: defaults).taskbarScreenPlacement, .pinned(selection))
     }
 
     func testTaskbarScreenPlacementSwitchingBackKeepsPinnedSelectionRemembered() {

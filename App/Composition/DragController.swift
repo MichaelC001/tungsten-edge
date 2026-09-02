@@ -316,6 +316,7 @@ final class DragController: ObservableObject {
         beginHoverHold(for: current.payload)   // 先按住悬停，再让卡显形——顺序反了就抖一下
         landing = nil            // ← 条 / 抽屉在本轮 SwiftUI 提交里让卡显形
         convertedChipID = nil    // 转正那张卡的空槽撑到这里为止，和 `landing` 同一轮放开
+        activeStripSurfaceID = nil
         retireCarrierAfterHandoff()
     }
 
@@ -521,6 +522,7 @@ final class DragController: ObservableObject {
         flightTimeline = nil
         carrierRetiring = false
         convertedChipID = nil
+        activeStripSurfaceID = nil
         guard landing != nil else { return }
         landing = nil
         retireCarrier()
@@ -590,6 +592,16 @@ final class DragController: ObservableObject {
     /// 画着、手里还拎着同一个图标 = 两个影子**（owner 2026-08-18 报）。
     /// 所以这里存的是 chip id，不是卡本身。
     @Published private(set) var convertedChipID: String?
+    /// 当前拖动的「活动 strip 表面」（多屏 ③④ 下有多条内容相同的任务条，它们都订阅本控制器，
+    /// 但只有一条可以往回写落点锚点 / 重排 / 转正——否则另一块屏的条会把自己屏的矩形报成落点，
+    /// 载体飞错屏；见 `DockStripView.ownsActiveDrag`）。起拖那条 strip 在 `beginDrag` 前认领；
+    /// 抽屉起拖的在转正那一刻由指针所在的 strip 认领，撤销转正即放手；落地结束或中止时清空。
+    /// **不是 `@Published`**——只在起拖 / 落定各变一次，不值得让整条任务条重算。
+    private(set) var activeStripSurfaceID: String?
+
+    func claimStripSurface(_ id: String) {
+        activeStripSurfaceID = id
+    }
 
     func setConvertedRepresentative(_ item: StripItem?, chipID: String?) {
         if convertedRepresentative != item { convertedRepresentative = item }
@@ -766,7 +778,9 @@ final class DragController: ObservableObject {
     ///   - snapshot: 卡槽同款视图的位图（由渲染卡槽的那个视图自己拍，见 `ChipSnapshotter`）。
     ///     **是 autoclosure**：按下时已经预备了候选的话（`prepareCandidate`），这里不会再拍一张。
     ///     两边都拍不出来就不起拖：没有位图就没有能拎的东西，硬起拖只会让图标凭空消失。
+    /// - Parameter stripSurfaceID: 起拖的那条 strip 的表面身份（`activeStripSurfaceID`）；抽屉起拖传 nil。
     func beginDrag(payload: DragPayload,
+                   stripSurfaceID: String? = nil,
                    startScreenLocation: CGPoint,
                    grabOffset: CGSize,
                    sourceScreenRect: CGRect,
@@ -790,6 +804,7 @@ final class DragController: ObservableObject {
         // 上一次的归位还在飞就立刻收掉（**不走延后交接**：那是给正常落地用的）。
         abortLanding()
         endHoverHold()
+        activeStripSurfaceID = stripSurfaceID   // 放在 abortLanding 之后：中止上一趟飞行会清掉认领
         let started = CACurrentMediaTime()
         dragBeganAt = started
         let hadCarrier = carrierPanel != nil
@@ -927,6 +942,7 @@ final class DragController: ObservableObject {
         conversion = nil
         convertedRepresentative = nil   // 载体恢复抽屉小图标
         convertedChipID = nil           // 条上不再有卡需要让位
+        activeStripSurfaceID = nil      // 放手认领：拖回抽屉区后换哪条 strip 转正都行
         applyCarrierVisualState(animated: true)
     }
 
@@ -1165,7 +1181,10 @@ final class DragController: ObservableObject {
         convertedRepresentative = nil
         // **转正那张卡的空槽要撑到落地**，与条内拖动同口径（那边由 `hiddenSlotPayload` 撑着整段飞行）。
         // 当场清掉的话，卡片立刻全不透明显形、而载体还在飞 = 双影。由 `finishLanding` / `abortLanding` 清。
-        if flight == nil { convertedChipID = nil }
+        if flight == nil {
+            convertedChipID = nil
+            activeStripSurfaceID = nil
+        }
         folderDragZone = nil
         folderDropGeometry = nil
         draggingPayload = nil
