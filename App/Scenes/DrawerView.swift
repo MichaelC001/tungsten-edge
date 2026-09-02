@@ -25,6 +25,9 @@ struct DrawerView: View {
     /// 本抽屉面板此刻开着没有。**显式传入、无默认值**：③④ 下每块屏各有一个抽屉视图，关掉的那个
     /// 还留着过期的 `drawerRootScreenRect`，不问这一句就会按旧位置把别的屏抽屉里的转正判成「已拖出」
     /// 而撤销——两个视图互相翻转换态，还在布局过程里改 `@Published`，2026-09-02 实机直接崩。
+    /// **本视图里凡是由拖拽控制器驱动的回调都要先问它**（转正 / 撤销、重排、落点锚点、飞行中点击）：
+    /// 关着的抽屉视图会一直活到下次打开，不问就会拿过期位置往共享的控制器里写——副屏抽屉拖出的图标
+    /// 曾因此飞去主屏抽屉落位（同日第二起）。
     let isDrawerOpen: () -> Bool
     /// 点击 app 图标执行「唤出」或「启动」后回调。由 PanelCoordinator 注入，用于关闭抽屉。
     /// 「最小化（前台 → 收起）」不触发——抽屉保持打开。右键菜单、拖动操作同样不触发。
@@ -184,7 +187,8 @@ struct DrawerView: View {
         }
         // 归位飞行途中点了一下抽屉图标 = 点了这个格子：走格子自己的默认左键行为（同一份静态逻辑）。
         .onReceive(dragController.carrierClicks) { payload in
-            guard payload.source == .drawer, !runtime.launchingBundleIDs.contains(payload.id) else { return }
+            // 只有开着的那个抽屉视图分发（每块屏各一个视图；都分发的话运行中的 app 显 / 隐两次 = 净零）。
+            guard isDrawerOpen(), payload.source == .drawer, !runtime.launchingBundleIDs.contains(payload.id) else { return }
             LauncherChip.performDefaultTap(
                 bundleID: payload.id,
                 isRunning: isRunning(payload.id),
@@ -261,6 +265,7 @@ struct DrawerView: View {
     /// 松手时浮动副本该飞回抽屉哪一格（屏幕坐标）。任务条侧同样在写它那一份，靠 owner 标签分开。
     /// 任务条卡收进抽屉（来源已翻成 `.drawer`）也走这里 —— 图标会直接飞进它落定的格子。
     private func updateLandingAnchor() {
+        guard isDrawerOpen() else { return }   // 关着的抽屉既不报锚点、也不清掉开着那个报的
         let anchor: CGRect? = {
             // `carriedPayload`：飞行途中也要继续报，网格重排落定后才纠得了偏。
             guard let p = dragController.carriedPayload, p.source == .drawer,
@@ -420,7 +425,7 @@ struct DrawerView: View {
     /// 抽屉内重排：按 DragController 全局鼠标位置驱动（替代会被取消的逐图标手势）。把屏幕坐标映回 `"drawer"`
     /// 空间,命中同区目标后让位。抽屉内重排不改成员数 → 抽屉不缩放 → 用实时 drawerRootScreenRect 映射即可。
     private func updateDrawerReorder() {
-        guard let p = dragController.draggingPayload, p.source == .drawer,
+        guard isDrawerOpen(), let p = dragController.draggingPayload, p.source == .drawer,
               !dragController.isOverDropZone,            // 光标已在任务条上 = 移回,不重排
               drawerRootScreenRect != .zero else { return }
         let pt = CGPoint(x: dragController.globalLocation.x - drawerRootScreenRect.minX,
