@@ -23,6 +23,8 @@ final class TaskbarScreenOrchestrator: NSObject, WindowLiftAvoidanceHost {
 
     private(set) var units: [Unit] = []
     let dragController: DragController
+    /// 常驻面板的私有空间宿主：整个进程一个（两块屏共用一个空间即可，实测各面板只在自己的屏上显示）。
+    let overlaySpaceHost = OverlaySpaceHost.make()
 
     private let runtime: AppRuntime
     private let drawerStore: DrawerStore
@@ -234,6 +236,7 @@ final class TaskbarScreenOrchestrator: NSObject, WindowLiftAvoidanceHost {
         let coordinator = PanelCoordinator(
             placement: placement,
             dragController: dragController,
+            overlaySpaceHost: overlaySpaceHost,
             runtime: runtime,
             drawerStore: drawerStore,
             messagingStore: messagingStore,

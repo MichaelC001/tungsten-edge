@@ -332,6 +332,9 @@ final class PanelCoordinator: NSObject {
 
     /// 这个单元被安放在哪（见 `TaskbarUnitPlacement`）。③④ 下每屏一个 `.fixed` 单元。
     let unitPlacement: TaskbarUnitPlacement
+    /// 常驻面板的私有空间宿主（整个进程一个，编排层持有）。nil = 开关关 / 符号缺失，
+    /// 面板保持 `.canJoinAllSpaces` 老行为。见 `OverlaySpaceHost`。
+    private let overlaySpaceHost: OverlaySpaceHost?
     /// 本单元那条 strip 在共享 `DragController` 里的表面身份（见 `DragController.activeStripSurfaceID`）。
     private let stripSurfaceID = "strip-" + UUID().uuidString
     private let displayTopologyStore: DisplayTopologyStore
@@ -343,6 +346,7 @@ final class PanelCoordinator: NSObject {
 
     init(placement: TaskbarUnitPlacement,
          dragController: DragController,
+         overlaySpaceHost: OverlaySpaceHost?,
          runtime: AppRuntime,
          drawerStore: DrawerStore,
          messagingStore: MessagingAppStore,
@@ -359,6 +363,7 @@ final class PanelCoordinator: NSObject {
          displayTopologyStore: DisplayTopologyStore) {
         self.unitPlacement = placement
         self.dragController = dragController
+        self.overlaySpaceHost = overlaySpaceHost
         self.runtime = runtime
         self.drawerStore = drawerStore
         self.messagingStore = messagingStore
@@ -380,6 +385,7 @@ final class PanelCoordinator: NSObject {
         setupDockPanel()
         setupCapsulePanel()
         presentInitialPanels()
+        pinResidentPanelsIfNeeded()
         subscribeSnapshotWidth()
         subscribeDrawerStoreWidth()
         subscribeMessagingStoreWidth()
@@ -2101,6 +2107,15 @@ final class PanelCoordinator: NSObject {
         guard Self.spaceMembershipRepairEnabled, !isSuspendedForPermissionLoss else { return }
         if attempt == 1 && spaceMembershipRepairInFlight { return }
         guard let dock = dockPanel else { return }
+        // 钉进私有空间的面板不在任何桌面上，这个修复会把它当「丢了成员资格」反复清空重赋；
+        // 只修没钉住的（宿主不可用时 = 全部，行为同旧）。
+        let repairCandidates = allSpacesPanels.filter { panel in
+            !(overlaySpaceHost?.isPinned(windowNumber: panel.windowNumber) ?? false)
+        }
+        guard !repairCandidates.isEmpty else {
+            spaceMembershipRepairInFlight = false
+            return
+        }
 
         guard let uuid = DisplayIdentity.uuidString(for: panelCurrentScreen(panel: dock)),
               let layout = ManagedSpaceLayoutReader.layout(forDisplayUUID: uuid) else {
@@ -2109,7 +2124,7 @@ final class PanelCoordinator: NSObject {
         }
         let desktops = layout.orderedSpaceIDs.filter { !layout.fullscreenSpaceIDs.contains($0) }
 
-        let broken = allSpacesPanels.filter { panel in
+        let broken = repairCandidates.filter { panel in
             guard let owned = WindowSpaceMembershipReader.spaceIDs(forWindowNumber: panel.windowNumber)
             else { return false }   // 读不到 = 不知道，不能当成「丢了」
             return !AllSpacesMembership.missingSpaceIDs(
@@ -2138,6 +2153,19 @@ final class PanelCoordinator: NSObject {
             DispatchQueue.main.asyncAfter(deadline: .now() + AllSpacesMembership.verifyDelay) { [weak self] in
                 self?.repairAllSpacesMembershipIfNeeded(attempt: attempt + 1)
             }
+        }
+    }
+
+    // MARK: - 常驻面板钉进私有空间（桌面互滑时底板不发灰）
+
+    /// 把任务条 / 玻璃底板 / 胶囊钉进进程唯一的私有空间；抽屉 / 弹窗 / 气泡是瞬时面板，
+    /// 弹出时落在当前桌面即可，不参与。机理与实测边界见 `OverlaySpaceHost`。
+    private func pinResidentPanelsIfNeeded() {
+        guard let host = overlaySpaceHost, !isSuspendedForPermissionLoss else { return }
+        let windowNumbers = allSpacesPanels.map(\.windowNumber)
+        guard !windowNumbers.isEmpty else { return }
+        if !host.pin(windowNumbers: windowNumbers) {
+            logger.error("[overlay-space] pin failed windows=\(windowNumbers, privacy: .public)")
         }
     }
 
@@ -2970,6 +2998,8 @@ final class PanelCoordinator: NSObject {
             orderDockSurfaceFront()
             capsulePanel?.orderFrontRegardless()
             if drawerWantsOpen { drawerPanel?.orderFrontRegardless() }
+            // 实测 orderOut/orderFront 不掉私有空间成员资格，这里只是一次读回；掉了才真的补。
+            pinResidentPanelsIfNeeded()
             if fadeIn {
                 NSAnimationContext.runAnimationGroup { ctx in
                     // 0.32s + ease-out（owner 2026-08-31「淡入再缓一些、更柔和」）：

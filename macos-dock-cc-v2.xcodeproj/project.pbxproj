@@ -17,6 +17,7 @@
 		D2000000000000000000000A /* DragCarrierGeometryTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = D1000000000000000000000A /* DragCarrierGeometryTests.swift */; };
 		F20000000000000000000001 /* FullscreenIntentDecision.swift in Sources */ = {isa = PBXBuildFile; fileRef = F10000000000000000000010 /* FullscreenIntentDecision.swift */; };
 		F20000000000000000000002 /* FullscreenIntentMonitor.swift in Sources */ = {isa = PBXBuildFile; fileRef = F10000000000000000000011 /* FullscreenIntentMonitor.swift */; };
+		F1D0000000000000000000E1 /* OverlaySpaceHost.swift in Sources */ = {isa = PBXBuildFile; fileRef = F1D0000000000000000000E0 /* OverlaySpaceHost.swift */; };
 		F20000000000000000000003 /* FullscreenIntentDecision.swift in Sources */ = {isa = PBXBuildFile; fileRef = F10000000000000000000010 /* FullscreenIntentDecision.swift */; };
 		F20000000000000000000004 /* FullscreenIntentDecisionTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = F10000000000000000000012 /* FullscreenIntentDecisionTests.swift */; };
 		C30000000000000000000001 /* AppFallbackChipDecision.swift in Sources */ = {isa = PBXBuildFile; fileRef = C30000000000000000000010 /* AppFallbackChipDecision.swift */; };
@@ -416,6 +417,7 @@
 		D1000000000000000000000A /* DragCarrierGeometryTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DragCarrierGeometryTests.swift; sourceTree = "<group>"; };
 		F10000000000000000000010 /* FullscreenIntentDecision.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FullscreenIntentDecision.swift; sourceTree = "<group>"; };
 		F10000000000000000000011 /* FullscreenIntentMonitor.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FullscreenIntentMonitor.swift; sourceTree = "<group>"; };
+		F1D0000000000000000000E0 /* OverlaySpaceHost.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OverlaySpaceHost.swift; sourceTree = "<group>"; };
 		F10000000000000000000012 /* FullscreenIntentDecisionTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FullscreenIntentDecisionTests.swift; sourceTree = "<group>"; };
 		C30000000000000000000010 /* AppFallbackChipDecision.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppFallbackChipDecision.swift; sourceTree = "<group>"; };
 		C30000000000000000000011 /* AppFallbackChipDecisionTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppFallbackChipDecisionTests.swift; sourceTree = "<group>"; };
@@ -1027,6 +1029,7 @@
 			children = (
 				F10000000000000000000010 /* FullscreenIntentDecision.swift */,
 				F10000000000000000000011 /* FullscreenIntentMonitor.swift */,
+				F1D0000000000000000000E0 /* OverlaySpaceHost.swift */,
 				F1B0000000000000000000A0 /* ScrollReverserDecision.swift */,
 				F1B0000000000000000000B0 /* ScrollReverserMonitor.swift */,
 				F1B0000000000000000000C2 /* DisplayIdentity.swift */,
@@ -1346,6 +1349,7 @@
 				files = (
 					F20000000000000000000001 /* FullscreenIntentDecision.swift in Sources */,
 					F20000000000000000000002 /* FullscreenIntentMonitor.swift in Sources */,
+					F1D0000000000000000000E1 /* OverlaySpaceHost.swift in Sources */,
 					C30000000000000000000001 /* AppFallbackChipDecision.swift in Sources */,
 					C20000000000000000000001 /* RunningStateSweepDecision.swift in Sources */,
 					A00000000000000000001001 /* MacOSDockCCV2App.swift in Sources */,

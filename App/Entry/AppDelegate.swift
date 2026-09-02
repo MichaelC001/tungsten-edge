@@ -280,6 +280,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         DocumentUsageStore.shared.stop()
         permissionCoordinator?.terminationRequested()
         windowLiftAvoidanceController?.stop()
+        // 私有空间进程一死 WindowServer 自会回收，这里只是不留垃圾空间。
+        panelCoordinator?.overlaySpaceHost?.tearDown()
         runtime.stop()
     }
 
