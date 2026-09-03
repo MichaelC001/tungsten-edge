@@ -176,6 +176,11 @@ struct DockStripView: View {
     @State private var messagingChipFrames: [String: CGRect] = [:]
     /// 载体此刻画的是哪张消息区图标（释放回消息区那条路的换图去重）。见 `syncReleasedMessagingCarrier`。
     @State private var carriedMessagingChipID: String?
+    /// 上一轮 body 见到的 `stripSlotCollapsed`（`.onChange` 里晚一轮更新）。body 里两者不等 = 这次
+    /// `layoutKeys` 变化就是空位合拢 / 重开，条内动画要和面板窗口动画**同一条曲线同一时长**——
+    /// 弹簧（0.28s）叠在 AppKit easeInEaseOut（0.22s）上，图标相对底板忽前忽后，就是 owner 2026-09-03
+    /// 录屏里「没有原生丝滑」的那一下。
+    @State private var renderedCollapsed = false
 
     /// 中转格 frame（"strip" 空间）。**独立上报,不塞进 folderChipFrames**（评审：那个字典专属
     /// 文件夹 chip,后续还喂文件夹重排 hit-test,不能混 sentinel）。喂中转弹窗锚点 + drop 路由。
@@ -381,7 +386,19 @@ struct DockStripView: View {
         }
         let folderEntries = (settingsStore.showShelf ? [StripEntry.shelf] : [])
             + pinnedFolderStore.folderPaths.map { StripEntry.pinnedFolder(path: $0) }
-        var zones = [messaging, folderEntries, renderedLive].filter { !$0.isEmpty }
+        // 拖出即合拢（owner 2026-09-03）：条上起拖的那张卡离开了条 → 从渲染里去掉（不是透明），
+        // HStack 弹簧合拢、面板缩短（`PanelCoordinator` 订阅 `stripSlotCollapsed`）。**只在渲染数组里剔**：
+        // `liveOrderIDs` / `messagingIDs` 喂顺序层与区内判定的仍是全集——顺序层子集不同会把它打成缺席
+        // （5s 宽限后丢排名），消息区的「成员消失即取消拖动」监听也不能被它误触。只有认领的那条剔。
+        let collapsedEntryID: String? = {
+            guard ownsActiveDrag, dragController.stripSlotCollapsed,
+                  let p = dragController.hiddenSlotPayload else { return nil }
+            if p.source == .folder { return StripEntry.pinnedFolder(path: p.id).id }
+            return Self.stripEntryID(for: p)
+        }()
+        var zones = [messaging, folderEntries, renderedLive]
+            .map { zone in zone.filter { $0.id != collapsedEntryID } }
+            .filter { !$0.isEmpty }
         var entries: [StripEntry] = []
         if !zones.isEmpty {
             entries = zones.removeFirst()
@@ -500,7 +517,10 @@ struct DockStripView: View {
                 }
                 .padding(.horizontal, Style.chipContentInset * dockScale)
                 .frame(height: metrics.panelHeight)
-                .animation(.spring(response: 0.28, dampingFraction: 0.82), value: projection.layoutKeys)
+                .animation(renderedCollapsed != dragController.stripSlotCollapsed
+                               ? .easeInOut(duration: DrawerAnimation.duration)          // 合拢 / 重开：跟面板走
+                               : .spring(response: 0.28, dampingFraction: 0.82),         // 让位：签收过的弹簧
+                           value: projection.layoutKeys)
             }
             .clipShape(RoundedRectangle(cornerRadius: taskbarCornerRadius, style: .continuous))
             .compatLeadingScrollAnchor()
@@ -594,7 +614,7 @@ struct DockStripView: View {
         // 而那正是「动一下鼠标就打翻整条任务条」的来源（实测 1.2 秒拖动 46 次整条重算）。
         // `onReceive` 照跑闭包，但不给本视图建立依赖——只有下面这些副作用真的改了什么才重画。
         .onReceive(dragController.pointerMoves) { _ in
-            updateCrossStripHover()               // 认领换手（跨屏拖窗）要在门控之前判
+            updateStripPresence()                 // 进出条：让位复原 / 合拢，认领换手——要在门控之前判
             guard ownsActiveDrag else { return }   // 别的屏上那条正拖着：本条不写回任何东西
             updateDrawerToMessagingRelease(projection: projection)
             updateDrawerToStripConvert(projection: projection)
@@ -628,6 +648,7 @@ struct DockStripView: View {
         // 悬停压制的开关翻转时重判一次：起拖藏卡那一刻清掉旧悬停；落地按住期结束（指针动了）
         // 那一刻按当前指针位置补上悬停。**不再在「手里空了」那一刻重判**——那正是落地一停稳
         // 就往上长一截的来源（见 `refreshHoveredEntry`）。
+        .onChange(of: dragController.stripSlotCollapsed) { renderedCollapsed = $0 }
         .onChange(of: dragController.hoverGate) { _ in
             refreshHoveredEntry(frames: stripHoverFrames, origin: stripRootScreenRect)
         }
@@ -999,7 +1020,7 @@ struct DockStripView: View {
             // `keepPlacement` 物化出来的 `app-<bid>` 占位，两者都上报进 `chipFrames`）。
             // **2026-08-20 之前这里返回 nil，于是抽屉拖进任务条根本没有归位飞行**，图标从光标
             // 瞬移到槽位——当时的理由是「松手会解冻条宽、整条重新居中，落点在飞行途中会漂」，
-            // 而那个漂已经不存在了：往条上放的方向不再钳宽度（`freezesStripWidth`）。
+            // 而那个漂已经不存在了：条宽不再钳（拖出即合拢后，条宽随时跟着渲染内容走）。
             // 认 `convertedChipID` 而不是 `isConvertedToStrip`：后者读的是 `conversion`，
             // 而 `conversion` 在 `teardown` 就清了，飞行途中会失去锚点、纠不了偏。
             if let cid = dragController.convertedChipID {
@@ -1190,26 +1211,29 @@ struct DockStripView: View {
                                  frames: chipFrames.filter { !block.contains($0.key) })
     }
 
-    /// 跨屏拖窗（多屏 ③④）：拖着任务条卡（窗口卡 / 没窗口的兜底卡 / 保留占位）的指针进了本条的判定框 → 本条接管认领（空槽在这儿开、
-    /// 重排落这儿、落点锚点由这儿报）；离开本条判定框（迟滞带外）且本条不是起拖那条 → 交还起拖那条。
-    /// 进 / 出阈值与抽屉转正那套相同。松手时认领若不在起拖那条上 = 跨屏投放（`DragController.endDrag`）。
-    private func updateCrossStripHover() {
+    /// 条上起拖的载荷（窗口卡 / 占位 / 消息 chip / 文件夹 chip）进出本条判定框 → 告诉控制器：
+    /// 进 = 让位复原（`.strip` 顺带认领换手——跨屏拖窗 ③④：空槽在这儿开、重排落这儿、落点锚点由这儿报）；
+    /// 清楚出 = 空位合拢、条缩短（owner 2026-09-03，对齐原生 Dock）。判定框与抽屉转正同一个
+    /// （`StripPointerBox`）。跑在 owner 门控之前：换手和「离开」都得由不认领的那条也能判。
+    private func updateStripPresence() {
         let dc = dragController
-        guard let p = dc.draggingPayload, p.source == .strip,
-              dc.conversion == nil, let origin = dc.originStripSurfaceID,
+        guard let p = dc.draggingPayload, p.source != .drawer, dc.conversion == nil,
               stripRootScreenRect != .zero else { return }
-        let g = dc.globalLocation
-        let r = stripRootScreenRect
-        let rightReach = metrics.capsuleGap + metrics.capsuleWidth
-        let enter      = g.x >= r.minX - 8  && g.x <= r.maxX + rightReach
-                      && g.y >= r.minY - 8  && g.y <= r.maxY + 16
-        let clearlyOut = g.x < r.minX - 24  || g.x > r.maxX + rightReach + 16
-                      || g.y < r.minY - 24  || g.y > r.maxY + 40
-        let active = dc.activeStripSurfaceID
-        if enter, active != stripSurfaceID {
+        // 跨屏拖窗（③④）的认领按**指针所在的屏**，不看条的判定框（owner 2026-09-03：「拖到 B 屏幕就落到
+        // B 条，拖到 A 屏幕就落到 A 条」；之前要压进另一条的框才换手，B 屏空处松手会飞回 A）。
+        // 认领决定空槽开在哪条、落点锚点谁报、松手搬不搬窗；判定框只管空位合拢 / 重开。
+        if p.source == .strip, let displayUUID,
+           let screen = NSScreen.screens.first(where: { $0.frame.contains(dc.globalLocation) }),
+           DisplayIdentity.uuidString(for: screen) == displayUUID {
             dc.claimStripSurface(stripSurfaceID, displayUUID: displayUUID)
-        } else if clearlyOut, active == stripSurfaceID, stripSurfaceID != origin {
-            dc.claimStripSurface(origin)
+        }
+        let box = StripPointerBox.classify(pointer: dc.globalLocation, stripRect: stripRootScreenRect,
+                                           rightReach: metrics.capsuleGap + metrics.capsuleWidth,
+                                           profile: .stripPresence)
+        if box.enter {
+            dc.noteStripEntered(surfaceID: stripSurfaceID, displayUUID: displayUUID)
+        } else if box.clearlyOut {
+            dc.noteStripLeft(surfaceID: stripSurfaceID)
         }
     }
 
@@ -1223,16 +1247,12 @@ struct DockStripView: View {
         let bid = p.bundleID
         let g = dc.globalLocation
         let r = stripRootScreenRect
-        // 右侧容差要一直伸到**抽屉入口胶囊**的外缘：抽屉的可视右缘是和胶囊右缘对齐的，
-        // 比任务条本体还要靠右 `capsuleGap + capsuleWidth`（中档 62pt）。只放 8pt 的话，
-        // 抽屉最右一列多多少少垂直往下拖，光标全程落在胶囊上、**永远进不了判定框**
-        // （实测 2026-08-18：整趟 60 帧 enter 全 false）。对抽屉来源的载荷来说胶囊没有别的语义
-        // ——它的投放区只有任务条面板——所以这里把它并进来不会和收纳打架。
-        let rightReach = metrics.capsuleGap + metrics.capsuleWidth
-        let enter      = g.x >= r.minX - 8  && g.x <= r.maxX + rightReach
-                      && g.y >= r.minY - 8  && g.y <= r.maxY + 16
-        let clearlyOut = g.x < r.minX - 24  || g.x > r.maxX + rightReach + 16
-                      || g.y < r.minY - 24  || g.y > r.maxY + 40
+        // 右侧容差伸到胶囊外缘的理由见 `StripPointerBox`（对抽屉来源的载荷胶囊没有别的语义，
+        // 它的投放区只有任务条面板，并进来不会和收纳打架）。
+        let box = StripPointerBox.classify(pointer: g, stripRect: r,
+                                           rightReach: metrics.capsuleGap + metrics.capsuleWidth,
+                                           profile: .drawerConversion)
+        let enter = box.enter, clearlyOut = box.clearlyOut
         if HoverTrace.isEnabled {
             HoverTrace.drawerToStrip(x: g.x, y: g.y, strip: r, enter: enter, clearlyOut: clearlyOut,
                                      mode: "\(currentDrawerDragOutMode(bid, projection: projection))",
@@ -1343,6 +1363,10 @@ struct DockStripView: View {
             inSnapshot: projection.snapshotBundleIDs.contains(p.bundleID),
             running: runningApplicationStore.isRunning(p.bundleID),
             inZone: true, released: true, stop: "ok")
+        // 释放到本条消息区后本条独占写回，直到落地 / 撤销释放（`revertDrawerToMessaging` 放手）。
+        // 与 `updateDrawerToStripConvert` 同一句：③④ 下两条 strip 都跑这段，不认领的话另一条
+        // 每 tick 按自己的消息区判「已释放但不在区内」→ 撤销，两条互相翻转，松手落谁看订阅顺序。
+        dc.claimStripSurface(stripSurfaceID)
         dc.convertDrawerToMessaging()
     }
 

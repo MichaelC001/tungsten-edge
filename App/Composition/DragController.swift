@@ -246,6 +246,7 @@ final class DragController: ObservableObject {
     func setLandingAnchor(_ rect: CGRect?, owner: LandingAnchorOwner) {
         if let rect {
             landingAnchor = (owner, rect)
+            if owner == .strip { lastKnownSlotAnchor = rect }
         } else if landingAnchor?.owner == owner {
             landingAnchor = nil
         }
@@ -281,7 +282,18 @@ final class DragController: ObservableObject {
         let updatedFlight: DragLandingFlight?
         switch current.kind {
         case .returnToSlot:
-            updatedFlight = DragLandingPlan.flight(from: current.flight.from,
+            var from = current.flight.from
+            // 还没起飞、锚点却在另一块屏上（跨屏拖窗松手时锚点由另一条 strip 晚一轮报上来）：
+            // 先切载体面板、按新面板原点重算起点，和 `plannedLanding` 同一套。起飞后不换屏。
+            if !landingLaunched, let rect = landingAnchor?.rect,
+               !carrierScreenFrame.contains(CGPoint(x: rect.midX, y: rect.midY)) {
+                followScreenIfNeeded(CGPoint(x: rect.midX, y: rect.midY))
+                placeCarrierUnderPointer()
+                from = DragCarrierGeometry.topLeftCarriedCenter(pointer: globalLocation,
+                                                                grabOffset: grabOffset,
+                                                                panelFrame: carrierScreenFrame)
+            }
+            updatedFlight = DragLandingPlan.flight(from: from,
                                                    fromScale: current.flight.fromScale,
                                                    anchorScreenRect: landingAnchor?.rect,
                                                    carrierScreenFrame: carrierScreenFrame)
@@ -295,15 +307,67 @@ final class DragController: ObservableObject {
               hypot(updated.to.x - current.flight.to.x, updated.to.y - current.flight.to.y) > 0.5
         else { return }
         HoverTrace.landingRetarget(from: updated.from, to: updated.to, previous: current.flight.to)
-        current.flight = updated
-        landing = current
         // 还在按住期（`DragLandingPlan.landingSettle`）就只改终点、不起飞：这一下改的多半正是
         // 「投放提交后网格换了一格」，当场起飞就等于先朝旧格子飞一段再拽回来，那条折线就是要治的。
-        guard landingLaunched else { return }
-        // 重发同一组动画（位移 / 缩放 / 阴影在一个事务里），CA 会从当前插值位置平滑接到新终点。
-        // 改了终点就等于重新起飞一段，**兜底计时器必须跟着往后推**——否则载体在半路被撤掉，
-        // 那正是要治的那一下跳。上限 `landingDeadline` 保证卡槽万一一直动也不会挂着不放。
-        flyCarrier(along: updated, token: current.token)
+        // 没起飞，整段飞行（含按新距离算的时长和曲线）都可以换。
+        guard landingLaunched else {
+            current.flight = updated
+            landing = current
+            return
+        }
+        // 已经在飞：**只在原时间线上滑终点，不重发新曲线。** 老做法是 `flyCarrier(along: updated)`
+        // 重发一整段——每次都从此刻位置重新起步再缓停；锚点逐帧漂那 0.22s 里重发十来次，
+        // 就是 owner 2026-09-03 报的「归位一抽一抽」。飞完了的就别再改（交给 finish）。
+        guard let timeline = flightTimeline,
+              CACurrentMediaTime() - timeline.beganAt < timeline.duration else { return }
+        let slid = current.flight.sliding(to: updated.to, toScale: updated.toScale)
+        current.flight = slid
+        landing = current
+        slideLanding(to: slid, token: current.token)
+    }
+
+    /// 中途纠偏的实现：把位移 / 缩放两条动画**用原来的 `beginTime`、时长、曲线**重新挂上，
+    /// 只把终值换成新终点。CA 从同一条曲线此刻的进度接着走，载体沿一条连续的路滑向新格子，
+    /// 收载体的时刻也不变（兜底计时器不重排）。完成回调认代次：被替换掉的那组动画的回调
+    /// 会立刻触发，不能让它把飞行结束掉（同 `flyCarrier`）。
+    private func slideLanding(to flight: DragLandingFlight, token: Int) {
+        guard let layer = carrierLayer, let timeline = flightTimeline else { return }
+        let destination = alignedCenter(
+            DragCarrierGeometry.panelPoint(fromTopLeft: flight.to, panelFrame: carrierScreenFrame), on: layer)
+        let toTransform = Self.scaleTransform(flight.toScale)
+        landingAnimation &+= 1
+        let generation = landingAnimation
+        let c = timeline.curve
+        let timing = CAMediaTimingFunction(controlPoints: Float(c.c0x), Float(c.c0y), Float(c.c1x), Float(c.c1y))
+        let beginTime = layer.convertTime(timeline.beganAt, from: nil)
+        CATransaction.begin()
+        CATransaction.setDisableActions(true)   // model 值直接到位；动画由下面两条显式动画负责
+        CATransaction.setCompletionBlock { [weak self] in
+            Task { @MainActor in
+                guard let self, self.landingAnimation == generation else { return }
+                self.finishLanding(token: token)
+            }
+        }
+        let tracks: [(String, Any, Any)] = [
+            ("position", NSValue(point: timeline.start.position), NSValue(point: destination)),
+            ("transform", NSValue(caTransform3D: Self.scaleTransform(timeline.start.scale)),
+                          NSValue(caTransform3D: toTransform))
+        ]
+        for (keyPath, from, to) in tracks {
+            let animation = CABasicAnimation(keyPath: keyPath)
+            animation.fromValue = from
+            animation.toValue = to
+            animation.beginTime = beginTime
+            animation.duration = timeline.duration
+            animation.timingFunction = timing
+            layer.add(animation, forKey: keyPath)
+        }
+        layer.position = destination
+        layer.transform = toTransform
+        CATransaction.commit()
+        flightTimeline = FlightTimeline(beganAt: timeline.beganAt, start: timeline.start,
+                                        destination: LayerPose(position: destination, scale: flight.toScale),
+                                        duration: timeline.duration, curve: timeline.curve)
     }
 
     /// 飞到终点。**先让条上那张卡显形，晚一轮 run loop 再撤载体**——两头都是「先新后旧」：
@@ -321,6 +385,8 @@ final class DragController: ObservableObject {
         landing = nil            // ← 条 / 抽屉在本轮 SwiftUI 提交里让卡显形
         convertedChipID = nil    // 转正那张卡的空槽撑到这里为止，和 `landing` 同一轮放开
         clearStripClaims()
+        setStripSlotCollapsed(false)   // 吸进胶囊的那张此刻已是抽屉成员，条上本来就没它了
+        lastKnownSlotAnchor = nil
         retireCarrierAfterHandoff()
     }
 
@@ -527,6 +593,8 @@ final class DragController: ObservableObject {
         carrierRetiring = false
         convertedChipID = nil
         clearStripClaims()
+        setStripSlotCollapsed(false)
+        lastKnownSlotAnchor = nil
         guard landing != nil else { return }
         landing = nil
         retireCarrier()
@@ -554,13 +622,6 @@ final class DragController: ObservableObject {
         /// 抽屉里运行中的消息应用已临时释放回消息区。回滚 = drawer.add + 还原 `.drawer` 载荷。
         case drawerToMessaging(original: DragPayload)
 
-        /// 从条上拿走，还是往条上放。任务条宽度钳不钳由它决定（`DragConversionPlan.freezesStripWidth`）。
-        var direction: CrossPanelDirection {
-            switch self {
-            case .stripToDrawer, .messagingToDrawer: return .intoDrawer
-            case .drawerToStrip, .drawerToMessaging: return .ontoStrip
-            }
-        }
     }
     @Published private(set) var conversion: CrossPanelConversion?
 
@@ -614,6 +675,12 @@ final class DragController: ObservableObject {
     func claimStripSurface(_ id: String, displayUUID: String? = nil) {
         activeStripDisplayUUID = displayUUID
         guard activeStripSurfaceID != id else { return }
+        // 换手 = 旧条的槽位对新条没有意义。留着的话，跨屏拖到 B 屏空处松手会先朝 A 条的旧槽位飞
+        //（载体面板切到 A 屏、图标从 B 屏消失），B 报上真锚点时已在错误的面板坐标里（owner 2026-09-03）。
+        if activeStripSurfaceID != nil {
+            lastKnownSlotAnchor = nil
+            if landingAnchor?.owner == .strip { landingAnchor = nil }
+        }
         activeStripSurfaceID = id
         stripClaimGeneration &+= 1
     }
@@ -622,6 +689,37 @@ final class DragController: ObservableObject {
         activeStripSurfaceID = nil
         originStripSurfaceID = nil
         activeStripDisplayUUID = nil
+    }
+
+    /// **拖出即合拢**（owner 2026-09-03，对齐原生 Dock；反转 2026-08-20「从条上拿走的方向钳住条宽」）：
+    /// 条上起拖的那张卡（窗口卡 / 占位 / 消息 chip / 文件夹 chip）离开了任务条——指针清楚出了当前认领
+    /// 那条的判定框，或已进抽屉体转换——条上就不再给它留空位、面板缩短；指针再进任一条的判定框就复原。
+    /// 之前空位全程留着、条宽不变，owner 报「不直觉」。`@Published`：投影层按它决定画不画那张卡
+    /// （`DockStripView.makeProjection`），`PanelCoordinator` 按它重排面板宽度。
+    @Published private(set) var stripSlotCollapsed = false
+    /// 合拢期间条上报不出槽位帧（卡不在布局里）。条外、非投放区松手要先重开槽再飞，
+    /// 这是那一飞的临时终点——最后一次报上来的槽位；槽位帧一报回来就由纠偏接到真实位置。
+    private var lastKnownSlotAnchor: CGRect?
+
+    /// 指针进了某条 strip 的判定框（`DockStripView.updateStripPresence`，跑在 owner 门控之前）。
+    /// 只认当前认领那条的框：认领本身由指针所在的屏决定（`.strip` 载荷跨屏，`claimStripSurface`），
+    /// 消息 / 文件夹 chip 不跨条、认领一直是起拖那条。
+    func noteStripEntered(surfaceID: String, displayUUID: String?) {
+        guard let p = draggingPayload, p.source != .drawer, conversion == nil,
+              activeStripSurfaceID == surfaceID else { return }
+        setStripSlotCollapsed(false)
+    }
+
+    /// 指针清楚出了这条 strip 的判定框。只有当前认领那条离开才算「离开任务条」（认领不因此换手）。
+    func noteStripLeft(surfaceID: String) {
+        guard let p = draggingPayload, p.source != .drawer, conversion == nil,
+              activeStripSurfaceID == surfaceID else { return }
+        setStripSlotCollapsed(true)
+    }
+
+    private func setStripSlotCollapsed(_ collapsed: Bool) {
+        guard stripSlotCollapsed != collapsed else { return }
+        stripSlotCollapsed = collapsed
     }
 
     func setConvertedRepresentative(_ item: StripItem?, chipID: String?) {
@@ -695,6 +793,13 @@ final class DragController: ObservableObject {
     }
     private var surfaces: [CarrierSurface] = []
     private var activeSurface: CarrierSurface?
+    /// 载体面板建好并 order front 之后交给编排层钉进**任务条所在的私有空间**（`OverlaySpaceHost`）。
+    /// 任务条钉进私有空间后，留在桌面空间的窗口不论 `level` 都被合成在它下面——载体一压进玻璃底板
+    /// 就显得半透明、靠近胶囊就变暗（owner 2026-09-03，`DOCK_OVERLAY_SPACE=0` A/B 坐实）。
+    /// 赋值时把已建好的那几套也补钉一遍（`prewarmCarrier` 可能先于接线跑）。
+    var pinCarrierWindows: (([Int]) -> Void)? {
+        didSet { pinCarrierWindows?(surfaces.map { $0.panel.windowNumber }) }
+    }
     private var carrierPanel: NSPanel? { activeSurface?.panel }
     private var carrierContainer: CarrierContainerView? { activeSurface?.container }
     /// 载体那张位图所在的图层。**位置 / 缩放 / 阴影 / 透明度全是它的 CA 属性**，
@@ -904,9 +1009,10 @@ final class DragController: ObservableObject {
     /// `guard source==.strip && conversion==nil` 保证幂等（转一次后不再触发）。
     func convertStripToDrawer() {
         guard let p = draggingPayload, p.source == .strip, p.canExternalDrop, conversion == nil else { return }
-        conversion = .stripToDrawer(original: p)  // 先置（同步触发宽度冻结），再动 store
+        conversion = .stripToDrawer(original: p)  // 先置、先翻载荷再动 store（成员消失监听按来源豁免）
         draggingPayload = DragPayload(source: .drawer, id: p.bundleID, bundleID: p.bundleID,
                                       item: p.item, visualKind: p.visualKind, canExternalDrop: true)
+        setStripSlotCollapsed(true)               // 进了抽屉体 = 离开了条（撤销后由条的判定框决定何时复原）
         drawerStore.add(p.bundleID)
         refreshDropZone()   // 投放区集合随来源变,重算
     }
@@ -932,6 +1038,7 @@ final class DragController: ObservableObject {
         conversion = .messagingToDrawer(original: p)
         draggingPayload = DragPayload(source: .drawer, id: p.bundleID, bundleID: p.bundleID,
                                       item: nil, visualKind: .drawerIcon, canExternalDrop: true)
+        setStripSlotCollapsed(true)               // 同 convertStripToDrawer
         drawerStore.add(p.bundleID)
         refreshDropZone()
     }
@@ -989,6 +1096,7 @@ final class DragController: ObservableObject {
         conversion = nil
         draggingPayload = original
         drawerStore.add(original.bundleID)
+        activeStripSurfaceID = nil      // 放手认领（同 revertDrawerToStrip）：再进哪条的消息区都能重新释放
         refreshDropZone()
     }
 
@@ -1076,6 +1184,10 @@ final class DragController: ObservableObject {
         if crossStripDisplayUUID != nil {
             HoverTrace.dragHandoff("crossStrip", msSinceBegin: (CACurrentMediaTime() - dragBeganAt) * 1000)
         }
+        // 卡还在条外（空位已合拢）而又不收纳 → 先把槽重开（同一同步块里，条随即变长），飞行先朝
+        // 最后一次已知槽位去（`plannedLanding`），槽位帧一报上来就由纠偏接到真实位置。
+        // 文件夹 chip 条外松手 = 取消固定，不重开。
+        if stripSlotCollapsed, p.source != .folder, !willStash(p) { setStripSlotCollapsed(false) }
         teardown(landing: plannedLanding(for: p, folderZone: folderZone))
         if let crossStripDisplayUUID {
             onCrossStripDrop?(p, crossStripDisplayUUID)
@@ -1172,22 +1284,43 @@ final class DragController: ObservableObject {
             landingToken &+= 1
             return Landing(token: landingToken, payload: payload, kind: .stash, flight: flight)
         }
+        // 空位刚重开、槽位帧还没报上来（拖出即合拢后在条外松手）：先朝最后一次已知槽位飞，
+        // 按住期 / 起飞后由纠偏接到真实位置。只有条上起拖的载荷才有这份记忆。
+        let slotAnchor = landingAnchor?.rect
+            ?? ((payload.source == .strip || payload.source == .messaging) ? lastKnownSlotAnchor : nil)
         // 卡槽在另一块屏上（跨屏拖回）：面板先挪到卡槽那块屏，飞行才在同一块面板里算。
-        if let rect = landingAnchor?.rect {
+        if let rect = slotAnchor {
             followScreenIfNeeded(CGPoint(x: rect.midX, y: rect.midY))
-            moveCarrier()   // 载体在新面板坐标里的当前位置 = 起点
+            placeCarrierUnderPointer()   // 载体在新面板坐标里的当前位置 = 起点
         }
         let from = DragCarrierGeometry.topLeftCarriedCenter(pointer: globalLocation,
                                                             grabOffset: grabOffset,
                                                             panelFrame: carrierScreenFrame)
-        let flight = DragLandingPlan.flight(from: from,
+        var flight = DragLandingPlan.flight(from: from,
                                             fromScale: carriedScale,
-                                            anchorScreenRect: landingAnchor?.rect,
+                                            anchorScreenRect: slotAnchor,
                                             carrierScreenFrame: carrierScreenFrame)
+        // 一个锚点都没有、但空槽刚重开（条上起拖的载荷）：原地按住等它——按住期里纠偏会整段换成
+        // 真正的飞行；到点还没来就直接落定（`launchLanding`）。理由见 `DragLandingPlan.holdingFlight`。
+        if flight == nil, slotAnchor == nil, payload.source == .strip || payload.source == .messaging,
+           carrierScreenFrame.width > 0 {
+            flight = DragLandingPlan.holdingFlight(at: from, scale: carriedScale)
+        }
         HoverTrace.landing(from: from, to: flight?.to, source: "\(payload.source)")
         guard let flight else { return nil }
         landingToken &+= 1
         return Landing(token: landingToken, payload: payload, kind: .returnToSlot, flight: flight)
+    }
+
+    /// 把载体当场摆到指针下（面板坐标按 `carrierScreenFrame` 算），不带 `moveCarrier` 的「抬起之前不跟手」
+    /// 守卫：归位阶段 `carrierLifted` 已被 `teardown` 清掉，而跨屏切面板后载体必须重新摆位才有起点。
+    private func placeCarrierUnderPointer() {
+        guard let layer = carrierLayer, carrierScreenFrame.width > 0 else { return }
+        let center = DragCarrierGeometry.carriedCenter(pointer: globalLocation,
+                                                       grabOffset: grabOffset,
+                                                       panelFrame: carrierScreenFrame)
+        let aligned = alignedCenter(center, on: layer)
+        Self.instantly { layer.position = aligned }
     }
 
     /// 跨屏投放的判定：任务条卡、没在收纳投放区、没有进行中的跨面板转换、且此刻认领的 strip 不是
@@ -1218,13 +1351,15 @@ final class DragController: ObservableObject {
     /// 收尾。`landing` 非空时**不收载体**——它还要飞一段；到点由 `finishLanding()` 收。
     private func teardown(landing flight: Landing?) {
         let released = draggingPayload
-        conversion = nil                  // 落定路径：清转换态不回滚（commit）；解冻任务条宽度
+        conversion = nil                  // 落定路径：清转换态不回滚（commit）
         convertedRepresentative = nil
         // **转正那张卡的空槽要撑到落地**，与条内拖动同口径（那边由 `hiddenSlotPayload` 撑着整段飞行）。
         // 当场清掉的话，卡片立刻全不透明显形、而载体还在飞 = 双影。由 `finishLanding` / `abortLanding` 清。
         if flight == nil {
             convertedChipID = nil
             clearStripClaims()
+            setStripSlotCollapsed(false)
+            lastKnownSlotAnchor = nil
         }
         folderDragZone = nil
         folderDropGeometry = nil
@@ -1275,6 +1410,8 @@ final class DragController: ObservableObject {
     private func launchLanding(token: Int) {
         guard !landingLaunched, let current = landing, current.token == token else { return }
         landingLaunched = true
+        // 按住期结束还是原地按住（锚点始终没来）→ 直接落定，别让载体原地挂满一段时长。
+        guard !current.flight.isStationary else { finishLanding(token: token); return }
         flyCarrier(along: current.flight, token: token)
     }
 
@@ -1332,6 +1469,7 @@ final class DragController: ObservableObject {
         let made = makeCarrierSurface(frame: frame)
         surfaces.append(made)
         made.panel.orderFrontRegardless()
+        pinCarrierWindows?([made.panel.windowNumber])
         return made
     }
 

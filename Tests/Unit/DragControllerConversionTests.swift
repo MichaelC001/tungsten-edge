@@ -98,6 +98,117 @@ final class DragControllerConversionTests: XCTestCase {
         controller.cancelDrag()
     }
 
+    /// 抽屉消息应用释放进消息区走的是另一条路（`convertDrawerToMessaging`），认领 / 放手必须同款：
+    /// 漏掉放手，撤销后指针再进另一条 strip 的消息区就没人能释放；漏掉认领，两条 strip 每 tick 互相撤销。
+    func testDrawerToMessagingClaimClearsOnRevert() {
+        messaging.mark("chat"); drawer.add("chat")
+        begin(.drawer, "chat", at: outsideZone)
+        controller.claimStripSurface("strip-B")
+        controller.convertDrawerToMessaging()
+        XCTAssertEqual(controller.activeStripSurfaceID, "strip-B")
+        controller.revertDrawerToMessaging()
+        XCTAssertNil(controller.activeStripSurfaceID, "撤销释放即放手认领")
+        controller.cancelDrag()
+    }
+
+    // MARK: - 拖出即合拢（owner 2026-09-03：卡离开条 → 空位合拢、条缩短；回来再让位）
+
+    func testLeavingTheStripCollapsesTheSlotAndEnteringRestoresIt() {
+        begin(.strip, "com.example.a", at: outsideZone, surface: "strip-A")
+        XCTAssertFalse(controller.stripSlotCollapsed, "起拖那一刻还在条上")
+        controller.noteStripLeft(surfaceID: "strip-A")
+        XCTAssertTrue(controller.stripSlotCollapsed)
+        controller.noteStripEntered(surfaceID: "strip-A", displayUUID: nil)
+        XCTAssertFalse(controller.stripSlotCollapsed)
+        controller.cancelDrag()
+    }
+
+    /// 只有认领那条的判定框作数；认领由指针所在的屏决定（`claimStripSurface`），进出框不换手
+    /// （owner 2026-09-03：拖到 B 屏就落 B 条，不要求压进 B 条的框）。
+    func testOnlyTheClaimedStripDecidesAndClaimFollowsTheScreenNotTheBox() {
+        begin(.strip, "com.example.a", at: outsideZone, surface: "strip-A")
+        controller.noteStripLeft(surfaceID: "strip-B")
+        XCTAssertFalse(controller.stripSlotCollapsed, "B 没认领，它的框不算")
+        controller.noteStripLeft(surfaceID: "strip-A")
+        XCTAssertTrue(controller.stripSlotCollapsed)
+        controller.noteStripEntered(surfaceID: "strip-B", displayUUID: "display-B")
+        XCTAssertEqual(controller.activeStripSurfaceID, "strip-A", "进框不换手")
+        XCTAssertTrue(controller.stripSlotCollapsed, "B 没认领，进它的框不重开")
+        controller.claimStripSurface("strip-B", displayUUID: "display-B")   // 指针到了 B 屏
+        controller.noteStripEntered(surfaceID: "strip-B", displayUUID: "display-B")
+        XCTAssertFalse(controller.stripSlotCollapsed, "认领的 B 条让位")
+        controller.noteStripLeft(surfaceID: "strip-B")
+        XCTAssertEqual(controller.activeStripSurfaceID, "strip-B", "出框也不交还：指针还在 B 屏")
+        XCTAssertTrue(controller.stripSlotCollapsed)
+        controller.cancelDrag()
+    }
+
+    /// 消息 chip 不跨条：进了别的条不算回来。
+    func testMessagingChipOnlyRestoresOnItsOwnStrip() {
+        messaging.mark("chat")
+        begin(.messaging, "chat", at: outsideZone, surface: "strip-A")
+        controller.noteStripLeft(surfaceID: "strip-A")
+        XCTAssertTrue(controller.stripSlotCollapsed)
+        controller.noteStripEntered(surfaceID: "strip-B", displayUUID: nil)
+        XCTAssertTrue(controller.stripSlotCollapsed, "别的条不算")
+        XCTAssertEqual(controller.activeStripSurfaceID, "strip-A", "消息 chip 不换手")
+        controller.noteStripEntered(surfaceID: "strip-A", displayUUID: nil)
+        XCTAssertFalse(controller.stripSlotCollapsed)
+        controller.cancelDrag()
+    }
+
+    /// 进抽屉体转换 = 离开条；撤销转换后仍是合拢的，直到条的判定框说它回来了。
+    func testConvertingIntoTheDrawerCollapsesAndRevertKeepsItCollapsed() {
+        begin(.strip, "com.example.a", at: outsideZone, surface: "strip-A")
+        controller.convertStripToDrawer()
+        XCTAssertTrue(controller.stripSlotCollapsed)
+        controller.noteStripEntered(surfaceID: "strip-A", displayUUID: nil)
+        XCTAssertTrue(controller.stripSlotCollapsed, "转换期间条的判定框不作数")
+        controller.revertStripFromDrawer()
+        XCTAssertTrue(controller.stripSlotCollapsed)
+        controller.noteStripEntered(surfaceID: "strip-A", displayUUID: nil)
+        XCTAssertFalse(controller.stripSlotCollapsed)
+        controller.cancelDrag()
+    }
+
+    /// 条外、非投放区松手：槽先重开，并朝最后一次已知槽位飞（槽位帧此刻还报不出来）。
+    func testDesktopReleaseReopensTheSlotAndFliesToTheLastKnownSlot() {
+        begin(.strip, "com.example.a", at: outsideZone, surface: "strip-A")
+        controller.setLandingAnchor(CGRect(x: 400, y: 400, width: 40, height: 54), owner: .strip)
+        controller.noteStripLeft(surfaceID: "strip-A")
+        controller.setLandingAnchor(nil, owner: .strip)   // 合拢后条上报不出槽位
+        controller.endDrag()
+        XCTAssertFalse(controller.stripSlotCollapsed, "松手即重开槽")
+        XCTAssertNotNil(controller.landing, "有最后已知槽位就飞，不瞬移")
+        XCTAssertEqual(controller.landing?.kind, .returnToSlot)
+        controller.cancelDrag()
+    }
+
+    /// 投放区（胶囊）松手 = 收纳：槽不重开，条保持窄的，直到落地收尾归零。
+    func testStashReleaseKeepsTheSlotCollapsedUntilLanding() {
+        let stashing = makeStashingController()
+        defer { stashing.cancelDrag() }
+        stashing.beginDrag(payload: payload(.strip, "app"), stripSurfaceID: "strip-A",
+                           startScreenLocation: insideZone, grabOffset: .zero, sourceScreenRect: .zero,
+                           pose: .resting, snapshot: stubSnapshot())
+        waitUntil { stashing.hiddenSlotPayload != nil }
+        stashing.noteStripLeft(surfaceID: "strip-A")
+        XCTAssertTrue(stashing.stripSlotCollapsed)
+        stashing.endDrag()
+        XCTAssertTrue(drawer.contains("app"))
+        XCTAssertEqual(stashing.landing?.kind, .stash)
+        XCTAssertTrue(stashing.stripSlotCollapsed, "吸进胶囊途中槽不重开")
+        stashing.abortLanding()
+        XCTAssertFalse(stashing.stripSlotCollapsed, "落地收尾归零")
+    }
+
+    func testCancelReopensTheSlot() {
+        begin(.strip, "com.example.a", at: outsideZone, surface: "strip-A")
+        controller.noteStripLeft(surfaceID: "strip-A")
+        controller.cancelDrag()
+        XCTAssertFalse(controller.stripSlotCollapsed)
+    }
+
     // MARK: - 起拖 / 落地的交接顺序（两头都必须「先新后旧」）
 
     /// **起拖那一帧，条上那张卡不能先藏（没有预备候选时）。**
@@ -163,10 +274,36 @@ final class DragControllerConversionTests: XCTestCase {
         XCTAssertNotNil(controller.hiddenSlotPayload)
 
         controller.endDrag()
-        // 没有落点锚点 → 不飞 → landing 为 nil → 卡当轮就该显形
-        XCTAssertNil(controller.landing)
+        // 没有落点锚点 → 原地按住等锚点（`DragLandingPlan.holdingFlight`）；按住期到点锚点还没来
+        // → 直接落定：`landing` 一清、卡当轮显形，载体晚一轮再撤。
+        XCTAssertEqual(controller.landing?.flight.isStationary, true, "没锚点先原地按住，不瞬时收尾")
+        waitUntil(1) { controller.landing == nil }
+        XCTAssertNil(controller.landing, "锚点始终没来 → 按住期一到就落定")
         XCTAssertNil(controller.hiddenSlotPayload, "不飞的收尾也要立刻让卡显形")
         XCTAssertTrue(controller.isCarrying, "但载体还没撤，悬停仍要压着")
+    }
+
+    /// 跨屏拖窗（③④）：认领换手后**旧条的槽位记忆作废**——B 屏空处松手不能朝 A 条的旧槽位飞
+    /// （载体面板会切到 A 屏、图标从 B 屏消失，owner 2026-09-03）。松手先原地按住，B 条报上真锚点后
+    /// 整段换成朝它的飞行。
+    func testClaimHandoverForgetsTheOldSlotAndWaitsForTheNewStripsAnchor() {
+        begin(.strip, "com.example.a", at: outsideZone, surface: "strip-A")
+        controller.setLandingAnchor(CGRect(x: 400, y: 400, width: 40, height: 54), owner: .strip)
+        controller.noteStripLeft(surfaceID: "strip-A")
+        controller.setLandingAnchor(nil, owner: .strip)   // A 合拢后报不出槽位
+        controller.claimStripSurface("strip-B", displayUUID: "display-B")   // 指针到了 B 屏
+        controller.endDrag()
+        XCTAssertFalse(controller.stripSlotCollapsed, "松手即重开槽（在 B 条上）")
+        guard let held = controller.landing else { return XCTFail("要有一段原地按住的飞行") }
+        XCTAssertEqual(held.kind, .returnToSlot)
+        XCTAssertTrue(held.flight.isStationary, "不认 A 条的旧槽位")
+        // B 条下一轮提交报上真锚点 → 按住期内整段替换
+        controller.setLandingAnchor(CGRect(x: outsideZone.x + 200, y: outsideZone.y, width: 40, height: 54),
+                                    owner: .strip)
+        guard let flying = controller.landing else { return XCTFail("锚点来了还得在飞") }
+        XCTAssertFalse(flying.flight.isStationary, "换成朝 B 条那格的飞行")
+        XCTAssertEqual(flying.token, held.token, "同一次落地，不是新的一次")
+        controller.cancelDrag()
     }
 
     /// **落地之后那一张卡的悬停要按住**，直到指针真的动了：卡刚以 1.0 停稳就重判悬停，
@@ -177,6 +314,8 @@ final class DragControllerConversionTests: XCTestCase {
         begin(.strip, "app", at: outsideZone)
         waitUntil { controller.hiddenSlotPayload != nil }
         controller.endDrag()
+        // 没锚点 → 先原地按住等锚点（34ms），按住期一过才落地；按住从落地那一刻起。
+        waitUntil { controller.landing == nil }
         XCTAssertEqual(controller.hoverHoldPayload?.bundleID, "app")
         XCTAssertEqual(controller.hoverExemptPayload?.bundleID, "app")
         // 载体撤掉那一轮之后仍然按着（`carrierRetiring` 已经 false，靠的是 hold）。

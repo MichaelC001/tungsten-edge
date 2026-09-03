@@ -223,6 +223,31 @@ final class AppTrackerDisplayAttributionTests: XCTestCase {
         XCTAssertNil(tracker.fixtureAppForTesting(pid: pid)?.windowsByID[cgWindow]?.displayUUIDHoldUntil)
     }
 
+    /// 跨屏搬窗冻结期内座位跟着被搬的窗口走，不被旧帧上的别的窗口「撕」走：否则旧座位继承刚写成 B 的键，
+    /// 被搬的窗口另建座位 → 两张卡都在 B、冻结一过旧的又跳回 A（owner 2026-09-03，多标签访达）。
+    func testMoveHoldKeepsTheSeatOnTheMovedWindowInsteadOfTearingItOut() {
+        let tracker = makeTracker()
+        // 夹具座位用 s9：新建座位的序号计数器从 s1 起，否则和夹具 token 撞名、断言分不出谁是谁。
+        tracker.installFixtureForTesting(makeApp(displayUUID: "A", token: "tabgrp-\(pid)-s9"))
+        XCTAssertTrue(tracker.noteWindowMoved(pid: pid, cgWindowID: cgWindow, displayUUID: "B"))
+        let other: CGWindowID = 92
+        let cg = AppTrackerCGWindowSnapshot(
+            allWindowIDs: [cgWindow, other], onScreenWindowIDs: [cgWindow, other],
+            windowIDsByPID: [pid: [cgWindow, other]], alphaByWindowID: [:], boundsByWindowID: [:]
+        )
+        _ = tracker.reconcileFixtureForTesting(
+            pid: pid, cgSnapshot: cg, now: Date(),
+            eligible: [makeSnapshot(bounds: frameOnB, isMinimized: false),
+                       makeSnapshot(bounds: frameOnA, isMinimized: false, cgWindowID: other)],
+            readOutcome: .success(count: 2)
+        )
+        let app = tracker.fixtureAppForTesting(pid: pid)
+        XCTAssertEqual(app?.windowsByID[cgWindow]?.token, "tabgrp-\(pid)-s9", "座位跟着被搬的窗口")
+        XCTAssertEqual(app?.windowsByID[cgWindow]?.displayUUID, "B")
+        XCTAssertNotEqual(app?.windowsByID[other]?.token, "tabgrp-\(pid)-s9", "旧帧上的窗口自成座位")
+        XCTAssertEqual(app?.windowsByID[other]?.displayUUID, "A")
+    }
+
     /// AX 写帧失败后的裁决：窗口在屏上 → 回滚；不在屏上 → 钉死到目标屏；座位不在册 → 不动。
     func testFailedMoveRollsBackOnScreenWindowsAndPinsOffScreenOnes() {
         let tracker = makeTracker()
@@ -297,11 +322,12 @@ final class AppTrackerDisplayAttributionTests: XCTestCase {
         bounds: CGRect? = nil,
         displayUUID: String?,
         isMinimized: Bool = false,
-        isHidden: Bool = false
+        isHidden: Bool = false,
+        token: String? = nil
     ) -> AppEntry {
         let seat = WindowEntry(
             cgWindowID: cgWindow,
-            token: "tabgrp-\(pid)-s1",
+            token: token ?? "tabgrp-\(pid)-s1",
             title: "Window",
             bounds: bounds ?? frameOnA,
             isMinimized: isMinimized,
@@ -321,10 +347,10 @@ final class AppTrackerDisplayAttributionTests: XCTestCase {
         )
     }
 
-    private func makeSnapshot(bounds: CGRect, isMinimized: Bool) -> AXWindowSnapshot {
+    private func makeSnapshot(bounds: CGRect, isMinimized: Bool, cgWindowID: CGWindowID? = nil) -> AXWindowSnapshot {
         AXWindowSnapshot(
             pid: pid,
-            cgWindowID: cgWindow,
+            cgWindowID: cgWindowID ?? cgWindow,
             titleRead: .value("Window"),
             bounds: bounds,
             role: kAXWindowRole as String,

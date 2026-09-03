@@ -484,8 +484,12 @@ final class AppTracker: ObservableObject {
                     absentSince: &seat.minAbsentSince,
                     episodeID: &seat.absenceEpisodeID
                 )
-                // X 仍可见。检查「拖当前标签出去」：X 移到了新 frame，旧 frame 上来了别的合格窗口 Y
-                if let seatKey, fk(snapX.bounds) != seatKey,
+                // X 仍可见。检查「拖当前标签出去」：X 移到了新 frame，旧 frame 上来了别的合格窗口 Y。
+                // **跨屏搬窗冻结期内不撕**（`displayUUIDHoldUntil` 有效 / 钉死）：那次移帧是我们自己写的，
+                // 座位必须跟着 X 走——否则座位留在旧帧改认 Y、还继承刚写成目标屏的键和冻结，X 落到 Pass B
+                // 新建座位：两张卡都在目标条，冻结一过旧座位又跳回来源屏（owner 2026-09-03，多标签访达）。
+                let moveHeld = seat.displayUUIDHoldUntil.map { $0 == .distantFuture || $0 > now } ?? false
+                if let seatKey, fk(snapX.bounds) != seatKey, !moveHeld,
                    let Y = eligible.first(where: { s in
                        guard let c = s.cgWindowID, c != X, !usedEligible.contains(c) else { return false }
                        return fk(s.bounds) == seatKey

@@ -343,6 +343,12 @@ final class TaskbarScreenOrchestrator: NSObject, WindowLiftAvoidanceHost {
             self?.units.forEach { $0.coordinator.closeDrawerAfterAction() }
         }
         // 跨屏投放（③④）：卡松在另一块屏的任务条上 → 窗口搬到那块屏（只搬不置前）/ 无窗口图标改住那块屏。
+        // 载体面板每屏一块、常驻最上层；任务条钉进私有空间后桌面空间的窗口不论 level 都被压在它下面，
+        // 载体也得钉进同一空间（理由见 `DragController.pinCarrierWindows`）。
+        dragController.pinCarrierWindows = { [weak self] numbers in
+            guard let host = self?.overlaySpaceHost else { return }
+            _ = host.pin(windowNumbers: numbers)
+        }
         dragController.onCrossStripDrop = { [runtime] payload, displayUUID in
             runtime.handleCrossStripDrop(payload: payload, toDisplayUUID: displayUUID)
         }

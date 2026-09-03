@@ -250,7 +250,7 @@ final class PanelCoordinator: NSObject {
     /// 换档事务代次：吞掉换档过程中被其它路径排队的动画布局（见 beginDockSizeChange）。
     private var dockSizeChangeGeneration: UInt64 = 0
     /// 抽屉拖回任务条·"松手才变长"：转正进行中冻结任务条宽度，转正态结束（松手落定 / 拖出还原）再 relayout。
-    private var convertReleaseSubscription: AnyCancellable?
+    private var stripSlotCollapseSubscription: AnyCancellable?
     private var springOpenTimer: Timer?
     /// 离开抽屉+胶囊后**延迟收回**的定时器（owner 2026-06-22：要延迟,不要一蹭到任务条就关）。
     private var springCloseTimer: Timer?
@@ -267,9 +267,6 @@ final class PanelCoordinator: NSObject {
     /// 正在拖的 strip 卡 bundleID,松手时用它判断有没有收进抽屉。
     private var springDragBundleID: String?
     private var lastDesiredWidth: CGFloat = 0
-    /// 跨面板转正进行中钳住的任务条内容宽度（拖动前的值）。非 nil → relayout 用它而非实测宽度，
-    /// 让窗口卡溢出/留空而不改变面板宽度；松手/还原清空后下一次 relayout 变到最终长度（owner 2026-06-22）。
-    private var frozenDockContentWidth: CGFloat?
     private var lastDrawerSize: CGSize = CGSize(width: 210, height: 60)
     /// 目标 frame 驱动布局：每次 layoutPanels 算齐三个目标并存这里。drop zone 命中、开抽屉定位都读**目标**
     /// 而非 live frame——动画中 live frame 是中途值,会和视觉/逻辑短暂不一致（Codex 二审 P2）。
@@ -393,7 +390,7 @@ final class PanelCoordinator: NSObject {
         subscribeRunningApplicationStore()
         subscribeDragSpringLoad()
         subscribeDragInhibitor()
-        subscribeConvertRelease()
+        subscribeStripSlotCollapse()
         subscribeSettings()
         subscribePinnedFolderStore()
         setupFullscreenMonitor()
@@ -591,6 +588,7 @@ final class PanelCoordinator: NSObject {
         panel.setFrame(initialFrame, display: false)
         if !panel.isVisible { panel.alphaValue = 0 }   // 重开中途若仍可见,从当前 alpha 续上,不跳回 0
         panel.orderFrontRegardless()
+        pinOverlappingPanelIfNeeded(panel)
         NSAnimationContext.runAnimationGroup { ctx in
             ctx.duration = PopoverAnimation.openDuration
             ctx.timingFunction = PopoverAnimation.curve()
@@ -821,6 +819,7 @@ final class PanelCoordinator: NSObject {
             }
             if !panel.isVisible { panel.alphaValue = 0 }
             panel.orderFrontRegardless()
+            pinOverlappingPanelIfNeeded(panel)
             NSAnimationContext.runAnimationGroup { ctx in
                 ctx.duration = PopoverAnimation.openDuration
                 ctx.timingFunction = PopoverAnimation.curve()
@@ -1266,6 +1265,7 @@ final class PanelCoordinator: NSObject {
         // （原生 Dock 的应用名是直接出现的）。同理离开也是直接收，见 `.exit` 分支。
         panel.alphaValue = 1
         if !panel.isVisible { panel.orderFrontRegardless() }
+        pinOverlappingPanelIfNeeded(panel)
         startWindowTitleTooltipWatchdog()
     }
 
@@ -1646,32 +1646,23 @@ final class PanelCoordinator: NSObject {
             }
     }
 
-    /// 跨面板拖动期间的任务条宽度。**只钳「从条上拿走」的两个方向**，判据是纯函数
-    /// `DragConversionPlan.freezesStripWidth`（理由与 2026-08-20 的反转都写在那里）。
-    ///
-    /// 钳住时：窗口卡照常出现/移出、实时让位，但只是溢出或留空，面板全程不变宽；转换态结束
-    /// （松手落定 / 拖出还原）才解钳 + relayout，这一刻才动画到最终长度。
-    ///
-    /// **不钳的两个方向不需要这里做任何事**：卡片现身/消失本身就会经 `drawerStore` / 快照那几条
-    /// 订阅触发一次 relayout，条在进条那一刻就张开了。
-    private func subscribeConvertRelease() {
-        convertReleaseSubscription = dragController.$conversion
-            .map { $0.map { DragConversionPlan.freezesStripWidth($0.direction) } ?? false }
+    /// 拖出即合拢（owner 2026-09-03）：条上那张卡离开 / 回到任务条时投影层剔掉 / 放回它，面板宽度
+    /// 要跟着动画。任务条宽度**不再钳**（2026-06-22 → 08-20 两轮的宽度冻结机制随之删除）：
+    /// 条宽任何时候都等于此刻渲染内容的宽度，收纳松手时条已经是窄的，胶囊 / 抽屉不再在飞行途中滑动。
+    /// 写法同 store 订阅（先 receive(on:) 再 async 一轮，让 SwiftUI 先按新投影布局，`fittingSize` 才是新宽度）。
+    private func subscribeStripSlotCollapse() {
+        stripSlotCollapseSubscription = dragController.$stripSlotCollapsed
             .removeDuplicates()
-            .sink { [weak self] converted in
+            .dropFirst()
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self] _ in
                 guard let self else { return }
-                if converted {
-                    // 转正开始：钳在"拖动前"宽度（此刻 lastDesiredWidth 仍是转正前的值，标志在改 drawerStore 前先置）。
-                    if self.frozenDockContentWidth == nil { self.frozenDockContentWidth = self.lastDesiredWidth }
-                } else {
-                    self.frozenDockContentWidth = nil
-                    // 换档事务里 cancelDrag() 也会走到这里排队一次带动画的布局；用代次吞掉它，
-                    // 否则会先按新 metrics 动画一次、再被事务的无动画布局跳一次。
-                    let generation = self.dockSizeChangeGeneration
-                    DispatchQueue.main.async { [weak self] in
-                        guard let self, generation == self.dockSizeChangeGeneration else { return }
-                        self.relayout(animated: true)
-                    }
+                // 换档事务里 cancelDrag() 也会走到这里排队一次带动画的布局；用代次吞掉它，
+                // 否则会先按新 metrics 动画一次、再被事务的无动画布局跳一次。
+                let generation = self.dockSizeChangeGeneration
+                DispatchQueue.main.async { [weak self] in
+                    guard let self, generation == self.dockSizeChangeGeneration else { return }
+                    self.relayout(animated: true)
                 }
             }
     }
@@ -1770,7 +1761,7 @@ final class PanelCoordinator: NSObject {
     /// 顺序是有讲究的：
     /// 1. 先收掉所有依附在旧几何上的东西——拖动载体（尺寸随档位）、抽屉（`maxContentHeight`
     ///    是开抽屉时一次性传进根视图的，只挪外框会裁掉内容）、弹窗与 tooltip（锚点已作废）。
-    /// 2. `cancelDrag()` 会经 `subscribeConvertRelease` 排队一次**带动画**的 relayout，
+    /// 2. `cancelDrag()` 会经 `subscribeStripSlotCollapse` 排队一次**带动画**的 relayout，
     ///    用 generation 门控把它吞掉，否则先按新 metrics 动画一次、再瞬时跳一次。
     /// 3. 等 SwiftUI 用新档位跑完一轮布局（`fittingSize` 那时才是新宽度），再一次性无动画提交。
     ///    换档是瞬时的，不做过渡动画。
@@ -1833,6 +1824,9 @@ final class PanelCoordinator: NSObject {
         onPanelScreenChanged?()
 
         let dockT = dockTargetFrame(contentWidth: contentWidth, on: screen)
+        // 胶囊（连同按它定位的抽屉）**永远**贴着此刻的条目标帧，拖动中也一样：拖出即合拢让条对称收缩，
+        // 胶囊跟着一起动（原生 Dock 同样整条重新居中）。2026-09-03 曾在拖动期把胶囊钉在旧目标帧上——
+        // 多屏下每个单元都被钉住，B 条变宽压到胶囊、A 条变窄留大缝（owner 当天报）。不要再加锚定。
         let capsuleT = capsuleTargetFrame(forDock: dockT, on: screen)
         // 任务条目标帧一变（宽度/切屏）就关弹窗——不追动画中的锚点（与原生 Dock 行为一致,保 target-frame 纯度）。
         if dockT != lastDockTargetFrame {
@@ -1884,8 +1878,7 @@ final class PanelCoordinator: NSObject {
         lastDesiredWidth = measured
         // 跨面板转正进行中 → 任务条宽度钳在拖动前的值（窗口卡溢出/留空而非改变面板宽度，owner 2026-06-22）；
         // 松手/还原解钳后，下一次 relayout 用真实测量值把任务条变到最终长度。
-        let contentWidth = frozenDockContentWidth ?? measured
-        layoutPanels(contentWidth: contentWidth, on: panelCurrentScreen(panel: panel), animated: animated)
+        layoutPanels(contentWidth: measured, on: panelCurrentScreen(panel: panel), animated: animated)
     }
 
     /// 三面板同一个动画组提交,共用一条时间轴（Codex 二审 P2：避免各跑各的时间轴抖动）。
@@ -2158,14 +2151,24 @@ final class PanelCoordinator: NSObject {
 
     // MARK: - 常驻面板钉进私有空间（桌面互滑时底板不发灰）
 
-    /// 把任务条 / 玻璃底板 / 胶囊钉进进程唯一的私有空间；抽屉 / 弹窗 / 气泡是瞬时面板，
-    /// 弹出时落在当前桌面即可，不参与。机理与实测边界见 `OverlaySpaceHost`。
+    /// 把任务条 / 玻璃底板 / 胶囊钉进进程唯一的私有空间。机理与实测边界见 `OverlaySpaceHost`。
     private func pinResidentPanelsIfNeeded() {
         guard let host = overlaySpaceHost, !isSuspendedForPermissionLoss else { return }
         let windowNumbers = allSpacesPanels.map(\.windowNumber)
         guard !windowNumbers.isEmpty else { return }
         if !host.pin(windowNumbers: windowNumbers) {
             logger.error("[overlay-space] pin failed windows=\(windowNumbers, privacy: .public)")
+        }
+    }
+
+    /// 瞬时面板（抽屉 / 弹窗 / 名字气泡）**也要钉进同一空间**——它们都会和任务条那几扇窗口的范围
+    /// （含 20pt 阴影透明边）重叠，而留在桌面空间的窗口不论 `level` 都被合成在私有空间**下面**：
+    /// 抽屉最下一行压在胶囊窗口的阴影边里就发暗，启动弹跳往上一抬又变亮（owner 2026-09-03，
+    /// `DOCK_OVERLAY_SPACE=0` A/B 坐实）。每次 order front 后补钉一次，已钉住的只是一次廉价读回。
+    private func pinOverlappingPanelIfNeeded(_ panel: NSPanel) {
+        guard let host = overlaySpaceHost, !isSuspendedForPermissionLoss, panel.windowNumber > 0 else { return }
+        if !host.pin(windowNumbers: [panel.windowNumber]) {
+            logger.error("[overlay-space] pin failed window=\(panel.windowNumber, privacy: .public)")
         }
     }
 

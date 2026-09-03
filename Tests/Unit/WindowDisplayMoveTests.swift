@@ -13,6 +13,15 @@ final class WindowDisplayMoveTests: XCTestCase {
         visibleCGFrame: CGRect(x: 1000, y: -175, width: 2000, height: 1175)
     )
 
+    /// 成败看归属屏：AppKit 修正了几 pt 仍算到了；落回来源屏才算没到。
+    func testLandedOnTargetJudgesByDisplayNotByPixels() {
+        let table = WindowDisplayAttribution.Table(displays: [a, b], primaryUUID: "A")
+        let nudged = CGRect(x: 1106, y: -70, width: 400, height: 300)   // 比请求帧偏了 6/5 pt
+        XCTAssertTrue(WindowDisplayMove.landedOnTarget(actual: nudged, target: "B", table: table))
+        let stayed = CGRect(x: 100, y: 125, width: 400, height: 300)
+        XCTAssertFalse(WindowDisplayMove.landedOnTarget(actual: stayed, target: "B", table: table))
+    }
+
     func testKeepsOffsetFromSourceVisibleOrigin() {
         let window = CGRect(x: 100, y: 125, width: 400, height: 300)   // 相对 A 可用区偏移 (100, 100)
         let moved = WindowDisplayMove.targetFrame(window: window, from: a, to: b)

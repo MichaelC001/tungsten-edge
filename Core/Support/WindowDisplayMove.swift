@@ -24,4 +24,11 @@ enum WindowDisplayMove {
         // 只对原点取整，尺寸原样保留（`.integral` 会在半像素处把尺寸撑大 1pt）。
         return CGRect(x: origin.x.rounded(), y: origin.y.rounded(), width: width, height: height)
     }
+
+    /// 搬窗成没成：看回读帧**归属到的屏**是不是目标屏，不看它和请求帧差几 pt。跨屏搬窗时 AppKit
+    /// 常自己修正几 pt（菜单栏 / 可用区约束、两块屏缩放不同），按 ±2pt 判失败会把已经搬过去的
+    /// 窗口又挪回来（owner 2026-09-03：「窗口到了 B，闪一下，窗口和卡都回到 A」）。
+    static func landedOnTarget(actual: CGRect, target: String, table: WindowDisplayAttribution.Table) -> Bool {
+        WindowDisplayAttribution.displayUUID(for: actual, table: table) == target
+    }
 }

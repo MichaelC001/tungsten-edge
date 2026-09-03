@@ -193,12 +193,17 @@ final class AppRuntime: ObservableObject {
     ///（`AXWindowReader.setFrame`，项目里唯一的几何写入口）；写不成就把键改回去（卡飞回来源条）。
     /// 标签组只搬代表窗口；全屏 / 不可写的窗口就是「写不成」。
     func moveWindow(item: StripItem, toDisplayUUID uuid: String) {
-        guard !item.isAppLevelFallback, let cgWindowID = item.cgWindowID, cgWindowID != 0 else { return }
+        guard !item.isAppLevelFallback else { return }
+        // `item` 是起拖那一刻拍下的；拖动途中座位的当前标签可能换了（切标签 / 顶替），按座位 token
+        // （`StripItem.id`）在**此刻**的快照里找现在的 cgWindowID，找不到才用起拖时那个——否则
+        // `noteWindowMoved` 找不到座位就整个不搬，卡落地后弹回来源条。
+        let liveRecord = snapshot.windows.values.first { $0.groupID == item.id && ($0.cgWindowID ?? 0) != 0 }
+        guard let cgWindowID = liveRecord?.cgWindowID ?? item.cgWindowID, cgWindowID != 0 else { return }
         let table = displayTableProvider()
         guard let target = table.displays.first(where: { $0.uuid == uuid }) else { return }
         let source = table.displays.first { $0.uuid == item.displayUUID }
         let pid = pid_t(item.pid)
-        let previous = item.displayUUID
+        let previous = liveRecord?.displayUUID ?? item.displayUUID
         let noted = tracker.noteWindowMoved(pid: pid, cgWindowID: cgWindowID, displayUUID: uuid)
         if Self.displayTraceEnabled {
             displayTraceLogger.info("moveWindow optimistic noted=\(noted) pid=\(pid) cg=\(cgWindowID) to=\(uuid, privacy: .public)")
@@ -218,15 +223,27 @@ final class AppRuntime: ObservableObject {
                 return
             }
             let frame = WindowDisplayMove.targetFrame(window: current, from: source, to: target)
+            // 成败看**回读帧归属到的屏**（`WindowDisplayMove.landedOnTarget`），不按 ±2pt 判：跨屏时 AppKit
+            // 常自己修正几 pt，按像素判失败会把已经搬过去的窗口又挪回来。所以不传 `restoreOnFailureTo`，
+            // 没到目标屏时自己写回原帧。
             let result = reader.setFrame(frame, for: handle.element,
                                          messagingTimeout: 0.1,
-                                         verificationTolerance: 2,
-                                         restoreOnFailureTo: current)
-            if case .success = result {
-                trace?.info("moveWindow setFrame ok pid=\(pid) cg=\(cgWindowID) frame=\(String(describing: frame), privacy: .public)")
+                                         verificationTolerance: 8)
+            let landedFrame: CGRect? = {
+                if case let .success(actual) = result { return actual }
+                return reader.frame(of: handle.element, messagingTimeout: 0.1)
+            }()
+            if let landedFrame, WindowDisplayMove.landedOnTarget(actual: landedFrame, target: uuid, table: table) {
+                trace?.info("moveWindow landed pid=\(pid) cg=\(cgWindowID) frame=\(String(describing: landedFrame), privacy: .public)")
+                // 冻结从真正写完这一刻重新起算：乐观写那一刻起的 1.5s 有大半花在两次 AX 往返 + 写帧上，
+                // 剩下的不够挡住随后落地的旧位置读。
+                Task { @MainActor [weak self] in
+                    self?.tracker.noteWindowMoved(pid: pid, cgWindowID: cgWindowID, displayUUID: uuid, hold: .brief)
+                }
                 return
             }
-            trace?.info("moveWindow setFrame failed pid=\(pid) cg=\(cgWindowID) result=\(String(describing: result), privacy: .public)")
+            trace?.info("moveWindow setFrame failed pid=\(pid) cg=\(cgWindowID) result=\(String(describing: result), privacy: .public) landed=\(String(describing: landedFrame), privacy: .public)")
+            _ = reader.setFrame(current, for: handle.element, messagingTimeout: 0.1, verificationTolerance: 8)
             // 写不成：窗口在屏上（用户看得见的真窗口，全屏 / 不可写）→ 回滚，卡飞回来源条；
             // 不在屏上（离屏 / 幽灵）→ 当「改住址」钉死到目标屏。由清单按 on-screen 集合判。
             Task { @MainActor [weak self] in

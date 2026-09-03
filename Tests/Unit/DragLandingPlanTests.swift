@@ -250,6 +250,40 @@ final class DragLandingPlanTests: XCTestCase {
                              2 * (DragLandingPlan.duration + DragLandingPlan.settleMargin))
     }
 
+    /// 起飞后的纠偏只滑终点：时长、曲线、起点、透明度一律保留。换成按新距离重算的话，
+    /// 每次纠偏都从此刻重新起步再缓停，锚点逐帧漂时就是「一抽一抽」（2026-09-03）。
+    func testSlidingARetargetKeepsTheTimelineAndOnlyMovesTheDestination() {
+        let carrier = CGRect(x: 0, y: 0, width: 1000, height: 1000)
+        let flight = DragLandingPlan.flight(from: CGPoint(x: 500, y: 100), fromScale: 1,
+                                            anchorScreenRect: CGRect(x: 90, y: 870, width: 40, height: 54),
+                                            carrierScreenFrame: carrier)!
+        let slid = flight.sliding(to: CGPoint(x: 480, y: 120), toScale: 0.5)
+        XCTAssertEqual(slid.to, CGPoint(x: 480, y: 120))
+        XCTAssertEqual(slid.toScale, 0.5)
+        XCTAssertEqual(slid.from, flight.from)
+        XCTAssertEqual(slid.fromScale, flight.fromScale)
+        XCTAssertEqual(slid.duration, flight.duration)
+        XCTAssertEqual(slid.curve, flight.curve)
+        XCTAssertEqual(slid.toOpacity, flight.toOpacity)
+    }
+
+    /// 松手时没锚点 → 原地按住的飞行：起点 = 终点、落地即常态尺寸；它是「等锚点」的占位，
+    /// 起飞时若还是它就该直接落定（`isStationary`），真正的飞行永远不是 stationary。
+    func testHoldingFlightIsStationaryAndARealFlightIsNot() {
+        let held = DragLandingPlan.holdingFlight(at: CGPoint(x: 500, y: 100), scale: 1)
+        XCTAssertTrue(held.isStationary)
+        XCTAssertEqual(held.from, held.to)
+        XCTAssertEqual(held.toScale, DragLandingPlan.landedScale)
+        XCTAssertEqual(held.toOpacity, 1)
+        let carrier = CGRect(x: 0, y: 0, width: 1000, height: 1000)
+        let real = DragLandingPlan.flight(from: CGPoint(x: 500, y: 100), fromScale: 1,
+                                          anchorScreenRect: CGRect(x: 90, y: 870, width: 40, height: 54),
+                                          carrierScreenFrame: carrier)!
+        XCTAssertFalse(real.isStationary)
+        // 纠偏把按住替换成真飞行后同样不再 stationary；反过来滑到原点又算按住
+        XCTAssertFalse(held.sliding(to: real.to, toScale: real.toScale).isStationary)
+    }
+
 
     /// 抬起（从卡槽滑到指针下）要明显比归位飞行短：它是起拖的**接手**动作，
     /// 长了就变成「起拖要等一下」，反而是要治的那种迟滞。

@@ -14,6 +14,21 @@ struct DragLandingFlight: Equatable {
     let curve: DragLandingCurve
     /// 落地时的透明度：飞回卡槽 = 1；吸进胶囊 = 0（`DragLandingPlan.stashFlight`）。
     var toOpacity: Float = 1
+
+    /// 起飞后的中途纠偏：**只换终点，起点 / 时长 / 曲线 / 透明度原样保留。**
+    /// 飞行已经在跑，换一段新时长新曲线就等于从此刻重新起步再缓停；锚点逐帧漂（任务条解冻
+    /// 重新居中、抽屉面板跟着滑 0.22s）时每帧重来一次，就是「一抽一抽」（2026-09-03 trace：
+    /// 0.22s 内重发 11 次、终点每次挪 1–3pt）。同一条时间线上滑终点，肉眼只看到一条平滑的路。
+    func sliding(to newTo: CGPoint, toScale newToScale: CGFloat) -> DragLandingFlight {
+        DragLandingFlight(from: from, to: newTo, fromScale: fromScale, toScale: newToScale,
+                          duration: duration, curve: curve, toOpacity: toOpacity)
+    }
+
+    /// 「原地按住」的飞行（`DragLandingPlan.holdingFlight`）——位移不到 `minimumTravel`，
+    /// 起飞时若还是它就直接落定，不让载体原地干等一段时长。
+    var isStationary: Bool {
+        hypot(to.x - from.x, to.y - from.y) < DragLandingPlan.minimumTravel
+    }
 }
 
 /// 一条定时长的三次贝塞尔曲线（`CAMediaTimingFunction(controlPoints:)` 的四个数）。
@@ -238,6 +253,16 @@ enum DragLandingPlan {
         return DragLandingFlight(from: from, to: to,
                                  fromScale: fromScale, toScale: stashScale,
                                  duration: stashDuration, curve: shortCurve, toOpacity: 0)
+    }
+
+    /// **松手时还拿不到落点锚点、但锚点马上会来**（拖出即合拢后在条外松手：空槽这一刻才重开，
+    /// 条要等下一轮 SwiftUI 提交才报得出那格的帧；跨屏拖窗时更是另一条 strip 第一次画这张卡）：
+    /// 返回一段原地按住的飞行，走按住期（`landingSettle`）路径，锚点一到由纠偏**整段替换**成真正的飞行。
+    /// 起飞时仍是它（锚点始终没来）→ 直接落定（`isStationary`）。以前这种情形直接瞬时收尾，
+    /// 跨屏时就是 owner 2026-09-03 报的「松手图标消失、闪现在 B 条上」。
+    static func holdingFlight(at point: CGPoint, scale: CGFloat) -> DragLandingFlight {
+        DragLandingFlight(from: point, to: point, fromScale: scale, toScale: landedScale,
+                          duration: minimumDuration, curve: shortCurve)
     }
 
     /// 屏幕矩形（左下原点）→ 载体面板内的中心点（左上原点）。

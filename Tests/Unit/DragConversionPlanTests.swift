@@ -72,19 +72,6 @@ final class DragConversionPlanTests: XCTestCase {
             bundleID: "com.example.app", isMessagingMember: false, isInSnapshot: false, isRunningProcess: false, hasRealWindow: false, isKept: false), .reject)
     }
 
-    // MARK: - freezesStripWidth
-
-    /// 从条上**拿走**东西的方向要钳住宽度：不钳的话卡一离开条就塌缩，而用户还没决定要不要真收进去。
-    func testTakingFromTheStripFreezesWidth() {
-        XCTAssertTrue(DragConversionPlan.freezesStripWidth(.intoDrawer))
-    }
-
-    /// **往条上放**东西的方向不钳（owner 2026-08-20 反转 06-22 定的「四向对称都钳」）：
-    /// 钳住意味着松手那一刻才解钳、整条在 0.22s 里重新居中，正好压在归位飞行的落点上。
-    func testPuttingOntoTheStripDoesNotFreezeWidth() {
-        XCTAssertFalse(DragConversionPlan.freezesStripWidth(.ontoStrip))
-    }
-
     // MARK: - endAction
 
     func testStripAndFolderNeverRouteHere() {
