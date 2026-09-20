@@ -217,6 +217,15 @@ final class DockLiquidGlassConfigurationTests: XCTestCase {
 
     /// The variant plate draws its own rim and casts no shadow, so the 2pt outset (which clips
     /// that rim) and the strip shadow go — but only when glass and the variant are both live.
+    func testVariantSelfCheckAcceptsOnlyAnUnfilledMaterial() {
+        typealias C = DockLiquidGlassConfiguration
+        XCTAssertTrue(C.variantRendersClearPlate(fillOpacity: 0), "the Dock material, as measured")
+        XCTAssertFalse(C.variantRendersClearPlate(fillOpacity: 0.845546), "the regular material's white fill")
+        XCTAssertFalse(C.variantRendersClearPlate(fillOpacity: 0.3789912))
+        XCTAssertFalse(C.variantRendersClearPlate(fillOpacity: -1), "unreadable fails closed")
+        XCTAssertFalse(C.variantRendersClearPlate(fillOpacity: .nan))
+    }
+
     func testOutsetAndStripShadowFollowTheSystemVariant() {
         typealias C = DockLiquidGlassConfiguration
         XCTAssertEqual(C.backdropOutset(usesLiquidGlass: true, usesSystemVariant: true), 0)

@@ -71,6 +71,53 @@ BOOL TEDockGlassSetSystemVariant(id glassView, NSInteger variant) {
     }
 }
 
+static double TEDockGlassFillOpacityInLayer(CALayer *layer) {
+    double result = -1;
+    for (id filter in layer.filters) {
+        if (![filter respondsToSelector:NSSelectorFromString(@"type")] ||
+            ![[filter valueForKey:@"type"] isEqual:@"glassBackground"] ||
+            ![filter respondsToSelector:NSSelectorFromString(@"inputKeys")]) continue;
+        NSArray *keys = [filter valueForKey:@"inputKeys"];
+        for (NSString *key in @[@"inputBlurFillLightenOpacity", @"inputBlurFillNormalOpacity"]) {
+            if (![keys containsObject:key]) return -1;
+            id value = [filter valueForKey:key];
+            if (![value isKindOfClass:NSNumber.class]) return -1;
+            result = MAX(result, [value doubleValue]);
+        }
+    }
+    for (CALayer *sublayer in layer.sublayers) {
+        result = MAX(result, TEDockGlassFillOpacityInLayer(sublayer));
+    }
+    return result;
+}
+
+double TEDockGlassVariantFillOpacity(NSInteger variant) {
+    Class glassClass = NSClassFromString(@"NSGlassEffectView");
+    if (glassClass == Nil) return -1;
+    @try {
+        NSRect frame = NSMakeRect(0, 0, 400, 54);
+        // AppKit builds the material's filter only for a view inside a window; the window is never ordered in.
+        NSWindow *window = [[NSWindow alloc] initWithContentRect:frame
+                                                       styleMask:NSWindowStyleMaskBorderless
+                                                         backing:NSBackingStoreBuffered
+                                                           defer:YES];
+        window.releasedWhenClosed = NO;
+        NSView *glassView = [[glassClass alloc] initWithFrame:frame];
+        [glassView setValue:[[NSView alloc] initWithFrame:frame] forKey:@"contentView"];
+        if (!TEDockGlassSetSystemVariant(glassView, variant)) return -1;
+        window.contentView = [[NSView alloc] initWithFrame:frame];
+        [window.contentView addSubview:glassView];
+        [window.contentView layoutSubtreeIfNeeded];
+        [window displayIfNeeded];
+        double fill = glassView.layer != nil ? TEDockGlassFillOpacityInLayer(glassView.layer) : -1;
+        [glassView removeFromSuperview];
+        [window close];
+        return fill;
+    } @catch (__unused NSException *exception) {
+        return -1;
+    }
+}
+
 BOOL TEDockGlassSetRefraction(id candidate, double height, double amount) {
     if (![candidate isKindOfClass:CALayer.class] || !isfinite(height) || !isfinite(amount) || height <= 0) {
         return NO;

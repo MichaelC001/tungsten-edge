@@ -91,6 +91,16 @@ struct DockLiquidGlassConfiguration: Equatable {
 
     static let dockSystemVariant = 3
 
+    /// The Dock material carries no white fill (0); the regular material a system may map the same
+    /// private number to carries 0.85 and paints a milky plate.
+    static let maxClearPlateFillOpacity = 0.1
+
+    /// Whether the material resolved for the Dock variant is safe to show. `fillOpacity` is
+    /// `TEDockGlassVariantFillOpacity`'s read-back; unreadable (< 0) fails closed to the SwiftUI plate.
+    static func variantRendersClearPlate(fillOpacity: Double) -> Bool {
+        (0 ... maxClearPlateFillOpacity).contains(fillOpacity)
+    }
+
     // The native Dock resolves its material at Size.medium, independently of the bar height.
     // These are optical distances, not panel geometry; do not scale them with the bar.
     static let dockInnerRefractionHeight = 13.28

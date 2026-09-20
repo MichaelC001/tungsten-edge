@@ -204,9 +204,18 @@ enum DockGlassPresentation {
     static let diagonalHighlightEnabled = DebugSwitch.liquidGlassDiagonalHighlight.isEnabled()
     static let highlightBoostEnabled = DebugSwitch.liquidGlassHighlightBoost.isEnabled()
 
-    /// The system variant in effect, or `nil` when it is switched off or the private selector is gone.
+    /// The system variant in effect, or `nil` when it is switched off, the private selector is gone,
+    /// or this system resolves the Dock's number to a filled (milky) material. Only the default is
+    /// checked: an explicit `DOCK_LIQUID_GLASS_SYSTEM_VARIANT=<n>` is a tuning request and is trusted.
+    /// First read must happen outside a SwiftUI update — `makeTaskbarGlassBackground` does it.
     static let activeSystemVariant: Int? = {
         guard let variant = configuration.systemVariant, TEDockGlassSupportsSystemVariant() else { return nil }
+        guard variant == DockLiquidGlassConfiguration.dockSystemVariant else { return variant }
+        let fill = TEDockGlassVariantFillOpacity(variant)
+        guard DockLiquidGlassConfiguration.variantRendersClearPlate(fillOpacity: fill) else {
+            print("[glass] system variant \(variant) failed the material self-check (fill=\(fill)); using the SwiftUI plate")
+            return nil
+        }
         return variant
     }()
 
