@@ -301,7 +301,12 @@ final class SettingsCoordinator: ObservableObject {
     /// 而且 Sparkle 自己也会写这个偏好。
     var automaticallyChecksForUpdates: Bool {
         get { updateService.automaticallyChecksForUpdates }
-        set { updateService.automaticallyChecksForUpdates = newValue }
+        set {
+            // A pass-through computed property publishes nothing on its own: without this the
+            // checkbox keeps its old look while the real value has already flipped.
+            objectWillChange.send()
+            updateService.automaticallyChecksForUpdates = newValue
+        }
     }
 
     // MARK: 应用内反馈

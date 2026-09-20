@@ -254,6 +254,19 @@ final class SettingsCoordinatorTests: XCTestCase {
         XCTAssertTrue(coordinator.automaticallyChecksForUpdates)
     }
 
+    /// The toggle is a pass-through to the updater, so the coordinator has to announce the
+    /// change itself — otherwise the checkbox stays checked while automatic checks are off.
+    func testAutomaticUpdateToggleAnnouncesTheChangeToTheSettingsWindow() {
+        let coordinator = makeCoordinator(updates: UpdateControlStub())
+        var announcements = 0
+        let subscription = coordinator.objectWillChange.sink { announcements += 1 }
+        defer { subscription.cancel() }
+
+        coordinator.automaticallyChecksForUpdates = false
+
+        XCTAssertEqual(announcements, 1)
+    }
+
     // MARK: 显隐快捷键
 
     func testApplyShortcutRejectionNeverReachesRegistrar() {
