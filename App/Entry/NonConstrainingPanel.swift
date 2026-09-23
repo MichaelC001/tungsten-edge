@@ -79,6 +79,22 @@ class NonConstrainingPanel: NSPanel {
     override func constrainFrameRect(_ frameRect: NSRect, to screen: NSScreen?) -> NSRect {
         frameRect
     }
+
+    // `isMovable = false` only stops mouse drags: any process with Accessibility access can still
+    // relocate the window through `kAXPositionAttribute`, and `PanelCoordinator` never puts it
+    // back (`setFrames` compares targets, not live frames). A window manager reacting to the
+    // per-tick frame changes of a grip drag is exactly such a process. NSWindow serves AX
+    // position / size writes through the legacy attribute API below; disallowing
+    // `setAccessibilityFrame(_:)` via `isAccessibilitySelectorAllowed` does not block them.
+    override func accessibilityIsAttributeSettable(_ attribute: NSAccessibility.Attribute) -> Bool {
+        if attribute == .position || attribute == .size { return false }
+        return super.accessibilityIsAttributeSettable(attribute)
+    }
+
+    override func accessibilitySetValue(_ value: Any?, forAttribute attribute: NSAccessibility.Attribute) {
+        if attribute == .position || attribute == .size { return }
+        super.accessibilitySetValue(value, forAttribute: attribute)
+    }
 }
 
 /// Liquid Glass is hosted in a non-key floating panel. These private AppKit appearance hooks are
