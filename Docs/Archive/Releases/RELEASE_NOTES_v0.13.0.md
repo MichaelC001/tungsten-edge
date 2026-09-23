@@ -1,8 +1,8 @@
-Tungsten Edge v0.13.0 brings a new brand mark, puts the size slider back in Settings, and stops other processes from moving the taskbar.
+Tungsten Edge v0.13.0 updates the brand mark, restores the size slider in Settings, and fixes the taskbar being moved by other apps.
 
-- **The app and menu bar icons now carry the new brand mark, rebuilt on Apple's icon grid so their size and padding match other apps in the Dock.**
-- **The Taskbar Size slider is back in Settings, and it changes the same value as dragging at a divider on the taskbar.**
-- **Fixed: other processes — window managers, for instance — can no longer move or resize the taskbar through Accessibility, which could leave the bar stranded mid-screen after you made it shorter.**
+- **Redesigned the app and menu bar icons with the new brand mark, following Apple's icon specifications.**
+- **Restored the Taskbar Size slider in Settings, synchronized with dragging at a divider.**
+- **Fixed the taskbar being moved or resized by other apps through Accessibility.**
 
 ## Installing
 
@@ -20,11 +20,11 @@ Requires macOS 12 or newer. Universal — Apple silicon and Intel.
 
 ---
 
-本版换了新的品牌标志，设置窗口里重新有了大小滑块，并挡住了别的程序挪动 Dock 栏。
+本版更换品牌标志，恢复设置中的大小滑块，并修复 Dock 栏被其他应用移动的问题。
 
-- **应用图标和菜单栏图标换成了新的品牌标志，并按苹果的图标网格重做，在程序坞里的大小和留边与其他应用一致。**
-- **设置窗口里重新有了「Dock 栏大小」滑块，它和在 Dock 栏分隔处上下拖动改的是同一个值。**
-- **修复：别的程序（比如窗口管理工具）不能再通过辅助功能挪动或缩放 Dock 栏——此前可能出现把高度调小之后，Dock 栏跑到屏幕中间。**
+- **应用图标与菜单栏图标更换为新的品牌标志，并按苹果图标规范重制。**
+- **设置中恢复「Dock 栏大小」滑块，与在分隔处拖动调节同步。**
+- **修复其他应用通过辅助功能移动或缩放 Dock 栏导致其偏离底部的问题。**
 
 ## 安装
 
