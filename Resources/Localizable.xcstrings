@@ -18,6 +18,40 @@
         }
       }
     },
+    "Large": {
+      "comment": "设置窗口 · 通用",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "大"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Large"
+          }
+        }
+      }
+    },
+    "Same as dragging the divider on the taskbar up or down.": {
+      "comment": "设置窗口 · 通用",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "和在 Dock 栏分隔线上上下拖动改的是同一个值。"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Same as dragging the divider on the taskbar up or down."
+          }
+        }
+      }
+    },
     "Single-display mode": {
       "comment": "单/多屏模式子菜单 · 第一组标题（跟随栏 / 固定在某屏）",
       "localizations": {
@@ -3195,6 +3229,23 @@
         }
       }
     },
+    "Small": {
+      "comment": "设置窗口 · 通用",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "小"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Small"
+          }
+        }
+      }
+    },
     "Some items can’t be accessed. Allow Tungsten Edge to access their folder in your Mac’s privacy settings.": {
       "localizations": {
         "zh-Hans": {
@@ -3355,6 +3406,23 @@
           "stringUnit": {
             "state": "translated",
             "value": "Taskbar"
+          }
+        }
+      }
+    },
+    "Taskbar Size": {
+      "comment": "设置窗口 · 通用",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Dock 栏大小"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Taskbar Size"
           }
         }
       }

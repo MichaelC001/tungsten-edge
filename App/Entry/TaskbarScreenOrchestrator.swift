@@ -196,6 +196,7 @@ final class TaskbarScreenOrchestrator: NSObject, WindowLiftAvoidanceHost {
         guard !isSuspended else { return }
         isSuspended = true
         cancelInteractiveHeightResize()
+        setSettingsHeightSessionActive(false)
         // 先回滚未提交的跨面板拖拽事务，再拆监视器；常驻的载体面板也要显式收掉。
         dragController.cancelDrag()
         dragController.closeCarrierSurfaces()
@@ -289,7 +290,9 @@ final class TaskbarScreenOrchestrator: NSObject, WindowLiftAvoidanceHost {
         coordinator.setFullscreenIntentRouting(enabled: fullscreenIntentMonitor != nil)
         // A unit created mid-drag (topology change is cancelled first, but a placement change
         // is not) joins the session instead of animating its way through every tick.
-        if heightResizeOrigin != nil { coordinator.setInteractiveHeightResizeActive(true) }
+        if heightResizeOrigin != nil || settingsHeightSessionActive {
+            coordinator.setInteractiveHeightResizeActive(true)
+        }
         coordinator.onInteractiveHeightResizeUpdate = { [weak self] in
             self?.units.forEach { $0.coordinator.commitInteractivePanelHeight() }
         }
@@ -306,6 +309,37 @@ final class TaskbarScreenOrchestrator: NSObject, WindowLiftAvoidanceHost {
     private func cancelInteractiveHeightResize() {
         heightResizeOrigin?.cancelInteractiveResize()
         heightResizeOrigin = nil
+    }
+
+    /// The settings window's height slider is being dragged (`true`) or released (`false`).
+    /// Every unit joins the same transaction as a grip drag — animations off, hover suppressed,
+    /// one batched commit per tick — instead of tearing down and relaying out on every point.
+    /// The wake inhibitor goes on the unit under the pointer only (the screen holding the
+    /// settings window): an inhibitor also wakes a hidden bar, and the other screens' bars
+    /// still pick up the height through the batched commit without being woken.
+    private var settingsHeightSessionActive = false
+    private weak var settingsHeightSessionWakeUnit: PanelCoordinator?
+
+    func setSettingsHeightSessionActive(_ active: Bool) {
+        guard settingsHeightSessionActive != active else { return }
+        if !active { commitSettingsPanelHeight() }
+        settingsHeightSessionActive = active
+        if active {
+            cancelInteractiveHeightResize()
+            let wakeUnit = (unitContainingMouse() ?? units.first)?.coordinator
+            settingsHeightSessionWakeUnit = wakeUnit
+            units.forEach { $0.coordinator.setInteractiveHeightResizeActive(true) }
+            wakeUnit?.setAutoHideInhibitor(.interactiveResize, active: true)
+        } else {
+            settingsHeightSessionWakeUnit?.setAutoHideInhibitor(.interactiveResize, active: false)
+            settingsHeightSessionWakeUnit = nil
+            units.forEach { $0.coordinator.setInteractiveHeightResizeActive(false) }
+        }
+    }
+
+    func commitSettingsPanelHeight() {
+        guard settingsHeightSessionActive, heightResizeOrigin == nil else { return }
+        units.forEach { $0.coordinator.commitInteractivePanelHeight() }
     }
 
     private func unitContainingMouse() -> Unit? {

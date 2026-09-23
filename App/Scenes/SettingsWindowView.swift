@@ -91,6 +91,7 @@ struct SettingsWindowContent: View {
     @ViewBuilder
     private var generalPane: some View {
         settingsPane {
+            taskbarSizeRow
             languageRow
             hotKeyRow
             scrollReverserRow
@@ -205,6 +206,32 @@ struct SettingsWindowContent: View {
         process.arguments = ["-c", "sleep 0.5; /usr/bin/open \"$0\"", Bundle.main.bundleURL.path]
         try? process.run()
         NSApp.terminate(nil)
+    }
+
+    /// Shares the grip's stored height and commits its panel geometry in the same event.
+    @ViewBuilder
+    private var taskbarSizeRow: some View {
+        settingRow(note: String(localized: "Same as dragging the divider on the taskbar up or down.")) {
+            HStack(spacing: 10) {
+                Text("Taskbar Size")
+                Text("Small")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                Slider(
+                    value: binding(
+                        get: { Double(store.dockPanelHeight.points) },
+                        set: { coordinator.setTaskbarHeight(DockPanelHeight(clamping: CGFloat($0))) }
+                    ),
+                    in: Double(DockPanelHeight.minimum)...Double(DockPanelHeight.maximum),
+                    step: 1,
+                    onEditingChanged: { coordinator.setTaskbarHeightEditing($0) }
+                )
+                .frame(width: 220)
+                Text("Large")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+        }
     }
 
     /// 显隐任务条快捷键：录制框 + 自定义过才出现的「恢复默认」。行高恒定

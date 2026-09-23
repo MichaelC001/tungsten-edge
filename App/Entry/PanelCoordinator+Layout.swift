@@ -151,16 +151,10 @@ extension PanelCoordinator {
                 if self.folderPopupWantsOpen, self.openPopupContent == .trash { self.closeFolderPopup() }
                 DispatchQueue.main.async { [weak self] in self?.relayout(animated: true) }
             }
-        dockPanelHeightSubscription = settingsStore.$dockPanelHeight
-            .removeDuplicates()
-            .dropFirst()
-            .receive(on: DispatchQueue.main)
+        dockPanelHeightSubscription = heightResizePresentation
+            .nonInteractiveHeightChanges(from: settingsStore.$dockPanelHeight)
             .sink { [weak self] _ in
-                guard let self else { return }
-                // The orchestrator commits every screen in the originating mouse event.
-                // Delaying another screen until this subscription would expose mixed scales.
-                guard !self.interactiveHeightResizeActive else { return }
-                self.beginPanelHeightChange()
+                self?.beginPanelHeightChange()
             }
     }
 

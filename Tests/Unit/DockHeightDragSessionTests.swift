@@ -26,12 +26,12 @@ final class DockHeightDragSessionTests: XCTestCase {
     }
 
     func testPastTheClampThePointerMustComeBackBeforeTheBarShrinks() {
-        // Stateless formula, like the native divider: 60pt past the cap, then 20pt back down —
+        // Stateless formula, like the native divider: 60pt past the cap, then 40pt back down —
         // still at the cap; only once the raw value is under the cap does the height move.
-        let session = DockHeightDragSession(startHeight: 54, startPointerY: 100)
-        XCTAssertEqual(session.height(forPointerY: 186).points, 80)
-        XCTAssertEqual(session.height(forPointerY: 166).points, 80)
-        XCTAssertEqual(session.height(forPointerY: 125).points, 79)
+        let session = DockHeightDragSession(startHeight: 100, startPointerY: 100)
+        XCTAssertEqual(session.height(forPointerY: 180).points, DockPanelHeight.maximum)
+        XCTAssertEqual(session.height(forPointerY: 140).points, DockPanelHeight.maximum)
+        XCTAssertEqual(session.height(forPointerY: 119).points, 119)
     }
 }
 

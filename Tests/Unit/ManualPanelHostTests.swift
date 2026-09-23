@@ -1,4 +1,5 @@
 import AppKit
+import Combine
 import SwiftUI
 import XCTest
 
@@ -6,6 +7,10 @@ import XCTest
 final class ManualPanelHostTests: XCTestCase {
     private final class ResizeModel: ObservableObject {
         @Published var height: CGFloat = 54
+    }
+
+    private final class HeightChangesModel: ObservableObject {
+        @Published var height = DockPanelHeight.native
     }
 
     private struct ResizingProbe: View {
@@ -148,7 +153,7 @@ final class ManualPanelHostTests: XCTestCase {
 
         // Reverse direction repeatedly: neither a stale fitting size nor a label-width
         // animation may put the next panel frame on a different scale from its content.
-        for height: CGFloat in [55, 70, 40, 80, 54] {
+        for height: CGFloat in [55, 70, 32, 120, 40, 80, 54] {
             model.height = height
             host.layoutContent()
             let expected = NSSize(width: height * 4 + 40, height: height + 40)
@@ -158,6 +163,71 @@ final class ManualPanelHostTests: XCTestCase {
             host.layoutContent()
             XCTAssertEqual(content.frame.size, expected)
             XCTAssertEqual(host.fittingSize, expected)
+        }
+    }
+
+    func testInteractiveHeightChangesAreNotReplayedAfterTheSessionEnds() async {
+        let model = HeightChangesModel()
+        let presentation = PanelHeightResizePresentation()
+        var delivered: [DockPanelHeight] = []
+        let subscription = presentation.nonInteractiveHeightChanges(from: model.$height)
+            .sink { delivered.append($0) }
+        defer { subscription.cancel() }
+
+        presentation.isActive = true
+        model.height = DockPanelHeight(clamping: 32)
+        model.height = DockPanelHeight(clamping: 120)
+        presentation.isActive = false
+        await drainMainQueue()
+        XCTAssertTrue(delivered.isEmpty)
+
+        model.height = .native
+        await drainMainQueue()
+        XCTAssertEqual(delivered, [.native])
+    }
+
+    func testQueuedOrdinaryHeightChangeStandsDownWhenADragStarts() async {
+        let model = HeightChangesModel()
+        let presentation = PanelHeightResizePresentation()
+        var delivered: [DockPanelHeight] = []
+        let subscription = presentation.nonInteractiveHeightChanges(from: model.$height)
+            .sink { delivered.append($0) }
+        defer { subscription.cancel() }
+
+        model.height = DockPanelHeight(clamping: 80)
+        presentation.isActive = true
+        await drainMainQueue()
+        XCTAssertTrue(delivered.isEmpty)
+
+        presentation.isActive = false
+        await drainMainQueue()
+        XCTAssertTrue(delivered.isEmpty)
+    }
+
+    func testOrdinaryHeightChangesArriveAfterAssignmentWithoutAnInitialLayout() async {
+        let model = HeightChangesModel()
+        let presentation = PanelHeightResizePresentation()
+        var delivered: [DockPanelHeight] = []
+        let subscription = presentation.nonInteractiveHeightChanges(from: model.$height)
+            .sink { height in
+                XCTAssertEqual(model.height, height)
+                delivered.append(height)
+            }
+        defer { subscription.cancel() }
+
+        await drainMainQueue()
+        XCTAssertTrue(delivered.isEmpty)
+        let height = DockPanelHeight(clamping: 80)
+        model.height = height
+        model.height = height
+        XCTAssertTrue(delivered.isEmpty)
+        await drainMainQueue()
+        XCTAssertEqual(delivered, [height])
+    }
+
+    private func drainMainQueue() async {
+        await withCheckedContinuation { continuation in
+            DispatchQueue.main.async { continuation.resume() }
         }
     }
 

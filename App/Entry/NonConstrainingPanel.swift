@@ -1,10 +1,25 @@
 import AppKit
+import Combine
 import SwiftUI
 
 /// Shared by the two hosting roots of one taskbar; a resize must not inherit chip animations.
 @MainActor
 final class PanelHeightResizePresentation: ObservableObject {
     @Published var isActive = false
+
+    func nonInteractiveHeightChanges(
+        from heights: Published<DockPanelHeight>.Publisher
+    ) -> AnyPublisher<DockPanelHeight, Never> {
+        heights
+            .removeDuplicates()
+            .dropFirst()
+            // Reject at publication, before a queued delivery can outlive the drag.
+            .filter { [weak self] _ in self?.isActive == false }
+            .receive(on: DispatchQueue.main)
+            // A new drag may have started while an ordinary change was queued.
+            .filter { [weak self] _ in self?.isActive == false }
+            .eraseToAnyPublisher()
+    }
 }
 
 private struct PanelHeightResizingKey: EnvironmentKey {

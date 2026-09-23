@@ -193,18 +193,20 @@ final class PanelGeometryTests: XCTestCase {
 
     // MARK: - 条高（连续）
 
-    private let sampleHeights: [DockPanelHeight] = [40, 47, 54, 63, 80].map { DockPanelHeight(clamping: $0) }
+    private let sampleHeights: [DockPanelHeight] = [32, 40, 47, 54, 63, 80, 120].map { DockPanelHeight(clamping: $0) }
 
     func testClampingRoundsAndClampsToTheRange() {
-        XCTAssertEqual(DockPanelHeight(clamping: 39.4).points, 40)
+        XCTAssertEqual(DockPanelHeight(clamping: 31.4).points, 32)
         XCTAssertEqual(DockPanelHeight(clamping: 40.6).points, 41)
-        XCTAssertEqual(DockPanelHeight(clamping: 80.4).points, 80)
-        XCTAssertEqual(DockPanelHeight(clamping: 100).points, 80)
-        XCTAssertEqual(DockPanelHeight(clamping: 0).points, 40)
+        XCTAssertEqual(DockPanelHeight(clamping: 120.4).points, 120)
+        XCTAssertEqual(DockPanelHeight(clamping: 200).points, 120)
+        XCTAssertEqual(DockPanelHeight(clamping: 0).points, 32)
         XCTAssertEqual(DockPanelHeight(clamping: .nan).points, 54)
         XCTAssertEqual(DockPanelHeight(clamping: .infinity).points, 54)
-        XCTAssertEqual(DockPanelHeight.minimum, 40)
-        XCTAssertEqual(DockPanelHeight.maximum, 80)
+        // 32…120 mirrors the reach of the Dock's own Size slider; both ends stay reachable by
+        // the settings slider and the grip, and every legacy tier value lands strictly inside.
+        XCTAssertEqual(DockPanelHeight.minimum, 32)
+        XCTAssertEqual(DockPanelHeight.maximum, 120)
     }
 
     func testLegacyTierMigrationTable() {
