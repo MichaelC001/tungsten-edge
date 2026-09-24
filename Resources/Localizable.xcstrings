@@ -311,7 +311,7 @@
         "ja": {
           "stringUnit": {
             "state": "translated",
-            "value": "\n\nスイッチをもう一度オンにするだけで効く場合は、Tungsten Edgeが自動的に再起動するのでほかに操作は不要です。上の手順で記録を削除した場合は、あとから手動で開き直してください。\nまた、タスクバーが避けさせていたウインドウは、タスクバー1本分だけ低いままになることがあります。一度最大化し直せば元に戻ります。"
+            "value": "\n\nスイッチをもう一度オンにするだけで許可が有効になる場合は、Tungsten Edgeが自動的に再起動するので、ほかの操作は不要です。上の手順で記録を削除した場合は、あとから手動で開き直してください。\nまた、タスクバーとの重なりを避けるために移動したウインドウは、高さがタスクバー1本分だけ縮んだままになることがあります。一度最大化し直すと元に戻ります。"
           }
         },
         "de": {
@@ -323,7 +323,7 @@
         "fr": {
           "stringUnit": {
             "state": "translated",
-            "value": "\n\nSi le simple fait de réactiver l’interrupteur suffit, Tungsten Edge redémarre tout seul et il n’y a rien d’autre à faire ; passer par le nettoyage ci-dessus oblige à le rouvrir manuellement ensuite.\nPar ailleurs, les fenêtres que la barre des tâches avait écartées peuvent se retrouver plus courtes d’une hauteur de barre — il suffit de les agrandir une fois pour les remettre en place."
+            "value": "\n\nSi le simple fait de réactiver l’interrupteur suffit, Tungsten Edge redémarre automatiquement et aucune autre action n’est nécessaire. Après avoir suivi les étapes de réinitialisation ci-dessus, vous devez toutefois le rouvrir manuellement.\nPar ailleurs, les fenêtres déplacées pour laisser de la place à la barre des tâches peuvent conserver une hauteur réduite de la hauteur d’une barre des tâches. Il suffit de les agrandir une fois pour rétablir leur taille."
           }
         }
       }
@@ -995,7 +995,7 @@
         "zh-Hant": {
           "stringUnit": {
             "state": "translated",
-            "value": "有個附件讀不出來"
+            "value": "無法讀取附件"
           }
         },
         "ja": {
@@ -1524,7 +1524,7 @@
         "zh-Hant": {
           "stringUnit": {
             "state": "translated",
-            "value": "讀不出這個檔案"
+            "value": "無法讀取此檔案"
           }
         },
         "ja": {
@@ -1646,7 +1646,7 @@
         "zh-Hant": {
           "stringUnit": {
             "state": "translated",
-            "value": "這組快速鍵不能用"
+            "value": "無法使用此快速鍵"
           }
         },
         "ja": {
@@ -2269,7 +2269,7 @@
         "fr": {
           "stringUnit": {
             "state": "translated",
-            "value": "Contact trop long"
+            "value": "Coordonnées trop longues"
           }
         }
       }
@@ -3228,7 +3228,7 @@
         "ja": {
           "stringUnit": {
             "state": "translated",
-            "value": "EscapeキーとDeleteキーは主キーに使えません。"
+            "value": "EscapeキーとDeleteキーはショートカットのキーとして使用できません。"
           }
         },
         "de": {
@@ -3548,7 +3548,7 @@
         "zh-Hant": {
           "stringUnit": {
             "state": "translated",
-            "value": "把滑鼠滾輪的捲動方向整個反過來，效果和Scroll Reverser一樣。觸控式軌跡板與巧控滑鼠不受影響。Tungsten Edge只把滾輪事件的方向值取反，不會記錄，也不會傳送到任何地方。若同時執行Scroll Reverser或Mos，兩者會互相抵消，請只保留一個。"
+            "value": "在整個系統中反轉滑鼠滾輪的捲動方向，效果和Scroll Reverser一樣。觸控式軌跡板與巧控滑鼠不受影響。Tungsten Edge只會反轉滾輪事件的方向值，不會記錄，也不會傳送到任何地方。若同時執行Scroll Reverser或Mos，兩者會互相抵消，請只保留一個。"
           }
         },
         "ja": {
@@ -5172,7 +5172,7 @@
         "ja": {
           "stringUnit": {
             "state": "translated",
-            "value": "インストール場所ではありません"
+            "value": "未インストール"
           }
         },
         "de": {
@@ -5298,7 +5298,7 @@
         "de": {
           "stringUnit": {
             "state": "translated",
-            "value": "Hier ist nichts zu tun – nur einen Moment."
+            "value": "Du musst nichts tun. Bitte warte einen Moment."
           }
         },
         "fr": {
@@ -5367,7 +5367,7 @@
         "zh-Hant": {
           "stringUnit": {
             "state": "translated",
-            "value": "有一個附件讀不出來。"
+            "value": "無法讀取其中一個附件。"
           }
         },
         "ja": {
@@ -5407,7 +5407,7 @@
         "zh-Hant": {
           "stringUnit": {
             "state": "translated",
-            "value": "只會傳送你的電子郵件地址與首次啟用日期，用來確認你的創始使用者身分。不會寄送行銷郵件。"
+            "value": "只會傳送你的電子郵件地址與首次啟動日期，用來確認你的創始使用者身分。不會寄送行銷郵件。"
           }
         },
         "ja": {
@@ -6474,7 +6474,7 @@
         "fr": {
           "stringUnit": {
             "state": "translated",
-            "value": "Appuyez sur ⌥⌘D à tout moment — c’est le raccourci de macOS pour afficher et masquer le Dock. Vous pourrez aussi le modifier plus tard depuis l’icône Tungsten Edge de la barre des menus."
+            "value": "Appuyez sur ⌥⌘D à tout moment — c’est le raccourci de macOS pour afficher et masquer le Dock. Vous pourrez aussi modifier ce réglage d’affichage plus tard depuis l’icône Tungsten Edge de la barre des menus."
           }
         }
       }
@@ -6508,7 +6508,7 @@
         "de": {
           "stringUnit": {
             "state": "translated",
-            "value": "Inhalt anzeigen"
+            "value": "Inhaltsvorschau anzeigen"
           }
         },
         "fr": {
@@ -6709,7 +6709,7 @@
         "de": {
           "stringUnit": {
             "state": "translated",
-            "value": "Ein Problem aufgetreten oder eine Idee? Schreib es uns hier."
+            "value": "Ist ein Problem aufgetreten oder hast du eine Idee? Schreib uns hier."
           }
         },
         "fr": {
@@ -8078,13 +8078,13 @@
         "ja": {
           "stringUnit": {
             "state": "translated",
-            "value": "GitHubでStarを付けてください。無料でTungsten Edgeの後押しになります。"
+            "value": "GitHubでTungsten EdgeにStarを付けると、無料で開発を応援できます。"
           }
         },
         "de": {
           "stringUnit": {
             "state": "translated",
-            "value": "Gib Tungsten Edge einen Stern auf GitHub – eine kostenlose Art zu helfen, dass es besser wird."
+            "value": "Gib Tungsten Edge auf GitHub einen Stern – so unterstützt du die Weiterentwicklung, ohne Geld auszugeben."
           }
         },
         "fr": {
@@ -8762,7 +8762,7 @@
         "zh-Hant": {
           "stringUnit": {
             "state": "translated",
-            "value": "這個檔案讀不出來，請重新選一次。"
+            "value": "無法讀取此檔案。請重新選取。"
           }
         },
         "ja": {
@@ -9172,7 +9172,7 @@
         "ja": {
           "stringUnit": {
             "state": "translated",
-            "value": "このキーはショートカットの主キーには使えません。"
+            "value": "このキーはショートカットのキーとして使用できません。"
           }
         },
         "de": {
@@ -9415,7 +9415,7 @@
         "ja": {
           "stringUnit": {
             "state": "translated",
-            "value": "タスクバーを常に表示する状態と、前回の自動的に非表示の待ち時間とを切り替えます。デフォルトは⌥⇧⌘Dです。"
+            "value": "タスクバーの表示を「常に表示」と、前回の呼び出し時間を使う自動非表示モードの間で切り替えます。デフォルトは⌥⇧⌘Dです。"
           }
         },
         "de": {
@@ -10222,7 +10222,7 @@
         "zh-Hant": {
           "stringUnit": {
             "state": "translated",
-            "value": "重新帶你走一遍首次啟用時的建議設定，包括隱藏Dock那幾項。"
+            "value": "再次引導你完成首次啟動時的建議設定，包括隱藏Dock。"
           }
         },
         "ja": {
@@ -10641,7 +10641,7 @@
         "de": {
           "stringUnit": {
             "state": "translated",
-            "value": "Du hast abonniert. Sobald die Lizenzierung kommt, wird sie direkt an dein Postfach geschickt."
+            "value": "Du hast abonniert. Sobald Lizenzen verfügbar sind, wird deine Lizenz direkt an dein Postfach geschickt."
           }
         },
         "fr": {
@@ -10722,7 +10722,7 @@
         "de": {
           "stringUnit": {
             "state": "translated",
-            "value": "macOS bindet die Bedienungshilfen-Berechtigung an genau eine Kopie einer App. Diese Kopie läuft von einem temporären oder schreibgeschützten Ort, deshalb bleibt das Aktivieren des Schalters wirkungslos – und der Berechtigungseintrag bleibt nach dem Auswerfen des Image in den Systemeinstellungen zurück. Bewege Tungsten Edge in den Ordner „Programme“ und öffne es von dort."
+            "value": "macOS bindet die Bedienungshilfen-Berechtigung an genau eine Kopie einer App. Diese Kopie läuft von einem temporären oder schreibgeschützten Ort, deshalb bleibt das Aktivieren des Schalters wirkungslos – und der Berechtigungseintrag bleibt nach dem Auswerfen des Images in den Systemeinstellungen zurück. Bewege Tungsten Edge in den Ordner „Programme“ und öffne es von dort."
           }
         },
         "fr": {

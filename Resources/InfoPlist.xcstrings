@@ -104,7 +104,7 @@
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Tungsten Edge需要此項目來預覽Finder顯示的檔案夾、顯示垃圾桶是否為空，以及清空垃圾桶。"
+            "value" : "Tungsten Edge會使用這項權限來預覽Finder顯示的檔案夾、顯示垃圾桶是否為空，以及清空垃圾桶。"
           }
         },
         "ja" : {
