@@ -73,12 +73,20 @@ notarize_and_require_acceptance() {
   # a run that looks hung cannot be inspected without `notarytool history`.
   # A team's first-ever submission really can take ~45 minutes (measured
   # 2026-08-19); later ones land in about a minute.
-  if ! xcrun notarytool submit "$artifact" \
-    --keychain-profile "$NOTARY_KEYCHAIN_PROFILE" \
-    --output-format json >"$submission"; then
+  # The upload to Apple's S3 bucket aborts intermittently from this network
+  # (`abortedUpload ... deadlineExceeded`, with or without the local proxy), so
+  # only the upload is retried. A verdict other than Accepted is never retried.
+  local attempt
+  for attempt in 1 2 3; do
+    if xcrun notarytool submit "$artifact" \
+      --keychain-profile "$NOTARY_KEYCHAIN_PROFILE" \
+      --output-format json >"$submission"; then
+      break
+    fi
     [[ ! -s "$submission" ]] || cat "$submission" >&2
-    die "$label notarization request failed"
-  fi
+    [[ "$attempt" -lt 3 ]] || die "$label notarization request failed after 3 upload attempts"
+    echo "    upload attempt $attempt failed; retrying"
+  done
 
   id="$(plutil -extract id raw -o - "$submission" 2>/dev/null || true)"
   if [[ -z "$id" ]]; then
