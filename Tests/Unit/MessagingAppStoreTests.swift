@@ -181,7 +181,7 @@ final class MessagingAppStoreTests: XCTestCase {
         XCTAssertFalse(store.isMessagingApp("custom.chat"), "既不在名单也不在白名单的 app，取消固定后没有任何身份来源")
     }
 
-    /// 2026-08-23 验收回炉：owner 早先把信息从消息区取消过，红点就没了。「固定到消息区」的取消
+    /// 2026-08-23 验收回炉：owner 早先把信息从消息区取消过，红点就没了。「固定为应用图标」的取消
     /// 只表达「别钉在区里」，内置消息应用的红点不能跟着没。
     func testUnpinningBuiltinKeepsIdentity() {
         let store = makeStore(["com.apple.MobileSMS"])

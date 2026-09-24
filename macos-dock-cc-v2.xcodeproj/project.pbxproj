@@ -1529,6 +1529,10 @@
 				en,
 				Base,
 				"zh-Hans",
+				"zh-Hant",
+				ja,
+				de,
+				fr,
 			);
 			mainGroup = A0000000000000000000001C;
 			productRefGroup = A00000000000000000000023 /* Products */;

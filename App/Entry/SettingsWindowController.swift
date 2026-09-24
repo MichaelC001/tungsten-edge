@@ -145,6 +145,10 @@ final class SettingsWindowController: NSObject, NSWindowDelegate {
     /// `present()` 与授权 sink 走默认 false——与一页式时代的行为一致。
     private func resizeToFitKeepingTopEdge(animated: Bool = false) {
         guard let window else { return }
+        // The probe must carry the same fixed width as the real window (`SettingsWindowView` puts
+        // `.frame(width:)` outside its ScrollView). `fittingSize` proposes no width, so without it
+        // every wrapping note measures single-line and the window comes up short by one line per
+        // note that wraps — invisible in English, 30–45pt of clipped content in German and French.
         let probe = NSHostingView(
             rootView: SettingsWindowContent(
                 store: store,
@@ -153,6 +157,7 @@ final class SettingsWindowController: NSObject, NSWindowDelegate {
                 tabState: tabState,
                 onShowWelcomeGuide: onShowWelcomeGuide
             )
+            .frame(width: SettingsWindowView.contentWidth)
         )
         probe.setFrameSize(NSSize(width: SettingsWindowView.contentWidth, height: 0))
         probe.layoutSubtreeIfNeeded()

@@ -6,6 +6,14 @@ import os
 
 @MainActor
 final class AppDelegate: NSObject, NSApplicationDelegate {
+    /// Window titles for the guide windows follow the localized bundle name (`InfoPlist.xcstrings`):
+    /// only zh-Hans carries the 「钨极」 suffix, every other language shows plain "Tungsten Edge".
+    static var localizedDisplayName: String {
+        (Bundle.main.localizedInfoDictionary?["CFBundleDisplayName"] as? String)
+            ?? (Bundle.main.infoDictionary?["CFBundleDisplayName"] as? String)
+            ?? "Tungsten Edge"
+    }
+
     /// Must be the **first** stored property: every other store writes defaults inside its own
     /// init, so a snapshot taken one step later can no longer tell a prior install apart.
     private let installLineage = InstallLineage.capture()
@@ -356,7 +364,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             backing: .buffered,
             defer: false
         )
-        window.title = "Tungsten Edge 钨极"
+        window.title = Self.localizedDisplayName
         window.isReleasedWhenClosed = false
         window.contentView = hosting
         window.delegate = self
@@ -443,7 +451,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             backing: .buffered,
             defer: false
         )
-        window.title = "Tungsten Edge 钨极"
+        window.title = Self.localizedDisplayName
         window.isReleasedWhenClosed = false
         window.contentView = hosting
         permissionWindow = window

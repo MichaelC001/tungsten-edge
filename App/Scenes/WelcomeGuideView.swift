@@ -53,15 +53,21 @@ struct WelcomeGuideView: View {
             HStack(spacing: 8) {
                 // 唯一的闪屏预告。放在手指要点的地方，而不是段落里；**无条件显示**——
                 // 随勾选出现/消失会让窗口高度对不上内容（高度只在建窗时量一次）。
+                // The note yields, the buttons never do: without `fixedSize()` the HStack
+                // squeezes the primary button to "Apply Recommended Set…" even in English
+                // (measured 173pt of the 207pt it needs) while the note keeps free space.
                 Text("The screen will flash once when you apply this.")
                     .font(.callout)
                     .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
                 Spacer()
                 Button("Not Now") { onDismiss() }
                     .keyboardShortcut(.cancelAction)
+                    .fixedSize()
                 Button("Apply Recommended Settings") { onApply(selection) }
                     .keyboardShortcut(.defaultAction)
                     .disabled(selection.isEmpty)
+                    .fixedSize()
             }
         }
         .padding(28)

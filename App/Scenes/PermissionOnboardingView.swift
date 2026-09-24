@@ -53,6 +53,7 @@ struct PermissionOnboardingView: View {
                     .font(.title3.weight(.semibold))
                 Text(subtitle)
                     .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
             }
         }
     }

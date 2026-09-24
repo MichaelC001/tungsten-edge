@@ -186,7 +186,7 @@ final class AppMembershipControllerTests: XCTestCase {
             isMessaging: false,
             controller: controller
         ).last)
-        XCTAssertEqual(unchecked.label, String(localized: "Pin to Messaging Zone"))
+        XCTAssertEqual(unchecked.label, String(localized: "Pin as App Icon"))
         XCTAssertEqual(unchecked.isChecked, false)
         unchecked.action()
         XCTAssertTrue(messaging.contains(bundleID))
@@ -200,7 +200,7 @@ final class AppMembershipControllerTests: XCTestCase {
             isMessaging: true,
             controller: controller
         ).last)
-        XCTAssertEqual(checked.label, String(localized: "Pin to Messaging Zone"))
+        XCTAssertEqual(checked.label, String(localized: "Pin as App Icon"))
         XCTAssertEqual(checked.isChecked, true)
         checked.action()
         XCTAssertFalse(messaging.contains(bundleID))

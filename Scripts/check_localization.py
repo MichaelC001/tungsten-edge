@@ -3,13 +3,19 @@
 
 用法：python3 Scripts/check_localization.py [--remaining]
 
-漏一条 = 中文用户在那个位置突然看到英文，编译期完全不报错。
+漏一条 = 非英文用户在那个位置突然看到英文，编译期完全不报错。
+每种语言都要有值：LANGUAGES 与 `AppLanguageOption.localizationIdentifier`、
+`knownRegions` 三处同步，加语言时三处一起改。
 """
 import json, pathlib, re, sys
 
 ROOT = pathlib.Path(__file__).resolve().parent.parent
 CATALOG = ROOT / 'Resources/Localizable.xcstrings'
+INFOPLIST_CATALOG = ROOT / 'Resources/InfoPlist.xcstrings'
 DIRS = ['App', 'Core', 'Platform', 'UI']
+# 英文也要有显式值：源语言块缺失时 String Catalog 不生成 en.lproj/Localizable.strings，
+# 系统设置里逐 App 语言那一栏会灰掉（规则见 .claude/rules/localization.md）。
+LANGUAGES = ['en', 'zh-Hans', 'zh-Hant', 'ja', 'de', 'fr']
 
 STR = r'"((?:[^"\\]|\\.)*)"'
 # 全文匹配（允许构造器后换行），用 match.start() 反查行号
@@ -103,29 +109,63 @@ def scan():
     return used, chinese
 
 
+def value_of(entry, lang):
+    return entry.get('localizations', {}).get(lang, {}).get('stringUnit', {}).get('value')
+
+
+RE_PLACEHOLDER = re.compile(r'%(?:\d+\$)?(?:@|d|lld|ld|u|f|s|%)')
+
+
+def placeholder_mismatches(catalog):
+    """每种语言的占位符必须与英文同数同序——多一个 %@ 是运行时崩溃，少一个是信息丢失。"""
+    out = []
+    for key, entry in catalog.items():
+        expected = RE_PLACEHOLDER.findall(value_of(entry, 'en') or key)
+        for lang in LANGUAGES:
+            value = value_of(entry, lang)
+            if value is None:
+                continue
+            actual = RE_PLACEHOLDER.findall(value)
+            if actual != expected:
+                out.append((key, lang, expected, actual))
+    return out
+
+
 def main():
     catalog = json.loads(CATALOG.read_text(encoding='utf-8'))['strings']
     used, chinese = scan()
 
     missing = {k: v for k, v in used.items() if k not in catalog}
     unused = [k for k in catalog if k not in used]
-    untranslated = [k for k, v in catalog.items()
-                    if not v.get('localizations', {}).get('zh-Hans', {}).get('stringUnit', {}).get('value')]
+    untranslated = {lang: [k for k, v in catalog.items() if not value_of(v, lang)] for lang in LANGUAGES}
+    infoplist = json.loads(INFOPLIST_CATALOG.read_text(encoding='utf-8'))['strings']
+    infoplist_untranslated = {lang: [k for k, v in infoplist.items() if not value_of(v, lang)] for lang in LANGUAGES}
+    placeholder_drift = placeholder_mismatches(catalog)
     chinese_key = [k for k in used if re.search(r'[一-龥]', k)]
 
-    print(f'代码引用 {len(used)} 个 key ｜ catalog {len(catalog)} 条 ｜ 源码剩余中文字面量 {len(chinese)} 处\n')
+    print(f'代码引用 {len(used)} 个 key ｜ catalog {len(catalog)} 条 × {len(LANGUAGES)} 种语言 ｜ 源码剩余中文字面量 {len(chinese)} 处\n')
 
     ok = True
     if missing:
         ok = False
-        print(f'❌ catalog 缺 {len(missing)} 条（中文用户会看到英文）：')
+        print(f'❌ catalog 缺 {len(missing)} 条（非英文用户会看到英文）：')
         for k, locs in sorted(missing.items()):
             print(f'   {k[:70]!r}  ← {locs[0]}')
-    if untranslated:
+    for lang, keys in untranslated.items():
+        if keys:
+            ok = False
+            print(f'\n❌ {len(keys)} 条没有 {lang} 翻译：')
+            for k in keys:
+                print(f'   {k[:70]!r}')
+    for lang, keys in infoplist_untranslated.items():
+        if keys:
+            ok = False
+            print(f'\n❌ InfoPlist.xcstrings 里 {len(keys)} 条没有 {lang} 值：{keys}')
+    if placeholder_drift:
         ok = False
-        print(f'\n❌ {len(untranslated)} 条没有中文翻译：')
-        for k in untranslated:
-            print(f'   {k[:70]!r}')
+        print(f'\n❌ {len(placeholder_drift)} 处译文的占位符与英文不一致（运行时 String(format:) 会崩或串位）：')
+        for k, lang, expected, actual in placeholder_drift:
+            print(f'   [{lang}] {k[:60]!r}  en={expected}  {lang}={actual}')
     if chinese_key:
         ok = False
         print(f'\n❌ {len(chinese_key)} 个 key 本身是中文（源语言应为英文）：')

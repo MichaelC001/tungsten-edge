@@ -10,7 +10,7 @@ import Foundation
 ///   minus opt-out. Decides the **unread badge** — wherever the app's card happens to be.
 /// - *Zone membership* (`bundleIDs`): decides the pinned-zone chip. Auto-entry still
 ///   requires an identifiable main window (`autoRegister`); everything else is manual
-///   (right-click「固定到消息区」, the fallback for apps the whitelist misses).
+///   (right-click「固定为应用图标」, the fallback for apps the whitelist misses).
 /// Overseas messengers (信息 / Slack / Discord …) are single-window apps that never pass
 /// the zone gate — the badge is what they actually need, so it must not depend on the zone.
 ///
@@ -85,7 +85,7 @@ final class MessagingAppStore: ObservableObject {
     /// 角标，读出来是空。
     ///
     /// **不看 opt-out**（2026-08-23 验收回炉：owner 早先把信息从区里取消过，红点就没了）：
-    /// 菜单项叫「固定到消息区」，取消它只能表达「别钉在区里」，表达不了「这不是消息应用」；
+    /// 菜单项叫「固定为应用图标」，取消它只能表达「别钉在区里」，表达不了「这不是消息应用」；
     /// opt-out 的职责只剩「别自动再钉回去」（`autoRegister`）。
     ///
     /// 读的是 store 当前状态：调用方必须在发布完成后再读（`@Published` 在赋值前发布，

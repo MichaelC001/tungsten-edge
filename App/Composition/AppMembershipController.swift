@@ -54,7 +54,7 @@ final class AppMembershipController: ObservableObject {
         keptAppStore.add(bundleID)
     }
 
-    /// 「固定到消息区」：mark + 首次加入补 kept（默认保留）。不改 drawer——位置只能拖动改。
+    /// 「固定为应用图标」：mark + 首次加入补 kept（默认保留）。不改 drawer——位置只能拖动改。
     func markMessaging(_ bundleID: String) {
         guard FinderTaskbarPolicy.canMarkMessaging(bundleID) else { return }
         if messagingStore.mark(bundleID) {
@@ -76,7 +76,7 @@ final class AppMembershipController: ObservableObject {
         }
     }
 
-    /// 取消「固定到消息区」勾选：只清消息身份 + 记 opt-out；kept 与 drawer 保持不变。
+    /// 取消「固定为应用图标」勾选：只清消息身份 + 记 opt-out；kept 与 drawer 保持不变。
     func unmarkMessaging(_ bundleID: String) {
         messagingStore.unmark(bundleID)
     }
