@@ -79,6 +79,8 @@ enum DebugSwitch: String, CaseIterable, Sendable {
     case chipPressDown = "DOCK_CHIP_PRESS_DOWN"
     /// 卡片标签对反复横跳的窗口标题的跟随抑制（WindowTitleSettle）
     case titleSettle = "DOCK_TITLE_SETTLE"
+    /// 访达没窗口时点图标先发程序坞同款「重新打开」事件（FinderNewWindowOpener）；=0 只按偏好开文件夹
+    case finderReopenEvent = "DOCK_FINDER_REOPEN_EVENT"
 
     // MARK: 默认关的追踪 / 实验（=1 开）
     /// 多屏归属写入日志（category display-trace）
@@ -169,7 +171,8 @@ enum DebugSwitch: String, CaseIterable, Sendable {
              .liquidGlassDiagonalHighlight, .liquidGlassHighlightBoost, .stripBalancedInsets,
              .spaceIntent, .fullscreenIntent, .fullscreenSlsVerdict, .spaceMembershipRepair,
              .overlaySpace, .scrollReverser, .windowLift, .windowLiftAnim,
-             .menuHoverSuspend, .hoverMonitorLean, .stripHoverPoll, .resizeCursor, .chipPressDown, .titleSettle:
+             .menuHoverSuspend, .hoverMonitorLean, .stripHoverPoll, .resizeCursor, .chipPressDown, .titleSettle,
+             .finderReopenEvent:
             return .killSwitch
         case .displayTrace, .launchTrace, .chipProbe, .clickTrace,
              .hoverTrace, .edgehoverTrace, .stripWheelTrace, .chipAnimTrace, .labelProbe,

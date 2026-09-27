@@ -8,6 +8,13 @@
 
 /* Begin PBXBuildFile section */
 		A7A500000000000000000065 /* FinderTrash.swift in Sources */ = {isa = PBXBuildFile; fileRef = A7A500000000000000000001 /* FinderTrash.swift */; };
+		F1D0A0000000000000000011 /* FinderNewWindowTarget.swift in Sources */ = {isa = PBXBuildFile; fileRef = F1D0A0000000000000000001 /* FinderNewWindowTarget.swift */; };
+		F1D0A0000000000000000012 /* FinderNewWindowTarget.swift in Sources */ = {isa = PBXBuildFile; fileRef = F1D0A0000000000000000001 /* FinderNewWindowTarget.swift */; };
+		F1D0A0000000000000000013 /* FinderNewWindowOpener.swift in Sources */ = {isa = PBXBuildFile; fileRef = F1D0A0000000000000000002 /* FinderNewWindowOpener.swift */; };
+		F1D0A0000000000000000014 /* FinderNewWindowTargetTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = F1D0A0000000000000000003 /* FinderNewWindowTargetTests.swift */; };
+		F1D0A0000000000000000015 /* FinderNewWindowOpener.swift in Sources */ = {isa = PBXBuildFile; fileRef = F1D0A0000000000000000002 /* FinderNewWindowOpener.swift */; };
+		F1D0A0000000000000000016 /* FinderNewWindowOpener.swift in Sources */ = {isa = PBXBuildFile; fileRef = F1D0A0000000000000000002 /* FinderNewWindowOpener.swift */; };
+		F1D0A0000000000000000017 /* FinderNewWindowTarget.swift in Sources */ = {isa = PBXBuildFile; fileRef = F1D0A0000000000000000001 /* FinderNewWindowTarget.swift */; };
 		A7A5000000000000000000C9 /* FinderTrash.swift in Sources */ = {isa = PBXBuildFile; fileRef = A7A500000000000000000001 /* FinderTrash.swift */; };
 		A7A500000000000000000066 /* TrashStateStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = A7A500000000000000000002 /* TrashStateStore.swift */; };
 		A7A5000000000000000000CA /* TrashStateStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = A7A500000000000000000002 /* TrashStateStore.swift */; };
@@ -503,6 +510,9 @@
 
 /* Begin PBXFileReference section */
 		A7A500000000000000000001 /* FinderTrash.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "FinderTrash.swift"; sourceTree = "<group>"; };
+		F1D0A0000000000000000001 /* FinderNewWindowTarget.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "FinderNewWindowTarget.swift"; sourceTree = "<group>"; };
+		F1D0A0000000000000000002 /* FinderNewWindowOpener.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "FinderNewWindowOpener.swift"; sourceTree = "<group>"; };
+		F1D0A0000000000000000003 /* FinderNewWindowTargetTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "FinderNewWindowTargetTests.swift"; sourceTree = "<group>"; };
 		A7A500000000000000000002 /* TrashStateStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "TrashStateStore.swift"; sourceTree = "<group>"; };
 		A7A500000000000000000003 /* TrashStateStore+Live.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "TrashStateStore+Live.swift"; sourceTree = "<group>"; };
 		A7A500000000000000000004 /* FinderAutomationPermission.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "FinderAutomationPermission.swift"; sourceTree = "<group>"; };
@@ -1036,6 +1046,7 @@
 			isa = PBXGroup;
 			children = (
 				A7A500000000000000000001 /* FinderTrash.swift */,
+				F1D0A0000000000000000001 /* FinderNewWindowTarget.swift */,
 				E90000000000000000000007 /* DebugSwitch.swift */,
 				E90000000000000000000005 /* FilePathNormalization.swift */,
 				E90000000000000000000004 /* DefaultsValueParsing.swift */,
@@ -1231,6 +1242,7 @@
 			isa = PBXGroup;
 			children = (
 				A7A500000000000000000004 /* FinderAutomationPermission.swift */,
+				F1D0A0000000000000000002 /* FinderNewWindowOpener.swift */,
 				A7A500000000000000000005 /* FinderTrashClient.swift */,
 				A00000000000000000000055 /* FinderWindowRules.swift */,
 				A00000000000000000000F01 /* FinderWindowContentsReader.swift */,
@@ -1326,6 +1338,7 @@
 			isa = PBXGroup;
 			children = (
 				A7A500000000000000000008 /* FinderTrashTests.swift */,
+				F1D0A0000000000000000003 /* FinderNewWindowTargetTests.swift */,
 				A7A500000000000000000009 /* TrashStateStoreTests.swift */,
 				E90000000000000000000009 /* AppMembershipInvariantTests.swift */,
 				E90000000000000000000008 /* DebugSwitchTests.swift */,
@@ -1568,6 +1581,8 @@
 			buildActionMask = 2147483647;
 			files = (
 				A7A500000000000000000065 /* FinderTrash.swift in Sources */,
+				F1D0A0000000000000000011 /* FinderNewWindowTarget.swift in Sources */,
+				F1D0A0000000000000000013 /* FinderNewWindowOpener.swift in Sources */,
 				A7A500000000000000000066 /* TrashStateStore.swift in Sources */,
 				A7A500000000000000000067 /* TrashStateStore+Live.swift in Sources */,
 				A7A500000000000000000068 /* FinderAutomationPermission.swift in Sources */,
@@ -1811,6 +1826,8 @@
 					A0000000000000000000101D /* AXWindowReader.swift in Sources */,
 					A00000000000000000001038 /* AXWindowMatchPolicy.swift in Sources */,
 					A0000000000000000000100F /* AccessibilitySource.swift in Sources */,
+					F1D0A0000000000000000016 /* FinderNewWindowOpener.swift in Sources */,
+					F1D0A0000000000000000017 /* FinderNewWindowTarget.swift in Sources */,
 				A00000000000000000001010 /* CoreGraphicsSource.swift in Sources */,
 				A00000000000000000001030 /* DockWindowEligibilityPolicy.swift in Sources */,
 				A0000000000000000000101E /* FinderWindowRules.swift in Sources */,
@@ -1825,6 +1842,8 @@
 			buildActionMask = 2147483647;
 			files = (
 				A7A5000000000000000000C9 /* FinderTrash.swift in Sources */,
+				F1D0A0000000000000000012 /* FinderNewWindowTarget.swift in Sources */,
+				F1D0A0000000000000000014 /* FinderNewWindowTargetTests.swift in Sources */,
 				A7A5000000000000000000CA /* TrashStateStore.swift in Sources */,
 				A7A5000000000000000000D0 /* FinderTrashTests.swift in Sources */,
 				A7A5000000000000000000D1 /* TrashStateStoreTests.swift in Sources */,
@@ -1987,6 +2006,7 @@
 					A00000000000000000009E12 /* WindowInventoryAnomalyLogTests.swift in Sources */,
 					A00000000000000000009E13 /* AXWindowReader.swift in Sources */,
 					B73000000000000000000003 /* AccessibilitySource.swift in Sources */,
+					F1D0A0000000000000000015 /* FinderNewWindowOpener.swift in Sources */,
 					B73000000000000000000002 /* AppWindowObserver.swift in Sources */,
 					B73000000000000000000001 /* AppTracker.swift in Sources */,
 					A00000000000000000009E14 /* AXWindowReaderResultTests.swift in Sources */,

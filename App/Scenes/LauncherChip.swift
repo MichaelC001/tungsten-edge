@@ -290,7 +290,8 @@ struct LauncherChip: View {
     ///
     /// 访达是唯一例外（2026-08-20 放开抽屉后才出现的路径）：它**不能被隐藏**（`hide()` 直接失败），
     /// 而没有窗口时 `openApplication` 只激活、不开窗——点了像没反应。所以访达永不收起，
-    /// 没有真窗口就开主目录，与条上常驻卡同口径（`LifecycleActionPlanner` + `AccessibilitySource`）。
+    /// 没有真窗口就按访达自己的「开启新访达窗口时打开」开一扇新窗，与条上常驻卡共用
+    /// `FinderNewWindowOpener`（它会阻塞等访达回复，所以放到 `actionQueue` 上跑）。
     /// - Parameters:
     ///   - finderHasRealWindow: 访达此刻有没有真窗口。只有访达分支用得上，但不给默认值——
     ///     省略它会静默走错分支。
@@ -305,7 +306,7 @@ struct LauncherChip: View {
                 if finderHasRealWindow {
                     runningApps.first?.activate(options: .activateIgnoringOtherApps)
                 } else {
-                    NSWorkspace.shared.open(FileManager.default.homeDirectoryForCurrentUser)
+                    AppRuntime.actionQueue.async { FinderNewWindowOpener.openNewWindow() }
                 }
                 onOpen?()
                 return

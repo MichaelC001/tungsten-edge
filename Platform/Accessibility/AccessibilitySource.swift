@@ -1207,11 +1207,11 @@ struct PlatformActionExecutor {
 
         switch request.kind {
         case .activateWindow:
-            // Finder persistent chip (no open windows): open home directory to create a new Finder
-            // window, matching system Dock behavior when clicking Finder with no windows open.
+            // Finder persistent chip (no open windows): open a new Finder window where Finder's own
+            // "New Finder windows show" setting points, as the system Dock does.
             if record.id.rawValue.hasPrefix("app-"),
                FinderWindowRules.isFinder(bundleIdentifier: record.bundleIdentifier) {
-                NSWorkspace.shared.open(FileManager.default.homeDirectoryForCurrentUser)
+                FinderNewWindowOpener.openNewWindow()
                 return true
             }
             return windowExecutor.activateAppWithWindowRecovery(pid: record.pid, runningApp: runningApp)
