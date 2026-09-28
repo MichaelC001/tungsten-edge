@@ -17,9 +17,6 @@ struct PinnedFolderChip: View {
     let sortOrder: FolderSortOrder
     /// User-set badge text; `nil` = automatic initial.
     let customBadge: String?
-    /// Badge colour candidate under comparison (`DOCK_FOLDER_BADGE`); resolved per folder
-    /// position at the call site so `mix` can put all three on one bar.
-    let badgeStyle: FolderBadgeStyle
     let onTap: () -> Void
     /// 内容预览（右键「预览内容」；左键在 preview 模式下也走这个）。
     let onPreview: () -> Void
@@ -86,8 +83,6 @@ struct PinnedFolderChip: View {
             }
             .overlay(alignment: .bottomTrailing) {
                 FolderBadgeDisc(text: FolderBadgeText.resolve(name: folderName, custom: customBadge),
-                                style: badgeStyle,
-                                cover: cover,
                                 scale: scale)
                     // Mirror of the unread badge: it sits `badgeTopOffset` below the card's top
                     // edge, so this one sits the same distance above the card's bottom edge.
@@ -154,98 +149,24 @@ struct PinnedFolderChip: View {
 }
 
 /// The solid disc carrying the folder's initial. Opaque and self-coloured on purpose: nothing
-/// behind it (glass, wallpaper, a dark window) can change its contrast.
+/// behind it (glass, wallpaper, a dark window) can change its contrast. White with medium-weight
+/// dark text — the owner's pick over graphite and a cover-derived tint.
 private struct FolderBadgeDisc: View {
     let text: String
-    let style: FolderBadgeStyle
-    let cover: FolderCover?
     let scale: CGFloat
 
     var body: some View {
         Text(text)
-            .font(.system(size: ChipPillMetrics.badgeFontSize * scale, weight: .bold, design: .rounded))
-            .foregroundStyle(foreground)
+            .font(.system(size: ChipPillMetrics.badgeFontSize * scale, weight: .medium, design: .rounded))
+            .foregroundStyle(.black.opacity(0.8))
             .lineLimit(1)
             .fixedSize()
             .padding(.horizontal, 4 * scale)
             .frame(minWidth: ChipPillMetrics.badgeMinimumSize * scale,
                    minHeight: ChipPillMetrics.badgeMinimumSize * scale)
-            .background(Capsule().fill(fill))
+            .background(Capsule().fill(Color(white: 0.97)))
             // 0.5pt 是发丝线，不随档位缩放。
-            .overlay(Capsule().strokeBorder(rim, lineWidth: 0.5))
-    }
-
-    private var fill: Color {
-        switch style {
-        case .graphite: return Color(white: 0.24)
-        case .light: return Color(white: 0.97)
-        case .tint:
-            return cover.map { FolderBadgeTint.color(for: $0.image) } ?? Color(white: 0.24)
-        }
-    }
-
-    private var foreground: Color {
-        style == .light ? .black.opacity(0.8) : .white
-    }
-
-    private var rim: Color {
-        style == .light ? .black.opacity(0.18) : .white.opacity(0.45)
-    }
-}
-
-/// `tint` candidate: the cover's average colour, pushed dark and saturated enough to carry
-/// white text. Cached per image object — covers change rarely and the sample is 8×8.
-@MainActor
-enum FolderBadgeTint {
-    private static let cache: NSCache<NSImage, NSColor> = {
-        let cache = NSCache<NSImage, NSColor>()
-        cache.countLimit = 64
-        return cache
-    }()
-
-    static func color(for image: NSImage) -> Color {
-        if let hit = cache.object(forKey: image) { return Color(nsColor: hit) }
-        let resolved = average(of: image).map(readable) ?? NSColor(white: 0.24, alpha: 1)
-        cache.setObject(resolved, forKey: image)
-        return Color(nsColor: resolved)
-    }
-
-    private static func average(of image: NSImage) -> NSColor? {
-        let side = 8
-        guard let rep = NSBitmapImageRep(bitmapDataPlanes: nil, pixelsWide: side, pixelsHigh: side,
-                                         bitsPerSample: 8, samplesPerPixel: 4, hasAlpha: true,
-                                         isPlanar: false, colorSpaceName: .deviceRGB,
-                                         bytesPerRow: 0, bitsPerPixel: 0),
-              let context = NSGraphicsContext(bitmapImageRep: rep) else { return nil }
-        NSGraphicsContext.saveGraphicsState()
-        NSGraphicsContext.current = context
-        image.draw(in: NSRect(x: 0, y: 0, width: side, height: side))
-        NSGraphicsContext.restoreGraphicsState()
-        var red: CGFloat = 0, green: CGFloat = 0, blue: CGFloat = 0, weight: CGFloat = 0
-        for x in 0..<side {
-            for y in 0..<side {
-                guard let pixel = rep.colorAt(x: x, y: y)?.usingColorSpace(.deviceRGB) else { continue }
-                let alpha = pixel.alphaComponent
-                red += pixel.redComponent * alpha
-                green += pixel.greenComponent * alpha
-                blue += pixel.blueComponent * alpha
-                weight += alpha
-            }
-        }
-        guard weight > 0.5 else { return nil }
-        return NSColor(deviceRed: red / weight, green: green / weight, blue: blue / weight, alpha: 1)
-    }
-
-    private static func readable(_ color: NSColor) -> NSColor {
-        guard let rgb = color.usingColorSpace(.deviceRGB) else { return NSColor(white: 0.24, alpha: 1) }
-        var hue: CGFloat = 0, saturation: CGFloat = 0, brightness: CGFloat = 0, alpha: CGFloat = 0
-        rgb.getHue(&hue, saturation: &saturation, brightness: &brightness, alpha: &alpha)
-        // Near-grey covers would give a muddy disc; fall back to graphite.
-        guard saturation > 0.12 else { return NSColor(white: 0.24, alpha: 1) }
-        return NSColor(deviceHue: hue,
-                       saturation: min(1, saturation * 1.3),
-                       brightness: min(max(brightness, 0.32), 0.55),
-                       alpha: 1)
+            .overlay(Capsule().strokeBorder(.black.opacity(0.18), lineWidth: 0.5))
     }
 }
 

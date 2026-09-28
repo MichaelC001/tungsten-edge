@@ -75,19 +75,3 @@ enum FolderBadgeText {
         }
     }
 }
-
-/// Colour candidates for the badge disc while the owner compares them on real glass.
-/// `DOCK_FOLDER_BADGE=graphite|light|tint|mix`; `mix` cycles by folder position so all
-/// three sit on the same bar at once. Unknown values fall back to `graphite`.
-enum FolderBadgeStyle: String, CaseIterable, Sendable {
-    case graphite, light, tint
-
-    static func resolve(raw: String?, folderIndex: Int) -> FolderBadgeStyle {
-        guard let raw = raw?.lowercased() else { return .graphite }
-        if raw == "mix" {
-            let all = FolderBadgeStyle.allCases
-            return all[((folderIndex % all.count) + all.count) % all.count]
-        }
-        return FolderBadgeStyle(rawValue: raw) ?? .graphite
-    }
-}

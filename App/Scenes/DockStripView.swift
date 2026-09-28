@@ -1280,8 +1280,6 @@ struct DockStripView: View {
                 cover: folderCoverStore.covers[path],
                 sortOrder: pinnedFolderStore.sortOrder(for: path),
                 customBadge: pinnedFolderStore.badgeLabel(for: path),
-                badgeStyle: FolderBadgeStyle.resolve(raw: DebugSwitch.folderBadge.value(in: DockEffectSwitches.environment),
-                                                     folderIndex: index - 1),
                 onTap: { folderPrimaryTap(path) },
                 onPreview: { folderShowPreview(path) },
                 onOpenInFinder: { openFolderInFinder(path) },

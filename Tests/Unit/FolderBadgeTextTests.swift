@@ -54,12 +54,4 @@ final class FolderBadgeTextTests: XCTestCase {
         XCTAssertEqual(FolderBadgeText.resolve(name: "Documents", custom: nil), "D")
         XCTAssertNil(FolderBadgeText.sanitizedCustom("\n"))
     }
-
-    func testStyleSwitchParsing() {
-        XCTAssertEqual(FolderBadgeStyle.resolve(raw: nil, folderIndex: 0), .graphite)
-        XCTAssertEqual(FolderBadgeStyle.resolve(raw: "LIGHT", folderIndex: 5), .light)
-        XCTAssertEqual(FolderBadgeStyle.resolve(raw: "bogus", folderIndex: 0), .graphite)
-        XCTAssertEqual((0..<4).map { FolderBadgeStyle.resolve(raw: "mix", folderIndex: $0) },
-                       [.graphite, .light, .tint, .graphite])
-    }
 }

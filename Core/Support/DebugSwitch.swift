@@ -135,8 +135,6 @@ enum DebugSwitch: String, CaseIterable, Sendable {
     case labelInactive = "DOCK_LABEL_INACTIVE"
     /// 中转格瓷砖配色 blue|graphite|light
     case shelfTile = "DOCK_SHELF_TILE"
-    /// 实验：固定文件夹角标配色 graphite|light|tint|mix（`FolderBadgeStyle`）
-    case folderBadge = "DOCK_FOLDER_BADGE"
     /// 玻璃调参：清透度
     case liquidGlassClearTint = "DOCK_LIQUID_GLASS_CLEAR_TINT"
     /// 玻璃调参：白色覆盖
@@ -182,7 +180,7 @@ enum DebugSwitch: String, CaseIterable, Sendable {
             return .trace
         case .reconcileAxTimeoutMs, .seedAxTimeoutMs, .dragFlightMs, .labelAnim, .inventoryLog,
              .panelLevel, .panelMaterial, .panelSaturation, .panelThickness,
-             .chipPillFill, .labelInactive, .shelfTile, .folderBadge, .liquidGlassClearTint,
+             .chipPillFill, .labelInactive, .shelfTile, .liquidGlassClearTint,
              .liquidGlassWhiteOverlay, .liquidGlassDimming, .liquidGlassBorder, .liquidGlassBorderEdge,
              .liquidGlassBorderCut, .liquidGlassBorderSpread, .liquidGlassBorderWidth, .liquidGlassBorderInner,
              .liquidGlassBackgroundOpacity, .liquidGlassWindowBlur, .liquidGlassContentInset,

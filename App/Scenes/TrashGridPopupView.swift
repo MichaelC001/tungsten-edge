@@ -66,7 +66,7 @@ struct TrashGridPopupView: View {
                                    label: item.name,
                                    contextMenu: { itemMenu(for: item) }) { reveal(item) }
                 }
-                FolderGridCell(iconPath: nil, staticIcon: Self.finderIcon, label: String(localized: "Open in Finder")) {
+                FolderGridCell.openInFinder {
                     onOpenInFinder()
                 }
                 if canEmpty {
@@ -131,7 +131,6 @@ struct TrashGridPopupView: View {
         return menu
     }
 
-    private static let finderIcon: NSImage = FolderIconResolver.resolve("/System/Library/CoreServices/Finder.app")
     private static let emptyIcon: NSImage = NSImage(named: NSImage.trashFullName) ?? NSImage()
 }
 

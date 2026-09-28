@@ -270,7 +270,7 @@ struct FolderGridPopupView: View {
                                    contextMenu: { cellMenu(for: entry) }) { open(entry) }
                 }
                 // 原生同款尾格：在访达中打开当前目录。
-                FolderGridCell(iconPath: nil, staticIcon: Self.finderIcon, label: String(localized: "Open in Finder")) {
+                FolderGridCell.openInFinder {
                     NSWorkspace.shared.open(currentURL)
                     onFileOpened()
                 }
@@ -307,8 +307,6 @@ struct FolderGridPopupView: View {
             pinFolder: canPin ? { onPinFolder?(entry.url) } : nil
         ))
     }
-
-    private static let finderIcon: NSImage = FolderIconResolver.resolve("/System/Library/CoreServices/Finder.app")
 }
 
 /// 弹窗网格的共享尺寸常量（文件夹弹窗 + 中转弹窗共用,别在两边各写一份漂移）。
@@ -335,6 +333,9 @@ enum FolderPopupStyle {
 struct FolderGridCell: View {
     let iconPath: String?
     let staticIcon: NSImage?
+    /// `staticIcon` is a black template glyph drawn the way native Stacks draws its
+    /// 「在访达中打开」 cell: mid-grey with plus-darker blending, so it takes the backdrop's hue.
+    let staticIconIsGlyph: Bool
     let label: String
     var dragURL: URL? = nil
     var contextMenu: (() -> NSMenu)? = nil
@@ -347,12 +348,14 @@ struct FolderGridCell: View {
 
     init(iconPath: String?,
          staticIcon: NSImage?,
+         staticIconIsGlyph: Bool = false,
          label: String,
          dragURL: URL? = nil,
          contextMenu: (() -> NSMenu)? = nil,
          onTap: @escaping () -> Void) {
         self.iconPath = iconPath
         self.staticIcon = staticIcon
+        self.staticIconIsGlyph = staticIconIsGlyph
         self.label = label
         self.dragURL = dragURL
         self.contextMenu = contextMenu
@@ -373,10 +376,7 @@ struct FolderGridCell: View {
 
     private var core: some View {
         VStack(spacing: 5) {
-            Image(nsImage: currentIcon)
-                .resizable()
-                .interpolation(.high)
-                .aspectRatio(contentMode: .fit)
+            iconImage
                 .frame(width: 64, height: 64)
                 .opacity(resolvedIcon == nil && staticIcon == nil ? 0 : 1)
                 .task(id: iconPath) {
@@ -416,7 +416,53 @@ struct FolderGridCell: View {
         return Self.placeholderIcon
     }
 
+    @ViewBuilder
+    private var iconImage: some View {
+        if staticIconIsGlyph, let staticIcon {
+            // Native measurement: the glyph reads exactly backdrop − 127 per channel, i.e. grey
+            // 128/255 composited plus-darker. A fixed tint would only match one backdrop.
+            Image(nsImage: staticIcon)
+                .renderingMode(.template)
+                .resizable()
+                .interpolation(.high)
+                .aspectRatio(contentMode: .fit)
+                .foregroundStyle(Color(white: 128.0 / 255.0))
+                .blendMode(.plusDarker)
+        } else {
+            Image(nsImage: currentIcon)
+                .resizable()
+                .interpolation(.high)
+                .aspectRatio(contentMode: .fit)
+        }
+    }
+
     private static let placeholderIcon = NSImage(size: NSSize(width: 64, height: 64))
+}
+
+extension FolderGridCell {
+    /// The tail cell shared by the folder and Trash popups. Uses the Dock's own
+    /// `openinfinder` artwork (ring + turn arrow), read from the system at runtime rather than
+    /// copied into the bundle; falls back to the Finder icon if a future macOS drops the file.
+    static func openInFinder(onTap: @escaping () -> Void) -> FolderGridCell {
+        let label = String(localized: "Open in Finder")
+        if let glyph = NativeStackArtwork.openInFinder {
+            return FolderGridCell(iconPath: nil, staticIcon: glyph, staticIconIsGlyph: true,
+                                  label: label, onTap: onTap)
+        }
+        return FolderGridCell(iconPath: nil, staticIcon: NativeStackArtwork.finderAppIcon,
+                              label: label, onTap: onTap)
+    }
+}
+
+enum NativeStackArtwork {
+    static let openInFinder: NSImage? = {
+        guard let image = Bundle(path: "/System/Library/CoreServices/Dock.app")?
+            .image(forResource: "openinfinder") else { return nil }
+        image.isTemplate = true
+        return image
+    }()
+
+    static let finderAppIcon: NSImage = FolderIconResolver.resolve("/System/Library/CoreServices/Finder.app")
 }
 
 private struct FolderGridHeightKey: PreferenceKey {
