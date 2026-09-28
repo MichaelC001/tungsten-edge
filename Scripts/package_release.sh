@@ -38,6 +38,9 @@ require_command() {
   command -v "$1" >/dev/null 2>&1 || die "required command not found: $1"
 }
 
+# strip_release_binary / verify_release_binary, shared with install_local_release.sh.
+source "$ROOT/Scripts/lib/release_binary.sh"
+
 build_setting() {
   local key="$1"
   awk -F ' = ' -v key="$key" '
@@ -184,6 +187,8 @@ verify_app() {
   archs="$(lipo -archs "$app/Contents/MacOS/$EXECUTABLE_NAME")"
   [[ " $archs " == *' arm64 '* ]] || die "app executable is missing arm64"
   [[ " $archs " == *' x86_64 '* ]] || die "app executable is missing x86_64"
+  verify_release_binary "$app/Contents/MacOS/$EXECUTABLE_NAME" \
+    || die "app executable carries coverage instrumentation or a symbol table"
   cmp -s "$LICENSE_FILE" "$app/Contents/Resources/LICENSE" || die "app bundle is missing the exact GPL license text"
 
   printf '    signed app: archs=%s, GPL license present\n' "$archs"
@@ -216,7 +221,7 @@ verify_dmg() {
 }
 
 # Credential checks intentionally happen before clean/build or replacing dist/.
-for command_name in awk cmp codesign ditto grep hdiutil lipo plutil security sed shasum spctl xcodebuild xcrun; do
+for command_name in awk cmp codesign ditto grep hdiutil lipo nm plutil security sed shasum size spctl xcodebuild xcrun; do
   require_command "$command_name"
 done
 [[ -f "$PROJECT/project.pbxproj" ]] || die "Xcode project not found: $PROJECT"
@@ -288,9 +293,12 @@ NEW_DIST="$TEMP_ROOT/dist"
 mkdir -p "$STAGE" "$DMG_STAGE" "$NEW_DIST"
 
 echo "==> Building unsigned universal Release (x86_64 + arm64)"
+# CLANG_COVERAGE_MAPPING=NO: the scheme's test action otherwise instruments this build
+# too (see Scripts/lib/release_binary.sh). The unit-test gate above keeps coverage.
 if ! xcodebuild -project "$PROJECT" -scheme "$SCHEME" -configuration Release \
   -derivedDataPath "$DD" \
   ARCHS="x86_64 arm64" ONLY_ACTIVE_ARCH=NO \
+  CLANG_COVERAGE_MAPPING=NO \
   CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO CODE_SIGN_IDENTITY="" DEVELOPMENT_TEAM="" \
   clean build >"$BUILD_LOG" 2>&1; then
   die "Release build failed; see $BUILD_LOG"
@@ -310,6 +318,12 @@ ditto "$BUILT_APP" "$APP"
 # GPL-3.0 requires the license text to accompany the binary. It must be added
 # before signing because modifying a signed bundle invalidates its signature.
 cp "$LICENSE_FILE" "$APP/Contents/Resources/LICENSE"
+
+# Strip the staged copy only; the DerivedData original and its dSYM stay untouched.
+echo "==> Stripping the main executable"
+strip_release_binary "$APP/Contents/MacOS/$EXECUTABLE_NAME" || die "could not strip the main executable"
+verify_release_binary "$APP/Contents/MacOS/$EXECUTABLE_NAME" \
+  || die "main executable carries coverage instrumentation or a symbol table"
 
 # Sparkle ships nested code inside its framework. A single codesign of the outer app
 # does NOT reach it, and notarization rejects unsigned nested Mach-O outright, so the
@@ -374,7 +388,8 @@ cp "$LICENSE_FILE" "$DMG_STAGE/LICENSE"
 ln -s /Applications "$DMG_STAGE/Applications"
 cmp -s "$LICENSE_FILE" "$DMG_STAGE/LICENSE" || die "DMG stage is missing the exact GPL license text"
 DMG="$NEW_DIST/Tungsten-Edge-$VERSION.dmg"
-hdiutil create -volname "$VOL_NAME" -srcfolder "$DMG_STAGE" -ov -format UDZO "$DMG" >/dev/null
+# ULMO (LZMA) opens on macOS 10.15+; the deployment target is 12. The ZIP stays as is.
+hdiutil create -volname "$VOL_NAME" -srcfolder "$DMG_STAGE" -ov -format ULMO "$DMG" >/dev/null
 codesign --force --sign "$DEVELOPER_ID_APPLICATION" --timestamp "$DMG"
 codesign --verify --strict --verbose=2 "$DMG"
 

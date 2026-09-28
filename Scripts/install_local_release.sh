@@ -35,6 +35,9 @@ FALLBACK_IDENTITY="macos-dock-cc Local Code Signing"
 
 [[ -f "$ENTITLEMENTS" ]] || { echo "error: 找不到 entitlements：$ENTITLEMENTS" >&2; exit 1; }
 
+# strip_release_binary / verify_release_binary, shared with package_release.sh.
+source "$ROOT/Scripts/lib/release_binary.sh"
+
 # 回退分支是给没有本项目 Developer ID 证书的人留的（仓库是 GPL 公开的、有 fork），
 # 不是给自己用的 —— 掉进回退分支意味着装出来的包和发布包身份不同，授权会打架。
 IDENTITIES="$(security find-identity -v -p codesigning 2>&1)"
@@ -52,14 +55,24 @@ else
 fi
 
 echo "==> 构建 Release…"
+# Same arch and coverage settings as package_release.sh (see Scripts/lib/release_binary.sh).
 xcodebuild -project "$PROJECT" -scheme "$SCHEME" -configuration Release \
-  -derivedDataPath "$DD" build >/tmp/tungsten-local-install.log 2>&1
+  -derivedDataPath "$DD" \
+  ARCHS="x86_64 arm64" ONLY_ACTIVE_ARCH=NO \
+  CLANG_COVERAGE_MAPPING=NO \
+  build >/tmp/tungsten-local-install.log 2>&1
 echo "    ok"
 
 STAGE="$(mktemp -d)"
 APP="$STAGE/$APP_NAME.app"
 cp -R "$PRODUCTS/$BUILT_NAME.app" "$APP"
 cp "$ROOT/LICENSE" "$APP/Contents/Resources/LICENSE"   # 与发布包保持一致
+
+# Strip the staged copy before signing, exactly as the release does; the build's dSYM
+# stays in $PRODUCTS for symbolication.
+echo "==> 剥符号表并检查主程序…"
+strip_release_binary "$APP/Contents/MacOS/$BUILT_NAME" && verify_release_binary "$APP/Contents/MacOS/$BUILT_NAME" \
+  || { echo "error: 主程序带着覆盖率插桩或符号表，不安装（原因见上一行）" >&2; exit 1; }
 
 # 与 package_release.sh 逐项对齐：hardened runtime + 安全时间戳 + 同一份 entitlements。
 # --timestamp 要联网（约 1 秒）。它对运行期行为没有影响，留着是为了让本机包与发布包
