@@ -724,7 +724,7 @@ struct DockStripView: View {
         )
     }
 
-    /// 卡槽**此刻**的姿态：悬停放大（安静档底锚 1.10 / 文件夹 chip 底锚 1.12）× 按压 0.93（中心）。
+    /// 卡槽**此刻**的姿态：悬停放大（安静档底锚 1.10，文件夹 chip 同款）× 按压 0.93（中心）。
     /// 载体第一帧按它摆才和卡槽逐像素重合——推导与数值见 `DragCarrierGeometry.pickUpPose`。
     /// 悬停放大的倍数用渲染卡片的**同一个** `ChipPillMetrics.quietHoverScale(forCardWidth:scale:)` 算，
     /// 卡宽取量到的帧宽（宽标题卡的封顶规则才对得上）。
@@ -742,9 +742,13 @@ struct DockStripView: View {
                 pressedScale: ChipPressSwitches.pressDownEnabled ? ChipPressDecision.pressedScale : nil,
                 hoverScale: hoverScale)
         case .pinnedFolder:
-            // 文件夹 chip 两档都是 1.12 底锚放大，且没有按压反馈（AGENTS《Taskbar Size Tiers》）。
+            // Folder chips hover like icon cards (quiet tier only) but have no press feedback.
+            let width = slot?.width ?? ChipPillMetrics.cardWidth * dockScale
+            let hoverScale: CGFloat? = hoverStyle.showsQuietHoverFeedback(isHovering: hovered)
+                ? ChipPillMetrics.quietHoverScale(forCardWidth: width, scale: dockScale)
+                : nil
             return DragCarrierGeometry.pickUpPose(chipHeight: height, pressedScale: nil,
-                                                  hoverScale: hovered ? PinnedFolderChip.hoverScale : nil)
+                                                  hoverScale: hoverScale)
         case .shelf, .trash, .divider, .externalDropGhost:
             return .resting
         }
@@ -1275,12 +1279,16 @@ struct DockStripView: View {
                 path: path,
                 cover: folderCoverStore.covers[path],
                 sortOrder: pinnedFolderStore.sortOrder(for: path),
+                customBadge: pinnedFolderStore.badgeLabel(for: path),
+                badgeStyle: FolderBadgeStyle.resolve(raw: DebugSwitch.folderBadge.value(in: DockEffectSwitches.environment),
+                                                     folderIndex: index - 1),
                 onTap: { folderPrimaryTap(path) },
                 onPreview: { folderShowPreview(path) },
                 onOpenInFinder: { openFolderInFinder(path) },
                 onAddFolder: onAddFolder,
                 onRemove: { pinnedFolderStore.remove(path) },
                 onSetSortOrder: { pinnedFolderStore.setSortOrder($0, for: path) },
+                onSetBadge: { pinnedFolderStore.setBadgeLabel($0, for: path) },
                 isDropTarget: externalDropTarget == .moveInto(path: path),
                 scale: dockScale,
                 hoverStyle: hoverStyle,

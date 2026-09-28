@@ -52,7 +52,7 @@ extension DockStripView {
     /// 该 entry 的气泡文案。`nil` = 这类 chip 不弹气泡。
     ///
     /// **弹的是应用名，不是窗口标题**（owner 2026-08-17，原生 Dock 的标签永远只写应用名）。
-    /// 固定文件夹不弹——它的名字常驻在封面下方；分隔线不是 chip。
+    /// 固定文件夹弹文件夹全名——卡上只剩角标里的首字；分隔线不是 chip。
     private func bubbleTitle(for entry: StripEntry) -> String? {
         switch entry {
         case let .window(item):
@@ -68,7 +68,9 @@ extension DockStripView {
             return count > 0
                 ? String(format: String(localized: "Shelf · %d"), count)
                 : String(localized: "Shelf")
-        case .pinnedFolder, .divider, .externalDropGhost:
+        case let .pinnedFolder(path):
+            return FileManager.default.displayName(atPath: path)
+        case .divider, .externalDropGhost:
             // 空档本来就不上报悬停帧，走不到这儿；写死 nil 是第二道闸。
             return nil
         }
