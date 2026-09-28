@@ -249,17 +249,8 @@ struct DockThemeTokens: Equatable {
     /// 别越过 `labelActive` 0.85。
     /// 调参出口：`DOCK_LABEL_INACTIVE`。
     let labelInactive: DockTint
-    /// 悬停时冒出的名字（窗口 chip / 抽屉图标 / 文件夹名 / 中转格）。
-    let labelHover: DockTint
     /// 标题胶囊下方的应用名副标题。
     let labelSubtitle: DockTint
-    /// **裸文字**（没有药丸兜底的那些）的描边光晕：悬停冒出的应用名、图标卡悬停标题、
-    /// 抽屉图标悬停名、中转站悬停标签、固定文件夹名。
-    ///
-    /// 颜色取文字的**反方向**——深色列黑光晕托白字、浅色列白光晕托黑字，
-    /// 和 macOS 自己给桌面图标标签的做法一样。`y = 0`：要的是包住字的一圈，不是投影。
-    /// 药丸**里面**的窗口标题不用它，那里靠药丸底解决，两个手段叠加会让小字发糊。
-    let labelHalo: DockShadow
 
     // MARK: 指示器
 
@@ -383,9 +374,7 @@ extension DockThemeTokens {
 
         labelActive: .black(0.85),
         labelInactive: .black(0.62),
-        labelHover: .black(0.75),
         labelSubtitle: .black(0.55),
-        labelHalo: DockShadow(tint: .white(0.70), radius: 1.5, y: 0),
 
         runningDot: .black(0.5),
         zoneDivider: .black(0.12),

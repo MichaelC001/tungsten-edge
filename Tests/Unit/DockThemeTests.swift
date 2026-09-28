@@ -19,7 +19,6 @@ final class DockThemeTests: XCTestCase {
         let mustBeBlack: [(String, DockTint)] = [
             ("labelActive", theme.labelActive),
             ("labelInactive", theme.labelInactive),
-            ("labelHover", theme.labelHover),
             ("labelSubtitle", theme.labelSubtitle),
             ("runningDot", theme.runningDot),
             ("zoneDivider", theme.zoneDivider),
@@ -151,20 +150,11 @@ final class DockThemeTests: XCTestCase {
                           "还得比在桌面那档淡，「在不在当前桌面」全靠这个深浅差")
     }
 
-    /// 裸文字（没有药丸兜底的那些）的光晕同样取文字的反方向，`y = 0`：
-    /// 要的是包住字的一圈，不是投影。
-    func testLabelHaloOpposesTheTextColour() {
-        XCTAssertEqual(theme.labelHalo.tint.base, .white, "文字是黑的，光晕必须是白的")
-        XCTAssertEqual(theme.labelHalo.y, 0, "光晕不向下偏移")
-        XCTAssertGreaterThan(theme.labelHalo.radius, 0)
-    }
-
     // MARK: - 数值合法性
 
     func testShadowsFitInsideShadowPaddingBudget() {
         XCTAssertLessThanOrEqual(theme.stripShadow.verticalExtent, shadowPadding)
         XCTAssertLessThanOrEqual(theme.popupShadow.verticalExtent, shadowPadding)
-        XCTAssertLessThanOrEqual(theme.labelHalo.verticalExtent, shadowPadding)
     }
 
     /// 手调时容易顺手写超。
@@ -300,7 +290,7 @@ private extension DockThemeTokens {
          stripShadow.tint, popupShadow.tint,
          chipPillFill.normal, chipPillFill.emphasized,
          chipPillRimTop.normal, chipPillRimTop.emphasized, chipPillRimBottom,
-         labelActive, labelInactive, labelHover, labelSubtitle, labelHalo.tint,
+         labelActive, labelInactive, labelSubtitle,
          runningDot, zoneDivider,
          shelfDropGlow,
          capsuleGlyph, capsuleStashGlow,

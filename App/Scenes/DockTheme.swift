@@ -344,11 +344,10 @@ extension EnvironmentValues {
     ///
     /// 拍出来的位图与屏幕上那张卡有**两处刻意的不同**，都由它控制：
     /// - **不画运行小圆点**：原生 Dock 拖起有圆点的图标时圆点是消失的，落位才回来（owner 2026-08-19）。
-    /// - **不烘任何 `dockShadow`**：图标的外投影 2026-08-19 已按 owner 决定整个去掉（条上和载体
-    ///   都不投影），所以这一条现在只管得着**文件夹名的描边光晕**（`theme.labelHalo`）。仍然保留
-    ///   不烘，是因为 `cacheDisplay` 抓 SwiftUI 的 `.shadow` 只抓到约四分之一强度——实测同一块
-    ///   白板 0.6 的投影只捕到 alpha 23（`ImageRenderer` 同一张是 99）——烘进去会得到一份比卡上
-    ///   淡得多的光晕，落位交接反而出现台阶，比干脆不画更糟。这正是上一轮 +2.85 台阶的成因。
+    /// - **不烘任何 `dockShadow`**：眼下没有哪张卡还画 `dockShadow`（图标外投影和文件夹名光晕
+    ///   都已去掉），这条留着防以后加回来的：`cacheDisplay` 抓 SwiftUI 的 `.shadow` 只抓到约四分之一
+    ///   强度——实测同一块白板 0.6 的投影只捕到 alpha 23（`ImageRenderer` 同一张是 99）——烘进去
+    ///   会得到一份比卡上淡得多的阴影，落位交接反而出现台阶，比干脆不画更糟。
     var isDragCarrierSnapshot: Bool {
         get { self[DragCarrierSnapshotKey.self] }
         set { self[DragCarrierSnapshotKey.self] = newValue }
