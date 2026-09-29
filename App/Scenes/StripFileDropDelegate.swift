@@ -115,6 +115,9 @@ struct StripFileDropDelegate: DropDelegate {
         guard target != .none else { return false }
         let providers = info.itemProviders(for: [UTType.fileURL])
         guard !providers.isEmpty else { return false }
+        // The fallback for an in-process drag (see `StripDropRouting.committedURLs`). The drag
+        // pasteboard is readable only while the session lives — snapshot it before this returns.
+        let pasteboardURLs = DragPasteboardInspector.draggedURLs()
 
         // 异步取齐全部 URL,保持 provider 顺序,回主线程一次性提交。
         let group = DispatchGroup()
@@ -127,9 +130,13 @@ struct StripFileDropDelegate: DropDelegate {
             }
         }
         group.notify(queue: .main) {
-            // Second gate for Trash items (the first is the hover route): filtered before the app
-            // split, so a Trash `.app` cannot reach the keep path either.
-            let urls = box.urls.compactMap { $0 }.filter { !DragPasteboardInspector.isInsideTrash($0) }
+            // Trash items are filtered here, before the app split, so a Trash `.app` cannot reach
+            // the keep path either.
+            let urls = StripDropRouting.committedURLs(
+                loaded: box.urls,
+                pasteboard: pasteboardURLs,
+                homeDirectory: FileManager.default.homeDirectoryForCurrentUser
+            )
             guard !urls.isEmpty else { return }
             // 落定这一刻按**真实 URL** 再判一次应用身份（悬停期读的是拖放剪贴板，只用来
             // 决定高亮和光标）。分流是硬的：`onCommit` 收到的绝不含应用。
@@ -162,6 +169,8 @@ struct StripFileDropDelegate: DropDelegate {
             /// 第一个应用 bundle 的 id。**解析 Info.plist 是读盘**，所以一次拖放会话只做一次
             /// ——`dropUpdated` 每 ~50ms 一次，逐次读盘会把主线程拖垮。
             let applicationBundleID: String?
+            /// File URLs only, Trash items included (the caller filters them).
+            let draggedURLs: [URL]
         }
         private static var session: Session?
 
@@ -181,6 +190,11 @@ struct StripFileDropDelegate: DropDelegate {
             currentSession().containsOnlyTrashItems
         }
 
+        /// The dragged file URLs, read synchronously. Readable only while the session is alive.
+        static func draggedURLs() -> [URL] {
+            currentSession().draggedURLs
+        }
+
         /// Path components only — nothing inside the Trash is read.
         static func isInsideTrash(_ url: URL) -> Bool {
             TrashPath.isInsideTrash(url, homeDirectory: FileManager.default.homeDirectoryForCurrentUser)
@@ -198,7 +212,8 @@ struct StripFileDropDelegate: DropDelegate {
                 changeCount: changeCount,
                 containsOnlyTrashItems: !dragged.isEmpty && urls.isEmpty,
                 containsApplication: !apps.isEmpty,
-                applicationBundleID: apps.first.flatMap { Bundle(url: $0)?.bundleIdentifier }
+                applicationBundleID: apps.first.flatMap { Bundle(url: $0)?.bundleIdentifier },
+                draggedURLs: dragged.filter(\.isFileURL)
             )
             session = next
             return next

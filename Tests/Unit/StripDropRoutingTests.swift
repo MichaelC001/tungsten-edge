@@ -299,4 +299,35 @@ final class StripDropRoutingTests: XCTestCase {
         // A refusal (e.g. Trash items) stays a refusal.
         XCTAssertFalse(StripDropRouting.usesGenericOperation(hoveredTarget: .trash, proposedIsCopy: false, sourceAllowsGeneric: true))
     }
+
+    private let home = URL(fileURLWithPath: "/Users/tester", isDirectory: true)
+    private let appA = URL(fileURLWithPath: "/Applications/A.app")
+    private let appB = URL(fileURLWithPath: "/Applications/B.app")
+    private let file = URL(fileURLWithPath: "/Users/tester/Downloads/note.txt")
+
+    func testProvidersStayTheAuthorityWheneverAnyOfThemLoads() {
+        // All loaded: the pasteboard is ignored even when it disagrees.
+        XCTAssertEqual(StripDropRouting.committedURLs(loaded: [appA, file], pasteboard: [appB], homeDirectory: home),
+                       [appA, file])
+        // Partly loaded: only what loaded, never topped up from the pasteboard.
+        XCTAssertEqual(StripDropRouting.committedURLs(loaded: [nil, file], pasteboard: [appA, file], homeDirectory: home),
+                       [file])
+    }
+
+    func testInProcessDragFallsBackToThePasteboard() {
+        // Our popup's provider cannot coerce to URL: every load is nil.
+        XCTAssertEqual(StripDropRouting.committedURLs(loaded: [nil], pasteboard: [appA], homeDirectory: home), [appA])
+        XCTAssertEqual(StripDropRouting.committedURLs(loaded: [nil, nil], pasteboard: [], homeDirectory: home), [])
+    }
+
+    func testCommittedURLsDropTrashItemsFromEitherSource() {
+        let homeTrash = URL(fileURLWithPath: "/Users/tester/.Trash/old.txt")
+        let volumeTrash = URL(fileURLWithPath: "/.Trashes/501/old.app")
+        XCTAssertEqual(StripDropRouting.committedURLs(loaded: [homeTrash, file, volumeTrash], pasteboard: [], homeDirectory: home),
+                       [file])
+        XCTAssertEqual(StripDropRouting.committedURLs(loaded: [nil], pasteboard: [homeTrash, appA, volumeTrash], homeDirectory: home),
+                       [appA])
+        // Loaded but all in the Trash: the selection is not retried against the pasteboard.
+        XCTAssertEqual(StripDropRouting.committedURLs(loaded: [homeTrash], pasteboard: [appA], homeDirectory: home), [])
+    }
 }

@@ -131,4 +131,14 @@ extension StripDropRouting {
     static func usesGenericOperation(hoveredTarget: Target?, proposedIsCopy: Bool, sourceAllowsGeneric: Bool) -> Bool {
         proposedIsCopy && sourceAllowsGeneric && hoveredTarget == .trash
     }
+
+    /// The URLs a drop commits. The item providers are the authority; only when **none** of them
+    /// yields a URL does the drop fall back to the drag pasteboard snapshot — an in-process drag
+    /// (our folder / shelf popup's `NSItemProvider(contentsOf:)`) cannot coerce to `URL` at all.
+    /// Trash items are dropped from either source (second gate; the first is the hover route).
+    static func committedURLs(loaded: [URL?], pasteboard: [URL], homeDirectory: URL) -> [URL] {
+        let resolved = loaded.compactMap { $0 }
+        return (resolved.isEmpty ? pasteboard : resolved)
+            .filter { !TrashPath.isInsideTrash($0, homeDirectory: homeDirectory) }
+    }
 }
