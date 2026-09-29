@@ -241,7 +241,7 @@ struct DrawerView: View {
     /// 拖动预览期间无需特判：任务条卡一进抽屉体就被 `convertStripToDrawer` 转成真成员，
     /// `runningZoneIDs` 立刻非空，提示自然让位给网格。
     private var emptyHint: some View {
-        Text("Drag apps here")
+        Text("Drag apps here from the taskbar")
             .font(.system(size: 11))
             .foregroundStyle(theme.effectiveLabelInactive.color)
             .multilineTextAlignment(.center)

@@ -2918,43 +2918,43 @@
         }
       }
     },
-    "Drag apps here": {
+    "Drag apps here from the taskbar": {
       "comment": "抽屉为空时的提示文字",
       "localizations": {
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "将应用拖入抽屉区"
+            "value": "从钨极 Dock 栏把应用拖到这里"
           }
         },
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Drag apps here"
+            "value": "Drag apps here from the taskbar"
           }
         },
         "zh-Hant": {
           "stringUnit": {
             "state": "translated",
-            "value": "把App拖移到這裡"
+            "value": "從工作列把App拖移到這裡"
           }
         },
         "ja": {
           "stringUnit": {
             "state": "translated",
-            "value": "アプリをここにドラッグ"
+            "value": "タスクバーからアプリをドラッグ"
           }
         },
         "de": {
           "stringUnit": {
             "state": "translated",
-            "value": "Apps hierher ziehen"
+            "value": "Apps aus der Taskleiste ziehen"
           }
         },
         "fr": {
           "stringUnit": {
             "state": "translated",
-            "value": "Faites glisser des apps ici"
+            "value": "Faites glisser des apps ici\ndepuis la barre des tâches"
           }
         }
       }
