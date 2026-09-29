@@ -368,7 +368,7 @@ struct FolderGridCell: View {
 
     var body: some View {
         if let dragURL {
-            core.onDrag { NSItemProvider(contentsOf: dragURL) ?? NSItemProvider() }
+            core.onDrag { FileDragItemProvider.make(for: dragURL) }
         } else {
             core
         }

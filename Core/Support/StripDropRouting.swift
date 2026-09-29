@@ -134,7 +134,7 @@ extension StripDropRouting {
 
     /// The URLs a drop commits. The item providers are the authority; only when **none** of them
     /// yields a URL does the drop fall back to the drag pasteboard snapshot — an in-process drag
-    /// (our folder / shelf popup's `NSItemProvider(contentsOf:)`) cannot coerce to `URL` at all.
+    /// (our folder / shelf popup) may not coerce to `URL` at all.
     /// Trash items are dropped from either source (second gate; the first is the hover route).
     static func committedURLs(loaded: [URL?], pasteboard: [URL], homeDirectory: URL) -> [URL] {
         let resolved = loaded.compactMap { $0 }

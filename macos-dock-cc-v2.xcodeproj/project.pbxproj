@@ -158,9 +158,12 @@
 		A00000000000000000009302 /* StripDropRouting.swift in Sources */ = {isa = PBXBuildFile; fileRef = A00000000000000000009300 /* StripDropRouting.swift */; };
 		A00000000000000000009901 /* FolderDropPlan.swift in Sources */ = {isa = PBXBuildFile; fileRef = A00000000000000000009900 /* FolderDropPlan.swift */; };
 		A00000000000000000009902 /* FolderDropPlan.swift in Sources */ = {isa = PBXBuildFile; fileRef = A00000000000000000009900 /* FolderDropPlan.swift */; };
+		A000000000000000000DE501 /* FileDragItemProvider.swift in Sources */ = {isa = PBXBuildFile; fileRef = A000000000000000000DE500 /* FileDragItemProvider.swift */; };
+		A000000000000000000DE502 /* FileDragItemProvider.swift in Sources */ = {isa = PBXBuildFile; fileRef = A000000000000000000DE500 /* FileDragItemProvider.swift */; };
 		A00000000000000000009911 /* FileMover.swift in Sources */ = {isa = PBXBuildFile; fileRef = A00000000000000000009910 /* FileMover.swift */; };
 		A00000000000000000009912 /* FileMover.swift in Sources */ = {isa = PBXBuildFile; fileRef = A00000000000000000009910 /* FileMover.swift */; };
 		A00000000000000000009921 /* FolderDropPlanTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A00000000000000000009920 /* FolderDropPlanTests.swift */; };
+		A000000000000000000DE521 /* FileDragItemProviderTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A000000000000000000DE520 /* FileDragItemProviderTests.swift */; };
 		A00000000000000000009931 /* FileMoverTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A00000000000000000009930 /* FileMoverTests.swift */; };
 		A00000000000000000009401 /* LauncherMenuPlan.swift in Sources */ = {isa = PBXBuildFile; fileRef = A00000000000000000009400 /* LauncherMenuPlan.swift */; };
 		A00000000000000000009402 /* LauncherMenuPlan.swift in Sources */ = {isa = PBXBuildFile; fileRef = A00000000000000000009400 /* LauncherMenuPlan.swift */; };
@@ -776,8 +779,10 @@
 		A00000000000000000009290 /* FolderSortTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FolderSortTests.swift; sourceTree = "<group>"; };
 		A00000000000000000009300 /* StripDropRouting.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StripDropRouting.swift; sourceTree = "<group>"; };
 		A00000000000000000009900 /* FolderDropPlan.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FolderDropPlan.swift; sourceTree = "<group>"; };
+		A000000000000000000DE500 /* FileDragItemProvider.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FileDragItemProvider.swift; sourceTree = "<group>"; };
 		A00000000000000000009910 /* FileMover.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FileMover.swift; sourceTree = "<group>"; };
 		A00000000000000000009920 /* FolderDropPlanTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FolderDropPlanTests.swift; sourceTree = "<group>"; };
+		A000000000000000000DE520 /* FileDragItemProviderTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FileDragItemProviderTests.swift; sourceTree = "<group>"; };
 		A00000000000000000009930 /* FileMoverTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FileMoverTests.swift; sourceTree = "<group>"; };
 		A00000000000000000009400 /* LauncherMenuPlan.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LauncherMenuPlan.swift; sourceTree = "<group>"; };
 		A0000000000000000000FA00 /* LauncherChipVisualPlan.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LauncherChipVisualPlan.swift; sourceTree = "<group>"; };
@@ -1062,6 +1067,7 @@
 				A00000000000000000000F03 /* FinderAppleEventMatcher.swift */,
 				A00000000000000000009300 /* StripDropRouting.swift */,
 				A00000000000000000009900 /* FolderDropPlan.swift */,
+				A000000000000000000DE500 /* FileDragItemProvider.swift */,
 				A00000000000000000009400 /* LauncherMenuPlan.swift */,
 				F1C0000000000000000000A0 /* WindowListMenuPlan.swift */,
 				F1F0000000000000000000A0 /* AppLanguageOption.swift */,
@@ -1371,6 +1377,7 @@
 				A00000000000000000009290 /* FolderSortTests.swift */,
 				A00000000000000000009340 /* StripDropRoutingTests.swift */,
 				A00000000000000000009920 /* FolderDropPlanTests.swift */,
+				A000000000000000000DE520 /* FileDragItemProviderTests.swift */,
 				A00000000000000000009930 /* FileMoverTests.swift */,
 				A00000000000000000009410 /* LauncherMenuPlanTests.swift */,
 				A0000000000000000000FA10 /* LauncherChipVisualPlanTests.swift */,
@@ -1707,6 +1714,7 @@
 					A00000000000000000009261 /* FileItemMenuBuilder.swift in Sources */,
 					A00000000000000000009301 /* StripDropRouting.swift in Sources */,
 					A00000000000000000009901 /* FolderDropPlan.swift in Sources */,
+					A000000000000000000DE501 /* FileDragItemProvider.swift in Sources */,
 					A00000000000000000009911 /* FileMover.swift in Sources */,
 					A00000000000000000009401 /* LauncherMenuPlan.swift in Sources */,
 					F1C0000000000000000000A1 /* WindowListMenuPlan.swift in Sources */,
@@ -1929,6 +1937,7 @@
 				A00000000000000000009291 /* FolderSortTests.swift in Sources */,
 				A00000000000000000009302 /* StripDropRouting.swift in Sources */,
 				A00000000000000000009902 /* FolderDropPlan.swift in Sources */,
+				A000000000000000000DE502 /* FileDragItemProvider.swift in Sources */,
 				A00000000000000000009912 /* FileMover.swift in Sources */,
 				A00000000000000000009402 /* LauncherMenuPlan.swift in Sources */,
 				A0000000000000000000FA02 /* LauncherChipVisualPlan.swift in Sources */,
@@ -1966,6 +1975,7 @@
 				A00000000000000000009312 /* ShelfStore.swift in Sources */,
 				A00000000000000000009341 /* StripDropRoutingTests.swift in Sources */,
 				A00000000000000000009921 /* FolderDropPlanTests.swift in Sources */,
+				A000000000000000000DE521 /* FileDragItemProviderTests.swift in Sources */,
 				A00000000000000000009931 /* FileMoverTests.swift in Sources */,
 				A00000000000000000009411 /* LauncherMenuPlanTests.swift in Sources */,
 				A0000000000000000000FA11 /* LauncherChipVisualPlanTests.swift in Sources */,
