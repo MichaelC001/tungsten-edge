@@ -7,16 +7,12 @@ final class PinnedFolderStore: ObservableObject {
     @Published private(set) var folderPaths: [String] = []
     /// 逐文件夹排序方式（normalized path → FolderSortOrder.rawValue）。缺省 = 默认排序，不落盘。
     @Published private(set) var sortOrders: [String: String] = [:]
-    /// User-set badge text per folder (normalized path → text). Absent = automatic initial.
-    @Published private(set) var badgeLabels: [String: String] = [:]
     private let key = "pinnedFolderPaths"
     private let sortKey = "pinnedFolderSortOrders"
-    private let badgeKey = "pinnedFolderBadgeLabels"
 
     init() {
         folderPaths = UserDefaults.standard.stringArray(forKey: key) ?? []
         sortOrders = UserDefaults.standard.dictionary(forKey: sortKey) as? [String: String] ?? [:]
-        badgeLabels = UserDefaults.standard.dictionary(forKey: badgeKey) as? [String: String] ?? [:]
     }
 
     func contains(_ path: String) -> Bool { folderPaths.contains(Self.normalized(path)) }
@@ -61,9 +57,6 @@ final class PinnedFolderStore: ObservableObject {
         if sortOrders.removeValue(forKey: normalized) != nil {
             UserDefaults.standard.set(sortOrders, forKey: sortKey)
         }
-        if badgeLabels.removeValue(forKey: normalized) != nil {
-            UserDefaults.standard.set(badgeLabels, forKey: badgeKey)
-        }
         persist()
     }
 
@@ -76,19 +69,6 @@ final class PinnedFolderStore: ObservableObject {
         guard sortOrders[normalized] != order.rawValue else { return }
         sortOrders[normalized] = order.rawValue
         UserDefaults.standard.set(sortOrders, forKey: sortKey)
-    }
-
-    func badgeLabel(for path: String) -> String? {
-        badgeLabels[Self.normalized(path)]
-    }
-
-    /// `nil` or blank text clears the override, so the automatic initial comes back.
-    func setBadgeLabel(_ label: String?, for path: String) {
-        let normalized = Self.normalized(path)
-        let next = FolderBadgeText.sanitizedCustom(label)
-        guard badgeLabels[normalized] != next else { return }
-        badgeLabels[normalized] = next
-        UserDefaults.standard.set(badgeLabels, forKey: badgeKey)
     }
 
     private func persist() {

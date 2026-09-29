@@ -1,22 +1,17 @@
 import AppKit
 import SwiftUI
 
-/// Pinned folder chip: the cover at app-icon size in an icon-card slot, plus a small solid
-/// badge disc at the bottom right carrying the folder's initial (`FolderBadgeText`). The full
-/// name lives in the hover bubble (`DockStripView.bubbleTitle`) and in `.help`.
+/// Pinned folder chip: the cover alone, at app-icon size in an icon-card slot, like a native
+/// Dock stack. The name lives in the hover bubble (`DockStripView.bubbleTitle`) and in `.help`.
 ///
-/// The name row under the cover is gone on purpose: it shrank the cover to ~22pt against the
-/// neighbours' 32.5pt, widened the card, and a resident black label with a white halo turned
-/// into an unreadable smudge once the glass went dark. The badge is opaque and self-coloured,
-/// so the glass behind it cannot affect it.
+/// No name row under the cover: it shrank the cover to ~22pt against the neighbours' 32.5pt,
+/// widened the card, and its black text with a white halo turned into a smudge on dark glass.
 /// 点击一律 onTapGesture（nonactivatingPanel 上勿用 Button）；右键 = 手搓 NSMenu。
 struct PinnedFolderChip: View {
     let path: String
     let cover: FolderCover?
     /// 当前排序方式（菜单打勾用;menu builder 每次右键现建,读到的总是最新值）。
     let sortOrder: FolderSortOrder
-    /// User-set badge text; `nil` = automatic initial.
-    let customBadge: String?
     let onTap: () -> Void
     /// 内容预览（右键「预览内容」；左键在 preview 模式下也走这个）。
     let onPreview: () -> Void
@@ -25,8 +20,6 @@ struct PinnedFolderChip: View {
     let onAddFolder: () -> Void
     let onRemove: () -> Void
     let onSetSortOrder: (FolderSortOrder) -> Void
-    /// Commits the text from 「更改角标…」; `nil` / blank restores the automatic initial.
-    let onSetBadge: (String?) -> Void
     var isDropTarget = false
     /// 任务条尺寸档位的缩放系数。中档 = 1.0，此时所有尺寸与历史字面值逐像素相同。
     /// **故意不给默认值**——漏传必须是编译错误，见 AGENTS《Taskbar Size Tiers》。
@@ -68,8 +61,7 @@ struct PinnedFolderChip: View {
         .animation(.easeOut(duration: 0.12), value: isDropTarget)
     }
 
-    /// The icon-card slot (40pt) with the cover and the badge. The drop-target lift scales the
-    /// slot as one piece so the badge stays pinned to the cover's corner.
+    /// The icon-card slot (40pt) with the cover and the drop-target ring, lifted as one piece.
     private var coverSlot: some View {
         let slot = ChipPillMetrics.bareIconSlot * scale
         let visible = ChipPillMetrics.bareIconVisibleSlot * scale
@@ -80,14 +72,6 @@ struct PinnedFolderChip: View {
                 RoundedRectangle(cornerRadius: corner, style: .continuous)
                     .strokeBorder(theme.folderDropRing.color(active: isDropTarget), lineWidth: 1.5)
                     .frame(width: visible, height: visible)
-            }
-            .overlay(alignment: .bottomTrailing) {
-                FolderBadgeDisc(text: FolderBadgeText.resolve(name: folderName, custom: customBadge),
-                                scale: scale)
-                    // Mirror of the unread badge: it sits `badgeTopOffset` below the card's top
-                    // edge, so this one sits the same distance above the card's bottom edge.
-                    .offset(y: ((ChipPillMetrics.chipHeight - ChipPillMetrics.bareIconSlot) / 2
-                                - ChipPillMetrics.badgeTopOffset) * scale)
             }
             .scaleEffect(isDropTarget ? 1.08 : 1)
     }
@@ -135,58 +119,9 @@ struct PinnedFolderChip: View {
         }
         sortItem.submenu = sortMenu
         menu.addItem(sortItem)
-        menu.addItem(ClosureMenuItem(String(localized: "Change Badge…")) { [folderName, customBadge, onSetBadge] in
-            // Let the menu finish closing before a modal alert takes over the run loop.
-            DispatchQueue.main.async {
-                FolderBadgeEditor.present(folderName: folderName, current: customBadge, onCommit: onSetBadge)
-            }
-        })
         menu.addItem(.separator())
         menu.addItem(ClosureMenuItem(String(localized: "Add Folder…")) { onAddFolder() })
         menu.addItem(ClosureMenuItem(String(localized: "Remove from Taskbar")) { onRemove() })
         return menu
-    }
-}
-
-/// The solid disc carrying the folder's initial. Opaque and self-coloured on purpose: nothing
-/// behind it (glass, wallpaper, a dark window) can change its contrast. White with medium-weight
-/// dark text — the owner's pick over graphite and a cover-derived tint.
-private struct FolderBadgeDisc: View {
-    let text: String
-    let scale: CGFloat
-
-    var body: some View {
-        Text(text)
-            .font(.system(size: ChipPillMetrics.badgeFontSize * scale, weight: .medium, design: .rounded))
-            .foregroundStyle(.black.opacity(0.8))
-            .lineLimit(1)
-            .fixedSize()
-            .padding(.horizontal, 4 * scale)
-            .frame(minWidth: ChipPillMetrics.badgeMinimumSize * scale,
-                   minHeight: ChipPillMetrics.badgeMinimumSize * scale)
-            .background(Capsule().fill(Color(white: 0.97)))
-            // 0.5pt 是发丝线，不随档位缩放。
-            .overlay(Capsule().strokeBorder(.black.opacity(0.18), lineWidth: 0.5))
-    }
-}
-
-/// 「更改角标…」: a text-field alert. Tungsten is an `.accessory` app, so it must activate
-/// first or the alert opens behind the frontmost app's windows (see `StatusMenuController`).
-@MainActor
-enum FolderBadgeEditor {
-    static func present(folderName: String, current: String?, onCommit: (String?) -> Void) {
-        let alert = NSAlert()
-        alert.messageText = String(format: String(localized: "Badge for “%@”"), folderName)
-        alert.informativeText = String(localized: "Shown at the bottom right of the folder icon — up to two characters, or an emoji. Leave it empty to use the folder name’s initial.")
-        let field = NSTextField(string: current ?? "")
-        field.placeholderString = FolderBadgeText.automatic(for: folderName)
-        field.frame = NSRect(x: 0, y: 0, width: 220, height: 24)
-        alert.accessoryView = field
-        alert.addButton(withTitle: String(localized: "OK"))
-        alert.addButton(withTitle: String(localized: "Cancel"))
-        alert.window.initialFirstResponder = field
-        NSApp.activate(ignoringOtherApps: true)
-        guard alert.runModal() == .alertFirstButtonReturn else { return }
-        onCommit(field.stringValue)
     }
 }

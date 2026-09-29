@@ -124,46 +124,6 @@
         }
       }
     },
-    "Shown at the bottom right of the folder icon — up to two characters, or an emoji. Leave it empty to use the folder name’s initial.": {
-      "localizations": {
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "显示在文件夹图标右下角，最多两个字符或一个表情。留空则自动取文件夹名的首字。"
-          }
-        },
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Shown at the bottom right of the folder icon — up to two characters, or an emoji. Leave it empty to use the folder name’s initial."
-          }
-        },
-        "zh-Hant": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "顯示在檔案夾圖像右下角，最多兩個字元或一個表情符號。留空則自動使用檔案夾名稱的第一個字。"
-          }
-        },
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "フォルダアイコンの右下に表示されます。2文字まで、または絵文字1つ。空欄にするとフォルダ名の頭文字を使います。"
-          }
-        },
-        "de": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Wird unten rechts auf dem Ordnersymbol angezeigt – bis zu zwei Zeichen oder ein Emoji. Leer lassen, um den Anfangsbuchstaben des Ordnernamens zu verwenden."
-          }
-        },
-        "fr": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Affichée en bas à droite de l’icône du dossier : deux caractères au maximum, ou un emoji. Laissez vide pour utiliser l’initiale du nom du dossier."
-          }
-        }
-      }
-    },
     "Single-display mode": {
       "comment": "单/多屏模式子菜单 · 第一组标题（跟随栏 / 固定在某屏）",
       "localizations": {
@@ -1465,46 +1425,6 @@
         }
       }
     },
-    "Badge for “%@”": {
-      "localizations": {
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "“%@”的角标"
-          }
-        },
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Badge for “%@”"
-          }
-        },
-        "zh-Hant": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "「%@」的標記"
-          }
-        },
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "“%@”のバッジ"
-          }
-        },
-        "de": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Kennzeichen für „%@“"
-          }
-        },
-        "fr": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Pastille de « %@ »"
-          }
-        }
-      }
-    },
     "Bug Report": {
       "comment": "设置窗口 · 反馈 · 类型单选",
       "localizations": {
@@ -1825,46 +1745,6 @@
           "stringUnit": {
             "state": "translated",
             "value": "Impossible de lire ce dossier"
-          }
-        }
-      }
-    },
-    "Change Badge…": {
-      "localizations": {
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "更改角标…"
-          }
-        },
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Change Badge…"
-          }
-        },
-        "zh-Hant": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "更改標記⋯"
-          }
-        },
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "バッジを変更…"
-          }
-        },
-        "de": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Kennzeichen ändern …"
-          }
-        },
-        "fr": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Modifier la pastille…"
           }
         }
       }

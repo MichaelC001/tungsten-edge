@@ -7,9 +7,6 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
-		F0BADE000000000000000002 /* FolderBadgeText.swift in Sources */ = {isa = PBXBuildFile; fileRef = F0BADE000000000000000001 /* FolderBadgeText.swift */; };
-		F0BADE000000000000000003 /* FolderBadgeText.swift in Sources */ = {isa = PBXBuildFile; fileRef = F0BADE000000000000000001 /* FolderBadgeText.swift */; };
-		F0BADE000000000000000005 /* FolderBadgeTextTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = F0BADE000000000000000004 /* FolderBadgeTextTests.swift */; };
 		A7A500000000000000000065 /* FinderTrash.swift in Sources */ = {isa = PBXBuildFile; fileRef = A7A500000000000000000001 /* FinderTrash.swift */; };
 		F1D0A0000000000000000011 /* FinderNewWindowTarget.swift in Sources */ = {isa = PBXBuildFile; fileRef = F1D0A0000000000000000001 /* FinderNewWindowTarget.swift */; };
 		F1D0A0000000000000000012 /* FinderNewWindowTarget.swift in Sources */ = {isa = PBXBuildFile; fileRef = F1D0A0000000000000000001 /* FinderNewWindowTarget.swift */; };
@@ -513,8 +510,6 @@
 /* End PBXContainerItemProxy section */
 
 /* Begin PBXFileReference section */
-		F0BADE000000000000000001 /* FolderBadgeText.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FolderBadgeText.swift; sourceTree = "<group>"; };
-		F0BADE000000000000000004 /* FolderBadgeTextTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FolderBadgeTextTests.swift; sourceTree = "<group>"; };
 		A7A500000000000000000001 /* FinderTrash.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "FinderTrash.swift"; sourceTree = "<group>"; };
 		F1D0A0000000000000000001 /* FinderNewWindowTarget.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "FinderNewWindowTarget.swift"; sourceTree = "<group>"; };
 		F1D0A0000000000000000002 /* FinderNewWindowOpener.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "FinderNewWindowOpener.swift"; sourceTree = "<group>"; };
@@ -1064,7 +1059,6 @@
 				A00000000000000000009210 /* DirectoryWatcher.swift */,
 				A00000000000000000009220 /* FolderContentsLoader.swift */,
 				A00000000000000000000F02 /* FolderInteraction.swift */,
-				F0BADE000000000000000001 /* FolderBadgeText.swift */,
 				A00000000000000000000F03 /* FinderAppleEventMatcher.swift */,
 				A00000000000000000009300 /* StripDropRouting.swift */,
 				A00000000000000000009900 /* FolderDropPlan.swift */,
@@ -1376,7 +1370,6 @@
 				A00000000000000000009280 /* FolderContentsLoaderTests.swift */,
 				A00000000000000000009290 /* FolderSortTests.swift */,
 				A00000000000000000009340 /* StripDropRoutingTests.swift */,
-				F0BADE000000000000000004 /* FolderBadgeTextTests.swift */,
 				A00000000000000000009920 /* FolderDropPlanTests.swift */,
 				A00000000000000000009930 /* FileMoverTests.swift */,
 				A00000000000000000009410 /* LauncherMenuPlanTests.swift */,
@@ -1591,7 +1584,6 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
-				F0BADE000000000000000002 /* FolderBadgeText.swift in Sources */,
 				A7A500000000000000000065 /* FinderTrash.swift in Sources */,
 				F1D0A0000000000000000011 /* FinderNewWindowTarget.swift in Sources */,
 				F1D0A0000000000000000013 /* FinderNewWindowOpener.swift in Sources */,
@@ -1853,8 +1845,6 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
-				F0BADE000000000000000003 /* FolderBadgeText.swift in Sources */,
-				F0BADE000000000000000005 /* FolderBadgeTextTests.swift in Sources */,
 				A7A5000000000000000000C9 /* FinderTrash.swift in Sources */,
 				F1D0A0000000000000000012 /* FinderNewWindowTarget.swift in Sources */,
 				F1D0A0000000000000000014 /* FinderNewWindowTargetTests.swift in Sources */,
