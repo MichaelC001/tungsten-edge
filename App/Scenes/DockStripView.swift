@@ -326,8 +326,8 @@ struct DockStripView: View {
         .background(StripPointerTracker { pointer in
             pointerBox.value = pointer
             refreshHoveredEntry(frames: stripHoverFrames, origin: stripRootScreenRect)
-            // Grip-zone hover for the ▲▼ glyph; rides the same ≤60Hz poll, `nil` on leave.
-            onInteractiveResize(.hover(pointer.flatMap { resizeGripZoneClaims(atScreen: $0) ? $0 : nil }))
+            // Grip-zone hover for the ▲▼ glyph; rides the same ≤60Hz poll, `nil` on leave or while a press is held.
+            onInteractiveResize(.hover(pointer.flatMap { resizeGripHoverClaims(atScreen: $0) ? $0 : nil }))
             HoverTrace.pointer(x: pointer?.x ?? -1, chip: hoveredEntryID)
         })
         // 重击(触控板)/中键(鼠标) → 内容预览：本地事件监视器 → 命中反查（handleGesturePreview）。

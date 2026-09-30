@@ -125,6 +125,16 @@ extension DockStripView {
         )
     }
 
+    /// ▲▼ hover only: the grip predicate, but never while the left button is already held. A press
+    /// that began anywhere else — a card or drawer-icon drag, a file dragged in, a press still under
+    /// the 8pt drag threshold — cannot turn into a resize, so the glyph would promise a drag that
+    /// isn't there. A grip press is unaffected: the coordinator ignores hover during its drag, and
+    /// `finishDrag` re-reports hover directly, not through here.
+    func resizeGripHoverClaims(atScreen global: CGPoint) -> Bool {
+        guard NSEvent.pressedMouseButtons & 1 == 0, dragController.draggingPayload == nil else { return false }
+        return resizeGripZoneClaims(atScreen: global)
+    }
+
     private func allStripChipFrames() -> [CGRect] {
         var frames = Array(chipFrames.values)
         frames.append(contentsOf: folderChipFrames.values)
