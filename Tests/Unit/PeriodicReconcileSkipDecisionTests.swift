@@ -15,6 +15,7 @@ final class PeriodicReconcileSkipDecisionTests: XCTestCase {
             lastReadWasUnread: false,
             lastRoundChanged: false,
             observerActive: true,
+            allSeatsSubscribed: true,
             uptimeSinceLastFullRead: 5
         )
     }
@@ -48,6 +49,12 @@ final class PeriodicReconcileSkipDecisionTests: XCTestCase {
         var input = quietInput()
         input.observerActive = false
         XCTAssertEqual(PeriodicReconcileSkipDecision.verdict(input), .fullRead(.observerInactive))
+    }
+
+    func testIncompleteSubscriptionForcesFullRead() {
+        var input = quietInput()
+        input.allSeatsSubscribed = false
+        XCTAssertEqual(PeriodicReconcileSkipDecision.verdict(input), .fullRead(.subscriptionIncomplete))
     }
 
     func testUnreadLastRoundForcesFullRead() {

@@ -13,8 +13,8 @@ import Foundation
 ///    后台标签都进过所属座位的历史）。与几何、min 标志完全无关——同时豁免「移动/缩放后
 ///    AX 几何过时」和「min 滞后竞态」两类折叠失效。注意历史是**会话态**（dock 重启清零）。
 /// 2. **影子标签池**：候选 cgID 上一轮対账时「在 CG 全列表、却不在 AXWindows」——这是
-///    order-out 后台标签独有的签名（真窗口不管可见/最小化/隐藏/其它 Space 都始终在 AXWindows
-///    里）。池子每轮从活信号重建，**天然免疫 dock 重启**，是成员历史清零后的重启安全层。
+///    order-out 后台标签的签名。(Not unique: a window on another Space also leaves AXWindows
+///    while staying in CG — seated ids are kept out of the pool for that reason.) 池子每轮从活信号重建，**天然免疫 dock 重启**，是成员历史清零后的重启安全层。
 ///    仅当已有落座座位时生效：零座位时不折（真最小化窗口组的代表标签必须能建座位）。
 /// 3. **frame 精确匹配**：后台标签与所属窗口逐像素同 frame（窗口没动过时成立）。
 /// 4. **尺寸兜底**：同宽高 ±3 + 屏幕外 + 对应座位已标最小化（窗口移动过、但没缩放过时成立）。

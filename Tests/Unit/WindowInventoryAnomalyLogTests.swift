@@ -527,6 +527,39 @@ final class WindowInventoryAnomalyLogTests: XCTestCase {
         XCTAssertNil(payload["previousTitle"])
     }
 
+    func testWindowSubscriptionEventsEncode() throws {
+        let directory = makeRoot().appendingPathComponent("logs")
+        let log = makeLogger(directory: directory)
+        log.record(.windowSubscription(InventoryWindowSubscriptionPayload(
+            event: .attempt, context: nil, flushID: 3, pid: 4242, bundleID: "com.example.app",
+            cgWindowID: 77, instanceID: 5, previousInstanceID: 4, kind: .renewal,
+            results: ["destroyed": AXError.success.rawValue, "miniaturized": AXError.cannotComplete.rawValue],
+            stop: .timeoutSkippedRest, covered: false, durationMs: 101.5
+        )))
+        log.record(.subscriptionRetryFlush(InventorySubscriptionRetryFlushPayload(
+            flushID: 3,
+            candidates: [.init(pid: 4242, cgWindowID: 77), .init(pid: 99, cgWindowID: 12)],
+            skippedInvalid: 1, executedPID: 4242, executedCgWindowID: 77, durationMs: 0.4
+        )))
+        log.flush()
+
+        let records = try jsonRecords(at: log.currentFileURL)
+        XCTAssertEqual(records.map { $0["event"] as? String }, ["windowSubscription", "subscriptionRetryFlush"])
+        let attempt = try XCTUnwrap(records[0]["payload"] as? [String: Any])
+        XCTAssertEqual(attempt["event"] as? String, "attempt")
+        XCTAssertEqual(attempt["kind"] as? String, "renewal")
+        XCTAssertEqual(attempt["stop"] as? String, "timeoutSkippedRest")
+        XCTAssertEqual(attempt["instanceID"] as? Int, 5)
+        XCTAssertEqual(attempt["previousInstanceID"] as? Int, 4)
+        let results = try XCTUnwrap(attempt["results"] as? [String: Int])
+        XCTAssertEqual(results["miniaturized"], Int(AXError.cannotComplete.rawValue))
+        XCTAssertNil(results["titleChanged"])
+        let flush = try XCTUnwrap(records[1]["payload"] as? [String: Any])
+        XCTAssertEqual(flush["skippedInvalid"] as? Int, 1)
+        XCTAssertEqual((flush["candidates"] as? [[String: Any]])?.count, 2)
+        XCTAssertEqual(flush["executedCgWindowID"] as? Int, 77)
+    }
+
     private func makeLogger(
         directory: URL,
         enabled: Bool = true,

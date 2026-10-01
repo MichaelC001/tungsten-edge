@@ -369,6 +369,82 @@ struct InventoryShadowPoolPayload: Codable, Equatable {
     let cgWindowCount: Int
 }
 
+/// Per-window AX notification subscription diagnostics (`WindowSubscriptionLedger`). Correlate by
+/// `pid + cgWindowID + instanceID`; instance ids are never reused within a session.
+struct InventoryWindowSubscriptionPayload: Codable, Equatable {
+    enum Event: String, Codable {
+        case attempt
+        case destroyNotified
+        case leftCG
+    }
+
+    let event: Event
+    /// Reconcile that ran an initial / renewal attempt; nil for retries and notifications.
+    let context: InventoryReconcileContext?
+    /// Retry flush that ran a retry attempt.
+    let flushID: UInt64?
+    let pid: Int32
+    let bundleID: String?
+    let cgWindowID: CGWindowID
+    let instanceID: UInt64?
+    let previousInstanceID: UInt64?
+    let kind: WindowSubscriptionAttemptKind?
+    /// Raw `AXError` per notification actually sent this attempt; absent = not tried.
+    let results: [String: Int32]?
+    let stop: WindowSubscriptionStop?
+    let covered: Bool?
+    let durationMs: Double?
+    /// destroyNotified: whether it removed the current subscription (false = a replaced element).
+    let removedCurrent: Bool?
+
+    init(
+        event: Event,
+        context: InventoryReconcileContext?,
+        flushID: UInt64?,
+        pid: Int32,
+        bundleID: String?,
+        cgWindowID: CGWindowID,
+        instanceID: UInt64?,
+        previousInstanceID: UInt64? = nil,
+        kind: WindowSubscriptionAttemptKind? = nil,
+        results: [String: Int32]? = nil,
+        stop: WindowSubscriptionStop? = nil,
+        covered: Bool? = nil,
+        durationMs: Double? = nil,
+        removedCurrent: Bool? = nil
+    ) {
+        self.event = event
+        self.context = context
+        self.flushID = flushID
+        self.pid = pid
+        self.bundleID = bundleID
+        self.cgWindowID = cgWindowID
+        self.instanceID = instanceID
+        self.previousInstanceID = previousInstanceID
+        self.kind = kind
+        self.results = results
+        self.stop = stop
+        self.covered = covered
+        self.durationMs = durationMs
+        self.removedCurrent = removedCurrent
+    }
+}
+
+struct InventorySubscriptionRetryCandidateEntry: Codable, Equatable {
+    let pid: Int32
+    let cgWindowID: CGWindowID
+}
+
+/// One retry flush: every due retry collected in one main-thread turn, and the single one run.
+struct InventorySubscriptionRetryFlushPayload: Codable, Equatable {
+    let flushID: UInt64
+    let candidates: [InventorySubscriptionRetryCandidateEntry]
+    let skippedInvalid: Int
+    let executedPID: Int32?
+    let executedCgWindowID: CGWindowID?
+    let durationMs: Double?
+}
+
 enum WindowInventoryLogEvent: Encodable {
     case sessionStart(InventorySessionStartPayload)
     case seatCreated(InventorySeatCreatedPayload)
@@ -382,6 +458,8 @@ enum WindowInventoryLogEvent: Encodable {
     case admissionProbe(InventoryAdmissionProbePayload)
     case reconcileUnread(InventoryReconcileUnreadPayload)
     case titleHeld(InventoryTitleHeldPayload)
+    case windowSubscription(InventoryWindowSubscriptionPayload)
+    case subscriptionRetryFlush(InventorySubscriptionRetryFlushPayload)
 
     var name: String {
         switch self {
@@ -397,6 +475,8 @@ enum WindowInventoryLogEvent: Encodable {
         case .admissionProbe: return "admissionProbe"
         case .reconcileUnread: return "reconcileUnread"
         case .titleHeld: return "titleHeld"
+        case .windowSubscription: return "windowSubscription"
+        case .subscriptionRetryFlush: return "subscriptionRetryFlush"
         }
     }
 
@@ -414,6 +494,8 @@ enum WindowInventoryLogEvent: Encodable {
         case .admissionProbe(let payload): try payload.encode(to: encoder)
         case .reconcileUnread(let payload): try payload.encode(to: encoder)
         case .titleHeld(let payload): try payload.encode(to: encoder)
+        case .windowSubscription(let payload): try payload.encode(to: encoder)
+        case .subscriptionRetryFlush(let payload): try payload.encode(to: encoder)
         }
     }
 }

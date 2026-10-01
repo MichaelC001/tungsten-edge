@@ -14,7 +14,8 @@ struct AppEntry {
     var windowOrder: [CGWindowID]
     var isHidden: Bool
     /// 影子标签池：上一轮対账时「在 CG 全列表(本 pid, layer 0)、却不在 AXWindows」的窗口 id——
-    /// order-out 后台标签独有的签名（真窗口不管可见/最小化/隐藏/其它 Space 都始终在 AXWindows 里）。
+    /// order-out 后台标签的签名。(Not unique: a window on another Space also leaves AXWindows while
+    /// staying in CG — seated ids are kept out of the pool for that reason.)
     /// Pass B 折叠判定第二级用它兜住「成员历史被 dock 重启清零」的缺口；每轮从活信号重建，
     /// 不依赖持久化。判定用上一轮的池（最小化爆发瞬间所有标签涌进 AX，本轮现算会是空的）。
     var shadowTabCgIDs: Set<CGWindowID> = []
@@ -121,6 +122,10 @@ final class AppTracker: ObservableObject {
     /// 幽灵座位自愈门槛：min 保留的座位 AX 连续缺席多久后才允许进入 PhantomSeatDecision 判定
     /// （还要过 everSeenVisible / CG 在场 / AX 读健康 / 有 AX 在场兄弟座位 四道门）。
     private static let phantomReapGrace: TimeInterval = 10.0
+    /// Due subscription retries collected during the current main-thread turn; at most one runs.
+    private var retryCandidates: [WindowSubscriptionRetryCandidate<AXElementKey>] = []
+    private var retryFlushScheduled = false
+    private var nextRetryFlushID: UInt64 = 0
 
     /// 上次重建快照时的 CG on-screen 集合。前台轮询据此发现「切标签」——AX 可能完全不报，
     /// 但 on-screen 集合会即时变化，变了就重建（标签组可见标签随之即时更新）。
@@ -529,7 +534,7 @@ final class AppTracker: ObservableObject {
                                previousDisplayUUID: seat.displayUUID,
                                previousHoldUntil: seat.displayUUIDHoldUntil))
                     usedEligible.insert(yc)
-                    observers[pid]?.registerWindow(Y.element, cgWindowID: yc)   // 接手新 activeCgID 必须订阅，理由见下面顶替分支
+                    subscribeWindow(pid: pid, element: Y.element, cgWindowID: yc, context: reconcileContext)   // 接手新 activeCgID 必须订阅，理由见下面顶替分支
                     tearOutCgIDs.insert(X)
                     // X 不标 used → 落到 Pass B 成新座位（被赶出去的当前标签）
                 } else {
@@ -550,6 +555,10 @@ final class AppTracker: ObservableObject {
                                previousDisplayUUID: seat.displayUUID,
                                previousHoldUntil: seat.displayUUIDHoldUntil))
                     usedEligible.insert(X)
+                    // A continuing seat re-subscribes too: after an order-out/order-in blink the window
+                    // answers with a new AX element and the old one's notifications never fire again —
+                    // without this the next real order-out goes unnoticed and the seat is held forever.
+                    subscribeWindow(pid: pid, element: snapX.element, cgWindowID: X, context: reconcileContext)
                 }
             } else {
                 // X 离开 AX：旧 frame 有没有新当前标签顶上 → 切标签
@@ -577,7 +586,7 @@ final class AppTracker: ObservableObject {
                     // 接手的 Y 必须在这里订阅每窗口通知（destroy/min/demin/title 只在接手 activeCgID 的三处订阅：新建座位、顶替、拖出替换）。
                     // 否则 Y 关掉时没有 destroy 通知 → 没有 tombstone；Ghostty 关掉的窗口还赖在 CG 全列表里，
                     // 座位会走「仍在 CG」保留分支永久留下幽灵卡（2026-08-23 最小化标签组关最后一个标签实测）。
-                    observers[pid]?.registerWindow(Y.element, cgWindowID: yc)
+                    subscribeWindow(pid: pid, element: Y.element, cgWindowID: yc, context: reconcileContext)
                 } else if cgIDs.contains(X) && !isTombstoned(X) {
                     // X 离开 AX 但仍在 CG。区分「最小化/隐藏(保座位)」vs「关窗后窗口赖在 CG(该删)」:
                     // 信号 = 离开 AX 前最后一次是不是 min(最小化会先经 Miniaturized 通知标 min；关窗不会)。
@@ -781,7 +790,7 @@ final class AppTracker: ObservableObject {
                     )))
                 }
                 place(entry)
-                observers[pid]?.registerWindow(s.element, cgWindowID: c)
+                subscribeWindow(pid: pid, element: s.element, cgWindowID: c, context: reconcileContext)
                 placedForFold.append(TabFoldDecision.PlacedSeat(activeCgID: entry.cgWindowID, bounds: entry.bounds,
                                                                 isMinimized: entry.isMinimized, formerCgIDs: entry.formerCgIDs))
             }
@@ -891,6 +900,24 @@ final class AppTracker: ObservableObject {
             }
             diagnostic.updateWasSkipped = true
             shadowPoolDiagnosticsByPID[pid] = diagnostic
+        }
+
+        // Subscription hygiene against cgWindowID reuse. Keep this round's seats and AX-present
+        // windows even if this round's CG capture predates them (a periodic batch captures CG before
+        // its AX reads land), and skip entirely when the capture failed.
+        if !cgSnapshot.captureFailed, let observer = observers[pid] {
+            let dropped = observer.retainSubscriptions(
+                keep: cgIDs.union(newOrder).union(eligibleByCgID.keys)
+            )
+            if inventoryLog.isEnabled {
+                for entry in dropped {
+                    recordSubscriptionEvent(InventoryWindowSubscriptionPayload(
+                        event: .leftCG, context: reconcileContext, flushID: nil, pid: pid,
+                        bundleID: app.bundleIdentifier, cgWindowID: entry.cgWindowID,
+                        instanceID: entry.instanceID
+                    ))
+                }
+            }
         }
 
         let hadSeats = !app.windowOrder.isEmpty
@@ -1370,6 +1397,9 @@ final class AppTracker: ObservableObject {
             obs.onWindowDeminiaturized = { [weak self] pid, cgID in self?.handleWindowDeminiaturized(pid: pid, cgWindowID: cgID) }
             obs.onFocusedWindowChanged = { [weak self] pid in self?.handleFocusedWindowChanged(pid: pid) }
             obs.onTitleChanged = { [weak self] pid, cgID in self?.handleTitleChanged(pid: pid, cgWindowID: cgID) }
+            obs.onSubscriptionDestroyNotified = { [weak self] pid, cgID, removedInstanceID in
+                self?.noteSubscriptionDestroyNotified(pid: pid, cgWindowID: cgID, removedInstanceID: removedInstanceID)
+            }
             obs.start()
             observers[pid] = obs
         }
@@ -1518,6 +1548,91 @@ final class AppTracker: ObservableObject {
         )
     }
 
+    // MARK: - Window Subscriptions
+
+    /// Every seat placement with an AX element in hand goes through here (new seat, tab takeover,
+    /// tear-out replacement, plain continuation). Initial / renewal attempts run inside the reconcile;
+    /// a due retry is queued and at most one runs after this main-thread turn (`flushRetryCandidates`).
+    private func subscribeWindow(
+        pid: pid_t,
+        element: AXUIElement,
+        cgWindowID: CGWindowID,
+        context: InventoryReconcileContext?
+    ) {
+        guard let observer = observers[pid] else { return }
+        switch observer.registerWindow(element, cgWindowID: cgWindowID) {
+        case .none:
+            return
+        case .attempted(let report):
+            recordSubscriptionAttempt(report, context: context, flushID: nil)
+        case .retryDue(let candidate):
+            retryCandidates.append(candidate)
+            guard !retryFlushScheduled else { return }
+            retryFlushScheduled = true
+            // Runs after the whole landing (single event read, periodic batch, scan or seed), so the
+            // pick sees every pid that landed together.
+            DispatchQueue.main.async { [weak self] in
+                MainActor.assumeIsolated { self?.flushRetryCandidates() }
+            }
+        }
+    }
+
+    private func flushRetryCandidates() {
+        retryFlushScheduled = false
+        let candidates = retryCandidates
+        retryCandidates.removeAll()
+        guard !candidates.isEmpty else { return }
+        nextRetryFlushID &+= 1
+        let flushID = nextRetryFlushID
+        let observers = self.observers
+        let choice = WindowSubscriptionRetryScheduler.pick(candidates) { candidate in
+            observers[candidate.pid]?.isRetryValid(candidate) ?? false
+        }
+        let report = choice.picked.flatMap { observers[$0.pid]?.performRetry($0) }
+        guard inventoryLog.isEnabled else { return }
+        inventoryLog.record(.subscriptionRetryFlush(InventorySubscriptionRetryFlushPayload(
+            flushID: flushID,
+            candidates: candidates.map {
+                InventorySubscriptionRetryCandidateEntry(pid: $0.pid, cgWindowID: $0.cgWindowID)
+            },
+            skippedInvalid: choice.skippedInvalid,
+            executedPID: report?.pid,
+            executedCgWindowID: report?.cgWindowID,
+            durationMs: report?.durationMs
+        )))
+        if let report { recordSubscriptionAttempt(report, context: nil, flushID: flushID) }
+    }
+
+    private func recordSubscriptionAttempt(
+        _ report: WindowSubscriptionAttemptReport,
+        context: InventoryReconcileContext?,
+        flushID: UInt64?
+    ) {
+        guard inventoryLog.isEnabled else { return }
+        recordSubscriptionEvent(InventoryWindowSubscriptionPayload(
+            event: .attempt, context: context, flushID: flushID, pid: report.pid,
+            bundleID: apps[report.pid]?.bundleIdentifier, cgWindowID: report.cgWindowID,
+            instanceID: report.instanceID, previousInstanceID: report.previousInstanceID,
+            kind: report.kind,
+            results: Dictionary(uniqueKeysWithValues: report.results.map { ($0.key.logName, $0.value.rawValue) }),
+            stop: report.stop, covered: report.covered,
+            durationMs: (report.durationMs * 10).rounded() / 10
+        ))
+    }
+
+    private func noteSubscriptionDestroyNotified(pid: pid_t, cgWindowID: CGWindowID, removedInstanceID: UInt64?) {
+        guard inventoryLog.isEnabled else { return }
+        recordSubscriptionEvent(InventoryWindowSubscriptionPayload(
+            event: .destroyNotified, context: nil, flushID: nil, pid: pid,
+            bundleID: apps[pid]?.bundleIdentifier, cgWindowID: cgWindowID,
+            instanceID: removedInstanceID, removedCurrent: removedInstanceID != nil
+        ))
+    }
+
+    private func recordSubscriptionEvent(_ payload: InventoryWindowSubscriptionPayload) {
+        inventoryLog.record(.windowSubscription(payload))
+    }
+
     // MARK: - AX Event Handlers
 
     private func handleWindowCreated(pid: pid_t) {
@@ -1573,7 +1688,13 @@ final class AppTracker: ObservableObject {
 
     private func invalidateEventReads(pid: pid_t) {
         mutationGenerations[pid, default: 0] &+= 1
-        trailingEventSources.removeValue(forKey: pid)
+        // The in-flight read now lands as `.skipped`, so whatever it was fetching must be fetched
+        // again. Dropping it lost a destroy's follow-up read whenever a minimize of another window
+        // landed first (orderOut + miniaturize in one burst): the next periodic read came after the
+        // 3s tombstone and the hidden window's seat was held for the app's lifetime.
+        if let inFlight = pendingEventReads[pid], trailingEventSources[pid] == nil {
+            trailingEventSources[pid] = inFlight.source
+        }
     }
 
     private func scheduleEventRead(pid: pid_t, source: InventoryReconcileSource) {
@@ -1960,9 +2081,17 @@ final class AppTracker: ObservableObject {
             lastReadWasUnread: gate?.lastReadWasUnread ?? true,
             lastRoundChanged: gate?.lastRoundChanged ?? true,
             observerActive: observerActive(pid: pid),
+            allSeatsSubscribed: allSeatsSubscribed(pid: pid, app: app),
             uptimeSinceLastFullRead: gate.map { uptimeProvider() - $0.lastFullReadUptime } ?? .infinity
         )
         return PeriodicReconcileSkipDecision.verdict(input) == .skip
+    }
+
+    /// Periodic skipping assumes AX events cover the pid; a seat whose subscription is incomplete
+    /// breaks that assumption. No observer (tests, or no Accessibility trust) keeps today's answer.
+    private func allSeatsSubscribed(pid: pid_t, app: AppEntry) -> Bool {
+        guard let observer = observers[pid], observer.isActive else { return true }
+        return app.windowOrder.allSatisfy { observer.isCovered(cgWindowID: $0) }
     }
 
     private func observerActive(pid: pid_t) -> Bool {

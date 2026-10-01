@@ -10,6 +10,9 @@ import Foundation
 ///   静默漂移兜底（已知唯一真实案例是原生标签切换，只发生在前台、由 2Hz 前台轮询覆盖）。
 /// - `observerInactive`：该 pid 的 AXObserver 没建起来（AXObserverCreate 可能失败），
 ///   没有事件覆盖就永不跳。
+/// - `subscriptionIncomplete`: some seat's per-window notifications are not all registered
+///   (`WindowSubscriptionLedger.isCovered`), so events do not cover it either; reading keeps the
+///   subscription retries moving in a quiet app instead of waiting for `refreshDue`.
 /// - `lastReadUnread`：上次读挂了，必须重试。
 /// - `dirtyEvents`：自上次成功全读起有该 pid 的 AX/workspace 事件。
 /// - `cgSetChanged`：该 pid 的 CG layer-0 窗口 id 集变了（真关闭/新窗口/切标签必改 CG 集）。
@@ -32,6 +35,7 @@ enum PeriodicReconcileSkipDecision {
         var lastReadWasUnread: Bool
         var lastRoundChanged: Bool
         var observerActive: Bool
+        var allSeatsSubscribed: Bool
         var uptimeSinceLastFullRead: TimeInterval
         var maxSkipInterval: TimeInterval = PeriodicReconcileSkipDecision.defaultMaxSkipInterval
     }
@@ -41,6 +45,7 @@ enum PeriodicReconcileSkipDecision {
         case neverRead
         case refreshDue
         case observerInactive
+        case subscriptionIncomplete
         case lastReadUnread
         case dirtyEvents
         case cgSetChanged
@@ -59,6 +64,7 @@ enum PeriodicReconcileSkipDecision {
         guard let lastObserved = input.lastObservedCGIDs else { return .fullRead(.neverRead) }
         if input.uptimeSinceLastFullRead >= input.maxSkipInterval { return .fullRead(.refreshDue) }
         if !input.observerActive { return .fullRead(.observerInactive) }
+        if !input.allSeatsSubscribed { return .fullRead(.subscriptionIncomplete) }
         if input.lastReadWasUnread { return .fullRead(.lastReadUnread) }
         if input.dirtySinceLastRead { return .fullRead(.dirtyEvents) }
         if input.currentCGIDs != lastObserved { return .fullRead(.cgSetChanged) }

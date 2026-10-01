@@ -427,6 +427,51 @@ final class AppTrackerPeriodicBatchTests: XCTestCase {
         XCTAssertNil(tracker.fixtureAppForTesting(pid: pidA)?.windowsByID[cgWindowA])
     }
 
+    /// A window is ordered out (destroy notification, still in CG) and, before its follow-up read
+    /// lands, another window of the same app is minimized. The minimize invalidates the in-flight
+    /// read; a fresh read must still follow, or the destroy's 3s tombstone expires unreconciled and
+    /// the hidden window's seat is held for the app's lifetime.
+    func testMinimizeDuringDestroyFollowUpReadStillReconcilesTheDestroy() async {
+        let hidden: CGWindowID = 91
+        let minimized: CGWindowID = 92
+        let reader = PeriodicBatchReader(
+            resultsByPID: [pidA: .success([makeSnapshot(pid: pidA, cgWindowID: minimized, title: "Other")])],
+            blocksTimedReads: true
+        )
+        let bothInCG = AppTrackerCGWindowSnapshot(
+            allWindowIDs: [hidden, minimized],
+            onScreenWindowIDs: [minimized],
+            windowIDsByPID: [pidA: [hidden, minimized]],
+            alphaByWindowID: [:]
+        )
+        let tracker = AppTracker(
+            reader: reader,
+            processProvider: BatchFixedProcessProvider(),
+            cgSnapshotProvider: { bothInCG },
+            eventAXAsyncEnabled: true
+        )
+        var app = makeApp(pid: pidA, cgWindowID: hidden)
+        app.windowsByID[minimized] = WindowEntry(
+            cgWindowID: minimized, token: "tabgrp-\(pidA)-s2", title: "Other",
+            bounds: CGRect(x: 10, y: 20, width: 500, height: 400),
+            isMinimized: false, isFocused: false, everSeenVisible: true
+        )
+        app.windowOrder.append(minimized)
+        tracker.installFixtureForTesting(app)
+
+        tracker.destroyForTesting(pid: pidA, cgWindowID: hidden)
+        XCTAssertTrue(tracker.hasPendingEventReadForTesting(pid: pidA))
+        tracker.minimizeForTesting(pid: pidA, cgWindowID: minimized)
+
+        reader.releaseOne()   // the destroy's read lands as skipped (generation moved)
+        await waitUntil { reader.readCount == 2 }
+        reader.releaseOne()   // the follow-up read
+        await waitUntil { !tracker.hasPendingEventReadForTesting(pid: self.pidA) }
+
+        XCTAssertNil(tracker.fixtureAppForTesting(pid: pidA)?.windowsByID[hidden])
+        XCTAssertNotNil(tracker.fixtureAppForTesting(pid: pidA)?.windowsByID[minimized])
+    }
+
     private func cgSnapshot() -> AppTrackerCGWindowSnapshot {
         AppTrackerCGWindowSnapshot(
             allWindowIDs: [cgWindowA, cgWindowB],
