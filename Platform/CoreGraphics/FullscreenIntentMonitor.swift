@@ -968,6 +968,9 @@ final class FullscreenIntentMonitor {
             role: kAXWindowRole,
             isAXFullscreen: isAXFullscreen,
             windowFrame: windowFrame,
+            // Not read here: a window that reached this point has a fullscreen button, so it is
+            // never a desktop-level overlay.
+            windowLayer: nil,
             screenCGFrame: screenFrame
         )
         return AXReadResult(

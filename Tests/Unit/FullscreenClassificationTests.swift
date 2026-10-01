@@ -6,33 +6,33 @@ final class FullscreenClassificationTests: XCTestCase {
     // 回归：Finder 桌面伪窗口（role=AXScrollArea，frame 恰好等于整屏）不得判为全屏
     func testDesktopPseudoWindowWithExactScreenFrameIsNotFullscreen() {
         XCTAssertFalse(FullscreenWindowClassifier.isFullscreen(
-            role: "AXScrollArea", isAXFullscreen: false, windowFrame: screen, screenCGFrame: screen))
+            role: "AXScrollArea", isAXFullscreen: false, windowFrame: screen, windowLayer: 0, screenCGFrame: screen))
     }
 
     func testUnreadableRoleIsNotFullscreenEvenWithExactScreenFrame() {
         XCTAssertFalse(FullscreenWindowClassifier.isFullscreen(
-            role: nil, isAXFullscreen: false, windowFrame: screen, screenCGFrame: screen))
+            role: nil, isAXFullscreen: false, windowFrame: screen, windowLayer: 0, screenCGFrame: screen))
     }
 
     func testUnreadableRoleIsNotFullscreenEvenWithAXFullscreenFlag() {
         XCTAssertFalse(FullscreenWindowClassifier.isFullscreen(
-            role: nil, isAXFullscreen: true, windowFrame: nil, screenCGFrame: screen))
+            role: nil, isAXFullscreen: true, windowFrame: nil, windowLayer: 0, screenCGFrame: screen))
     }
 
     func testNativeFullscreenWindowIsFullscreen() {
         XCTAssertTrue(FullscreenWindowClassifier.isFullscreen(
-            role: "AXWindow", isAXFullscreen: true, windowFrame: screen, screenCGFrame: screen))
+            role: "AXWindow", isAXFullscreen: true, windowFrame: screen, windowLayer: 0, screenCGFrame: screen))
     }
 
     func testNativeFullscreenWithUnreadableFrameIsFullscreen() {
         XCTAssertTrue(FullscreenWindowClassifier.isFullscreen(
-            role: "AXWindow", isAXFullscreen: true, windowFrame: nil, screenCGFrame: screen))
+            role: "AXWindow", isAXFullscreen: true, windowFrame: nil, windowLayer: 0, screenCGFrame: screen))
     }
 
     func testNativeFullscreenOnAnotherScreenIsNotFullscreenHere() {
         let otherScreen = CGRect(x: 1512, y: -200, width: 1920, height: 1080)
         XCTAssertFalse(FullscreenWindowClassifier.isFullscreen(
-            role: "AXWindow", isAXFullscreen: true, windowFrame: otherScreen, screenCGFrame: screen))
+            role: "AXWindow", isAXFullscreen: true, windowFrame: otherScreen, windowLayer: 0, screenCGFrame: screen))
     }
 
     // 全屏幕拼贴（真分屏）：AXFullScreen=true 但只有半屏宽（2026-08-30 实测形状按比例缩到测试屏）。
@@ -40,10 +40,10 @@ final class FullscreenClassificationTests: XCTestCase {
     func testSplitViewTileOnThisScreenIsFullscreen() {
         let leftTile = CGRect(x: 0, y: 20, width: 754, height: 962)
         XCTAssertTrue(FullscreenWindowClassifier.isFullscreen(
-            role: "AXWindow", isAXFullscreen: true, windowFrame: leftTile, screenCGFrame: screen))
+            role: "AXWindow", isAXFullscreen: true, windowFrame: leftTile, windowLayer: 0, screenCGFrame: screen))
         let rightTile = CGRect(x: 756, y: 20, width: 756, height: 962)
         XCTAssertTrue(FullscreenWindowClassifier.isFullscreen(
-            role: "AXWindow", isAXFullscreen: true, windowFrame: rightTile, screenCGFrame: screen))
+            role: "AXWindow", isAXFullscreen: true, windowFrame: rightTile, windowLayer: 0, screenCGFrame: screen))
     }
 
     // 多屏护栏的接棒者：窗口主体在邻屏、只蹭进本屏几十点，不得判为本屏的全屏。
@@ -51,7 +51,7 @@ final class FullscreenClassificationTests: XCTestCase {
     func testFullscreenWindowMostlyOnNeighborScreenIsNotFullscreenHere() {
         let mostlyElsewhere = CGRect(x: 1480, y: -200, width: 1920, height: 1080)
         XCTAssertFalse(FullscreenWindowClassifier.isFullscreen(
-            role: "AXWindow", isAXFullscreen: true, windowFrame: mostlyElsewhere, screenCGFrame: screen))
+            role: "AXWindow", isAXFullscreen: true, windowFrame: mostlyElsewhere, windowLayer: 0, screenCGFrame: screen))
     }
 
     // 桌面平铺（26 的默认「分屏」）：半宽但 AXFullScreen=false，走 frame 兜底，不得判为全屏——
@@ -59,25 +59,56 @@ final class FullscreenClassificationTests: XCTestCase {
     func testDesktopTiledHalfWindowIsNotFullscreen() {
         let tiled = CGRect(x: 756, y: 20, width: 756, height: 962)
         XCTAssertFalse(FullscreenWindowClassifier.isFullscreen(
-            role: "AXWindow", isAXFullscreen: false, windowFrame: tiled, screenCGFrame: screen))
+            role: "AXWindow", isAXFullscreen: false, windowFrame: tiled, windowLayer: 0, screenCGFrame: screen))
     }
 
     // 无 AXFullScreen 标志的无边框全屏（游戏/HTML5）仍走 frame≈整屏兜底
     func testBorderlessScreenSizedWindowIsFullscreen() {
         let nearScreen = screen.insetBy(dx: 2, dy: 2)
         XCTAssertTrue(FullscreenWindowClassifier.isFullscreen(
-            role: "AXWindow", isAXFullscreen: false, windowFrame: nearScreen, screenCGFrame: screen))
+            role: "AXWindow", isAXFullscreen: false, windowFrame: nearScreen, windowLayer: 0, screenCGFrame: screen))
+    }
+
+    // Regression (feedback 652f4dc8): an accessory app's screen-sized window at desktop level takes
+    // focus when the desktop is clicked; the frame fallback must not read it as fullscreen.
+    func testScreenSizedWindowBelowNormalLayerIsNotFullscreen() {
+        let desktopIconLayer = Int(CGWindowLevelForKey(.desktopIconWindow)) + 1
+        XCTAssertFalse(FullscreenWindowClassifier.isFullscreen(
+            role: "AXWindow", isAXFullscreen: false, windowFrame: screen,
+            windowLayer: desktopIconLayer, screenCGFrame: screen))
+        XCTAssertEqual(
+            FullscreenWindowClassifier.classify(
+                role: "AXWindow", isAXFullscreen: false, windowFrame: screen,
+                windowLayer: -1, screenCGFrame: screen),
+            .windowed)
+    }
+
+    // An unreadable layer keeps the old verdict, and games above the normal layer still hide the bar.
+    func testScreenSizedWindowWithUnknownOrRaisedLayerIsFullscreen() {
+        XCTAssertTrue(FullscreenWindowClassifier.isFullscreen(
+            role: "AXWindow", isAXFullscreen: false, windowFrame: screen,
+            windowLayer: nil, screenCGFrame: screen))
+        XCTAssertTrue(FullscreenWindowClassifier.isFullscreen(
+            role: "AXWindow", isAXFullscreen: false, windowFrame: screen,
+            windowLayer: Int(CGWindowLevelForKey(.screenSaverWindow)), screenCGFrame: screen))
+    }
+
+    // The layer guard belongs to the frame fallback only: a native fullscreen flag is never overruled.
+    func testNativeFullscreenFlagIgnoresLayer() {
+        XCTAssertTrue(FullscreenWindowClassifier.isFullscreen(
+            role: "AXWindow", isAXFullscreen: true, windowFrame: screen,
+            windowLayer: -1, screenCGFrame: screen))
     }
 
     func testOrdinaryWindowIsNotFullscreen() {
         let partial = CGRect(x: 253, y: 125, width: 1127, height: 689)
         XCTAssertFalse(FullscreenWindowClassifier.isFullscreen(
-            role: "AXWindow", isAXFullscreen: false, windowFrame: partial, screenCGFrame: screen))
+            role: "AXWindow", isAXFullscreen: false, windowFrame: partial, windowLayer: 0, screenCGFrame: screen))
     }
 
     func testRealWindowWithUnreadableFrameIsNotFullscreen() {
         XCTAssertFalse(FullscreenWindowClassifier.isFullscreen(
-            role: "AXWindow", isAXFullscreen: false, windowFrame: nil, screenCGFrame: screen))
+            role: "AXWindow", isAXFullscreen: false, windowFrame: nil, windowLayer: 0, screenCGFrame: screen))
     }
 
     // MARK: - 常驻所有桌面的成员资格（issue #19）

@@ -630,13 +630,25 @@ extension PanelCoordinator {
         let isAXFullscreen = reader.boolAttribute("AXFullScreen" as CFString, from: focused, maxAttempts: 1) ?? false
         // AX kAXPositionAttribute uses CG coordinates (top-left origin) — matches screenCGFrame directly
         let windowFrame = reader.frame(of: focused, maxAttempts: 1)
+        // Only the frame fallback consults the layer, so skip the CG round-trip for native fullscreen.
+        let windowLayer = isAXFullscreen
+            ? nil
+            : reader.cgWindowID(for: focused, maxAttempts: 1).flatMap(Self.cgWindowLayer(of:))
 
         return FullscreenWindowClassifier.classify(
             role: role,
             isAXFullscreen: isAXFullscreen,
             windowFrame: windowFrame,
+            windowLayer: windowLayer,
             screenCGFrame: screenCGFrame
         )
+    }
+
+    nonisolated private static func cgWindowLayer(of windowID: CGWindowID) -> Int? {
+        guard let list = CGWindowListCopyWindowInfo([.optionIncludingWindow], windowID) as? [[String: Any]],
+              let info = list.first(where: { ($0[kCGWindowNumber as String] as? NSNumber)?.uint32Value == windowID })
+        else { return nil }
+        return (info[kCGWindowLayer as String] as? NSNumber)?.intValue
     }
 
     /// 焦点窗口在别的屏上时，本屏的条问 SkyLight「本屏当前空间是不是原生全屏空间」

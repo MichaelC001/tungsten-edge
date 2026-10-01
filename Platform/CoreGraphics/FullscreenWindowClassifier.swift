@@ -27,16 +27,25 @@ enum FullscreenWindowClassifier {
         role: String?,
         isAXFullscreen: Bool,
         windowFrame: CGRect?,
+        windowLayer: Int?,
         screenCGFrame: CGRect
     ) -> Bool {
-        classify(role: role, isAXFullscreen: isAXFullscreen, windowFrame: windowFrame, screenCGFrame: screenCGFrame)
-            == .fullscreen
+        classify(
+            role: role,
+            isAXFullscreen: isAXFullscreen,
+            windowFrame: windowFrame,
+            windowLayer: windowLayer,
+            screenCGFrame: screenCGFrame
+        ) == .fullscreen
     }
 
+    /// `windowLayer` is the focused window's CG layer (`kCGWindowLayer`); nil = not read / unknown.
+    /// No default on purpose: a caller that omits it silently loses the desktop-overlay guard below.
     static func classify(
         role: String?,
         isAXFullscreen: Bool,
         windowFrame: CGRect?,
+        windowLayer: Int?,
         screenCGFrame: CGRect
     ) -> FullscreenAXVerdict {
         guard role == kAXWindowRole else { return .windowed }
@@ -59,6 +68,11 @@ enum FullscreenWindowClassifier {
                 && abs(wf.height - screenCGFrame.height) < t
                 && abs(wf.minX   - screenCGFrame.minX)   < t
                 && abs(wf.minY   - screenCGFrame.minY)   < t {
+                // A screen-sized window *below* the normal layer is a desktop overlay — wallpaper /
+                // desktop-widget helpers own one and take focus when the desktop is clicked — not
+                // fullscreen content. Without this the bar hides for as long as the desktop has focus.
+                // An unknown layer keeps the fullscreen verdict (borderless games must still hide it).
+                if let windowLayer, windowLayer < 0 { return .windowed }
                 return .fullscreen
             }
             return mostlyBelongsToScreen(wf, screenCGFrame) ? .windowed : .notOnThisScreen
