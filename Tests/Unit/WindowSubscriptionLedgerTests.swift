@@ -44,10 +44,8 @@ final class WindowSubscriptionLedgerTests: XCTestCase {
     func testNewElementRenewsWithFreshInstanceAndResetItems() {
         var ledger = Ledger()
         let first = attempt(&ledger, element: "E1", kind: .initial, now: 0)
-        // Inside the renewal spacing a live (not dead) record is left alone.
-        XCTAssertNil(ledger.attemptKind(cgWindowID: 7, element: "E2", now: 1))
-        XCTAssertEqual(ledger.attemptKind(cgWindowID: 7, element: "E2", now: 2), .renewal)
-        let renewed = attempt(&ledger, element: "E2", kind: .renewal, now: 2)
+        XCTAssertEqual(ledger.attemptKind(cgWindowID: 7, element: "E2", now: 0.1), .renewal)
+        let renewed = attempt(&ledger, element: "E2", kind: .renewal, now: 0.1)
         XCTAssertEqual(renewed.items, all)
         XCTAssertEqual(renewed.previousInstanceID, first.instanceID)
         XCTAssertNotEqual(renewed.instanceID, first.instanceID)
@@ -67,6 +65,28 @@ final class WindowSubscriptionLedgerTests: XCTestCase {
         XCTAssertEqual(ledger.attemptKind(cgWindowID: 7, element: "E2", now: 0.1), .initial)
         let second = attempt(&ledger, element: "E2", kind: .initial, now: 0.1)
         XCTAssertGreaterThan(second.instanceID, first.instanceID)
+    }
+
+    /// Code review 1-1: the old element's subscription failed and the window comes back with a new
+    /// element right away. The new element must be subscribed now — delaying it leaves the window
+    /// with no live destroy subscription if it is hidden again in the meantime.
+    func testNewElementAfterAFailedSubscriptionRenewsImmediately() {
+        var ledger = Ledger()
+        attempt(&ledger, element: "E1", kind: .initial, now: 0, results: [.destroyed: .cannotComplete])
+        XCTAssertEqual(ledger.attemptKind(cgWindowID: 7, element: "E2", now: 0.05), .renewal)
+        attempt(&ledger, element: "E2", kind: .renewal, now: 0.05)
+        XCTAssertTrue(ledger.isCovered(cgWindowID: 7))
+    }
+
+    /// Code review 1-3: a process's observer can be dropped and recreated; instance ids come from one
+    /// session-wide source so diagnostics never see the same id twice.
+    func testInstanceIDsAreUniqueAcrossLedgersSharingASource() {
+        let ids = WindowSubscriptionInstanceIDs()
+        var first = Ledger(instanceIDs: ids)
+        let a = attempt(&first, element: "E1", kind: .initial, now: 0)
+        var second = Ledger(instanceIDs: ids)
+        let b = attempt(&second, element: "E1", kind: .initial, now: 0)
+        XCTAssertNotEqual(a.instanceID, b.instanceID)
     }
 
     /// Blink order 2: the new element was renewed first; the old element's late destroy must not
@@ -139,7 +159,6 @@ final class WindowSubscriptionLedgerTests: XCTestCase {
         XCTAssertTrue(ledger.record(for: 7)!.isDead)
         XCTAssertFalse(ledger.isCovered(cgWindowID: 7))
         XCTAssertNil(ledger.attemptKind(cgWindowID: 7, element: "E1", now: 100))
-        // A dead element is not an identity storm: renew immediately, no spacing.
         XCTAssertEqual(ledger.attemptKind(cgWindowID: 7, element: "E2", now: 0.1), .renewal)
     }
 

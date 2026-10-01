@@ -70,30 +70,27 @@ struct WindowSubscriptionLedger<Element: Hashable> {
         var step: Int
         var retryAt: TimeInterval
         var isDead: Bool
-        var attemptedAt: TimeInterval
     }
 
     /// Retry delays after a failed attempt; the last value repeats. Never gives up: a transient
     /// timeout must not freeze into a permanently missing subscription.
     static var backoff: [TimeInterval] { [1, 5, 15, 60] }
-    /// Minimum spacing between two renewals of one cgWindowID (unless the old element is known
-    /// dead), so an app whose window elements are not `CFEqual` across reads cannot turn every read
-    /// into four registration round trips.
-    static var minimumRenewalInterval: TimeInterval { 2 }
 
     private(set) var records: [CGWindowID: Record] = [:]
     private var cgIDByElement: [Element: CGWindowID] = [:]
-    private var lastInstanceID: UInt64 = 0
+    /// Shared across every ledger of the session so an instance id is never reused, even when a
+    /// process's observer is dropped and recreated (non-regular eviction, re-admission).
+    private let instanceIDs: WindowSubscriptionInstanceIDs
 
-    init() {}
+    init(instanceIDs: WindowSubscriptionInstanceIDs = WindowSubscriptionInstanceIDs()) {
+        self.instanceIDs = instanceIDs
+    }
 
     func attemptKind(cgWindowID: CGWindowID, element: Element, now: TimeInterval) -> WindowSubscriptionAttemptKind? {
         guard let record = records[cgWindowID] else { return .initial }
-        if record.element != element {
-            // A known-dead element is not an identity storm: renew at once.
-            if record.isDead { return .renewal }
-            return now - record.attemptedAt >= Self.minimumRenewalInterval ? .renewal : nil
-        }
+        // A new element is renewed at once, never delayed: the old element's subscription may never
+        // have succeeded, and if the window is hidden again before the renewal it is held forever.
+        if record.element != element { return .renewal }
         if record.isDead || Self.isCovered(record) { return nil }
         return now >= record.retryAt ? .retry : nil
     }
@@ -120,19 +117,15 @@ struct WindowSubscriptionLedger<Element: Hashable> {
                 previousInstanceID = old.instanceID
                 cgIDByElement.removeValue(forKey: old.element)
             }
-            lastInstanceID &+= 1
             records[cgWindowID] = Record(
                 element: element,
-                instanceID: lastInstanceID,
+                instanceID: instanceIDs.next(),
                 items: Dictionary(uniqueKeysWithValues: WindowSubscriptionItem.allCases.map { ($0, .pending) }),
                 step: 0,
                 retryAt: now,
-                isDead: false,
-                attemptedAt: now
+                isDead: false
             )
             cgIDByElement[element] = cgWindowID
-        } else {
-            records[cgWindowID]?.attemptedAt = now
         }
         let record = records[cgWindowID]!
         let items = WindowSubscriptionItem.allCases.filter {
@@ -234,6 +227,18 @@ enum WindowSubscriptionAttemptPolicy {
         }
         if sawTimeout, !item.isCritical { return .skip }
         return .send
+    }
+}
+
+/// Session-wide subscription instance ids (diagnostics only).
+final class WindowSubscriptionInstanceIDs {
+    private var last: UInt64 = 0
+
+    init() {}
+
+    func next() -> UInt64 {
+        last &+= 1
+        return last
     }
 }
 

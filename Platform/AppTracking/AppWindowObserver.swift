@@ -12,7 +12,8 @@ final class AppWindowObserver {
     let pid: pid_t
     private var observer: AXObserver?
     /// Per-window subscriptions, keyed by cgWindowID **and element** (`WindowSubscriptionLedger`).
-    private var subscriptions = WindowSubscriptionLedger<AXElementKey>()
+    private var subscriptions = WindowSubscriptionLedger<AXElementKey>(instanceIDs: AppWindowObserver.instanceIDs)
+    private static let instanceIDs = WindowSubscriptionInstanceIDs()
     private let clock: () -> TimeInterval
 
     /// AXObserverCreate 可能失败（观察器根本没建起来）。周期对账的跳读门控用它判断
