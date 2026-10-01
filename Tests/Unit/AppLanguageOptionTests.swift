@@ -13,10 +13,10 @@ final class AppLanguageOptionTests: XCTestCase {
     }
 
     /// ⚠️ 兜底方向必须是英文。写反了，英文系统的用户打开设置会看到「简体中文」被选中。
-    /// 我们没有的语言（韩语这类）界面实际回落英文，选单也该显示 English。
+    /// 我们没有的语言（俄语这类）界面实际回落英文，选单也该显示 English。
     func testFallbackIsEnglishForEveryUnsupportedLocalization() {
-        XCTAssertEqual(AppLanguageOption.current(appDomainValue: nil, effectiveLocalization: "ko"), .english)
-        XCTAssertEqual(AppLanguageOption.current(appDomainValue: nil, effectiveLocalization: "es-419"), .english)
+        XCTAssertEqual(AppLanguageOption.current(appDomainValue: nil, effectiveLocalization: "ru"), .english)
+        XCTAssertEqual(AppLanguageOption.current(appDomainValue: nil, effectiveLocalization: "nl"), .english)
         XCTAssertEqual(AppLanguageOption.current(appDomainValue: nil, effectiveLocalization: ""), .english)
     }
 
@@ -44,13 +44,34 @@ final class AppLanguageOptionTests: XCTestCase {
         XCTAssertEqual(AppLanguageOption.option(matching: "de-CH"), .german)
         XCTAssertEqual(AppLanguageOption.option(matching: "fr-CA"), .french)
         XCTAssertEqual(AppLanguageOption.option(matching: "fr_FR"), .french)
+        XCTAssertEqual(AppLanguageOption.option(matching: "it-CH"), .italian)
+        XCTAssertEqual(AppLanguageOption.option(matching: "ko-KR"), .korean)
     }
 
-    /// 用户在系统设置里给本 app 选了我们没有的语言：域里是 `ko`，界面实际回落英文，
+    /// Spanish and Portuguese ship two regional files each. A region code must land on the file
+    /// the system itself would load, or the menu ticks one variant while the UI shows the other.
+    func testSpanishAndPortugueseRegionsLandOnTheFileTheSystemLoads() {
+        for code in ["es-MX", "es-419", "es-US", "es-AR", "es-CO", "es_MX", "ES-MX"] {
+            XCTAssertEqual(AppLanguageOption.option(matching: code), .spanishLatinAmerica, code)
+        }
+        for code in ["es", "es-ES", "es_ES", "es-GQ"] {
+            XCTAssertEqual(AppLanguageOption.option(matching: code), .spanish, code)
+        }
+        for code in ["pt", "pt-BR", "pt_BR"] {
+            XCTAssertEqual(AppLanguageOption.option(matching: code), .portugueseBrazil, code)
+        }
+        for code in ["pt-PT", "pt-AO", "pt-MZ", "pt_PT"] {
+            XCTAssertEqual(AppLanguageOption.option(matching: code), .portuguesePortugal, code)
+        }
+        XCTAssertEqual(AppLanguageOption.current(appDomainValue: nil, effectiveLocalization: "es-419"), .spanishLatinAmerica)
+        XCTAssertEqual(AppLanguageOption.current(appDomainValue: nil, effectiveLocalization: "pt-PT"), .portuguesePortugal)
+    }
+
+    /// 用户在系统设置里给本 app 选了我们没有的语言：域里是 `ru`，界面实际回落英文，
     /// 选单按实际生效的那份 `.lproj` 显示 English——不谎称用户选过中文。
     func testUnsupportedLanguageInDomainFallsBackToTheEffectiveLocalization() {
-        XCTAssertEqual(AppLanguageOption.current(appDomainValue: ["ko"], effectiveLocalization: "en"), .english)
-        XCTAssertEqual(AppLanguageOption.current(appDomainValue: ["ko"], effectiveLocalization: "ja"), .japanese)
+        XCTAssertEqual(AppLanguageOption.current(appDomainValue: ["ru"], effectiveLocalization: "en"), .english)
+        XCTAssertEqual(AppLanguageOption.current(appDomainValue: ["ru"], effectiveLocalization: "ja"), .japanese)
     }
 
     func testAppleLanguagesValueRoundTripsThroughCurrent() {
@@ -67,11 +88,14 @@ final class AppLanguageOptionTests: XCTestCase {
         }
     }
 
-    /// 写进 `AppleLanguages` 的值同时是 `.lproj` 目录名，六个都要在构建产物里真实存在。
+    /// 写进 `AppleLanguages` 的值同时是 `.lproj` 目录名，每个都要在构建产物里真实存在。
     func testLocalizationIdentifiersAreDistinctAndMatchTheLprojNames() {
         let identifiers = AppLanguageOption.allCases.map(\.localizationIdentifier)
         XCTAssertEqual(Set(identifiers).count, identifiers.count)
-        XCTAssertEqual(Set(identifiers), ["zh-Hans", "zh-Hant", "en", "ja", "de", "fr"])
+        XCTAssertEqual(
+            Set(identifiers),
+            ["zh-Hans", "zh-Hant", "en", "ja", "de", "fr", "es", "es-419", "pt-BR", "pt-PT", "it", "ko"]
+        )
     }
 
     func testDisplayNamesAreLanguageStable() {
@@ -81,5 +105,11 @@ final class AppLanguageOptionTests: XCTestCase {
         XCTAssertEqual(AppLanguageOption.japanese.displayName, "日本語")
         XCTAssertEqual(AppLanguageOption.german.displayName, "Deutsch")
         XCTAssertEqual(AppLanguageOption.french.displayName, "Français")
+        XCTAssertEqual(AppLanguageOption.spanish.displayName, "Español (España)")
+        XCTAssertEqual(AppLanguageOption.spanishLatinAmerica.displayName, "Español (Latinoamérica)")
+        XCTAssertEqual(AppLanguageOption.portugueseBrazil.displayName, "Português (Brasil)")
+        XCTAssertEqual(AppLanguageOption.portuguesePortugal.displayName, "Português (Portugal)")
+        XCTAssertEqual(AppLanguageOption.italian.displayName, "Italiano")
+        XCTAssertEqual(AppLanguageOption.korean.displayName, "한국어")
     }
 }

@@ -15,7 +15,7 @@ INFOPLIST_CATALOG = ROOT / 'Resources/InfoPlist.xcstrings'
 DIRS = ['App', 'Core', 'Platform', 'UI']
 # 英文也要有显式值：源语言块缺失时 String Catalog 不生成 en.lproj/Localizable.strings，
 # 系统设置里逐 App 语言那一栏会灰掉（规则见 .claude/rules/localization.md）。
-LANGUAGES = ['en', 'zh-Hans', 'zh-Hant', 'ja', 'de', 'fr']
+LANGUAGES = ['en', 'zh-Hans', 'zh-Hant', 'ja', 'de', 'fr', 'es', 'es-419', 'pt-BR', 'pt-PT', 'it', 'ko']
 
 STR = r'"((?:[^"\\]|\\.)*)"'
 # 全文匹配（允许构造器后换行），用 match.start() 反查行号

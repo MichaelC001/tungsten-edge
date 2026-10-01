@@ -40,6 +40,42 @@
             "state" : "translated",
             "value" : "Tungsten Edge"
           }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Tungsten Edge"
+          }
+        },
+        "es-419" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Tungsten Edge"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Tungsten Edge"
+          }
+        },
+        "pt-PT" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Tungsten Edge"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Tungsten Edge"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Tungsten Edge"
+          }
         }
       }
     },
@@ -78,6 +114,42 @@
           }
         },
         "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Tungsten Edge"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Tungsten Edge"
+          }
+        },
+        "es-419" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Tungsten Edge"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Tungsten Edge"
+          }
+        },
+        "pt-PT" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Tungsten Edge"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Tungsten Edge"
+          }
+        },
+        "ko" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "Tungsten Edge"
@@ -123,6 +195,42 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Tungsten Edge utilise cette autorisation pour prévisualiser le dossier affiché dans le Finder, indiquer si la corbeille est vide et vider la corbeille."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Tungsten Edge usa este permiso para previsualizar la carpeta abierta en el Finder, mostrar si la papelera está vacía y vaciarla."
+          }
+        },
+        "es-419" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Tungsten Edge usa este permiso para mostrar una vista previa de la carpeta abierta en el Finder, indicar si el basurero está vacío y vaciarlo."
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "O Tungsten Edge usa isto para pré-visualizar a pasta exibida no Finder, mostrar se o Lixo está vazio e esvaziar o Lixo."
+          }
+        },
+        "pt-PT" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "O Tungsten Edge utiliza isto para pré-visualizar a pasta apresentada no Finder, indicar se o Lixo está vazio e esvaziar o Lixo."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Tungsten Edge usa questa autorizzazione per mostrare l’anteprima della cartella visualizzata nel Finder, indicare se il Cestino è vuoto e svuotarlo."
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Tungsten Edge는 Finder에 표시된 폴더를 미리 보고, 휴지통이 비어 있는지 표시하고, 휴지통을 비우는 데 이 권한을 사용합니다."
           }
         }
       }

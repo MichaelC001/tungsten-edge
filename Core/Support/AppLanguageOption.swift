@@ -2,6 +2,9 @@ import Foundation
 
 /// 界面语言选单的档位（2026-09-01 由三档收成两档、删掉「跟随系统」，owner 拍板；
 /// 2026-09-24 扩到六档，加繁中 / 日 / 德 / 法；三档那版见 `Docs/27`）。
+/// Twelve tiers since the Spanish / Portuguese / Italian / Korean round: Spanish and Portuguese
+/// each ship two regional files (`es` + `es-419`, `pt-BR` + `pt-PT`) so every region sees the
+/// system words of its own Mac.
 ///
 /// 机制：写**应用自己域**的 `AppleLanguages`——这正是 macOS 13+「系统设置 → 通用 →
 /// 语言与地区 → 应用程序」逐 App 语言写的同一个键，两条路互通，顺带把逐 App 语言
@@ -22,6 +25,12 @@ enum AppLanguageOption: String, CaseIterable, Equatable {
     case japanese
     case german
     case french
+    case spanish
+    case spanishLatinAmerica
+    case portugueseBrazil
+    case portuguesePortugal
+    case italian
+    case korean
 
     /// 当前该显示哪一档。
     ///
@@ -30,8 +39,8 @@ enum AppLanguageOption: String, CaseIterable, Equatable {
     ///   分不清「没设过」和「显式设置」。要用 `CFPreferencesCopyAppValue` /
     ///   `persistentDomain(forName:)` 取本域值传进来。
     /// - `effectiveLocalization`: 此刻**真正加载的那份 `.lproj`**（`Bundle.main.preferredLocalizations.first`）。
-    ///   没设过、或域里是我们没有的语言（用户在系统设置里给本 app 选了韩语这类）时按它回答：
-    ///   界面只有这六种，第七种语言实际回落英文，选单就该显示 English，不谎称。
+    ///   没设过、或域里是我们没有的语言（用户在系统设置里给本 app 选了俄语这类）时按它回答：
+    ///   a language we do not ship really falls back to English, so the menu shows English too.
     ///
     /// **兜底方向是英文，不是中文**：只有认得出的语言码才命中对应档。写反了会让英文系统的用户
     /// 在选单里看到「简体中文」——单测钉的就是这一条。
@@ -62,8 +71,24 @@ enum AppLanguageOption: String, CaseIterable, Equatable {
         case "ja": return .japanese
         case "de": return .german
         case "fr": return .french
+        case "it": return .italian
+        case "ko": return .korean
+        case "es": return regionalVariant(of: code, among: [.spanish, .spanishLatinAmerica])
+        case "pt": return regionalVariant(of: code, among: [.portugueseBrazil, .portuguesePortugal])
         default: return nil
         }
+    }
+
+    /// Which of a language's regional files the system would load for `code` (`es-MX` → `es-419`,
+    /// `pt-AO` → `pt-PT`). Asks Foundation's own matcher instead of keeping a list of region codes,
+    /// so the menu names the same file the system actually loads. Only call it once the language
+    /// subtag is known to match: for an unrelated code the matcher still returns its first candidate.
+    private static func regionalVariant(of code: String, among variants: [AppLanguageOption]) -> AppLanguageOption? {
+        let identifiers = variants.map(\.localizationIdentifier)
+        guard let match = Bundle.preferredLocalizations(from: identifiers, forPreferences: [code]).first else {
+            return variants.first
+        }
+        return variants.first { $0.localizationIdentifier == match } ?? variants.first
     }
 
     /// 该写进 `AppleLanguages` 的值，同时也是 `.lproj` 的目录名。每档都是显式值——
@@ -81,11 +106,18 @@ enum AppLanguageOption: String, CaseIterable, Equatable {
         case .japanese: return "ja"
         case .german: return "de"
         case .french: return "fr"
+        case .spanish: return "es"
+        case .spanishLatinAmerica: return "es-419"
+        case .portugueseBrazil: return "pt-BR"
+        case .portuguesePortugal: return "pt-PT"
+        case .italian: return "it"
+        case .korean: return "ko"
         }
     }
 
     /// 展示名。**每档都用它自己的语言写死**（语言选单的通用惯例），所以这里没有任何
-    /// 需要本地化的字符串——六种界面下显示的是同样六行字。
+    /// 需要本地化的字符串——every UI language shows the same rows. The two Spanish and two
+    /// Portuguese rows carry their region so the menu never shows two identical names.
     var displayName: String {
         switch self {
         case .zhHans: return "简体中文"
@@ -94,6 +126,12 @@ enum AppLanguageOption: String, CaseIterable, Equatable {
         case .japanese: return "日本語"
         case .german: return "Deutsch"
         case .french: return "Français"
+        case .spanish: return "Español (España)"
+        case .spanishLatinAmerica: return "Español (Latinoamérica)"
+        case .portugueseBrazil: return "Português (Brasil)"
+        case .portuguesePortugal: return "Português (Portugal)"
+        case .italian: return "Italiano"
+        case .korean: return "한국어"
         }
     }
 }
