@@ -1,6 +1,30 @@
 import Combine
 import Foundation
 
+/// App-wide appearance (settings window → General → Appearance). The bar, capsule, drawer, bubble,
+/// menus, settings and guide windows all follow it; the stack popups stay dark either way.
+///
+/// It is applied as `NSApp.appearance` (`AppDelegate`) and nowhere else: the materials and SwiftUI's
+/// `colorScheme` both derive from the window appearance, so one switch keeps text and plate together.
+///
+/// The raw value is persisted — renaming a case resets everyone who chose it to `system`.
+enum AppearanceMode: String, CaseIterable {
+    /// Whatever macOS is showing right now, including its own automatic light/dark schedule.
+    case system
+    case light
+    case dark
+
+    static let `default` = AppearanceMode.system
+
+    var displayName: String {
+        switch self {
+        case .system: return String(localized: "System")
+        case .light: return String(localized: "Light")
+        case .dark: return String(localized: "Dark")
+        }
+    }
+}
+
 /// 悬停效果档位。
 /// - `standard`：图标 36→24pt 缩放 + 下方冒出名字 + 文件夹格整块放大（原生程序坞手感）。
 /// - `quiet`：鼠标划过任务条时**完全静止**——不缩放、不移动、不冒名字、胶囊底色不提亮。
@@ -94,6 +118,8 @@ final class AppSettingsStore: ObservableObject {
     /// 自定义显隐任务条快捷键；nil = 默认 ⌥⇧⌘D。**只由 `SettingsCoordinator.applyEdgeToggleShortcut`
     /// 在注册成功后写入**——先落盘再注册失败会让存的键和实际生效的键分家。
     @Published private(set) var edgeToggleShortcut: StoredHotKeyShortcut?
+    /// See `AppearanceMode`. Missing or unrecognised stored value = `system`.
+    @Published private(set) var appearanceMode: AppearanceMode
     /// 全局反转鼠标滚轮（只反离散滚轮，触控板 / 妙控鼠标不动）。**默认关**——
     /// 改写全系统输入事件的能力必须由用户主动选择，理由同 `windowLiftEnabled`。
     @Published private(set) var scrollReverserEnabled: Bool
@@ -167,6 +193,8 @@ final class AppSettingsStore: ObservableObject {
         edgeToggleShortcut = Self.storedHotKeyShortcut(defaults.dictionary(forKey: Keys.edgeToggleShortcut))
         // 同样有意不 register：缺键即 false 正好是「默认关」，注册个 false 会让人误读成默认开。
         scrollReverserEnabled = defaults.bool(forKey: Keys.scrollReverserEnabled)
+        // Read only, never written back here: a missing key keeps meaning "follow the system".
+        appearanceMode = AppearanceMode(rawValue: defaults.string(forKey: Keys.appearance) ?? "") ?? .default
         // 有意不 register：缺键即 followMouse = 现状行为，老用户升级无感。
         let pinnedSelection = Self.storedPinnedScreenSelection(
             defaults.dictionary(forKey: Keys.taskbarScreenPinned)
@@ -255,6 +283,12 @@ final class AppSettingsStore: ObservableObject {
             ],
             forKey: Keys.edgeToggleShortcut
         )
+    }
+
+    func setAppearanceMode(_ value: AppearanceMode) {
+        guard appearanceMode != value else { return }
+        appearanceMode = value
+        defaults.set(value.rawValue, forKey: Keys.appearance)
     }
 
     func setScrollReverserEnabled(_ value: Bool) {
@@ -510,8 +544,10 @@ private enum Keys {
     /// Legacy four-tier raw string. **Read once for migration, never written or removed.**
     static let dockSize = "com.tungsten.edge.dockSize"
     static let hoverStyle = "com.tungsten.edge.hoverStyle"
-        // `com.tungsten.edge.appearanceMode` 已随深色模式一起删除（owner 2026-08-16）。
-        // **键留成孤儿，不读不写不删**——回退这轮改动时还读得回用户原来的选择。
+    /// system / light / dark. Missing key = system.
+    /// The pre-glass `com.tungsten.edge.appearanceMode` is an orphan and stays one: never read,
+    /// written or removed — a choice made for that older look is not carried over.
+    static let appearance = "com.tungsten.edge.appearance"
     static let windowLiftEnabled = "com.tungsten.edge.windowLiftEnabled"
     static let fullscreenIntentEnabled = "com.tungsten.edge.fullscreenIntentEnabled"
     /// 自定义显隐快捷键（字典：keyCode / modifiers / glyphs）。缺键 = 默认 ⌥⇧⌘D。

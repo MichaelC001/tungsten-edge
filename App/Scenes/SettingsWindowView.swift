@@ -93,6 +93,7 @@ struct SettingsWindowContent: View {
         settingsPane {
             taskbarSizeRow
             languageRow
+            appearanceRow
             hotKeyRow
             scrollReverserRow
             welcomeGuideRow
@@ -261,6 +262,24 @@ struct SettingsWindowContent: View {
                     Button("Reset to Default") { applyShortcut(nil) }
                 }
             }
+        }
+    }
+
+    /// App-wide appearance (`AppearanceMode`). The third option is `System`, never `Auto`:
+    /// macOS's Auto switches by time of day, this one follows whatever macOS is showing.
+    @ViewBuilder
+    private var appearanceRow: some View {
+        settingRow(note: String(localized: "System follows the macOS appearance. Light and Dark keep Tungsten Edge that way whatever macOS is set to.")) {
+            Picker(
+                String(localized: "Appearance"),
+                selection: binding(get: { store.appearanceMode }, set: store.setAppearanceMode)
+            ) {
+                ForEach(AppearanceMode.allCases, id: \.self) { mode in
+                    Text(mode.displayName).tag(mode)
+                }
+            }
+            .pickerStyle(.menu)
+            .frame(maxWidth: 280, alignment: .leading)
         }
     }
 

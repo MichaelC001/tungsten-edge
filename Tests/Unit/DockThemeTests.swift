@@ -1,14 +1,13 @@
 import XCTest
 
-/// 主题表只有**一套**值（`DockThemeTokens.standard`）——产品固定浅色，深色模式已于
-/// 2026-08-16 由 owner 拍板删除。
-///
-/// 本文件在那之前锁的是「深色列逐字节冻结 + 浅色列逐项断言」共 38 个字段。**那套契约随
-/// 功能一起消失了，不要按旧值把它恢复回来。** 现在只锁与功能绑定的不变量：
-/// 前景必须加黑（加白在浅玻璃上等于消失）、药丸与光晕必须把底板推离文字、阴影不超预算、
-/// 所有效果开关默认关。逐个数值是可以自由调的观感，不该由测试钉死。
+/// The table has two columns, `light` and `dark`. These tests lock invariants tied to function —
+/// foreground direction, the pill pushing the plate away from the text, a contrast floor on each
+/// column's worst backdrop, shadows inside their budget, effects off by default — not individual
+/// numbers, which are look and stay free to tune.
 final class DockThemeTests: XCTestCase {
-    private let theme = DockThemeTokens.standard
+    /// The light column; the tests below that say nothing else are about it.
+    private let theme = DockThemeTokens.light
+    private let dark = DockThemeTokens.dark
     private let shadowPadding: CGFloat = 20
 
     // MARK: - 前景方向
@@ -149,8 +148,10 @@ final class DockThemeTests: XCTestCase {
     // MARK: - 数值合法性
 
     func testShadowsFitInsideShadowPaddingBudget() {
-        XCTAssertLessThanOrEqual(theme.stripShadow.verticalExtent, shadowPadding)
-        XCTAssertLessThanOrEqual(theme.popupShadow.verticalExtent, shadowPadding)
+        for column in [theme, dark, DockThemeTokens.darkLiftedPillCandidate] {
+            XCTAssertLessThanOrEqual(column.stripShadow.verticalExtent, shadowPadding)
+            XCTAssertLessThanOrEqual(column.popupShadow.verticalExtent, shadowPadding)
+        }
     }
 
     /// The stack popup is the one dark surface (the native Dock's stack grid is dark glass in both
@@ -170,8 +171,10 @@ final class DockThemeTests: XCTestCase {
 
     /// 手调时容易顺手写超。
     func testAllOpacitiesAreInRange() {
-        for tint in theme.allTints {
-            XCTAssertTrue((0 ... 1).contains(tint.opacity), "不透明度越界：\(tint)")
+        for column in [theme, dark, DockThemeTokens.darkLiftedPillCandidate] {
+            for tint in column.allTints {
+                XCTAssertTrue((0 ... 1).contains(tint.opacity), "不透明度越界：\(tint)")
+            }
         }
     }
 
@@ -281,15 +284,119 @@ final class DockThemeTests: XCTestCase {
             from: ["DOCK_LABEL_INACTIVE": " 0.55 "], candidate: .black(0.62)), .black(0.55))
     }
 
-    /// 覆盖值的**基色不给出口**：药丸恒为白、文字恒为黑，方向不能靠环境变量翻过来
+    /// 覆盖值的**基色不给出口**：方向不能靠环境变量翻过来
     ///（翻过来就是把对比度抹平，见 `DockThemeTokens.chipPillFill` 的注释）。
+    /// The override changes the opacity only; each column keeps its own base.
     func testContrastOverridesCannotFlipTheDirection() {
-        let pair = DockEffectSwitches.chipPillFill(
-            from: ["DOCK_CHIP_PILL_FILL": "0.3"], candidate: theme.chipPillFill)
-        XCTAssertEqual(pair.normal.base, .white)
-        XCTAssertEqual(pair.emphasized.base, .white)
-        XCTAssertEqual(DockEffectSwitches.labelInactive(
-            from: ["DOCK_LABEL_INACTIVE": "0.5"], candidate: theme.labelInactive).base, .black)
+        for column in [theme, dark] {
+            let pair = DockEffectSwitches.chipPillFill(
+                from: ["DOCK_CHIP_PILL_FILL": "0.3"], candidate: column.chipPillFill)
+            XCTAssertEqual(pair.normal, DockTint(base: column.chipPillFill.normal.base, opacity: 0.3))
+            XCTAssertEqual(pair.emphasized.base, column.chipPillFill.emphasized.base)
+            XCTAssertEqual(
+                DockEffectSwitches.labelInactive(from: ["DOCK_LABEL_INACTIVE": "0.5"], candidate: column.labelInactive),
+                DockTint(base: column.labelInactive.base, opacity: 0.5))
+        }
+    }
+
+    // MARK: - Dark column
+
+    /// The mirror of `testForegroundsAreDarkTinted`: on the dark glass, black marks vanish.
+    func testDarkForegroundsAreWhiteTinted() {
+        let mustBeWhite: [(String, DockTint)] = [
+            ("labelActive", dark.labelActive),
+            ("labelInactive", dark.labelInactive),
+            ("labelSubtitle", dark.labelSubtitle),
+            ("runningDot", dark.runningDot),
+            ("zoneDivider", dark.zoneDivider),
+            ("capsuleGlyph", dark.capsuleGlyph),
+            ("folderDropRing", dark.folderDropRing),
+            ("tooltipText", dark.tooltipText),
+        ]
+        for (name, tint) in mustBeWhite {
+            XCTAssertEqual(tint.base, .white, "\(name) must be white-based in the dark column")
+        }
+        XCTAssertLessThan(dark.labelInactive.opacity, dark.labelActive.opacity,
+                          "the active / inactive difference is the only on-desktop cue")
+    }
+
+    /// The stack popup is dark glass in both appearances, and its views may resolve either column
+    /// (some sit inside a forced `.dark` environment, the backdrop does not).
+    func testStackPopupTokensAreIdenticalInBothColumns() {
+        XCTAssertEqual(dark.stackPopupText, theme.stackPopupText)
+        XCTAssertEqual(dark.stackPopupNote, theme.stackPopupNote)
+        XCTAssertEqual(dark.stackPopupGlyph, theme.stackPopupGlyph)
+        XCTAssertEqual(dark.stackPopupBackFill, theme.stackPopupBackFill)
+        XCTAssertEqual(dark.stackPopupHairline, theme.stackPopupHairline)
+        XCTAssertEqual(dark.stackPopupShadow, theme.stackPopupShadow)
+        XCTAssertEqual(dark.shelfTile, theme.shelfTile, "the shelf tile is opaque art, not a tint")
+    }
+
+    /// Same rule as the light column, mirrored: white text, so the pill darkens the plate.
+    func testDarkChipPillPushesAgainstTheTextColour() {
+        XCTAssertEqual(dark.labelActive.base, .white, "premise: the text is white")
+        XCTAssertEqual(dark.chipPillFill.normal.base, .black)
+        XCTAssertEqual(dark.chipPillFill.emphasized.base, .black)
+        XCTAssertGreaterThan(dark.chipPillFill.emphasized.opacity, dark.chipPillFill.normal.opacity)
+        // The card's outline is the rim's job; on a dark backdrop the fill is nearly invisible.
+        XCTAssertEqual(dark.chipPillRimTop.normal.base, .white)
+        XCTAssertGreaterThan(dark.chipPillRimTop.emphasized.opacity, dark.chipPillRimTop.normal.opacity)
+    }
+
+    /// **The contrast floor.** Composite the pill onto the plate, then the *translucent* text onto
+    /// the pill, then take the sRGB contrast ratio — leaving the text's own opacity out overstates
+    /// it badly. Each column is judged on its worst backdrop, read off the system Dock glass:
+    /// light = bar over black (plate 38), dark = bar over white (plate 176). The floor is what
+    /// the signed-off light column achieves there, so dark may not read worse than light already does.
+    func testTitlesKeepTheContrastFloorOnEachColumnsWorstBackdrop() {
+        let activeFloor = 2.8, inactiveFloor = 2.3
+        let cases: [(String, DockThemeTokens, Double)] = [("light", theme, 38), ("dark", dark, 176)]
+        for (name, column, plate) in cases {
+            for (state, pill) in [("normal", column.chipPillFill.normal), ("hover", column.chipPillFill.emphasized)] {
+                let pillLevel = Self.composite(pill, over: plate)
+                let active = Self.contrast(Self.composite(column.labelActive, over: pillLevel), pillLevel)
+                let inactive = Self.contrast(Self.composite(column.labelInactive, over: pillLevel), pillLevel)
+                XCTAssertGreaterThanOrEqual(active, activeFloor, "\(name) \(state): active title \(active)")
+                XCTAssertGreaterThanOrEqual(inactive, inactiveFloor, "\(name) \(state): inactive title \(inactive)")
+            }
+        }
+    }
+
+    /// No unaccepted effect rides in with the dark column: zero means the layers never enter the tree.
+    func testDarkColumnCarriesNoEffectCandidates() {
+        XCTAssertFalse(dark.drawsPanelThickness)
+        XCTAssertEqual(dark.panelBackdropSaturation, 1.0)
+    }
+
+    func testResolvedColumnFollowsTheColourScheme() {
+        XCTAssertEqual(DockThemeTokens.resolved(for: .light), .light)
+        XCTAssertEqual(DockThemeTokens.resolved(for: .dark), DockEffectSwitches.darkColumn)
+        XCTAssertEqual(DockEffectSwitches.darkColumn, .dark, "no DOCK_DARK_PILL in the test process")
+    }
+
+    func testDarkPillSwitchOnlyAcceptsLift() {
+        XCTAssertTrue(DockEffectSwitches.darkPillLifts(from: ["DOCK_DARK_PILL": " Lift "]))
+        for other in ["", "sink", "1", "true"] {
+            XCTAssertFalse(DockEffectSwitches.darkPillLifts(from: ["DOCK_DARK_PILL": other]))
+        }
+        XCTAssertFalse(DockEffectSwitches.darkPillLifts(from: [:]))
+    }
+
+    // MARK: - Contrast helpers (levels are 0…255)
+
+    private static func composite(_ tint: DockTint, over background: Double) -> Double {
+        let base: Double = tint.base == .white ? 255 : 0
+        return background * (1 - tint.opacity) + base * tint.opacity
+    }
+
+    private static func relativeLuminance(_ level: Double) -> Double {
+        let c = level / 255
+        return c <= 0.04045 ? c / 12.92 : pow((c + 0.055) / 1.055, 2.4)
+    }
+
+    private static func contrast(_ a: Double, _ b: Double) -> Double {
+        let la = relativeLuminance(a), lb = relativeLuminance(b)
+        return (max(la, lb) + 0.05) / (min(la, lb) + 0.05)
     }
 }
 

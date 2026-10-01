@@ -650,7 +650,8 @@ struct WindowTitleTooltipView: View {
     /// （它的 `usesLiquidGlass` 是全局唯一来源）。
     let usesLiquidGlass: Bool
 
-    private let theme = DockThemeTokens.standard
+    @Environment(\.colorScheme) private var colorScheme
+    private var theme: DockThemeTokens { .resolved(for: colorScheme) }
 
     var body: some View {
         let shape = WindowTitleTooltipShape(style: style)

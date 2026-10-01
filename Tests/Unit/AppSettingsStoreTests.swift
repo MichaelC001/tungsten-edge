@@ -732,6 +732,31 @@ final class AppSettingsStoreTests: XCTestCase {
 
     // MARK: - 反转鼠标滚轮
 
+    func testAppearanceDefaultsToSystemAndRoundTrips() {
+        let defaults = makeDefaults()
+        let store = AppSettingsStore(defaults: defaults)
+        XCTAssertEqual(store.appearanceMode, .system)
+        XCTAssertNil(defaults.object(forKey: "com.tungsten.edge.appearance"),
+                     "reading must not write the default back")
+
+        store.setAppearanceMode(.dark)
+        XCTAssertEqual(AppSettingsStore(defaults: defaults).appearanceMode, .dark)
+        store.setAppearanceMode(.light)
+        XCTAssertEqual(AppSettingsStore(defaults: defaults).appearanceMode, .light)
+    }
+
+    func testAppearanceFallsBackToSystemOnABadValueAndIgnoresTheOrphanKey() {
+        let defaults = makeDefaults()
+        defaults.set("midnight", forKey: "com.tungsten.edge.appearance")
+        XCTAssertEqual(AppSettingsStore(defaults: defaults).appearanceMode, .system)
+
+        // The pre-glass key is an orphan: a choice stored there must not come back.
+        let orphaned = makeDefaults()
+        orphaned.set("dark", forKey: "com.tungsten.edge.appearanceMode")
+        XCTAssertEqual(AppSettingsStore(defaults: orphaned).appearanceMode, .system)
+        XCTAssertEqual(orphaned.string(forKey: "com.tungsten.edge.appearanceMode"), "dark")
+    }
+
     func testScrollReverserDefaultsOffAndRoundTrips() {
         let defaults = makeDefaults()
         let store = AppSettingsStore(defaults: defaults)

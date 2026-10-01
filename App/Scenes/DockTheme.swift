@@ -6,15 +6,21 @@ import SwiftUI
 // 纯数值表在 `Core/Support/DockThemeTokens.swift`（不 import SwiftUI，因此可被单测精确冻结）。
 // 这里只做「数值 → Color / Material / 修饰符」的翻译，不含任何取值判断。
 //
-// 用法：需要上色的视图加
-//     private let theme = DockThemeTokens.standard
-// 然后读 `theme.xxx.color`。
+// Usage — a view that needs colour declares
+//     @Environment(\.colorScheme) private var colorScheme
+//     private var theme: DockThemeTokens { .resolved(for: colorScheme) }
+// and reads `theme.xxx.color`.
 //
-// **只有一套值**（产品固定浅色，owner 2026-08-16 删掉深色模式），所以这里没有取值判断，
-// 视图也不用再读 `colorScheme`。前提是 `AppDelegate` 无条件把 `NSApp.appearance` 钉成
-// `.aqua`——毛玻璃与玻璃跟的是窗口外观、不看 SwiftUI 环境。
+// `colorScheme` comes from the hosting window's `effectiveAppearance`, the same source the frosted
+// material and Liquid Glass follow, so text and plate always flip together. There is deliberately
+// no appearance-free accessor: a view that skipped the environment would stay light on a dark plate.
 
 extension DockThemeTokens {
+    /// The column for a SwiftUI colour scheme (anything that is not `.dark` is light).
+    static func resolved(for colorScheme: ColorScheme) -> DockThemeTokens {
+        colorScheme == .dark ? DockEffectSwitches.darkColumn : .light
+    }
+
     /// 实际生效的材质：`DOCK_PANEL_MATERIAL` 覆盖 token 值（认不出的名字回落，不崩）。
     var effectivePanelMaterial: DockPanelMaterial {
         DockPanelMaterial.resolved(from: DockEffectSwitches.environment, fallback: panelMaterial)
@@ -57,6 +63,15 @@ enum DockEffectSwitches {
     /// 读一次就固定——调参期间改环境变量重启一次即可，也避免一次会话里前后不一致。
     static let environment = ProcessInfo.processInfo.environment
 
+    /// The dark column in effect: `DOCK_DARK_PILL=lift` swaps in the lightening-pill candidate.
+    static let darkColumn: DockThemeTokens = darkPillLifts(from: environment) ? .darkLiftedPillCandidate : .dark
+
+    /// Only the exact word `lift` selects the candidate; unset or anything else keeps the default.
+    static func darkPillLifts(from environment: [String: String]) -> Bool {
+        DebugSwitch.darkPill.value(in: environment)?
+            .trimmingCharacters(in: .whitespacesAndNewlines).lowercased() == "lift"
+    }
+
     /// `DOCK_PANEL_SATURATION=1.25`。未设 / 非数字 / 超出合理范围 → `1.0`（= 不加滤镜）。
     /// 特例：`1` 也当"开，用表里的候选值"讲不通——数字就是倍数本身，`1` 就是不提饱和。
     /// 想用表里的候选值就写 `candidate`。
@@ -77,7 +92,8 @@ enum DockEffectSwitches {
 
     /// `DOCK_CHIP_PILL_FILL=<常态>[,<悬停态>]`，两个都是 0…1 的不透明度。
     /// 只给一个数时悬停态按表里既有的 **×1.4** 关系推出来。未设 / 非数字 / 越界 → 回落到表里的值。
-    /// 基色恒为白：方向必须和黑字相反（`DockThemeTokens.chipPillFill`），不给「改成加黑」的出口。
+    /// Only the opacity is overridden; the base stays the column's own, so the pill cannot be
+    /// flipped onto the text's side (`DockThemeTokens.chipPillFill`).
     static func chipPillFill(from environment: [String: String], candidate: DockTintPair) -> DockTintPair {
         guard let raw = DebugSwitch.chipPillFill.value(in: environment)?
             .trimmingCharacters(in: .whitespacesAndNewlines),
@@ -92,16 +108,17 @@ enum DockEffectSwitches {
         } else {
             emphasized = min(normal * 1.4, 1)
         }
-        return DockTintPair(normal: .white(normal), emphasized: .white(emphasized))
+        return DockTintPair(normal: DockTint(base: candidate.normal.base, opacity: normal),
+                            emphasized: DockTint(base: candidate.emphasized.base, opacity: emphasized))
     }
 
     /// `DOCK_LABEL_INACTIVE=<不透明度>`（0…1）。未设 / 非数字 / 越界 → 回落到表里的值。
-    /// 基色恒为黑，同上。
+    /// The base stays the column's own, as above.
     static func labelInactive(from environment: [String: String], candidate: DockTint) -> DockTint {
         guard let raw = DebugSwitch.labelInactive.value(in: environment)?
             .trimmingCharacters(in: .whitespacesAndNewlines),
               let value = opacity(raw) else { return candidate }
-        return .black(value)
+        return DockTint(base: candidate.base, opacity: value)
     }
 
     /// 0…1 的不透明度解析。空串 / 非数字 / 越界一律 `nil`，由调用方回落。
@@ -123,12 +140,16 @@ enum DockEffectSwitches {
             print("[panel] DOCK_PANEL_THICKNESS=\"\(raw)\" → 厚度层\(thickness ? "开" : "关")")
         }
         // 这两个不属于底板，但调对比度时和上面几个一起看，所以打在同一处。
+        // Both overrides apply to whichever column is showing (opacity only).
         if let raw = DebugSwitch.chipPillFill.value(in: environment) {
-            let pair = DockThemeTokens.standard.effectiveChipPillFill
+            let pair = DockThemeTokens.light.effectiveChipPillFill
             print("[panel] DOCK_CHIP_PILL_FILL=\"\(raw)\" → 实际生效 常态 \(pair.normal.opacity) / 悬停 \(pair.emphasized.opacity)")
         }
         if let raw = DebugSwitch.labelInactive.value(in: environment) {
-            print("[panel] DOCK_LABEL_INACTIVE=\"\(raw)\" → 实际生效 \(DockThemeTokens.standard.effectiveLabelInactive.opacity)")
+            print("[panel] DOCK_LABEL_INACTIVE=\"\(raw)\" → 实际生效 \(DockThemeTokens.light.effectiveLabelInactive.opacity)")
+        }
+        if let raw = DebugSwitch.darkPill.value(in: environment) {
+            print("[panel] DOCK_DARK_PILL=\"\(raw)\" → 深色卡底 \(darkPillLifts(from: environment) ? "lift" : "sink")")
         }
     }
 }

@@ -51,7 +51,8 @@ struct DockStripView: View {
     @EnvironmentObject var appMembershipController: AppMembershipController
 
     /// 浅 / 深色两套视觉数值（见 `DockThemeTokens`）。深色列是冻结的历史值，调观感只动浅色列。
-    private let theme = DockThemeTokens.standard
+    @Environment(\.colorScheme) private var colorScheme
+    private var theme: DockThemeTokens { .resolved(for: colorScheme) }
 
     /// 文件夹 chip 点击 → 弹窗 toggle（path + chip 可视矩形·屏幕坐标）。PanelCoordinator 注入。
     var onFolderPopupToggle: (String, CGRect) -> Void = { _, _ in }

@@ -12,8 +12,9 @@ import Foundation
 // 因此 `DockThemeTests` 能逐项冻结深色列。`Color` / `NSVisualEffectView.Material` 的桥接在
 // `App/Scenes/DockTheme.swift`。
 //
-// ⚠️ **深色列是冻结的**：它逐项等于 2026-07-30 改造前散落在各视图里的字面值，`DockThemeTests`
-// 机械保证任何漂移直接红。要调观感只动 `light`——动 `dark` 等于改 owner 天天在用的界面。
+// Two columns, `light` and `dark`, picked by the window's appearance (`DockTheme.swift`,
+// `DockThemeTokens.resolved(for:)`). The light column is the signed-off look and must not drift
+// when the dark one is tuned.
 //
 // ⚠️ 两个「看着像颜色其实不是」的坑，不属于本表、也绝不能按外观改：
 //   · `DockStripView` 滚动边缘淡出的 `.black` / `.clear` 是 **mask 的 alpha 通道**，不是颜色。
@@ -335,17 +336,13 @@ struct DockThemeTokens: Equatable {
     }
 }
 
-// MARK: - 唯一那套主题值
+// MARK: - The two columns
 
 extension DockThemeTokens {
-    /// **唯一那套主题值。** 产品固定浅色（owner 2026-08-16 拍板删掉深色模式），
-    /// 所以这里不再有「浅 / 深」两列，名字也不带相对概念——它就是全部。
-    ///
-    /// 前提是 `AppDelegate` 无条件把 `NSApp.appearance` 钉成 `.aqua`：
-    /// `NSVisualEffectView` 和 Liquid Glass 跟的是**窗口的 effectiveAppearance**，
-    /// 不看 SwiftUI 环境。系统处于深色而不强制的话，材质会渲染成深色、而这张表是浅色数值，
-    /// 结果就是「文字翻了、底板没翻」（实测同屏同壁纸，底板亮度 37.7 对 143.2）。
-    static let standard = DockThemeTokens(
+    /// The light column. Text and material must flip together: `NSVisualEffectView` and Liquid
+    /// Glass follow the **window's** `effectiveAppearance`, and so does SwiftUI's `colorScheme`,
+    /// which is what `resolved(for:)` keys on — never pick a column from anything else.
+    static let light = DockThemeTokens(
         panelRimTop: .white(0.6),
         panelRimBottom: .black(0.1),
         // 投放高亮：叠在平时那圈边**之上**的一圈更亮的边（`DockPanelRimPlan`）。
@@ -414,4 +411,82 @@ extension DockThemeTokens {
         tooltipText: .black(0.85),
         tooltipShadow: DockShadow(tint: .black(0.14), radius: 5, y: 2)
     )
+
+    /// The dark column: white marks on the system Dock glass in its dark appearance.
+    ///
+    /// The plate is the system's (variant 3 under `darkAqua`), so nothing here colours it. It
+    /// barely lifts a dark backdrop and dims a bright one — white 255 reads about 176 through it —
+    /// which makes the bar over a white window the worst case for white text.
+    static let dark = darkColumn(pillLifts: false)
+
+    /// Experiment only (`DOCK_DARK_PILL=lift`): the pill lightens instead of darkening. It reads
+    /// more like a card on a dark backdrop but fails the contrast floor over a white window
+    /// (`DockThemeTests`), so it cannot become the default as it stands.
+    static let darkLiftedPillCandidate = darkColumn(pillLifts: true)
+
+    private static func darkColumn(pillLifts: Bool) -> DockThemeTokens {
+        DockThemeTokens(
+            // The theme rim is drawn only on the frosted / fallback plate; the system glass has its own.
+            panelRimTop: .white(0.15),
+            panelRimBottom: .white(0.15),
+            panelRimHighlighted: light.panelRimHighlighted,
+            panelRimLineWidth: light.panelRimLineWidth,
+            panelRimHighlightedLineWidth: light.panelRimHighlightedLineWidth,
+            // No thickness or saturation candidates in dark: zero means the layers never enter the tree.
+            panelInnerHighlight: .white(0),
+            panelInnerHighlightWidth: 0,
+            panelInnerHighlightBlur: 0,
+            panelInnerShadow: .black(0),
+            panelInnerShadowWidth: 0,
+            panelInnerShadowBlur: 0,
+            panelBackdropSaturation: 1.0,
+            stripShadow: DockShadow(tint: .black(0.35), radius: 12, y: 5),
+            popupShadow: DockShadow(tint: .black(0.35), radius: 12, y: 5),
+            panelMaterial: .popover,
+
+            // Against the text, as in the light column: white text needs a darker pill. Worst case
+            // (plate 176): 3.44 active / 2.37 inactive, at or above the light column's own worst case.
+            // The pill and `labelInactive` are one pair — tune both, then re-run the contrast test.
+            chipPillFill: pillLifts
+                ? DockTintPair(normal: .white(0.10), emphasized: .white(0.14))
+                : DockTintPair(normal: .black(0.25), emphasized: .black(0.33)),
+            chipPillRimTop: DockTintPair(normal: .white(0.22), emphasized: .white(0.34)),
+            chipPillRimBottom: .white(0.04),
+
+            labelActive: .white(0.92),
+            labelInactive: .white(0.6),
+            labelSubtitle: .white(0.6),
+
+            // The native dot is the plate plus ~124 per channel (additive). Chips sit under the
+            // strip's edge-fade mask, where a plus-lighter blend cannot see the glass, so this is
+            // the translucent white that lands on the same value over a typical dark plate (36).
+            runningDot: .white(0.57),
+            zoneDivider: .white(0.18),
+
+            shelfTile: light.shelfTile,
+            shelfDropGlow: .white(0.25),
+
+            capsuleGlyph: .white(0.6),
+            capsuleStashGlow: .white(0.18),
+
+            folderDropRing: .white(0.9),
+            folderThumbHairline: .white(0.3),
+
+            // The stack popup is dark in both appearances: same values, by construction.
+            stackPopupText: light.stackPopupText,
+            stackPopupNote: light.stackPopupNote,
+            stackPopupGlyph: light.stackPopupGlyph,
+            stackPopupBackFill: light.stackPopupBackFill,
+            stackPopupHairline: light.stackPopupHairline,
+            stackPopupShadow: light.stackPopupShadow,
+
+            // PLACEHOLDER — not measured against the native dark bubble yet (needs the same bubble
+            // read on two backdrops, then a third to verify). Do not sign this off as native.
+            tooltipPlate: DockRGB(0.16, 0.16, 0.17),
+            tooltipPlateOpacity: 0.70,
+            tooltipRim: .white(0.2),
+            tooltipText: .white(0.92),
+            tooltipShadow: DockShadow(tint: .black(0.32), radius: 5, y: 2)
+        )
+    }
 }

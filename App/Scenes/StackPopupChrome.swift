@@ -35,7 +35,8 @@ struct StackPopupChrome<Grid: View>: View {
     /// The cells; they land in a `LazyVGrid` of `layout.columns` fixed columns.
     @ViewBuilder let grid: () -> Grid
 
-    private let theme = DockThemeTokens.standard
+    @Environment(\.colorScheme) private var colorScheme
+    private var theme: DockThemeTokens { .resolved(for: colorScheme) }
     private typealias Metrics = StackPopupMetrics
 
     private var plateSize: CGSize {

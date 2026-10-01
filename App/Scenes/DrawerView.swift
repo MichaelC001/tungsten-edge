@@ -42,7 +42,8 @@ struct DrawerView: View {
     @EnvironmentObject var runningApplicationStore: RunningApplicationStore
     @EnvironmentObject var appMembershipController: AppMembershipController
 
-    private let theme = DockThemeTokens.standard
+    @Environment(\.colorScheme) private var colorScheme
+    private var theme: DockThemeTokens { .resolved(for: colorScheme) }
 
     /// 抽屉图标在 `"drawer"` 坐标空间里的位置，喂给起拖抓取偏移 + 同区落点命中。
     @State private var drawerFrames: [String: CGRect] = [:]

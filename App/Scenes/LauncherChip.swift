@@ -61,7 +61,8 @@ struct LauncherChip: View {
     /// Only set by DrawerView; strip messaging chips leave it nil.
     var onPrimaryAction: (() -> Void)? = nil
 
-    private let theme = DockThemeTokens.standard
+    @Environment(\.colorScheme) private var colorScheme
+    private var theme: DockThemeTokens { .resolved(for: colorScheme) }
     /// 见 `EnvironmentValues.isDragCarrierSnapshot`：拍副本时不画圆点、不烘投影。
     @Environment(\.isDragCarrierSnapshot) private var isDragCarrierSnapshot
 

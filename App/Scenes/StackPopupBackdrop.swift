@@ -13,7 +13,8 @@ struct StackPopupBackdrop: View {
     let arrowCenterX: CGFloat
     let usesLiquidGlass: Bool
 
-    private let theme = DockThemeTokens.standard
+    @Environment(\.colorScheme) private var colorScheme
+    private var theme: DockThemeTokens { .resolved(for: colorScheme) }
 
     var body: some View {
         Group {

@@ -301,7 +301,8 @@ struct FolderGridCell: View {
     var contextMenu: (() -> NSMenu)? = nil
     let onTap: () -> Void
 
-    private let theme = DockThemeTokens.standard
+    @Environment(\.colorScheme) private var colorScheme
+    private var theme: DockThemeTokens { .resolved(for: colorScheme) }
     private typealias Metrics = StackPopupMetrics
 
     @Environment(\.displayScale) private var displayScale

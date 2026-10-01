@@ -98,6 +98,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     ///（startTaskbarRuntime 建、suspend/终止拆），与全屏 tap 同一生命周期语义。
     private var scrollReverserMonitor: ScrollReverserMonitor?
     private var scrollReverserSettingSubscription: AnyCancellable?
+    /// Lives for the whole process: the guide windows need the appearance too, so it is never
+    /// cancelled with the taskbar's subscriptions.
+    private var appearanceSubscription: AnyCancellable?
     private let permissionService = PermissionService()
     private var installLocation: AppInstallLocation = .other
     private var permissionCoordinator: PermissionRecoveryCoordinator?
@@ -149,18 +152,19 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             settingsStore.armTaskbarPerDisplaySeedForFreshInstall(lineage: installLineage)
         }
 
-        // **无条件钉死浅色，这一句不能省。** 产品固定浅色（owner 2026-08-16 删掉深色模式），
-        // 而 `NSVisualEffectView` 和 Liquid Glass 跟的是**窗口的 effectiveAppearance**、
-        // 不看 SwiftUI 环境。系统处于深色时若不钉，材质会渲染成深色，而 `DockThemeTokens`
-        // 只有一套浅色数值 —— 结果就是「文字是浅色的、底板是深色的」那种对不上
-        //（实测同屏同壁纸，底板亮度 37.7 对 143.2）。
+        // The appearance setting is applied here and only here (`nil` = follow macOS). The frosted
+        // material and Liquid Glass follow the **window's** `effectiveAppearance`, and SwiftUI's
+        // `colorScheme` — which picks the `DockThemeTokens` column — comes from the same place, so
+        // text and plate flip together. Do not set `appearance` on an individual panel or hosting
+        // view: every window leaves it unset and inherits this one, including those created later
+        // on demand (drawer, bubble, drag carrier) and the menus. The stack popups pin `darkAqua`
+        // on their glass view alone (`stack-popup.md`).
         //
-        // 钉在 `NSApp` 这一处就够：所有面板与窗口都没覆写自己的 `appearance`，会一路回落到
-        // 这里——**包括之后才按需新建的**抽屉、两个弹窗、tooltip、拖动载体，以及状态栏与
-        // 右键菜单。状态栏图标是 template image，仍由菜单栏按系统外观自己染色，不受影响。
-        //
-        // 排在最前面：搬家引导、权限引导、正常启动三条分支的第一个窗口就得是对的外观。
-        NSApp.appearance = NSAppearance(named: .aqua)
+        // It stays ahead of the three launch branches (relocation guide, permission guide, normal
+        // start) so each one's first window opens in the right appearance. `@Published` emits the
+        // current value on subscription, which is what applies it at launch.
+        appearanceSubscription = settingsStore.$appearanceMode
+            .sink { NSApp.appearance = $0.nsAppearance }
 
         // 位置分类必须排在接管其他实例和注册热键**之前**。
         // 挂载磁盘映像双击运行时，那份临时副本一旦执行 terminateOtherInstances()，
@@ -881,4 +885,14 @@ extension AppDelegate: NSWindowDelegate {
 private final class StallProbeClock: @unchecked Sendable {
     var expected: CFTimeInterval
     init(expected: CFTimeInterval) { self.expected = expected }
+}
+
+private extension AppearanceMode {
+    var nsAppearance: NSAppearance? {
+        switch self {
+        case .system: return nil
+        case .light: return NSAppearance(named: .aqua)
+        case .dark: return NSAppearance(named: .darkAqua)
+        }
+    }
 }

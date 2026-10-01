@@ -145,9 +145,18 @@ final class HotKeyRecorderNSView: NSView {
         label.stringValue = String(localized: "Press new shortcut…")
     }
 
+    // A `CGColor` is resolved once, for the appearance current at that moment: re-resolve under
+    // this view's own appearance, and again whenever it changes, or the box keeps the old one.
     private func refreshChrome() {
-        layer?.borderColor = (isRecording ? NSColor.controlAccentColor : NSColor.separatorColor).cgColor
-        layer?.backgroundColor = NSColor.controlBackgroundColor.cgColor
+        effectiveAppearance.performAsCurrentDrawingAppearance {
+            layer?.borderColor = (isRecording ? NSColor.controlAccentColor : NSColor.separatorColor).cgColor
+            layer?.backgroundColor = NSColor.controlBackgroundColor.cgColor
+        }
+    }
+
+    override func viewDidChangeEffectiveAppearance() {
+        super.viewDidChangeEffectiveAppearance()
+        refreshChrome()
     }
 
     private static func carbonModifiers(from flags: NSEvent.ModifierFlags) -> UInt32 {

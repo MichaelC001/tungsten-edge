@@ -15,7 +15,8 @@ struct DrawerCapsuleButton: View {
     @EnvironmentObject var settingsStore: AppSettingsStore
     /// 拖卡进抽屉的投放反馈：手指压在投放区时胶囊放大 + 高亮描边。
     @EnvironmentObject var dragController: DragController
-    private let theme = DockThemeTokens.standard
+    @Environment(\.colorScheme) private var colorScheme
+    private var theme: DockThemeTokens { .resolved(for: colorScheme) }
     /// 右键胶囊 → 弹钨极菜单。胶囊是设置的**主要后路入口**：它恒在、位置固定、尺寸等于面板高度，
     /// 而且是钨极自己的部件（不属于任何 app），不像任务条底板那样只剩几条缝可点。
     var onRequestTaskbarMenu: (NSEvent, NSView) -> Void = { _, _ in }
