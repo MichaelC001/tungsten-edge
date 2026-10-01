@@ -96,6 +96,14 @@ enum DockPanelMaterial: Equatable {
 // 图标下方的运行点（是否运行）、带标题卡片的 `labelActive` / `labelInactive`（是否在桌面）。
 // 理由与旧数值见 `Docs/27-product-decisions.md`。
 
+/// How the hover bubble's surface is built when Liquid Glass is available.
+enum DockTooltipSurface: Equatable {
+    /// Our near-white plate over clear glass, with our own rim and shadow (`tooltipPlate`).
+    case plateOverClearGlass
+    /// The system's regular glass and nothing else — no plate, rim or shadow of ours.
+    case regularGlassAlone
+}
+
 /// 与外观无关的形状常量。原先 `cornerRadius: 16` 在 `DockStripView` 的 private `Style` 里，
 /// 导致 `DrawerView` / `FolderGridPopupView` / `ShelfGridPopupView` 各自硬写一遍 16。
 enum DockShape {
@@ -319,6 +327,8 @@ struct DockThemeTokens: Equatable {
     let tooltipRim: DockTint
     let tooltipText: DockTint
     let tooltipShadow: DockShadow
+    /// Liquid Glass path only; the frosted path always draws the plate, rim and shadow above.
+    let tooltipGlassSurface: DockTooltipSurface
 
     /// 这一套值到底画不画厚度层。**深色必须是 `false`**——不是"画一层全透明的"，而是
     /// 整层根本不进视图树。`.blur(radius: 0)` 在 SwiftUI 里仍可能触发离屏渲染，
@@ -409,7 +419,10 @@ extension DockThemeTokens {
         // 起始值，待实测标定（见字段注释里的三个目标点）。
         tooltipRim: .white(0.45),
         tooltipText: .black(0.85),
-        tooltipShadow: DockShadow(tint: .black(0.14), radius: 5, y: 2)
+        tooltipShadow: DockShadow(tint: .black(0.14), radius: 5, y: 2),
+        // Regular glass alone was measured and rejected here: it follows the backdrop down to 45
+        // on black, where the native light bubble stays 173 (`hover-bubble.md`).
+        tooltipGlassSurface: .plateOverClearGlass
     )
 
     /// The dark column: white marks on the system Dock glass in its dark appearance.
@@ -480,13 +493,17 @@ extension DockThemeTokens {
             stackPopupHairline: light.stackPopupHairline,
             stackPopupShadow: light.stackPopupShadow,
 
-            // PLACEHOLDER — not measured against the native dark bubble yet (needs the same bubble
-            // read on two backdrops, then a third to verify). Do not sign this off as native.
-            tooltipPlate: DockRGB(0.16, 0.16, 0.17),
-            tooltipPlateOpacity: 0.70,
-            tooltipRim: .white(0.2),
-            tooltipText: .white(0.92),
-            tooltipShadow: DockShadow(tint: .black(0.32), radius: 5, y: 2)
+            // The native dark bubble *is* the system's regular glass in its dark appearance: fill
+            // 64 over a 35 backdrop and 172 over 219, and the same edge profile and shadow, row for
+            // row. So the glass path draws that material and nothing of ours on top.
+            // The plate below is the frosted path's stand-in, solved from those two readings
+            // (grey 105 at 0.41); it matches them but not a coloured backdrop, which it greys out.
+            tooltipPlate: DockRGB(105.0 / 255.0, 105.0 / 255.0, 105.0 / 255.0),
+            tooltipPlateOpacity: 0.41,
+            tooltipRim: .white(0.12),
+            tooltipText: .white(0.96),
+            tooltipShadow: DockShadow(tint: .black(0.25), radius: 5, y: 2),
+            tooltipGlassSurface: .regularGlassAlone
         )
     }
 }

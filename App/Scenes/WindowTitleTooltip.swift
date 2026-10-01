@@ -666,8 +666,11 @@ struct WindowTitleTooltipView: View {
             .frame(height: style.height)
             .padding(.bottom, style.tailHeight)
             .background(plate(shape: shape))
-            .overlay(shape.strokeBorder(theme.tooltipRim.color, lineWidth: 0.5))
-            .dockShadow(theme.tooltipShadow)
+            // The system glass brings its own edge light and shadow; ours go only with our plate.
+            .overlay {
+                if drawsOwnChrome { shape.strokeBorder(theme.tooltipRim.color, lineWidth: 0.5) }
+            }
+            .dockShadow(theme.tooltipShadow, visible: drawsOwnChrome)
             .padding(PanelGeometry.windowTitleTooltipShadowPadding)
     }
 
@@ -701,13 +704,26 @@ struct WindowTitleTooltipView: View {
     /// 原生的行为是「近白半透板 + 背后被糊过」，所以板的代数一个字不改（`0.965 @ 0.70`，
     /// 三点实测标定过、也被 `DockThemeTests` 锁着），玻璃只负责**把透过来的那 30% 糊掉**。
     /// 两条路径因此代数完全相同，唯一区别是那 30% 清不清楚——回退路径不会跑偏。
+    /// False only when the surface is the system's regular glass alone (`DockTooltipSurface`).
+    private var drawsOwnChrome: Bool {
+        guard #available(macOS 26.0, *), usesLiquidGlass else { return true }
+        return theme.tooltipGlassSurface == .plateOverClearGlass
+    }
+
     @ViewBuilder
     private func plate(shape: WindowTitleTooltipShape) -> some View {
         // 板：两条路径共用，**不因玻璃而改**。
         // 这里底下不能垫 `.ultraThinMaterial`：实测它只透约 54% 背景、不加白，
         // 白底上把气泡压到 174（原生 249），降不透明度也救不回来（要板色 384）。
         let plate = shape.fill(theme.tooltipPlate.color.opacity(theme.tooltipPlateOpacity))
-        if #available(macOS 26.0, *), usesLiquidGlass {
+        if #available(macOS 26.0, *), usesLiquidGlass, theme.tooltipGlassSurface == .regularGlassAlone {
+            // Dark: the native bubble is this material, measured (`DockThemeTokens.dark`).
+            shape
+                .fill(Color.clear)
+                .glassEffect(.regular.interactive(false), in: shape)
+                .materialActiveAppearance(.active)
+                .environment(\.appearsActive, true)
+        } else if #available(macOS 26.0, *), usesLiquidGlass {
             plate.background {
                 shape
                     .fill(Color.clear)

@@ -362,6 +362,22 @@ final class DockThemeTests: XCTestCase {
         }
     }
 
+    /// The dark bubble is the system's regular glass on the glass path (the native one reads the
+    /// same, row for row); the plate is only the frosted path's stand-in, solved from the native
+    /// bubble on two backdrops: 64 over 35 and 172 over 219.
+    func testDarkTooltipIsSystemGlassWithAPlateFittedForTheFrostedPath() {
+        XCTAssertEqual(dark.tooltipGlassSurface, .regularGlassAlone)
+        XCTAssertEqual(theme.tooltipGlassSurface, .plateOverClearGlass,
+                       "light: regular glass alone falls to 45 on black, the native bubble stays 173")
+        func composite(over background: Double) -> Double {
+            dark.tooltipPlateOpacity * dark.tooltipPlate.luminance * 255
+                + (1 - dark.tooltipPlateOpacity) * background
+        }
+        XCTAssertEqual(composite(over: 35), 64, accuracy: 4)
+        XCTAssertEqual(composite(over: 219), 172, accuracy: 4)
+        XCTAssertEqual(dark.tooltipRim.base, .white, "a dark rim is no rim")
+    }
+
     /// No unaccepted effect rides in with the dark column: zero means the layers never enter the tree.
     func testDarkColumnCarriesNoEffectCandidates() {
         XCTAssertFalse(dark.drawsPanelThickness)
