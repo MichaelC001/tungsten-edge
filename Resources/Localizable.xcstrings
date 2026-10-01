@@ -4871,7 +4871,7 @@
         "es-419": {
           "stringUnit": {
             "state": "translated",
-            "value": "No se pudo iniciar una nueva instancia de Tungsten Edge: %@\n\nPuedes hacer clic en Reintentar, o cerrar la app y abrirla manualmente desde la carpeta Aplicaciones."
+            "value": "No se pudo iniciar una nueva instancia de Tungsten Edge: %@\n\nPuedes hacer clic en Reintentar, o salir de la app y abrirla manualmente desde la carpeta Aplicaciones."
           }
         },
         "pt-BR": {
@@ -7550,7 +7550,7 @@
         "es-419": {
           "stringUnit": {
             "state": "translated",
-            "value": "Si el interruptor ya está activado y no pasa nada, puede que un registro de permiso que dejó una versión anterior ya no coincida con esta copia de Tungsten Edge. Puedes restablecerlo:\n\n1. Primero cierra Tungsten Edge: mientras se está ejecutando, el botón menos de la lista aparece atenuado y no se puede eliminar la entrada.\n2. En Privacidad y seguridad > Accesibilidad, selecciona Tungsten Edge en la lista y elimínalo con el botón menos. Puede haber más de una entrada; elimínalas todas.\n3. Vuelve a abrir Tungsten Edge desde la carpeta Aplicaciones, agrégalo y activa el interruptor cuando se te solicite."
+            "value": "Si el interruptor ya está activado y no pasa nada, puede que un registro de permiso que dejó una versión anterior ya no coincida con esta copia de Tungsten Edge. Puedes restablecerlo:\n\n1. Primero sal de Tungsten Edge: mientras se está ejecutando, el botón menos de la lista aparece atenuado y no se puede eliminar la entrada.\n2. En Privacidad y seguridad > Accesibilidad, selecciona Tungsten Edge en la lista y elimínalo con el botón menos. Puede haber más de una entrada; elimínalas todas.\n3. Vuelve a abrir Tungsten Edge desde la carpeta Aplicaciones, agrégalo y activa el interruptor cuando se te solicite."
           }
         },
         "pt-BR": {
@@ -8722,7 +8722,7 @@
         "ko": {
           "stringUnit": {
             "state": "translated",
-            "value": "라이선스는 버전 1.0부터 시작됩니다. 그때까지 Tungsten Edge는 완전히 무료이며, 이메일을 확인한 창립 멤버에게는 영구 무료 라이선스 키가 제공됩니다."
+            "value": "라이선스는 버전 1.0부터 시작됩니다. 그때까지 Tungsten Edge는 완전히 무료이며, 이메일 주소 확인을 완료한 창립 멤버에게는 영구 무료 라이선스 키가 제공됩니다."
           }
         }
       }
@@ -12127,25 +12127,25 @@
         "es": {
           "stringUnit": {
             "state": "translated",
-            "value": "Pulsa el nuevo atajo…"
+            "value": "Pulsa un atajo…"
           }
         },
         "es-419": {
           "stringUnit": {
             "state": "translated",
-            "value": "Presiona el nuevo atajo…"
+            "value": "Presiona un atajo…"
           }
         },
         "pt-BR": {
           "stringUnit": {
             "state": "translated",
-            "value": "Pressione o novo atalho…"
+            "value": "Novo atalho…"
           }
         },
         "pt-PT": {
           "stringUnit": {
             "state": "translated",
-            "value": "Prima o novo atalho…"
+            "value": "Prima um atalho…"
           }
         },
         "it": {
@@ -12157,7 +12157,7 @@
         "ko": {
           "stringUnit": {
             "state": "translated",
-            "value": "새로운 단축키 누르기…"
+            "value": "새 단축키 누르기…"
           }
         }
       }
@@ -12204,37 +12204,37 @@
         "es": {
           "stringUnit": {
             "state": "translated",
-            "value": "Pulsa ⌥⌘D cuando quieras: es el atajo propio de macOS para mostrar y ocultar el Dock. También puedes cambiarlo más adelante desde el icono de Tungsten Edge en la barra de menús."
+            "value": "Pulsa ⌥⌘D cuando quieras: es el atajo propio de macOS para mostrar y ocultar el Dock. También puedes cambiar más adelante cómo se muestra el Dock desde el icono de Tungsten Edge en la barra de menús."
           }
         },
         "es-419": {
           "stringUnit": {
             "state": "translated",
-            "value": "Presiona ⌥⌘D cuando quieras: es el atajo propio de macOS para mostrar y ocultar el Dock. También puedes cambiarlo más adelante desde el ícono de Tungsten Edge en la barra de menús."
+            "value": "Presiona ⌥⌘D cuando quieras: es el atajo propio de macOS para mostrar y ocultar el Dock. También puedes cambiar más adelante cómo se muestra el Dock desde el ícono de Tungsten Edge en la barra de menús."
           }
         },
         "pt-BR": {
           "stringUnit": {
             "state": "translated",
-            "value": "Pressione ⌥⌘D a qualquer momento — é o atalho do próprio macOS para mostrar e ocultar o Dock. Você também pode alterar isso depois no item do Tungsten Edge na barra de menus."
+            "value": "Pressione ⌥⌘D a qualquer momento — é o atalho do próprio macOS para mostrar e ocultar o Dock. Você também pode alterar depois como o Dock é mostrado, no item do Tungsten Edge na barra de menus."
           }
         },
         "pt-PT": {
           "stringUnit": {
             "state": "translated",
-            "value": "Prima ⌥⌘D a qualquer momento – é o atalho do próprio macOS para mostrar e ocultar a Dock. Também pode alterar isto mais tarde no item do Tungsten Edge na barra de menus."
+            "value": "Prima ⌥⌘D a qualquer momento – é o atalho do próprio macOS para mostrar e ocultar a Dock. Também pode alterar mais tarde a forma como a Dock é mostrada, no item do Tungsten Edge na barra de menus."
           }
         },
         "it": {
           "stringUnit": {
             "state": "translated",
-            "value": "Premi ⌥⌘D in qualsiasi momento: è la scorciatoia di macOS per mostrare e nascondere il Dock. Puoi cambiare questa impostazione anche in seguito dall’elemento Tungsten Edge nella barra dei menu."
+            "value": "Premi ⌥⌘D in qualsiasi momento: è la scorciatoia di macOS per mostrare e nascondere il Dock. Puoi cambiare anche in seguito come viene mostrato il Dock dall’elemento Tungsten Edge nella barra dei menu."
           }
         },
         "ko": {
           "stringUnit": {
             "state": "translated",
-            "value": "언제든지 ⌥⌘D를 누르십시오. macOS에서 Dock을 보이거나 가리는 기본 단축키입니다. 나중에 Tungsten Edge 메뉴 막대 항목에서도 변경할 수 있습니다."
+            "value": "언제든지 ⌥⌘D를 누르십시오. macOS에서 Dock을 보이거나 가리는 기본 단축키입니다. Dock 표시 방식은 나중에 Tungsten Edge 메뉴 막대 항목에서도 변경할 수 있습니다."
           }
         }
       }
@@ -13284,19 +13284,19 @@
         "pt-BR": {
           "stringUnit": {
             "state": "translated",
-            "value": "Reiniciar Tungsten Edge"
+            "value": "Reabrir Tungsten Edge"
           }
         },
         "pt-PT": {
           "stringUnit": {
             "state": "translated",
-            "value": "Reiniciar Tungsten Edge"
+            "value": "Reabrir Tungsten Edge"
           }
         },
         "it": {
           "stringUnit": {
             "state": "translated",
-            "value": "Riavvia Tungsten Edge"
+            "value": "Riapri Tungsten Edge"
           }
         },
         "ko": {
