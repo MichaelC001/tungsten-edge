@@ -82,6 +82,190 @@ final class WindowLiftAvoidanceTests: XCTestCase {
         XCTAssertNil(geometry.adjustedFrame(for: otherScreenWindow))
     }
 
+    // MARK: - Bottom-docked tiles
+
+    /// macOS 27.0 desktop-tiling frames measured on a 1920×1080 display with a 30pt menu bar
+    /// (`Docs/05` §「分屏」有两种), converted to AppKit coordinates.
+    private let tileGeometry = WindowLiftAvoidance.Geometry(
+        screenFrame: CGRect(x: 0, y: 0, width: 1920, height: 1080),
+        visibleFrame: CGRect(x: 0, y: 0, width: 1920, height: 1050),
+        taskbarTop: 72
+    )
+    private let leftHalf = CGRect(x: 0, y: 0, width: 960, height: 1050)
+    private let rightHalf = CGRect(x: 959, y: 0, width: 960, height: 1050)
+    private let leftHalfWithMargins = CGRect(x: 8, y: 8, width: 948, height: 1034)
+
+    func testSystemTilesThatReachTheBottomAreBottomDockedTiles() {
+        XCTAssertTrue(tileGeometry.isBottomDockedTile(leftHalf))
+        XCTAssertTrue(tileGeometry.isBottomDockedTile(rightHalf))
+        XCTAssertTrue(tileGeometry.isBottomDockedTile(leftHalfWithMargins))
+        XCTAssertTrue(tileGeometry.isBottomDockedTile(CGRect(x: 963, y: 8, width: 948, height: 1034)))
+        // Bottom-right quarter, without and with margins.
+        XCTAssertTrue(tileGeometry.isBottomDockedTile(CGRect(x: 959, y: 0, width: 960, height: 525)))
+        XCTAssertTrue(tileGeometry.isBottomDockedTile(CGRect(x: 963, y: 8, width: 948, height: 514)))
+        // Bottom half, and a centred full-height column (top + bottom flush, neither side).
+        XCTAssertTrue(tileGeometry.isBottomDockedTile(CGRect(x: 0, y: 0, width: 1920, height: 525)))
+        XCTAssertTrue(tileGeometry.isBottomDockedTile(CGRect(x: 480, y: 0, width: 960, height: 1050)))
+    }
+
+    func testWindowsThatAreNotBottomDockedTiles() {
+        // Top-right quarter: the bottom edge is nowhere near the taskbar.
+        XCTAssertFalse(tileGeometry.isBottomDockedTile(CGRect(x: 959, y: 525, width: 960, height: 525)))
+        // Free-floating window.
+        XCTAssertFalse(tileGeometry.isBottomDockedTile(CGRect(x: 300, y: 200, width: 900, height: 600)))
+        // Bottom flush only — no second flush edge.
+        XCTAssertFalse(tileGeometry.isBottomDockedTile(CGRect(x: 300, y: 0, width: 900, height: 600)))
+        // Small window resting in the bottom-left corner: under the height floor, then the width floor.
+        XCTAssertFalse(tileGeometry.isBottomDockedTile(CGRect(x: 0, y: 0, width: 600, height: 300)))
+        XCTAssertFalse(tileGeometry.isBottomDockedTile(CGRect(x: 0, y: 0, width: 400, height: 600)))
+        // Hanging off the visible frame.
+        XCTAssertFalse(tileGeometry.isBottomDockedTile(CGRect(x: -200, y: 0, width: 960, height: 1050)))
+        // Mostly on another screen.
+        XCTAssertFalse(tileGeometry.isBottomDockedTile(CGRect(x: 1900, y: 0, width: 960, height: 1050)))
+    }
+
+    func testBottomDockedTileUsesTheTwelvePointDetectionTolerance() {
+        XCTAssertTrue(tileGeometry.isBottomDockedTile(CGRect(x: 12, y: 12, width: 948, height: 1026)))
+        XCTAssertFalse(tileGeometry.isBottomDockedTile(CGRect(x: 12, y: 12.1, width: 948, height: 1026)))
+        // Bottom flush, but both the top and the left edge sit just outside the tolerance.
+        XCTAssertFalse(tileGeometry.isBottomDockedTile(CGRect(x: 12.1, y: 0, width: 948, height: 1037.9)))
+    }
+
+    func testLiftTargetFrameRaisesOnlyTheBottomOfATile() throws {
+        let target = try XCTUnwrap(tileGeometry.liftTargetFrame(for: leftHalf, includesTiles: true))
+        XCTAssertEqual(target, CGRect(x: 0, y: 74, width: 960, height: 976))
+
+        let marginTarget = try XCTUnwrap(
+            tileGeometry.liftTargetFrame(for: leftHalfWithMargins, includesTiles: true)
+        )
+        XCTAssertEqual(marginTarget, CGRect(x: 8, y: 74, width: 948, height: 968))
+    }
+
+    func testTilesAreNotLiftedWhenTheKillSwitchIsOff() throws {
+        XCTAssertFalse(tileGeometry.isLiftEligible(leftHalf, includesTiles: false))
+        XCTAssertNil(tileGeometry.liftTargetFrame(for: leftHalf, includesTiles: false))
+
+        let full = tileGeometry.visibleFrame
+        XCTAssertTrue(tileGeometry.isLiftEligible(full, includesTiles: false))
+        XCTAssertEqual(
+            tileGeometry.liftTargetFrame(for: full, includesTiles: false),
+            tileGeometry.adjustedFrame(for: full)
+        )
+        XCTAssertEqual(
+            tileGeometry.liftTargetFrame(for: full, includesTiles: true),
+            tileGeometry.adjustedFrame(for: full)
+        )
+    }
+
+    func testExternalFrameIsUserEraOnlyAfterTheReassertWindow() {
+        let lifted = WindowLiftAvoidance.SessionState.lifted(WindowLiftAvoidance.LiftedSession(
+            generation: 1,
+            nativeFrame: leftHalf,
+            adjustedFrame: CGRect(x: 0, y: 74, width: 960, height: 976),
+            reliftCount: 0,
+            settledAt: 100,
+            standoffRounds: 0
+        ))
+        XCTAssertFalse(WindowLiftAvoidance.externalFrameIsUserEra(state: lifted, at: 100.2))
+        XCTAssertFalse(WindowLiftAvoidance.externalFrameIsUserEra(
+            state: lifted,
+            at: 100 + WindowLiftAvoidance.appReassertWindow
+        ))
+        XCTAssertTrue(WindowLiftAvoidance.externalFrameIsUserEra(
+            state: lifted,
+            at: 100 + WindowLiftAvoidance.appReassertWindow + 0.01
+        ))
+
+        let abandoned = WindowLiftAvoidance.SessionState.abandoned(WindowLiftAvoidance.AbandonedSession(
+            generation: 1,
+            nativeFrame: leftHalf,
+            adjustedFrame: CGRect(x: 0, y: 74, width: 960, height: 976),
+            reliftCount: 1,
+            reason: .reliftLimitReached,
+            abandonedAt: 100,
+            standoffRounds: 2
+        ))
+        XCTAssertFalse(WindowLiftAvoidance.externalFrameIsUserEra(state: abandoned, at: 100.5))
+        XCTAssertTrue(WindowLiftAvoidance.externalFrameIsUserEra(state: abandoned, at: 102))
+
+        let writing = WindowLiftAvoidance.SessionState.writing(WindowLiftAvoidance.WriteAttempt(
+            generation: 1,
+            latestObservationGeneration: 1,
+            nativeFrame: leftHalf,
+            targetFrame: CGRect(x: 0, y: 74, width: 960, height: 976),
+            reliftCount: 0,
+            standoffRounds: 0
+        ))
+        XCTAssertFalse(WindowLiftAvoidance.externalFrameIsUserEra(state: writing, at: 500))
+        XCTAssertFalse(WindowLiftAvoidance.externalFrameIsUserEra(state: .idle, at: 500))
+    }
+
+    func testSuppressionReleasesOnANewEligibleFrameOnlyInTheUserEra() {
+        let full = tileGeometry.visibleFrame
+        func releases(_ frame: CGRect, native: CGRect, userEra: Bool = true, tiles: Bool = true) -> Bool {
+            tileGeometry.suppressionReleasesOnNewFrame(
+                frame,
+                suppressedNative: native,
+                userEra: userEra,
+                includesTiles: tiles
+            )
+        }
+
+        // Re-tiled somewhere else, maximized ↔ tile, and the same slot after a margin toggle.
+        XCTAssertTrue(releases(rightHalf, native: leftHalf))
+        XCTAssertTrue(releases(full, native: leftHalf))
+        XCTAssertTrue(releases(leftHalf, native: full))
+        XCTAssertTrue(releases(leftHalfWithMargins, native: leftHalf))
+
+        // An app's or a window manager's reaction keeps the exact-native rule.
+        XCTAssertFalse(releases(rightHalf, native: leftHalf, userEra: false))
+        XCTAssertFalse(releases(leftHalfWithMargins, native: leftHalf, userEra: false))
+
+        // Maximized → maximized stays on the old path even when the two frames sit on opposite
+        // sides of the detection band.
+        XCTAssertFalse(releases(
+            CGRect(x: -12, y: 0, width: 1944, height: 1050),
+            native: CGRect(x: 12, y: 0, width: 1896, height: 1050)
+        ))
+
+        // Not eligible, or the kill switch is off.
+        XCTAssertFalse(releases(CGRect(x: 300, y: 200, width: 900, height: 600), native: leftHalf))
+        XCTAssertFalse(releases(rightHalf, native: leftHalf, tiles: false))
+    }
+
+    func testLiftCandidateGateAddsTilesAndTrackedWindowsToTheWidthGate() {
+        let context = WindowLiftAvoidanceContext(
+            geometry: tileGeometry,
+            screenCGFrame: CGRect(x: 0, y: 0, width: 1920, height: 1080),
+            visibleCGFrame: CGRect(x: 0, y: 30, width: 1920, height: 1050),
+            primaryScreenHeight: 1080
+        )
+        func isCandidate(_ quartzFrame: CGRect, tracked: Bool = false, tiles: Bool = true) -> Bool {
+            WindowLiftAvoidance.isLiftCandidate(
+                quartzFrame: quartzFrame,
+                isTracked: tracked,
+                context: context,
+                includesTiles: tiles
+            )
+        }
+        let wide = CGRect(x: 100, y: 100, width: 1400, height: 700)
+        let leftHalfQuartz = CGRect(x: 0, y: 30, width: 960, height: 1050)
+        let liftedLeftHalfQuartz = CGRect(x: 0, y: 30, width: 960, height: 976)
+        let floating = CGRect(x: 300, y: 200, width: 900, height: 600)
+
+        XCTAssertTrue(isCandidate(wide))
+        XCTAssertTrue(isCandidate(leftHalfQuartz))
+        XCTAssertFalse(isCandidate(floating))
+        // A lifted tile is neither wide nor bottom-docked; only its session keeps it a candidate.
+        XCTAssertFalse(isCandidate(liftedLeftHalfQuartz))
+        XCTAssertTrue(isCandidate(liftedLeftHalfQuartz, tracked: true))
+
+        // Kill switch off = the 0.7 width gate alone.
+        XCTAssertTrue(isCandidate(wide, tiles: false))
+        XCTAssertFalse(isCandidate(leftHalfQuartz, tiles: false))
+        XCTAssertFalse(isCandidate(liftedLeftHalfQuartz, tracked: true, tiles: false))
+    }
+
     // MARK: - Retry and animation
 
     func testPollScheduleHasOnlyImmediateHundredAndTwoHundredFiftyMillisecondAttempts() {

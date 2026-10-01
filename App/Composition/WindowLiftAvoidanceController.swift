@@ -39,9 +39,11 @@ enum WindowLiftCGWindowProbe {
     }
 
     static func capture(
-        on screenCGFrames: [CGRect],
+        on contexts: [WindowLiftAvoidanceContext],
         excludingPID selfPID: pid_t,
-        includeLiveWindowKeys: Bool
+        includeLiveWindowKeys: Bool,
+        includesTiles: Bool,
+        trackedKeys: Set<WindowLiftAvoidance.WindowKey>
     ) -> WindowLiftCGScanResult {
         let onScreenList = CGWindowListCopyWindowInfo(
             [.optionOnScreenOnly, .excludeDesktopElements],
@@ -66,10 +68,18 @@ enum WindowLiftCGWindowProbe {
             liveWindowKeys = nil
         }
 
-        // 一次 CG 全表，每块屏各跑一遍同一个过滤（0.7 宽度门与全屏探测共享，不放松）。
+        // One CG list, filtered once per screen. The lift scan has its own gate
+        // (`WindowLiftAvoidance.isLiftCandidate`); `frontmostLargeWindow` below stays the
+        // fullscreen probe's 0.7-only filter.
         var candidates: [Int: WindowLiftCGCandidate] = [:]
-        for (index, frame) in screenCGFrames.enumerated() {
-            if let candidate = frontmostLargeWindow(in: onScreenList, on: frame, excludingPID: selfPID) {
+        for (index, context) in contexts.enumerated() {
+            if let candidate = frontmostLiftCandidate(
+                in: onScreenList,
+                context: context,
+                excludingPID: selfPID,
+                includesTiles: includesTiles,
+                trackedKeys: trackedKeys
+            ) {
                 candidates[index] = candidate
             }
         }
@@ -136,6 +146,35 @@ enum WindowLiftCGWindowProbe {
         return nil
     }
 
+    private static func frontmostLiftCandidate(
+        in list: [[String: Any]],
+        context: WindowLiftAvoidanceContext,
+        excludingPID selfPID: pid_t,
+        includesTiles: Bool,
+        trackedKeys: Set<WindowLiftAvoidance.WindowKey>
+    ) -> WindowLiftCGCandidate? {
+        for info in list {
+            guard number(in: info, key: kCGWindowLayer)?.intValue == 0,
+                  let key = windowKey(in: info),
+                  key.pid != selfPID,
+                  let bounds = windowBounds(in: info),
+                  bounds.intersects(context.screenCGFrame),
+                  bounds.width >= 80,
+                  bounds.height >= 40,
+                  (number(in: info, key: kCGWindowAlpha)?.doubleValue ?? 1) > 0,
+                  WindowLiftAvoidance.isLiftCandidate(
+                      quartzFrame: bounds,
+                      isTracked: trackedKeys.contains(key),
+                      context: context,
+                      includesTiles: includesTiles
+                  ) else {
+                continue
+            }
+            return WindowLiftCGCandidate(key: key, quartzFrame: bounds)
+        }
+        return nil
+    }
+
     private static func windowKey(in info: [String: Any]) -> WindowLiftAvoidance.WindowKey? {
         guard let pid = number(in: info, key: kCGWindowOwnerPID)?.int32Value,
               let windowID = number(in: info, key: kCGWindowNumber)?.uint32Value,
@@ -193,6 +232,14 @@ final class WindowLiftAvoidanceController {
         let progress: Double
     }
 
+    /// What `clearManagedSession` leaves behind for the window it clears.
+    private enum SuppressionRequest {
+        case none
+        /// Hold the window until its native frame reappears; `userEra` additionally lets a new
+        /// eligible frame release it (`Geometry.suppressionReleasesOnNewFrame`).
+        case untilNative(userEra: Bool)
+    }
+
     private enum OperationOutcome {
         case completed(CGRect, reliftCount: Int, anomalies: [WriteAnomaly])
         case externalFrame(CGRect, anomalies: [WriteAnomaly])
@@ -233,6 +280,10 @@ final class WindowLiftAvoidanceController {
     private var states: [WindowLiftAvoidance.WindowKey: WindowLiftAvoidance.SessionState] = [:]
     private var managedFrames: [WindowLiftAvoidance.WindowKey: ManagedFrames] = [:]
     private var suppressedFrames: [WindowLiftAvoidance.WindowKey: ManagedFrames] = [:]
+    /// Suppressed keys whose session was cleared by a user-era external frame
+    /// (`WindowLiftAvoidance.externalFrameIsUserEra`). Always a subset of `suppressedFrames.keys`:
+    /// written only through `setSuppression` / `clearSuppression` / `clearAllSuppressions`.
+    private var userEraSuppressedKeys: Set<WindowLiftAvoidance.WindowKey> = []
     private var observationWatermarks: [WindowLiftAvoidance.WindowKey: UInt64] = [:]
     private var validationGenerations: [WindowLiftAvoidance.WindowKey: UInt64] = [:]
     private var lastTraceClassifications: [
@@ -248,6 +299,8 @@ final class WindowLiftAvoidanceController {
     private var restoreGeneration: UInt64 = 0
     private var scanInFlight = false
     private var usesAnimatedLift = false
+    /// `DOCK_WINDOW_LIFT_TILES`: bottom-docked tiles lift too. Off = maximized windows only.
+    private var includesTiles = false
     private var traceEnabled = false
     private var periodicPollCount: UInt64 = 0
     private var eventPollCount: UInt64 = 0
@@ -364,7 +417,7 @@ final class WindowLiftAvoidanceController {
     }
 
     /// 解冻收敛：writer 已经被取消的 `.writing` 会话不可能自己走完，就地清掉。
-    /// 用 `suppressUntilNative` 清，免得下一轮把「已经被抬起的位置」当成原生位置再抬一次。
+    /// 用 `.untilNative` 清，免得下一轮把「已经被抬起的位置」当成原生位置再抬一次。
     private func convergeFrozenSessions() {
         let stalled = states.compactMap { key, state -> WindowLiftAvoidance.WindowKey? in
             if case .writing = state { return key }
@@ -375,7 +428,7 @@ final class WindowLiftAvoidanceController {
                 for: key,
                 cancelWriter: false,
                 reason: "permissionUnfreeze",
-                suppressUntilNative: true
+                suppression: .untilNative(userEra: false)
             )
         }
     }
@@ -429,6 +482,7 @@ final class WindowLiftAvoidanceController {
 
         isEnabled = true
         usesAnimatedLift = DebugSwitch.windowLiftAnim.isEnabled(in: environment)
+        includesTiles = DebugSwitch.windowLiftTiles.isEnabled(in: environment)
         traceEnabled = DebugSwitch.windowLiftTrace.isEnabled(in: environment)
         periodicPollCount = 0
         eventPollCount = 0
@@ -447,7 +501,7 @@ final class WindowLiftAvoidanceController {
         updatePollTimerLifecycle()
         poll()
         if traceEnabled {
-            logger.info("window lift trace started animated=\(self.usesAnimatedLift, privacy: .public)")
+            logger.info("window lift trace started animated=\(self.usesAnimatedLift, privacy: .public) tiles=\(self.includesTiles, privacy: .public)")
         }
     }
 
@@ -532,12 +586,15 @@ final class WindowLiftAvoidanceController {
         let observationGeneration = nextGeneration
         let tracked = !states.isEmpty || !suppressedFrames.isEmpty
         let selfPID = pid_t(ProcessInfo.processInfo.processIdentifier)
-        let screenCGFrames = contexts.map(\.screenCGFrame)
+        let includesTiles = includesTiles
+        let trackedKeys = Set(states.keys)
         scanTask = Task.detached { [weak self] in
             let result = WindowLiftCGWindowProbe.capture(
-                on: screenCGFrames,
+                on: contexts,
                 excludingPID: selfPID,
-                includeLiveWindowKeys: tracked
+                includeLiveWindowKeys: tracked,
+                includesTiles: includesTiles,
+                trackedKeys: trackedKeys
             )
             guard !Task.isCancelled else { return }
             await MainActor.run { [weak self] in
@@ -814,7 +871,7 @@ final class WindowLiftAvoidanceController {
         guard canMutateSessions() else { return }
         guard contexts != lastContexts else { return }
         observationWatermarks.removeAll()
-        suppressedFrames.removeAll()
+        clearAllSuppressions()
         scanGeneration &+= 1
         scanTask?.cancel()
         scanTask = nil
@@ -893,8 +950,16 @@ final class WindowLiftAvoidanceController {
                 targetFrame: suppressed.targetAppKit
             )
             traceClassification(classification, for: candidate.key)
-            guard classification == .native else { return false }
-            suppressedFrames.removeValue(forKey: candidate.key)
+            guard classification == .native
+                || context.geometry.suppressionReleasesOnNewFrame(
+                    appKitFrame,
+                    suppressedNative: suppressed.nativeAppKit,
+                    userEra: userEraSuppressedKeys.contains(candidate.key),
+                    includesTiles: includesTiles
+                ) else {
+                return false
+            }
+            clearSuppression(for: candidate.key)
             updatePollTimerLifecycle()
             if traceEnabled {
                 logger.info(
@@ -902,8 +967,10 @@ final class WindowLiftAvoidanceController {
                 )
             }
         }
-        guard context.geometry.fillsVisibleFrame(appKitFrame),
-              let targetFrame = context.geometry.adjustedFrame(for: appKitFrame),
+        guard let targetFrame = context.geometry.liftTargetFrame(
+                  for: appKitFrame,
+                  includesTiles: includesTiles
+              ),
               let app = NSRunningApplication(processIdentifier: candidate.key.pid),
               app.isActive,
               !app.isTerminated,
@@ -968,11 +1035,16 @@ final class WindowLiftAvoidanceController {
     ) {
         sessionContexts[candidate.key] = context
         if transition.action == .clear {
+            // Read the era off the state the external frame is about to clear.
+            let userEra = WindowLiftAvoidance.externalFrameIsUserEra(
+                state: states[candidate.key] ?? .idle,
+                at: ProcessInfo.processInfo.systemUptime
+            )
             clearManagedSession(
                 for: candidate.key,
                 cancelWriter: true,
                 reason: "reducerClear",
-                suppressUntilNative: true
+                suppression: .untilNative(userEra: userEra)
             )
             return
         }
@@ -1962,11 +2034,12 @@ final class WindowLiftAvoidanceController {
                     )
                 }
             }
+            // An external frame during our own write is never the user era.
             clearManagedSession(
                 for: key,
                 cancelWriter: false,
                 reason: "externalFrame",
-                suppressUntilNative: true
+                suppression: .untilNative(userEra: false)
             )
 
         case let .reliftLimitReached(_, reliftCount, anomalies):
@@ -2099,7 +2172,7 @@ final class WindowLiftAvoidanceController {
         states.removeAll()
         sessionContexts.removeAll()
         managedFrames.removeAll()
-        suppressedFrames.removeAll()
+        clearAllSuppressions()
         observationWatermarks.removeAll()
         validationGenerations.removeAll()
         lastTraceClassifications.removeAll()
@@ -2231,7 +2304,7 @@ final class WindowLiftAvoidanceController {
         for key: WindowLiftAvoidance.WindowKey,
         cancelWriter: Bool,
         reason: String,
-        suppressUntilNative: Bool = false
+        suppression: SuppressionRequest = .none
     ) {
         guard canMutateSessions() else {
             // 冻结期间只丢任务引用，会话数据一概不动。
@@ -2254,10 +2327,10 @@ final class WindowLiftAvoidanceController {
         validationGenerations.removeValue(forKey: key)
         let previous = states.removeValue(forKey: key)
         let frames = managedFrames.removeValue(forKey: key)
-        if suppressUntilNative, let frames {
-            suppressedFrames[key] = frames
+        if case let .untilNative(userEra) = suppression, let frames {
+            setSuppression(frames, userEra: userEra, for: key)
         } else {
-            suppressedFrames.removeValue(forKey: key)
+            clearSuppression(for: key)
         }
         lastTraceClassifications.removeValue(forKey: key)
         if traceEnabled, previous != nil {
@@ -2267,6 +2340,29 @@ final class WindowLiftAvoidanceController {
         }
         updateTrackedProbeLifecycle()
         updatePollTimerLifecycle()
+    }
+
+    private func setSuppression(
+        _ frames: ManagedFrames,
+        userEra: Bool,
+        for key: WindowLiftAvoidance.WindowKey
+    ) {
+        suppressedFrames[key] = frames
+        if userEra {
+            userEraSuppressedKeys.insert(key)
+        } else {
+            userEraSuppressedKeys.remove(key)
+        }
+    }
+
+    private func clearSuppression(for key: WindowLiftAvoidance.WindowKey) {
+        suppressedFrames.removeValue(forKey: key)
+        userEraSuppressedKeys.remove(key)
+    }
+
+    private func clearAllSuppressions() {
+        suppressedFrames.removeAll()
+        userEraSuppressedKeys.removeAll()
     }
 
     private func traceClassification(

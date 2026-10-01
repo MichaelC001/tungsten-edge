@@ -67,6 +67,8 @@ enum DebugSwitch: String, CaseIterable, Sendable {
     case windowLift = "DOCK_WINDOW_LIFT"
     /// 避让用动画写 frame
     case windowLiftAnim = "DOCK_WINDOW_LIFT_ANIM"
+    /// Window lift also covers bottom-docked tiles (halves / quarters); =0 lifts maximized windows only.
+    case windowLiftTiles = "DOCK_WINDOW_LIFT_TILES"
     /// 菜单打开时暂停悬停监视
     case menuHoverSuspend = "DOCK_MENU_HOVER_SUSPEND"
     /// 悬停监视精简模式
@@ -170,7 +172,7 @@ enum DebugSwitch: String, CaseIterable, Sendable {
              .handoffActivePrediction, .staleActiveGuard, .dragLanding, .liquidGlass, .liquidGlassDockRefraction,
              .liquidGlassDiagonalHighlight, .liquidGlassHighlightBoost, .stripBalancedInsets,
              .spaceIntent, .fullscreenIntent, .fullscreenSlsVerdict, .spaceMembershipRepair,
-             .overlaySpace, .scrollReverser, .windowLift, .windowLiftAnim,
+             .overlaySpace, .scrollReverser, .windowLift, .windowLiftAnim, .windowLiftTiles,
              .menuHoverSuspend, .hoverMonitorLean, .stripHoverPoll, .resizeCursor, .chipPressDown, .titleSettle,
              .finderReopenEvent:
             return .killSwitch

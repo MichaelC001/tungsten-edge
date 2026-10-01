@@ -37,6 +37,10 @@ enum WindowLiftAvoidance {
     /// 压住底边。不永久锁死整机：external 帧（窗口不再铺满 / 换窗 / 关窗）是万能出口，清会话
     /// 后下一次铺满从零重来。
     static let maximumStandoffRounds = 2
+    /// Size floor of a bottom-docked tile, as fractions of the visible frame. System halves and
+    /// quarters, and third / quarter columns from snapping tools, all clear it.
+    static let tileMinimumWidthFraction: CGFloat = 0.25
+    static let tileMinimumHeightFraction: CGFloat = 0.30
 
     enum PollCadence {
         static let idleInterval: TimeInterval = 1.0
@@ -116,6 +120,82 @@ enum WindowLiftAvoidance {
                 visible: visibleFrame,
                 tolerance: tolerance
             )
+        }
+
+        /// A window the system (or the user) parked against the bottom of the visible frame without
+        /// filling it: a left / right half, a bottom half or quarter, a full-height column. Its
+        /// bottom edge sits under the taskbar exactly like a maximized window's.
+        ///
+        /// Bottom edge flush, at least one more edge flush (top / left / right), nothing outside the
+        /// visible frame, and no smaller than `tileMinimumWidthFraction` × `tileMinimumHeightFraction`
+        /// of it — the floor keeps a small window resting in a corner from being squashed.
+        /// `detectionTolerance` already covers the 8pt "tiled windows have margins" inset.
+        func isBottomDockedTile(
+            _ frame: CGRect,
+            tolerance: CGFloat = WindowLiftAvoidance.detectionTolerance
+        ) -> Bool {
+            guard mostlyBelongsToScreen(frame),
+                  WindowLiftAvoidance.isValid(frame: visibleFrame),
+                  tolerance.isFinite,
+                  tolerance >= 0 else {
+                return false
+            }
+            let visible = visibleFrame
+            guard abs(frame.minY - visible.minY) <= tolerance,
+                  frame.minX >= visible.minX - tolerance,
+                  frame.maxX <= visible.maxX + tolerance,
+                  frame.maxY <= visible.maxY + tolerance,
+                  frame.width >= visible.width * WindowLiftAvoidance.tileMinimumWidthFraction - tolerance,
+                  frame.height >= visible.height * WindowLiftAvoidance.tileMinimumHeightFraction else {
+                return false
+            }
+            return abs(frame.maxY - visible.maxY) <= tolerance
+                || abs(frame.minX - visible.minX) <= tolerance
+                || abs(frame.maxX - visible.maxX) <= tolerance
+        }
+
+        /// What the scan may lift: a frame filling the visible frame, plus bottom-docked tiles when
+        /// `includesTiles` (`DOCK_WINDOW_LIFT_TILES`). No default on purpose — the controller's
+        /// kill switch must reach every call.
+        func isLiftEligible(_ frame: CGRect, includesTiles: Bool) -> Bool {
+            fillsVisibleFrame(frame) || (includesTiles && isBottomDockedTile(frame))
+        }
+
+        /// `adjustedFrame(for:)` widened to bottom-docked tiles: same target bottom, same fixed
+        /// top / left / width.
+        func liftTargetFrame(
+            for frame: CGRect,
+            includesTiles: Bool,
+            clearance: CGFloat = WindowLiftAvoidance.clearance
+        ) -> CGRect? {
+            guard isLiftEligible(frame, includesTiles: includesTiles),
+                  clearance.isFinite,
+                  clearance >= 0,
+                  taskbarTop.isFinite else {
+                return nil
+            }
+            return WindowLiftAvoidance.adjustedFrame(
+                for: frame,
+                targetBottom: max(frame.minY, visibleFrame.minY, taskbarTop + clearance)
+            )
+        }
+
+        /// A suppressed window shows a frame that is not its old native one: may it start a fresh
+        /// lift? A tile's native frame is not unique (left half → right half, a margin toggle), so
+        /// "wait for the exact native frame" alone would leave a re-tiled window under the taskbar
+        /// for good. Released only when the external frame that cleared the session was the user's
+        /// (`externalFrameIsUserEra`), the new frame is eligible, and it is not maximized → maximized
+        /// (that pair keeps the exact-native rule it always had).
+        func suppressionReleasesOnNewFrame(
+            _ frame: CGRect,
+            suppressedNative: CGRect,
+            userEra: Bool,
+            includesTiles: Bool
+        ) -> Bool {
+            guard includesTiles, userEra, isLiftEligible(frame, includesTiles: true) else {
+                return false
+            }
+            return !(fillsVisibleFrame(suppressedNative) && fillsVisibleFrame(frame))
         }
 
         /// 保持窗口顶、左、宽不变，只把底边收至系统保留区和钨极任务栏之上。
@@ -612,6 +692,40 @@ enum WindowLiftAvoidance {
             }
             return Transition(state: .idle, action: .clear)
         }
+    }
+
+    /// Whether the external frame that is about to clear `state` counts as the user's own action.
+    /// Same time-scale rule as the reducer: an app or a window manager answers our lift within
+    /// `appReassertWindow` of the settle; anything later is the user. A write still in flight never
+    /// qualifies.
+    static func externalFrameIsUserEra(state: SessionState, at: TimeInterval) -> Bool {
+        switch state {
+        case let .lifted(session):
+            return at - session.settledAt > appReassertWindow
+        case let .abandoned(session):
+            return at - session.abandonedAt > appReassertWindow
+        case .writing, .idle:
+            return false
+        }
+    }
+
+    /// The CG scan's per-window gate for lift candidates. `frontmostLargeWindow` (the fullscreen
+    /// probe) keeps its own 0.7-only filter; with `includesTiles == false` this is that same filter.
+    ///
+    /// A tracked window must stay a candidate: a lifted tile is no longer bottom-docked nor wide,
+    /// and without this the next scan would walk past it and lift whatever sits behind it.
+    static func isLiftCandidate(
+        quartzFrame: CGRect,
+        isTracked: Bool,
+        context: WindowLiftAvoidanceContext,
+        includesTiles: Bool
+    ) -> Bool {
+        if quartzFrame.width > context.screenCGFrame.width * 0.7 { return true }
+        guard includesTiles else { return false }
+        if isTracked { return true }
+        return context.geometry.isBottomDockedTile(
+            appKitFrame(fromQuartz: quartzFrame, primaryScreenHeight: context.primaryScreenHeight)
+        )
     }
 
     // MARK: - Animation
