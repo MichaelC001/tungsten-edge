@@ -137,9 +137,6 @@ enum DebugSwitch: String, CaseIterable, Sendable {
     case chipPillFill = "DOCK_CHIP_PILL_FILL"
     /// 实验：非活动标签颜色
     case labelInactive = "DOCK_LABEL_INACTIVE"
-    /// Dark-mode experiment: `lift` swaps the title pill to the lightening candidate (default `sink`).
-    /// Temporary — remove with the losing candidate once the owner has picked.
-    case darkPill = "DOCK_DARK_PILL"
     /// 中转格瓷砖配色 blue|graphite|light
     case shelfTile = "DOCK_SHELF_TILE"
     /// 玻璃调参：清透度
@@ -187,7 +184,7 @@ enum DebugSwitch: String, CaseIterable, Sendable {
             return .trace
         case .reconcileAxTimeoutMs, .seedAxTimeoutMs, .dragFlightMs, .labelAnim, .inventoryLog,
              .panelLevel, .panelMaterial, .panelSaturation, .panelThickness,
-             .chipPillFill, .labelInactive, .darkPill, .shelfTile, .liquidGlassClearTint,
+             .chipPillFill, .labelInactive, .shelfTile, .liquidGlassClearTint,
              .liquidGlassWhiteOverlay, .liquidGlassDimming, .liquidGlassBorder, .liquidGlassBorderEdge,
              .liquidGlassBorderCut, .liquidGlassBorderSpread, .liquidGlassBorderWidth, .liquidGlassBorderInner,
              .liquidGlassBackgroundOpacity, .liquidGlassWindowBlur, .liquidGlassContentInset,

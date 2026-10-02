@@ -148,7 +148,7 @@ final class DockThemeTests: XCTestCase {
     // MARK: - 数值合法性
 
     func testShadowsFitInsideShadowPaddingBudget() {
-        for column in [theme, dark, DockThemeTokens.darkColumn(pill: .lift)] {
+        for column in [theme, dark] {
             XCTAssertLessThanOrEqual(column.stripShadow.verticalExtent, shadowPadding)
             XCTAssertLessThanOrEqual(column.popupShadow.verticalExtent, shadowPadding)
         }
@@ -171,7 +171,7 @@ final class DockThemeTests: XCTestCase {
 
     /// 手调时容易顺手写超。
     func testAllOpacitiesAreInRange() {
-        for column in [theme, dark, DockThemeTokens.darkColumn(pill: .lift)] {
+        for column in [theme, dark] {
             for tint in column.allTints {
                 XCTAssertTrue((0 ... 1).contains(tint.opacity), "不透明度越界：\(tint)")
             }
@@ -386,17 +386,7 @@ final class DockThemeTests: XCTestCase {
 
     func testResolvedColumnFollowsTheColourScheme() {
         XCTAssertEqual(DockThemeTokens.resolved(for: .light), .light)
-        XCTAssertEqual(DockThemeTokens.resolved(for: .dark), DockEffectSwitches.darkColumn)
-        XCTAssertEqual(DockEffectSwitches.darkColumn, .dark, "no DOCK_DARK_PILL in the test process")
-    }
-
-    func testDarkPillSwitchParsesTheCandidates() {
-        XCTAssertEqual(DockEffectSwitches.darkPillCandidate(from: ["DOCK_DARK_PILL": " Lift "]), .lift)
-        XCTAssertEqual(DockEffectSwitches.darkPillCandidate(from: ["DOCK_DARK_PILL": "sink"]), .sink)
-        for other in ["", "1", "true", "frosted"] {
-            XCTAssertEqual(DockEffectSwitches.darkPillCandidate(from: ["DOCK_DARK_PILL": other]), .glass)
-        }
-        XCTAssertEqual(DockEffectSwitches.darkPillCandidate(from: [:]), .glass)
+        XCTAssertEqual(DockThemeTokens.resolved(for: .dark), .dark)
     }
 
     /// The glass pill is tinted to the side opposite the text, like the flat pill it falls back to
@@ -406,8 +396,6 @@ final class DockThemeTests: XCTestCase {
         XCTAssertEqual(glass.tint.base, .black)
         XCTAssertEqual(dark.chipPillFill.normal.base, .black, "the fallback under the glass candidate")
         XCTAssertNil(theme.chipPillGlass, "the light pill is signed off as the flat one")
-        XCTAssertNil(DockThemeTokens.darkColumn(pill: .sink).chipPillGlass)
-        XCTAssertEqual(DockThemeTokens.darkColumn(pill: .lift).chipPillFill.normal.base, .white)
     }
 
     // MARK: - Contrast helpers (levels are 0…255)

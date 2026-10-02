@@ -18,7 +18,7 @@ import SwiftUI
 extension DockThemeTokens {
     /// The column for a SwiftUI colour scheme (anything that is not `.dark` is light).
     static func resolved(for colorScheme: ColorScheme) -> DockThemeTokens {
-        colorScheme == .dark ? DockEffectSwitches.darkColumn : .light
+        colorScheme == .dark ? .dark : .light
     }
 
     /// 实际生效的材质：`DOCK_PANEL_MATERIAL` 覆盖 token 值（认不出的名字回落，不崩）。
@@ -62,16 +62,6 @@ extension DockThemeTokens {
 enum DockEffectSwitches {
     /// 读一次就固定——调参期间改环境变量重启一次即可，也避免一次会话里前后不一致。
     static let environment = ProcessInfo.processInfo.environment
-
-    /// The dark column in effect: `DOCK_DARK_PILL=glass|sink|lift` picks the title-pill candidate.
-    static let darkColumn: DockThemeTokens = .darkColumn(pill: darkPillCandidate(from: environment))
-
-    /// Unset or unrecognised keeps the default (`glass`).
-    static func darkPillCandidate(from environment: [String: String]) -> DockDarkPillCandidate {
-        let raw = DebugSwitch.darkPill.value(in: environment)?
-            .trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
-        return raw.flatMap(DockDarkPillCandidate.init(rawValue:)) ?? .glass
-    }
 
     /// `DOCK_PANEL_SATURATION=1.25`。未设 / 非数字 / 超出合理范围 → `1.0`（= 不加滤镜）。
     /// 特例：`1` 也当"开，用表里的候选值"讲不通——数字就是倍数本身，`1` 就是不提饱和。
@@ -148,9 +138,6 @@ enum DockEffectSwitches {
         }
         if let raw = DebugSwitch.labelInactive.value(in: environment) {
             print("[panel] DOCK_LABEL_INACTIVE=\"\(raw)\" → 实际生效 \(DockThemeTokens.light.effectiveLabelInactive.opacity)")
-        }
-        if let raw = DebugSwitch.darkPill.value(in: environment) {
-            print("[panel] DOCK_DARK_PILL=\"\(raw)\" → 深色卡底 \(darkPillCandidate(from: environment).rawValue)")
         }
     }
 }

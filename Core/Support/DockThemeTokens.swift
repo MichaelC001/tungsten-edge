@@ -104,17 +104,6 @@ struct DockChipPillGlass: Equatable {
     let hoverLift: DockTint
 }
 
-/// The dark title-pill looks under comparison (`DOCK_DARK_PILL`). Experiment scaffolding: once the
-/// owner has picked, delete the losers and the switch.
-enum DockDarkPillCandidate: String {
-    /// Tinted system glass; the flat darkening pill where there is no glass.
-    case glass
-    /// Flat darkening pill everywhere.
-    case sink
-    /// Flat lightening pill — fails the contrast floor over a white window (`DockThemeTests`).
-    case lift
-}
-
 /// How the hover bubble's surface is built when Liquid Glass is available.
 enum DockTooltipSurface: Equatable {
     /// Our near-white plate over clear glass, with our own rim and shadow (`tooltipPlate`).
@@ -459,82 +448,75 @@ extension DockThemeTokens {
     /// The plate is the system's (variant 3 under `darkAqua`), so nothing here colours it. It
     /// barely lifts a dark backdrop and dims a bright one — white 255 reads about 176 through it —
     /// which makes the bar over a white window the worst case for white text.
-    static let dark = darkColumn(pill: .glass)
+    static let dark = DockThemeTokens(
+        // The theme rim is drawn only on the frosted / fallback plate; the system glass has its own.
+        panelRimTop: .white(0.15),
+        panelRimBottom: .white(0.15),
+        panelRimHighlighted: light.panelRimHighlighted,
+        panelRimLineWidth: light.panelRimLineWidth,
+        panelRimHighlightedLineWidth: light.panelRimHighlightedLineWidth,
+        // No thickness or saturation candidates in dark: zero means the layers never enter the tree.
+        panelInnerHighlight: .white(0),
+        panelInnerHighlightWidth: 0,
+        panelInnerHighlightBlur: 0,
+        panelInnerShadow: .black(0),
+        panelInnerShadowWidth: 0,
+        panelInnerShadowBlur: 0,
+        panelBackdropSaturation: 1.0,
+        stripShadow: DockShadow(tint: .black(0.35), radius: 12, y: 5),
+        popupShadow: DockShadow(tint: .black(0.35), radius: 12, y: 5),
+        panelMaterial: .popover,
 
-    static func darkColumn(pill: DockDarkPillCandidate) -> DockThemeTokens {
-        DockThemeTokens(
-            // The theme rim is drawn only on the frosted / fallback plate; the system glass has its own.
-            panelRimTop: .white(0.15),
-            panelRimBottom: .white(0.15),
-            panelRimHighlighted: light.panelRimHighlighted,
-            panelRimLineWidth: light.panelRimLineWidth,
-            panelRimHighlightedLineWidth: light.panelRimHighlightedLineWidth,
-            // No thickness or saturation candidates in dark: zero means the layers never enter the tree.
-            panelInnerHighlight: .white(0),
-            panelInnerHighlightWidth: 0,
-            panelInnerHighlightBlur: 0,
-            panelInnerShadow: .black(0),
-            panelInnerShadowWidth: 0,
-            panelInnerShadowBlur: 0,
-            panelBackdropSaturation: 1.0,
-            stripShadow: DockShadow(tint: .black(0.35), radius: 12, y: 5),
-            popupShadow: DockShadow(tint: .black(0.35), radius: 12, y: 5),
-            panelMaterial: .popover,
+        // Against the text, as in the light column: white text needs a darker pill. Worst case
+        // (plate 176): 3.44 active / 2.37 inactive, at or above the light column's own worst case.
+        // The pill and `labelInactive` are one pair — tune both, then re-run the contrast test.
+        // A lightening pill (white 0.10) was compared and dropped: 1.9 / 1.5 over a white window.
+        chipPillFill: DockTintPair(normal: .black(0.25), emphasized: .black(0.33)),
+        chipPillRimTop: DockTintPair(normal: .white(0.22), emphasized: .white(0.34)),
+        chipPillRimBottom: .white(0.04),
+        // Measured through the real materials (dark Dock plate under the pill): over a white
+        // backdrop the pill reads 111 — 2.9 inactive / 4.5 active, better than the flat pill —
+        // and over blue or black it sits at the plate's level, so the edge light carries the card.
+        chipPillGlass: DockChipPillGlass(tint: .black(0.3), hoverLift: .white(0.07)),
 
-            // Against the text, as in the light column: white text needs a darker pill. Worst case
-            // (plate 176): 3.44 active / 2.37 inactive, at or above the light column's own worst case.
-            // The pill and `labelInactive` are one pair — tune both, then re-run the contrast test.
-            chipPillFill: pill == .lift
-                ? DockTintPair(normal: .white(0.10), emphasized: .white(0.14))
-                : DockTintPair(normal: .black(0.25), emphasized: .black(0.33)),
-            chipPillRimTop: DockTintPair(normal: .white(0.22), emphasized: .white(0.34)),
-            chipPillRimBottom: .white(0.04),
-            // Measured through the real materials (dark Dock plate under the pill): over a white
-            // backdrop the pill reads 111 — 2.9 inactive / 4.5 active, better than the flat pill —
-            // and over blue or black it sits at the plate's level, so the edge light carries the card.
-            chipPillGlass: pill == .glass
-                ? DockChipPillGlass(tint: .black(0.3), hoverLift: .white(0.07))
-                : nil,
+        labelActive: .white(0.92),
+        labelInactive: .white(0.6),
+        labelSubtitle: .white(0.6),
 
-            labelActive: .white(0.92),
-            labelInactive: .white(0.6),
-            labelSubtitle: .white(0.6),
+        // The native dot is the plate plus ~124 per channel (additive). Chips sit under the
+        // strip's edge-fade mask, where a plus-lighter blend cannot see the glass, so this is
+        // the translucent white that lands on the same value over a typical dark plate (36).
+        runningDot: .white(0.57),
+        zoneDivider: .white(0.18),
 
-            // The native dot is the plate plus ~124 per channel (additive). Chips sit under the
-            // strip's edge-fade mask, where a plus-lighter blend cannot see the glass, so this is
-            // the translucent white that lands on the same value over a typical dark plate (36).
-            runningDot: .white(0.57),
-            zoneDivider: .white(0.18),
+        shelfTile: light.shelfTile,
+        shelfDropGlow: .white(0.25),
 
-            shelfTile: light.shelfTile,
-            shelfDropGlow: .white(0.25),
+        capsuleGlyph: .white(0.6),
+        capsuleStashGlow: .white(0.18),
 
-            capsuleGlyph: .white(0.6),
-            capsuleStashGlow: .white(0.18),
+        folderDropRing: .white(0.9),
+        folderThumbHairline: .white(0.3),
 
-            folderDropRing: .white(0.9),
-            folderThumbHairline: .white(0.3),
+        // The stack popup is dark in both appearances: same values, by construction.
+        stackPopupText: light.stackPopupText,
+        stackPopupNote: light.stackPopupNote,
+        stackPopupGlyph: light.stackPopupGlyph,
+        stackPopupBackFill: light.stackPopupBackFill,
+        stackPopupHairline: light.stackPopupHairline,
+        stackPopupShadow: light.stackPopupShadow,
 
-            // The stack popup is dark in both appearances: same values, by construction.
-            stackPopupText: light.stackPopupText,
-            stackPopupNote: light.stackPopupNote,
-            stackPopupGlyph: light.stackPopupGlyph,
-            stackPopupBackFill: light.stackPopupBackFill,
-            stackPopupHairline: light.stackPopupHairline,
-            stackPopupShadow: light.stackPopupShadow,
-
-            // The native dark bubble *is* the system's regular glass in its dark appearance: fill
-            // 64 over a 35 backdrop and 172 over 219, and the same edge profile and shadow, row for
-            // row. So the glass path draws that material and nothing of ours on top.
-            // The plate below is the frosted path's stand-in, solved from those two readings
-            // (grey 105 at 0.41); it matches them but not a coloured backdrop, which it greys out.
-            tooltipPlate: DockRGB(105.0 / 255.0, 105.0 / 255.0, 105.0 / 255.0),
-            tooltipPlateOpacity: 0.41,
-            tooltipRim: .white(0.12),
-            tooltipText: .white(0.96),
-            tooltipTextSmoothing: false,
-            tooltipShadow: DockShadow(tint: .black(0.25), radius: 5, y: 2),
-            tooltipGlassSurface: .regularGlassAlone
-        )
-    }
+        // The native dark bubble *is* the system's regular glass in its dark appearance: fill
+        // 64 over a 35 backdrop and 172 over 219, and the same edge profile and shadow, row for
+        // row. So the glass path draws that material and nothing of ours on top.
+        // The plate below is the frosted path's stand-in, solved from those two readings
+        // (grey 105 at 0.41); it matches them but not a coloured backdrop, which it greys out.
+        tooltipPlate: DockRGB(105.0 / 255.0, 105.0 / 255.0, 105.0 / 255.0),
+        tooltipPlateOpacity: 0.41,
+        tooltipRim: .white(0.12),
+        tooltipText: .white(0.96),
+        tooltipTextSmoothing: false,
+        tooltipShadow: DockShadow(tint: .black(0.25), radius: 5, y: 2),
+        tooltipGlassSurface: .regularGlassAlone
+    )
 }
