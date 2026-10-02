@@ -63,6 +63,24 @@ require_resolved_value() {
   fi
 }
 
+# The secure timestamp comes from Apple's timestamp server, which intermittently answers
+# "The timestamp service is not available." from this network. Only that answer is
+# retried; any other codesign failure stops the run as before.
+codesign_with_timestamp() {
+  local output attempt
+  for attempt in 1 2 3; do
+    if output="$(codesign "$@" 2>&1)"; then
+      [[ -z "$output" ]] || printf '%s\n' "$output"
+      return 0
+    fi
+    printf '%s\n' "$output" >&2
+    [[ "$output" == *"The timestamp service is not available."* ]] || die "codesign failed: ${*: -1}"
+    [[ "$attempt" -lt 3 ]] || die "timestamp service unavailable after 3 attempts: ${*: -1}"
+    echo "    timestamp service unavailable (attempt $attempt); retrying"
+    sleep 5
+  done
+}
+
 notarize_and_require_acceptance() {
   local artifact="$1"
   local receipt="$2"
@@ -343,13 +361,13 @@ if [[ -d "$SPARKLE_FRAMEWORK" ]]; then
     "$SPARKLE_FRAMEWORK/Versions/B/Updater.app" \
     "$SPARKLE_FRAMEWORK/Versions/B/Autoupdate"; do
     [[ -e "$nested" ]] || die "Sparkle is missing expected nested code: $nested"
-    codesign --force \
+    codesign_with_timestamp --force \
       --sign "$DEVELOPER_ID_APPLICATION" \
       --options runtime \
       --timestamp \
       "$nested"
   done
-  codesign --force \
+  codesign_with_timestamp --force \
     --sign "$DEVELOPER_ID_APPLICATION" \
     --options runtime \
     --timestamp \
@@ -359,7 +377,7 @@ else
 fi
 
 echo "==> Signing app with hardened runtime and secure timestamp"
-codesign --force \
+codesign_with_timestamp --force \
   --sign "$DEVELOPER_ID_APPLICATION" \
   --options runtime \
   --timestamp \
@@ -390,7 +408,7 @@ cmp -s "$LICENSE_FILE" "$DMG_STAGE/LICENSE" || die "DMG stage is missing the exa
 DMG="$NEW_DIST/Tungsten-Edge-$VERSION.dmg"
 # ULMO (LZMA) opens on macOS 10.15+; the deployment target is 12. The ZIP stays as is.
 hdiutil create -volname "$VOL_NAME" -srcfolder "$DMG_STAGE" -ov -format ULMO "$DMG" >/dev/null
-codesign --force --sign "$DEVELOPER_ID_APPLICATION" --timestamp "$DMG"
+codesign_with_timestamp --force --sign "$DEVELOPER_ID_APPLICATION" --timestamp "$DMG"
 codesign --verify --strict --verbose=2 "$DMG"
 
 notarize_and_require_acceptance "$DMG" "$TEMP_ROOT/dmg-notary.json" "DMG"
