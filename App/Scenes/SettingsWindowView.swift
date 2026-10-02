@@ -305,14 +305,34 @@ struct SettingsWindowContent: View {
             systemForm {
                 aboutVersionRow
                 autoUpdateToggle
+                diagnosticsRow
             }
             .padding(.bottom, Self.afterFormMargin)
         } else {
             settingsPane {
                 aboutVersionRow
                 autoUpdateToggle
+                diagnosticsRow
             }
             .padding(Self.paneMargin)
+        }
+    }
+
+    /// Copies `DiagnosticReport` to the clipboard so a user can paste it into a chat or the
+    /// feedback box. Nothing is sent: the feedback form's disclosed fields stay as they are.
+    private var diagnosticsRow: some View {
+        HStack(spacing: 12) {
+            Text("Diagnostic Info")
+            Spacer()
+            Button("Copy") {
+                let report = DiagnosticReport.collect(appVersion: coordinator.versionTitle)
+                NSPasteboard.general.clearContents()
+                NSPasteboard.general.setString(report.text, forType: .string)
+                presentedAlert = SettingsAlert(
+                    title: String(localized: "Diagnostic Info Copied"),
+                    message: String(localized: "Paste it into a feedback message or send it to us. It contains only app, system and display details.")
+                )
+            }
         }
     }
 
@@ -999,5 +1019,63 @@ extension LicenseKind {
         case .founding: return String(localized: "Founding User")
         case .paid: return String(localized: "Paid")
         }
+    }
+}
+
+// App-only half of `DiagnosticReport`: the pure struct is also compiled into the test target,
+// which has neither the glass bridge nor the panels.
+extension DiagnosticReport {
+    /// Variants read back for the report; the Dock's own material has been seen at 2 and at 3.
+    static let reportedVariants = 0 ... 6
+
+    /// Main thread, from a user action only — the variant read-back builds throwaway windows,
+    /// which must not happen inside a SwiftUI update.
+    static func collect(appVersion: String?) -> DiagnosticReport {
+        let workspace = NSWorkspace.shared
+        let isDark = NSApp.effectiveAppearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua
+        return DiagnosticReport(
+            appVersion: appVersion,
+            systemVersion: ProcessInfo.processInfo.operatingSystemVersionString,
+            hardwareModel: hardwareModel(),
+            language: Bundle.main.preferredLocalizations.first ?? "en",
+            appearance: "\(isDark ? "dark" : "light") (\(NSApp.appearance == nil ? "follows system" : "fixed"))",
+            reduceTransparency: workspace.accessibilityDisplayShouldReduceTransparency,
+            increaseContrast: workspace.accessibilityDisplayShouldIncreaseContrast,
+            displays: NSScreen.screens.map {
+                "\(Int($0.frame.width))x\(Int($0.frame.height))@\(Int($0.backingScaleFactor))x"
+            },
+            glassPath: glassPath(),
+            glassTint: UserDefaults.standard.object(forKey: "NSGlassTintAmount").map { "\($0)" },
+            glassVariants: glassVariantReadings(),
+            glassPanels: NSApp.windows
+                .filter { $0 is DockLiquidGlassPanel && $0.isVisible }
+                .map { window in
+                    GlassReading(
+                        label: "\(Int(window.frame.width))x\(Int(window.frame.height))",
+                        reading: window.contentView?.layer.flatMap { TEDockGlassDescribeLayer($0) }
+                    )
+                }
+        )
+    }
+
+    private static func glassPath() -> String {
+        guard DockGlassPresentation.shouldAttemptTaskbarComposite else { return "frosted" }
+        if let variant = DockGlassPresentation.activeSystemVariant { return "variant \(variant)" }
+        return DockGlassPresentation.configuration.systemVariant == nil
+            ? "swiftui clear (variant switched off)"
+            : "swiftui clear (no variant selector)"
+    }
+
+    private static func glassVariantReadings() -> [GlassReading] {
+        guard TEDockGlassSupportsSystemVariant() else { return [] }
+        return reportedVariants.map { GlassReading(label: "\($0)", reading: TEDockGlassDescribeVariant($0)) }
+    }
+
+    private static func hardwareModel() -> String? {
+        var size = 0
+        guard sysctlbyname("hw.model", nil, &size, nil, 0) == 0, size > 1 else { return nil }
+        var buffer = [CChar](repeating: 0, count: size)
+        guard sysctlbyname("hw.model", &buffer, &size, nil, 0) == 0 else { return nil }
+        return String(cString: buffer)
     }
 }

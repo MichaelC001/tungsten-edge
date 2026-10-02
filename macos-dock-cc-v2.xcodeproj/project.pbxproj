@@ -430,6 +430,9 @@
 		F1E0000000000000000000C2 /* FeedbackAttachment.swift in Sources */ = {isa = PBXBuildFile; fileRef = F1E0000000000000000000C0 /* FeedbackAttachment.swift */; };
 		F1E0000000000000000000A2 /* FeedbackSubmitter.swift in Sources */ = {isa = PBXBuildFile; fileRef = F1E0000000000000000000A0 /* FeedbackSubmitter.swift */; };
 		F1E0000000000000000000B1 /* FeedbackSubmitterTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = F1E0000000000000000000B0 /* FeedbackSubmitterTests.swift */; };
+		F3A0000000000000000000A1 /* DiagnosticReport.swift in Sources */ = {isa = PBXBuildFile; fileRef = F3A0000000000000000000A0 /* DiagnosticReport.swift */; };
+		F3A0000000000000000000A2 /* DiagnosticReport.swift in Sources */ = {isa = PBXBuildFile; fileRef = F3A0000000000000000000A0 /* DiagnosticReport.swift */; };
+		F3A0000000000000000000B1 /* DiagnosticReportTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = F3A0000000000000000000B0 /* DiagnosticReportTests.swift */; };
 		F1E0000000000000000000C4 /* FeedbackAttachmentTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = F1E0000000000000000000C3 /* FeedbackAttachmentTests.swift */; };
 		F1D0000000000000000000A1 /* DocumentUsageRanking.swift in Sources */ = {isa = PBXBuildFile; fileRef = F1D0000000000000000000A0 /* DocumentUsageRanking.swift */; };
 		F1D0000000000000000000A2 /* DocumentUsageRanking.swift in Sources */ = {isa = PBXBuildFile; fileRef = F1D0000000000000000000A0 /* DocumentUsageRanking.swift */; };
@@ -634,6 +637,8 @@
 		F1E0000000000000000000A0 /* FeedbackSubmitter.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FeedbackSubmitter.swift; sourceTree = "<group>"; };
 		F1E0000000000000000000C0 /* FeedbackAttachment.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FeedbackAttachment.swift; sourceTree = "<group>"; };
 		F1E0000000000000000000B0 /* FeedbackSubmitterTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FeedbackSubmitterTests.swift; sourceTree = "<group>"; };
+		F3A0000000000000000000A0 /* DiagnosticReport.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DiagnosticReport.swift; sourceTree = "<group>"; };
+		F3A0000000000000000000B0 /* DiagnosticReportTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DiagnosticReportTests.swift; sourceTree = "<group>"; };
 		F1E0000000000000000000C3 /* FeedbackAttachmentTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FeedbackAttachmentTests.swift; sourceTree = "<group>"; };
 		F1D0000000000000000000A0 /* DocumentUsageRanking.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DocumentUsageRanking.swift; sourceTree = "<group>"; };
 		F1D0000000000000000000B0 /* DocumentUsageStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DocumentUsageStore.swift; sourceTree = "<group>"; };
@@ -969,6 +974,7 @@
 				A00000000000000000009F00 /* GlobalHotKeyMonitor.swift */,
 				F1D0000000000000000000B0 /* DocumentUsageStore.swift */,
 				F1E0000000000000000000A0 /* FeedbackSubmitter.swift */,
+				F3A0000000000000000000A0 /* DiagnosticReport.swift */,
 				F1E0000000000000000000C0 /* FeedbackAttachment.swift */,
 				F1A0000000000000000000A0 /* HotKeyShortcutValidation.swift */,
 				F1A0000000000000000000B0 /* HotKeyGlyphs.swift */,
@@ -1469,6 +1475,7 @@
 				F1C0000000000000000000B0 /* WindowListMenuPlanTests.swift */,
 				F1D0000000000000000000C0 /* DocumentUsageRankingTests.swift */,
 				F1E0000000000000000000B0 /* FeedbackSubmitterTests.swift */,
+				F3A0000000000000000000B0 /* DiagnosticReportTests.swift */,
 				F1E0000000000000000000C3 /* FeedbackAttachmentTests.swift */,
 				F1F0000000000000000000B0 /* AppLanguageOptionTests.swift */,
 				B78000000000000000000033 /* LicenseStoreTests.swift */,
@@ -1752,6 +1759,7 @@
 					F1D0000000000000000000A1 /* DocumentUsageRanking.swift in Sources */,
 					F1D0000000000000000000B1 /* DocumentUsageStore.swift in Sources */,
 					F1E0000000000000000000A1 /* FeedbackSubmitter.swift in Sources */,
+					F3A0000000000000000000A1 /* DiagnosticReport.swift in Sources */,
 					F1E0000000000000000000C1 /* FeedbackAttachment.swift in Sources */,
 					A0000000000000000000FA01 /* LauncherChipVisualPlan.swift in Sources */,
 					A0000000000000000000FF01 /* LaunchGateDecision.swift in Sources */,
@@ -1950,6 +1958,7 @@
 				F1F0000000000000000000A2 /* AppLanguageOption.swift in Sources */,
 				F1D0000000000000000000A2 /* DocumentUsageRanking.swift in Sources */,
 				F1E0000000000000000000A2 /* FeedbackSubmitter.swift in Sources */,
+				F3A0000000000000000000A2 /* DiagnosticReport.swift in Sources */,
 				F1E0000000000000000000C2 /* FeedbackAttachment.swift in Sources */,
 				F2A0000000000000000000A2 /* SettingsTab.swift in Sources */,
 				A00000000000000000009F11 /* GlobalHotKeyMonitorTests.swift in Sources */,
@@ -2132,6 +2141,7 @@
 					F1C0000000000000000000B1 /* WindowListMenuPlanTests.swift in Sources */,
 					F1D0000000000000000000C1 /* DocumentUsageRankingTests.swift in Sources */,
 					F1E0000000000000000000B1 /* FeedbackSubmitterTests.swift in Sources */,
+					F3A0000000000000000000B1 /* DiagnosticReportTests.swift in Sources */,
 					F1E0000000000000000000C4 /* FeedbackAttachmentTests.swift in Sources */,
 					F1F0000000000000000000B1 /* AppLanguageOptionTests.swift in Sources */,
 					B78000000000000000000031 /* LicenseStoreTests.swift in Sources */,

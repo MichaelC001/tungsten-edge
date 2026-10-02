@@ -15,6 +15,13 @@ BOOL TEDockGlassSetSystemVariant(id glassView, NSInteger variant);
 /// a stack's plate its arrow. Returns NO and does nothing if unsupported; the caller keeps a
 /// plain rounded plate.
 BOOL TEDockGlassSetPath(id glassView, CGPathRef _Nullable path);
+/// One reading per distinct `glassBackground` filter under `layer` ("L0.85 N0.40 R-27.00 B5.00 K77":
+/// lighten fill, normal fill, refraction, blur, key count), joined by " + "; nil when there is none.
+/// Diagnostics only — nothing may branch on it.
+NSString * _Nullable TEDockGlassDescribeLayer(id layer);
+/// The same reading for the material AppKit resolves for `variant`, from a throwaway glass view in a
+/// never-shown window. Main thread only, and never from inside a SwiftUI update.
+NSString * _Nullable TEDockGlassDescribeVariant(NSInteger variant);
 /// Copies supported background filters before changing their refraction. Other filters stay intact.
 BOOL TEDockGlassSetRefraction(id layer, double height, double amount);
 /// Copies a supported system rim effect; a nil amount preserves native light strength.

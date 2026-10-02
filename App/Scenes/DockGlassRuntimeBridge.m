@@ -83,6 +83,69 @@ BOOL TEDockGlassSetPath(id glassView, CGPathRef path) {
     }
 }
 
+static void TEDockGlassCollectReadings(CALayer *layer, NSMutableOrderedSet<NSString *> *readings) {
+    for (id filter in layer.filters) {
+        if (![filter respondsToSelector:NSSelectorFromString(@"type")] ||
+            ![[filter valueForKey:@"type"] isEqual:@"glassBackground"] ||
+            ![filter respondsToSelector:NSSelectorFromString(@"inputKeys")]) continue;
+        NSArray *keys = [filter valueForKey:@"inputKeys"];
+        NSMutableArray<NSString *> *parts = [NSMutableArray array];
+        NSArray<NSArray<NSString *> *> *fields = @[
+            @[@"L", @"inputBlurFillLightenOpacity"], @[@"N", @"inputBlurFillNormalOpacity"],
+            @[@"R", @"inputInnerRefractionAmount"], @[@"B", @"inputBlurRadius"],
+        ];
+        for (NSArray<NSString *> *field in fields) {
+            id value = [keys containsObject:field[1]] ? [filter valueForKey:field[1]] : nil;
+            [parts addObject:[value isKindOfClass:NSNumber.class]
+                ? [NSString stringWithFormat:@"%@%.2f", field[0], [value doubleValue]]
+                : [field[0] stringByAppendingString:@"?"]];
+        }
+        [parts addObject:[NSString stringWithFormat:@"K%lu", (unsigned long)keys.count]];
+        [readings addObject:[parts componentsJoinedByString:@" "]];
+    }
+    for (CALayer *sublayer in layer.sublayers) {
+        TEDockGlassCollectReadings(sublayer, readings);
+    }
+}
+
+NSString *TEDockGlassDescribeLayer(id candidate) {
+    if (![candidate isKindOfClass:CALayer.class]) return nil;
+    @try {
+        NSMutableOrderedSet<NSString *> *readings = [NSMutableOrderedSet orderedSet];
+        TEDockGlassCollectReadings(candidate, readings);
+        return readings.count > 0 ? [readings.array componentsJoinedByString:@" + "] : nil;
+    } @catch (__unused NSException *exception) {
+        return nil;
+    }
+}
+
+NSString *TEDockGlassDescribeVariant(NSInteger variant) {
+    Class glassClass = NSClassFromString(@"NSGlassEffectView");
+    if (glassClass == Nil) return nil;
+    @try {
+        NSRect frame = NSMakeRect(0, 0, 400, 54);
+        // AppKit builds the material's filter only for a view inside a window; the window is never ordered in.
+        NSWindow *window = [[NSWindow alloc] initWithContentRect:frame
+                                                       styleMask:NSWindowStyleMaskBorderless
+                                                         backing:NSBackingStoreBuffered
+                                                           defer:YES];
+        window.releasedWhenClosed = NO;
+        NSView *glassView = [[glassClass alloc] initWithFrame:frame];
+        [glassView setValue:[[NSView alloc] initWithFrame:frame] forKey:@"contentView"];
+        if (!TEDockGlassSetSystemVariant(glassView, variant)) return nil;
+        window.contentView = [[NSView alloc] initWithFrame:frame];
+        [window.contentView addSubview:glassView];
+        [window.contentView layoutSubtreeIfNeeded];
+        [window displayIfNeeded];
+        NSString *reading = TEDockGlassDescribeLayer(glassView.layer);
+        [glassView removeFromSuperview];
+        [window close];
+        return reading;
+    } @catch (__unused NSException *exception) {
+        return nil;
+    }
+}
+
 BOOL TEDockGlassSetRefraction(id candidate, double height, double amount) {
     if (![candidate isKindOfClass:CALayer.class] || !isfinite(height) || !isfinite(amount) || height <= 0) {
         return NO;
