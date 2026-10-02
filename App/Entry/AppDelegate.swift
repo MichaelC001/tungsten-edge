@@ -577,8 +577,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         )
         panelCoordinator = coordinator
         runtime.onToggleDrawer = { [weak coordinator] in coordinator?.toggleDrawer() }
-        // Settings height slider ↔ every bar's grip-drag transaction. Weak: the orchestrator is
-        // dropped on permission loss and the settings window is closed with it.
+        // Menu height slider ↔ every bar's grip-drag transaction. Weak: the orchestrator is
+        // dropped on permission loss.
         settingsCoordinator.taskbarHeightSessionHandler = { [weak coordinator] editing in
             coordinator?.setSettingsHeightSessionActive(editing)
         }

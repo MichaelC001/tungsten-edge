@@ -239,6 +239,80 @@ final class PreferenceSliderMenuItemView: NSView {
     }
 }
 
+/// Taskbar height row: Small — slider — Large. Live while the mouse is down: every whole point
+/// goes out through `onHeightChange`, bracketed by `onEditingChanged` so the bars resize inside
+/// one height-resize transaction (`size-tiers.md`).
+@MainActor
+final class TaskbarSizeMenuItemView: NSView {
+    var onEditingChanged: ((Bool) -> Void)?
+    var onHeightChange: ((DockPanelHeight) -> Void)?
+
+    private let smallLabel = NSTextField(labelWithString: String(localized: "Small"))
+    private let largeLabel = NSTextField(labelWithString: String(localized: "Large"))
+    private let slider = MenuTrackingSlider()
+
+    init(accessibilityTitle: String) {
+        super.init(frame: NSRect(x: 0, y: 0, width: 300, height: 32))
+        autoresizingMask = [.width]
+
+        for label in [smallLabel, largeLabel] {
+            label.font = .systemFont(ofSize: 9)
+            label.textColor = PreferenceSliderMenuItemView.inactiveEndpointColor
+            label.alignment = .center
+            label.setAccessibilityElement(false)
+            addSubview(label)
+        }
+
+        slider.minValue = Double(DockPanelHeight.minimum)
+        slider.maxValue = Double(DockPanelHeight.maximum)
+        slider.isContinuous = true
+        slider.target = self
+        slider.action = #selector(sliderChanged)
+        slider.onTrackingStarted = { [weak self] in self?.onEditingChanged?(true) }
+        slider.onTrackingEnded = { [weak self] in self?.onEditingChanged?(false) }
+        slider.setAccessibilityLabel(accessibilityTitle)
+        addSubview(slider)
+        sync(height: .default)
+    }
+
+    required init?(coder: NSCoder) { fatalError("init(coder:) has not been implemented") }
+
+    override func acceptsFirstMouse(for event: NSEvent?) -> Bool { true }
+
+    override func viewDidMoveToWindow() {
+        super.viewDidMoveToWindow()
+        if let width = window?.frame.width, width > frame.width {
+            frame.size.width = width
+        }
+    }
+
+    func sync(height: DockPanelHeight) {
+        slider.doubleValue = Double(height.points)
+        slider.displayString = "\(Int(height.points))"
+    }
+
+    override func layout() {
+        super.layout()
+        let contentX = StatusMenuLayout.textInsetX
+        let contentWidth = bounds.width - contentX - StatusMenuLayout.trailingInsetX
+        // 34pt lines the track up with the wake sliders above; longer words (es `Pequeño`)
+        // widen both slots instead of clipping.
+        let labelWidth = max(smallLabel.intrinsicContentSize.width, largeLabel.intrinsicContentSize.width)
+        let sideInset = max(34, ceil(labelWidth) + 6)
+        let sliderY = (bounds.height - 20) / 2
+        slider.frame = NSRect(x: contentX + sideInset, y: sliderY, width: max(0, contentWidth - sideInset * 2), height: 20)
+        let labelY = (bounds.height - 12) / 2
+        smallLabel.frame = NSRect(x: contentX, y: labelY, width: sideInset, height: 12)
+        largeLabel.frame = NSRect(x: slider.frame.maxX, y: labelY, width: sideInset, height: 12)
+    }
+
+    @objc private func sliderChanged(_ sender: NSSlider) {
+        let height = DockPanelHeight(clamping: CGFloat(sender.doubleValue))
+        slider.displayString = "\(Int(height.points))"
+        onHeightChange?(height)
+    }
+}
+
 /// 系统 Dock 滑块的确认按钮行。做成**按钮**而不是普通菜单文字行是有意的：
 /// 菜单行和它的邻居视觉权重相同，用户刚拖完滑块、视线还在滑块上，很容易整行错过；
 /// 一旦错过就直接关菜单，结果是「以为设好了其实没生效」——比原本那一下闪更糟。

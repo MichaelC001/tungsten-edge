@@ -311,11 +311,11 @@ final class TaskbarScreenOrchestrator: NSObject, WindowLiftAvoidanceHost {
         heightResizeOrigin = nil
     }
 
-    /// The settings window's height slider is being dragged (`true`) or released (`false`).
+    /// The status menu's height slider is being dragged (`true`) or released (`false`).
     /// Every unit joins the same transaction as a grip drag — animations off, hover suppressed,
     /// one batched commit per tick — instead of tearing down and relaying out on every point.
-    /// The wake inhibitor goes on the unit under the pointer only (the screen holding the
-    /// settings window): an inhibitor also wakes a hidden bar, and the other screens' bars
+    /// The wake inhibitor goes on the unit under the pointer only (the screen showing the
+    /// menu): an inhibitor also wakes a hidden bar, and the other screens' bars
     /// still pick up the height through the batched commit without being woken.
     private var settingsHeightSessionActive = false
     private weak var settingsHeightSessionWakeUnit: PanelCoordinator?

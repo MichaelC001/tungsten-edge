@@ -43,6 +43,7 @@ struct SettingsWindowContent: View {
     let onShowWelcomeGuide: () -> Void
 
     @State private var presentedAlert: SettingsAlert?
+    @State private var showsScrollReverserHelp = false
     @State private var subscriptionEmail = ""
     @State private var licenseKeyInput = ""
     @State private var feedbackMessage = ""
@@ -62,7 +63,8 @@ struct SettingsWindowContent: View {
             case .about: aboutPane
             }
         }
-        .padding(28)
+        // No padding here: each pane brings its own, because the system form already insets
+        // its boxes (`systemForm`) and the macOS 12 layouts pad by `Self.paneMargin`.
         // **不许写死宽度**：外面套着 ScrollView，刚性宽度在可视区变窄时会被居中 = 整页平移。
         // 弹性宽度下左边缘恒在 padding 处，最多重排换行。测高探针给的仍是 contentWidth 的提案。
         .frame(maxWidth: .infinity, alignment: .leading)
@@ -86,60 +88,231 @@ struct SettingsWindowContent: View {
     // 分区标题行随分页取消（窗口标题承担）。页体全部是**本根视图**的计算属性——
     // 草稿 @State（presentedAlert / 订阅邮箱 / 授权码 / 反馈正文与联系方式）必须留在根上，
     // 下放进页级子视图 = 切页即清空（settings.md 有对应规则）。
-    /// 「通用」页。四行控件**一律靠左起**（owner 2026-09-01 从三个排版方向里选的这个）：
-    /// 谁都不许用 `Spacer()` 把自己的控件推到右边缘，一页里出现两种对齐就开始显乱。
+    /// Every pane is the system's own grouped `Form` on macOS 13+ (`systemForm`), so radius,
+    /// fill and dividers follow each OS release; macOS 12 has no grouped form and keeps the
+    /// hand-built layouts in the `else` branches.
+    ///
+    /// 「通用」页: one box — label leading, control trailing — with the setup-guide entry under
+    /// it. Rows carry no grey note; the one disclosure this page owes (scroll reversal) sits
+    /// behind that row's help button.
     @ViewBuilder
     private var generalPane: some View {
-        settingsPane {
-            taskbarSizeRow
-            languageRow
-            appearanceRow
-            hotKeyRow
-            scrollReverserRow
-            welcomeGuideRow
+        if #available(macOS 13.0, *) {
+            VStack(alignment: .trailing, spacing: 0) {
+                systemForm {
+                    languagePicker
+                    // Plain stacks, not `LabeledContent`: that aligns on the text baseline, which
+                    // an AppKit-backed control lacks — the recorder drops below its own label.
+                    HStack {
+                        Text("Appearance")
+                        Spacer(minLength: 12)
+                        appearanceCards
+                    }
+                    HStack {
+                        Text("Show/hide taskbar shortcut")
+                        Spacer(minLength: 12)
+                        hotKeyControls
+                    }
+                    HStack {
+                        scrollReverserLabel
+                        Spacer(minLength: 12)
+                        scrollReverserToggle
+                            .toggleStyle(.switch)
+                            .labelsHidden()
+                    }
+                }
+                welcomeGuideButton
+                    .padding(.trailing, Self.paneMargin)
+            }
+            .padding(.bottom, Self.paneMargin)
+        } else {
+            settingsPane {
+                settingsGroup {
+                    groupRow {
+                        Text("Language")
+                    } control: {
+                        languagePicker
+                            .labelsHidden()
+                            .fixedSize()
+                    }
+                    Divider().opacity(0.5)
+                    groupRow {
+                        Text("Appearance")
+                    } control: {
+                        appearanceCards
+                    }
+                    Divider().opacity(0.5)
+                    groupRow {
+                        Text("Show/hide taskbar shortcut")
+                    } control: {
+                        hotKeyControls
+                    }
+                    Divider().opacity(0.5)
+                    groupRow {
+                        scrollReverserLabel
+                    } control: {
+                        scrollReverserToggle
+                            .toggleStyle(.switch)
+                            .controlSize(.small)
+                            .labelsHidden()
+                    }
+                }
+                HStack {
+                    Spacer()
+                    welcomeGuideButton
+                }
+            }
+            .padding(Self.paneMargin)
         }
     }
+
+    /// Distance from the window edge to a pane's content, boxes included.
+    private static let paneMargin: CGFloat = 28
+    /// Margin a grouped `Form` keeps around its boxes.
+    private static let systemFormMargin: CGFloat = 20
+
+    /// A pane as the system's grouped form, its boxes `paneMargin` from the window's top and
+    /// sides. The form's own bottom margin is left as is — what follows decides the rest.
+    @available(macOS 13.0, *)
+    private func systemForm<Content: View>(@ViewBuilder content: () -> Content) -> some View {
+        Form(content: content)
+            .formStyle(.grouped)
+            // The window is sized to its content and the page scrolls as a whole; a form that
+            // scrolls by itself has no height to measure.
+            .scrollDisabled(true)
+            .fixedSize(horizontal: false, vertical: true)
+            .padding([.horizontal, .top], Self.paneMargin - Self.systemFormMargin)
+    }
+
+    /// Bottom padding for a pane that ends with its form.
+    private static let afterFormMargin = paneMargin - systemFormMargin
 
     // 「高级」= 需要额外能力、默认就对、基本不用碰的开关。单独一页不是为了藏，
     // 而是让常用页只留日常会调的东西；真想拒绝这个能力的人找得到（owner 2026-08-09，
     // 2026-08-24 分页时 owner 确认保留「高级」这一页）。
     @ViewBuilder
     private var advancedPane: some View {
-        settingsPane {
-                settingRow(
-                    note: String(localized: "To keep the taskbar from flashing when you switch into full screen, Tungsten Edge has to hide it before your input reaches the app. It therefore watches global left-clicks, key presses and trackpad gestures, and recognizes only four of them: the window’s green button, Control-Command-F, Control-Left/Right arrow, and a three-finger horizontal swipe. What you type is never recorded, logged, or sent anywhere. Turning this off disables the watching completely.")
-                ) {
-                    Toggle(
-                        "Predict full-screen transitions to prevent taskbar flicker",
-                        isOn: binding(
-                            get: { store.fullscreenIntentEnabled },
-                            set: store.setFullscreenIntentEnabled
-                        )
-                    )
+        if #available(macOS 13.0, *) {
+            systemForm {
+                Section {
+                    fullscreenIntentToggle
+                } footer: {
+                    Text(fullscreenIntentNote)
+                        .fixedSize(horizontal: false, vertical: true)
+                        .frame(maxWidth: .infinity, alignment: .leading)
                 }
             }
+            .padding(.bottom, Self.afterFormMargin)
+        } else {
+            settingsPane {
+                settingRow(note: fullscreenIntentNote) {
+                    fullscreenIntentToggle
+                }
+            }
+            .padding(Self.paneMargin)
+        }
+    }
+
+    private var fullscreenIntentToggle: some View {
+        Toggle(
+            "Predict full-screen transitions to prevent taskbar flicker",
+            isOn: binding(
+                get: { store.fullscreenIntentEnabled },
+                set: store.setFullscreenIntentEnabled
+            )
+        )
+    }
+
+    private var fullscreenIntentNote: String {
+        String(localized: "To keep the taskbar from flashing when you switch into full screen, Tungsten Edge has to hide it before your input reaches the app. It therefore watches global left-clicks, key presses and trackpad gestures, and recognizes only four of them: the window’s green button, Control-Command-F, Control-Left/Right arrow, and a three-finger horizontal swipe. What you type is never recorded, logged, or sent anywhere. Turning this off disables the watching completely.")
     }
 
     @ViewBuilder
     private var licensePane: some View {
-        settingsPane {
-            licenseRow
-            subscriptionRow
-            githubStarRow
+        if #available(macOS 13.0, *) {
+            systemForm {
+                Section {
+                    licenseRow
+                }
+                Section {
+                    subscriptionContent
+                } footer: {
+                    githubStarRow
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                }
+            }
+            .padding(.bottom, Self.afterFormMargin)
+        } else {
+            settingsPane {
+                licenseRow
+                Divider()
+                    .padding(.vertical, 2)
+                subscriptionContent
+                githubStarRow
+            }
+            .padding(Self.paneMargin)
         }
     }
 
     @ViewBuilder
     private var feedbackPane: some View {
-        settingsPane {
-            feedbackRow
+        let presentation = coordinator.feedbackState.presentation
+        if #available(macOS 13.0, *) {
+            systemForm {
+                Section {
+                    feedbackTypePicker
+                        .horizontalRadioGroupLayout()
+                    feedbackEditor
+                        .scrollContentBackground(.hidden)
+                    feedbackAttachmentRow(isEnabled: presentation.isEnabled)
+                    feedbackContactRow(presentation)
+                } header: {
+                    feedbackLeadIn
+                } footer: {
+                    feedbackDisclosure
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                }
+            }
+            .padding(.bottom, Self.afterFormMargin)
+        } else {
+            settingsPane {
+                VStack(alignment: .leading, spacing: 8) {
+                    feedbackLeadIn
+                    HStack(spacing: 10) {
+                        Text("Type")
+                            .font(.callout)
+                        feedbackTypePicker
+                            .horizontalRadioGroupLayout()
+                            .labelsHidden()
+                    }
+                    feedbackEditor
+                        .overlay(
+                            RoundedRectangle(cornerRadius: 6)
+                                .stroke(Color(nsColor: .separatorColor), lineWidth: 1)
+                        )
+                    feedbackAttachmentRow(isEnabled: presentation.isEnabled)
+                    feedbackContactRow(presentation)
+                    feedbackDisclosure
+                }
+            }
+            .padding(Self.paneMargin)
         }
     }
 
     @ViewBuilder
     private var aboutPane: some View {
-        settingsPane {
-            aboutRow
+        if #available(macOS 13.0, *) {
+            systemForm {
+                aboutVersionRow
+                autoUpdateToggle
+            }
+            .padding(.bottom, Self.afterFormMargin)
+        } else {
+            settingsPane {
+                aboutVersionRow
+                autoUpdateToggle
+            }
+            .padding(Self.paneMargin)
         }
     }
 
@@ -153,23 +326,19 @@ struct SettingsWindowContent: View {
     ///
     /// ⚠️ 没设过语言的人键是不存在的，此时选单显示的是**推断值**（当前实际加载的那份
     /// `.lproj`）。**这条读取路径绝不许回写**：一回写就等于替所有从没选过的用户把语言钉死。
-    @ViewBuilder
-    private var languageRow: some View {
-        settingRow(note: String(localized: "The language change takes effect after Tungsten Edge restarts.")) {
-            Picker(
-                String(localized: "Language"),
-                selection: Binding(
-                    get: { Self.currentLanguageOption() },
-                    set: { applyLanguage($0) }
-                )
-            ) {
-                ForEach(AppLanguageOption.allCases, id: \.self) { option in
-                    Text(option.displayName).tag(option)
-                }
+    private var languagePicker: some View {
+        Picker(
+            String(localized: "Language"),
+            selection: Binding(
+                get: { Self.currentLanguageOption() },
+                set: { applyLanguage($0) }
+            )
+        ) {
+            ForEach(AppLanguageOption.allCases, id: \.self) { option in
+                Text(option.displayName).tag(option)
             }
-            .pickerStyle(.menu)
-            .frame(maxWidth: 280, alignment: .leading)
         }
+        .pickerStyle(.menu)
     }
 
     private static func currentLanguageOption() -> AppLanguageOption {
@@ -209,104 +378,82 @@ struct SettingsWindowContent: View {
         NSApp.terminate(nil)
     }
 
-    /// Shares the grip's stored height and commits its panel geometry in the same event.
-    @ViewBuilder
-    private var taskbarSizeRow: some View {
-        settingRow(note: String(localized: "Same as dragging the divider on the taskbar up or down.")) {
-            HStack(spacing: 10) {
-                Text("Taskbar Size")
-                Text("Small")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-                Slider(
-                    value: binding(
-                        get: { Double(store.dockPanelHeight.points) },
-                        set: { coordinator.setTaskbarHeight(DockPanelHeight(clamping: CGFloat($0))) }
-                    ),
-                    in: Double(DockPanelHeight.minimum)...Double(DockPanelHeight.maximum),
-                    step: 1,
-                    onEditingChanged: { coordinator.setTaskbarHeightEditing($0) }
-                )
-                .frame(width: 220)
-                Text("Large")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-            }
-        }
-    }
-
     /// 显隐任务条快捷键：录制框 + 自定义过才出现的「恢复默认」。行高恒定
     ///（录制态只换文案不换尺寸，按钮出现在同一行内），所以不用给
     /// `SettingsWindowController.sessionSubscriptions` 加 sink。
-    ///
-    /// ⚠️ **不要在这行里放 `Spacer()`**：录制框会被推到 560pt 宽的最右边，而同页其他三行
-    /// 的控件都紧挨着自己的标签，一页里就出现四种对齐（owner 2026-09-01 反馈「拥挤又乱」）。
     @ViewBuilder
-    private var hotKeyRow: some View {
-        settingRow(note: String(localized: "Toggles the taskbar between always visible and your last auto-hide delay. Default: ⌥⇧⌘D.")) {
-            HStack(spacing: 10) {
-                Text("Show/hide taskbar shortcut")
-                HotKeyRecorder(
-                    currentGlyphs: store.edgeToggleShortcut?.glyphs
-                        ?? GlobalHotKeyShortcut.edgeAutoHideMode.displayGlyphs,
-                    onRecord: { applyShortcut($0) },
-                    onRejectKey: {
-                        presentedAlert = SettingsAlert(
-                            title: String(localized: "Can’t Use This Shortcut"),
-                            message: String(localized: "This key can’t be used as the shortcut key.")
-                        )
-                    }
-                )
-                .fixedSize()
-                if store.edgeToggleShortcut != nil {
-                    Button("Reset to Default") { applyShortcut(nil) }
-                }
+    private var hotKeyControls: some View {
+        HStack(spacing: 10) {
+            if store.edgeToggleShortcut != nil {
+                Button("Reset to Default") { applyShortcut(nil) }
             }
+            HotKeyRecorder(
+                currentGlyphs: store.edgeToggleShortcut?.glyphs
+                    ?? GlobalHotKeyShortcut.edgeAutoHideMode.displayGlyphs,
+                onRecord: { applyShortcut($0) },
+                onRejectKey: {
+                    presentedAlert = SettingsAlert(
+                        title: String(localized: "Can’t Use This Shortcut"),
+                        message: String(localized: "This key can’t be used as the shortcut key.")
+                    )
+                }
+            )
+            .fixedSize()
         }
     }
 
     /// App-wide appearance (`AppearanceMode`). The third option is `System`, never `Auto`:
     /// macOS's Auto switches by time of day, this one follows whatever macOS is showing.
-    @ViewBuilder
-    private var appearanceRow: some View {
-        settingRow(note: String(localized: "System follows the macOS appearance. Light and Dark keep Tungsten Edge that way whatever macOS is set to.")) {
-            Picker(
-                String(localized: "Appearance"),
-                selection: binding(get: { store.appearanceMode }, set: store.setAppearanceMode)
-            ) {
-                ForEach(AppearanceMode.allCases, id: \.self) { mode in
-                    Text(mode.displayName).tag(mode)
-                }
-            }
-            .pickerStyle(.menu)
-            .frame(maxWidth: 280, alignment: .leading)
-        }
+    private var appearanceCards: some View {
+        AppearanceModeCards(selection: store.appearanceMode, onSelect: store.setAppearanceMode)
     }
 
     /// 全局反转鼠标滚轮。作用于整个系统而不只是任务条，所以放「通用」。
     /// 说明必须写清「只改写方向值、不记录不发送」——这是全项目唯一改写别人输入事件的功能。
-    @ViewBuilder
-    private var scrollReverserRow: some View {
-        settingRow(note: String(localized: "Flips mouse-wheel scrolling system-wide, like Scroll Reverser. Trackpads and Magic Mouse are not affected. Tungsten Edge only inverts the direction values of scroll-wheel events; nothing is recorded or sent anywhere. If Scroll Reverser or Mos is also running, the two cancel out — keep only one.")) {
-            Toggle(
-                "Reverse mouse scroll direction",
-                isOn: binding(get: { store.scrollReverserEnabled }, set: store.setScrollReverserEnabled)
-            )
+    /// It sits behind the help button beside the title, not under the toggle: the page shows
+    /// no notes, but this disclosure must stay reachable in the app — and a hover tooltip is
+    /// not reachable enough (it needs a still pointer and an active window).
+    private var scrollReverserToggle: some View {
+        Toggle(
+            "Reverse mouse scroll direction",
+            isOn: binding(get: { store.scrollReverserEnabled }, set: store.setScrollReverserEnabled)
+        )
+    }
+
+    private var scrollReverserLabel: some View {
+        HStack(spacing: 6) {
+            Text("Reverse mouse scroll direction")
+            // A text-sized symbol, not the system help bezel: that one is as tall as the row.
+            Button { showsScrollReverserHelp = true } label: {
+                Image(systemName: "questionmark.circle")
+                    .foregroundStyle(.secondary)
+            }
+                .buttonStyle(.plain)
+                // A bare symbol reads as an unnamed button; say the disclosure itself.
+                .accessibilityLabel(Text(scrollReverserHelp))
+                .popover(isPresented: $showsScrollReverserHelp, arrowEdge: .bottom) {
+                    Text(scrollReverserHelp)
+                        .font(.callout)
+                        .fixedSize(horizontal: false, vertical: true)
+                        .frame(width: 300, alignment: .leading)
+                        .padding(14)
+                }
         }
+    }
+
+    private var scrollReverserHelp: String {
+        String(localized: "Flips mouse-wheel scrolling system-wide, like Scroll Reverser. Trackpads and Magic Mouse are not affected. Tungsten Edge only inverts the direction values of scroll-wheel events; nothing is recorded or sent anywhere. If Scroll Reverser or Mos is also running, the two cancel out — keep only one.")
     }
 
     /// 重开首次引导（那扇写系统 Dock 推荐设置的窗）。2026-09-01 从状态栏菜单搬来
     /// （owner 拍板）：它是"打开另一个界面"的入口，不是随手切的开关。
-    /// 放「通用」页最后一行——前三条是设置，它是入口。
+    /// 放「通用」页分组框下面——框里是设置，它是入口。
     ///
     /// ⚠️ 闭包直通 `AppDelegate.showWelcomeWindow()`，**绝不能改成走
     /// `presentWelcomeGuideIfNeeded()`、也不能靠删 `hasSeenWelcome`**：那条决策函数对
     /// 「系统 Dock 已自动隐藏」的存量用户恰好会跳过并把键写回，而存量用户正是这个入口的全部受众。
-    @ViewBuilder
-    private var welcomeGuideRow: some View {
-        settingRow(note: String(localized: "Walks you through the first-launch recommendations again, including hiding the Dock.")) {
-            Button("Show Setup Guide Again") { onShowWelcomeGuide() }
-        }
+    private var welcomeGuideButton: some View {
+        Button("Show Setup Guide Again") { onShowWelcomeGuide() }
     }
 
     private func applyShortcut(_ stored: StoredHotKeyShortcut?) {
@@ -355,7 +502,10 @@ struct SettingsWindowContent: View {
                         .font(.callout)
                         .foregroundStyle(.secondary)
                     HStack(spacing: 10) {
-                        TextField("Paste your license key", text: $licenseKeyInput)
+                        TextField(text: $licenseKeyInput, prompt: Text("Paste your license key")) {
+                            Text("Paste your license key")
+                        }
+                            .labelsHidden()
                             .textFieldStyle(.roundedBorder)
                             .onSubmit { activateLicense() }
                         Button("Activate") { activateLicense() }
@@ -385,8 +535,7 @@ struct SettingsWindowContent: View {
         }
     }
 
-    @ViewBuilder
-    private var aboutRow: some View {
+    private var aboutVersionRow: some View {
         HStack(spacing: 12) {
             if let versionTitle = coordinator.versionTitle {
                 Text(versionTitle)
@@ -400,7 +549,9 @@ struct SettingsWindowContent: View {
             }
             .disabled(!coordinator.canCheckForUpdates)
         }
+    }
 
+    private var autoUpdateToggle: some View {
         // 自动检查默认是开的（`SUEnableAutomaticChecks`）。**必须给关的入口**：
         // 一个用户关不掉的后台定期联网检查，比多一个勾选项糟糕得多。
         // 真值在 Sparkle 那边，这里不做镜像。
@@ -423,62 +574,59 @@ struct SettingsWindowContent: View {
     /// 就地长出状态行或让附件把 pane 顶高，都只会变成可滚动。
     /// ⚠️ 披露行必须与实际发送的内容一致（六项：正文 / 联系方式 / 版本 / macOS / 语言 / 附件）；
     /// 类型并入 message（`FeedbackComposition` 是组装唯一入口），不是独立字段。
-    @ViewBuilder
-    private var feedbackRow: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            Text("Ran into a problem or have an idea? Write to us here.")
-                .font(.callout)
-                .foregroundStyle(.secondary)
+    private var feedbackLeadIn: some View {
+        Text("Ran into a problem or have an idea? Write to us here.")
+            .font(.callout)
+            .foregroundStyle(.secondary)
+    }
 
-            HStack(spacing: 10) {
-                Text("Type")
-                    .font(.callout)
-                Picker("Type", selection: $feedbackCategory) {
-                    ForEach(FeedbackCategory.allCases, id: \.self) { category in
-                        Text(category.displayName).tag(category)
-                    }
-                }
-                .pickerStyle(.radioGroup)
-                .horizontalRadioGroupLayout()
-                .labelsHidden()
+    private var feedbackTypePicker: some View {
+        Picker("Type", selection: $feedbackCategory) {
+            ForEach(FeedbackCategory.allCases, id: \.self) { category in
+                Text(category.displayName).tag(category)
             }
-
-            TextEditor(text: $feedbackMessage)
-                .font(.callout)
-                .frame(height: 140)
-                .overlay(
-                    RoundedRectangle(cornerRadius: 6)
-                        .stroke(Color(nsColor: .separatorColor), lineWidth: 1)
-                )
-                .overlay(alignment: .topLeading) {
-                    if feedbackMessage.isEmpty {
-                        Text(feedbackCategory.placeholder)
-                            .font(.callout)
-                            .foregroundStyle(Color(nsColor: .placeholderTextColor))
-                            .padding(.horizontal, 5)
-                            .allowsHitTesting(false)
-                    }
-                }
-
-            let presentation = coordinator.feedbackState.presentation
-            feedbackAttachmentRow(isEnabled: presentation.isEnabled)
-
-            HStack(spacing: 10) {
-                TextField(String(localized: "Email or WeChat ID (optional)"), text: $feedbackContact)
-                    .textFieldStyle(.roundedBorder)
-                    .disabled(!presentation.isEnabled)
-                Button(presentation.title) { submitFeedback() }
-                    .disabled(
-                        !presentation.isEnabled
-                            || feedbackMessage.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-                    )
-            }
-
-            Text("Only your message, the contact you enter, the app version, your macOS version, the interface language and the attachments you add (kept for at most 90 days) are sent.")
-                .font(.caption)
-                .foregroundStyle(.secondary)
-                .fixedSize(horizontal: false, vertical: true)
         }
+        .pickerStyle(.radioGroup)
+    }
+
+    private var feedbackEditor: some View {
+        TextEditor(text: $feedbackMessage)
+            .font(.callout)
+            .frame(height: 140)
+            .overlay(alignment: .topLeading) {
+                if feedbackMessage.isEmpty {
+                    Text(feedbackCategory.placeholder)
+                        .font(.callout)
+                        .foregroundStyle(Color(nsColor: .placeholderTextColor))
+                        .padding(.horizontal, 5)
+                        .allowsHitTesting(false)
+                }
+            }
+    }
+
+    private func feedbackContactRow(_ presentation: FeedbackSubmitPresentation) -> some View {
+        HStack(spacing: 10) {
+            // Prompt plus hidden label: inside a grouped form a bare title becomes a leading
+            // label and the field itself shows empty.
+            TextField(text: $feedbackContact, prompt: Text(String(localized: "Email or WeChat ID (optional)"))) {
+                Text(String(localized: "Email or WeChat ID (optional)"))
+            }
+                .labelsHidden()
+                .textFieldStyle(.roundedBorder)
+                .disabled(!presentation.isEnabled)
+            Button(presentation.title) { submitFeedback() }
+                .disabled(
+                    !presentation.isEnabled
+                        || feedbackMessage.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+                )
+        }
+    }
+
+    private var feedbackDisclosure: some View {
+        Text("Only your message, the contact you enter, the app version, your macOS version, the interface language and the attachments you add (kept for at most 90 days) are sent.")
+            .font(.caption)
+            .foregroundStyle(.secondary)
+            .fixedSize(horizontal: false, vertical: true)
     }
 
     /// 附件区：一行，**定高 44pt，始终渲染**（一个都没加时也占着这行）。
@@ -592,10 +740,7 @@ struct SettingsWindowContent: View {
     /// `SettingsWindowController.resizeToFitKeepingTopEdge()` 只在 `present()` 和几个
     /// `@Published` 订阅里重新量高度，就地加一行不会让窗口跟着变高，只会变成可滚动。
     @ViewBuilder
-    private var subscriptionRow: some View {
-        Divider()
-            .padding(.vertical, 2)
-
+    private var subscriptionContent: some View {
         if store.hasSubscribed {
             // 已经留过的人不该被同一段话反复看见。这只是本机的显示状态，
             // 不是「是否原始用户」的凭据。
@@ -614,7 +759,10 @@ struct SettingsWindowContent: View {
 
                 let presentation = coordinator.subscriptionState.presentation
                 HStack(spacing: 10) {
-                    TextField("you@example.com", text: $subscriptionEmail)
+                    TextField(text: $subscriptionEmail, prompt: Text("you@example.com")) {
+                        Text("you@example.com")
+                    }
+                        .labelsHidden()
                         .textFieldStyle(.roundedBorder)
                         .disabled(!presentation.isEnabled)
                         .onSubmit { submitSubscription() }
@@ -684,6 +832,35 @@ struct SettingsWindowContent: View {
         .frame(maxWidth: .infinity, alignment: .leading)
     }
 
+    /// macOS 12 stand-in for the grouped form's box: rows stacked edge to edge, a `Divider()`
+    /// between them.
+    private func settingsGroup<Content: View>(
+        @ViewBuilder content: () -> Content
+    ) -> some View {
+        VStack(spacing: 0) {
+            content()
+        }
+        .padding(.horizontal, 14)
+        .background(
+            RoundedRectangle(cornerRadius: 12, style: .continuous)
+                .fill(Color.primary.opacity(0.04))
+        )
+    }
+
+    /// One row of a `settingsGroup`: label leading, control(s) pushed to the trailing edge.
+    private func groupRow<Label: View, Control: View>(
+        @ViewBuilder label: () -> Label,
+        @ViewBuilder control: () -> Control
+    ) -> some View {
+        HStack(spacing: 10) {
+            label()
+            Spacer(minLength: 12)
+            control()
+        }
+        .padding(.vertical, 11)
+        .contentShape(Rectangle())
+    }
+
     /// 开关 + 一行灰色说明。说明是给「不知道这个开关在干嘛」的人看的，
     /// 菜单里塞不下，设置窗口有的是地方。
     private func settingRow<Content: View>(
@@ -705,6 +882,53 @@ struct SettingsWindowContent: View {
         set: @escaping (Value) -> Void
     ) -> Binding<Value> {
         Binding(get: get, set: set)
+    }
+}
+
+/// The three `AppearanceMode` choices as plain cards: a symbol over the name, the chosen one
+/// tinted and ringed in the accent colour.
+private struct AppearanceModeCards: View {
+    let selection: AppearanceMode
+    let onSelect: (AppearanceMode) -> Void
+
+    var body: some View {
+        HStack(spacing: 8) {
+            ForEach(AppearanceMode.allCases, id: \.self) { mode in
+                let isSelected = mode == selection
+                Button { onSelect(mode) } label: {
+                    VStack(spacing: 5) {
+                        Image(systemName: Self.symbolName(for: mode))
+                            .font(.system(size: 16))
+                            .foregroundColor(isSelected ? .accentColor : .secondary)
+                            .frame(height: 18)
+                        Text(mode.displayName)
+                            .font(.caption)
+                    }
+                    .padding(.horizontal, 10)
+                    .frame(minWidth: 76, minHeight: 52)
+                    .background(
+                        RoundedRectangle(cornerRadius: 10, style: .continuous)
+                            .fill(isSelected ? Color.accentColor.opacity(0.14) : Color.primary.opacity(0.05))
+                    )
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 10, style: .continuous)
+                            .strokeBorder(Color.accentColor, lineWidth: 1.5)
+                            .opacity(isSelected ? 1 : 0)
+                    )
+                    .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .accessibilityAddTraits(isSelected ? .isSelected : [])
+            }
+        }
+    }
+
+    private static func symbolName(for mode: AppearanceMode) -> String {
+        switch mode {
+        case .system: return "circle.lefthalf.filled"
+        case .light: return "sun.max"
+        case .dark: return "moon"
+        }
     }
 }
 

@@ -834,6 +834,27 @@ final class AppSettingsStoreTests: XCTestCase {
     }
 
     @MainActor
+    func testTaskbarSizeSliderSpansTheHeightRangeAndReportsWholePoints() {
+        let view = TaskbarSizeMenuItemView(accessibilityTitle: "Taskbar Size")
+        var heights: [DockPanelHeight] = []
+        view.onHeightChange = { heights.append($0) }
+        guard let slider = view.subviews.compactMap({ $0 as? NSSlider }).first else {
+            return XCTFail("the row must hold a slider")
+        }
+
+        XCTAssertEqual(slider.minValue, Double(DockPanelHeight.minimum))
+        XCTAssertEqual(slider.maxValue, Double(DockPanelHeight.maximum))
+
+        view.sync(height: DockPanelHeight(clamping: 70))
+        XCTAssertEqual(slider.doubleValue, 70)
+        XCTAssertTrue(heights.isEmpty, "syncing from the store must not write back")
+
+        slider.doubleValue = 61.6
+        _ = slider.sendAction(slider.action, to: slider.target)
+        XCTAssertEqual(heights, [DockPanelHeight(clamping: 62)])
+    }
+
+    @MainActor
     func testNativeDockApplyRowIsAButtonWiredToApply() {
         let row = NativeDockApplyRowView()
         var fired = 0

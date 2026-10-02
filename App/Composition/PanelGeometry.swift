@@ -9,7 +9,7 @@ import CoreGraphics
 struct DockPanelHeight: Equatable {
     /// 32…120 mirrors the reach of the Dock's own Size slider (tile 16…128 around a default of
     /// 48) rather than a comfort band around `native`. Both ends are reached only through the
-    /// settings slider or the grip; nothing seeds them. Below ~38pt the unscaled 9pt ▲▼ grip
+    /// status-menu slider or the grip; nothing seeds them. Below ~38pt the unscaled 9pt ▲▼ grip
     /// glyph reaches past the chip *frame* by under 1pt but stays short of the icon artwork
     /// (`ChipPillMetrics.bareIconVisibleSlot` keeps 3.75pt × scale of transparent margin).
     static let minimum: CGFloat = 32

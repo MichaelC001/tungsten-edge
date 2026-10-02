@@ -79,7 +79,7 @@
       }
     },
     "Large": {
-      "comment": "设置窗口 · 通用",
+      "comment": "状态栏菜单 · Dock 栏大小",
       "localizations": {
         "zh-Hans": {
           "stringUnit": {
@@ -151,83 +151,6 @@
           "stringUnit": {
             "state": "translated",
             "value": "크게"
-          }
-        }
-      }
-    },
-    "Same as dragging the divider on the taskbar up or down.": {
-      "comment": "设置窗口 · 通用",
-      "localizations": {
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "和在 Dock 栏的分隔处上下拖动，改的是同一个值。"
-          }
-        },
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Same as dragging the divider on the taskbar up or down."
-          }
-        },
-        "zh-Hant": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "與在工作列分隔處上下拖移調整的是同一個值。"
-          }
-        },
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "タスクバーの区切り部分を上下にドラッグするのと同じ設定です。"
-          }
-        },
-        "de": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Entspricht dem Ziehen des Trenners in der Taskleiste nach oben oder unten."
-          }
-        },
-        "fr": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Revient à faire glisser le séparateur de la barre des tâches vers le haut ou vers le bas."
-          }
-        },
-        "es": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Es lo mismo que arrastrar hacia arriba o hacia abajo el divisor de la barra de tareas."
-          }
-        },
-        "es-419": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Es lo mismo que arrastrar hacia arriba o hacia abajo el divisor de la barra de tareas."
-          }
-        },
-        "pt-BR": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "É o mesmo que arrastar o divisor da barra de tarefas para cima ou para baixo."
-          }
-        },
-        "pt-PT": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Equivale a arrastar o divisor da barra de tarefas para cima ou para baixo."
-          }
-        },
-        "it": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Equivale a trascinare in alto o in basso il divisore sulla barra delle applicazioni."
-          }
-        },
-        "ko": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "작업 표시줄의 구분선을 위아래로 드래그하는 것과 같습니다."
           }
         }
       }
@@ -15221,7 +15144,7 @@
       }
     },
     "Small": {
-      "comment": "设置窗口 · 通用",
+      "comment": "状态栏菜单 · Dock 栏大小",
       "localizations": {
         "zh-Hans": {
           "stringUnit": {
@@ -16061,83 +15984,6 @@
         }
       }
     },
-    "System follows the macOS appearance. Light and Dark keep Tungsten Edge that way whatever macOS is set to.": {
-      "comment": "设置窗口 · 通用 · 外观",
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "System follows the macOS appearance. Light and Dark keep Tungsten Edge that way whatever macOS is set to."
-          }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "「跟随系统」随 macOS 的外观变化；选「浅色」或「深色」则不管系统怎么设都保持不变。"
-          }
-        },
-        "zh-Hant": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "「跟隨系統」會隨 macOS 的外觀變化；選「淺色」或「深色」則不論系統如何設定都維持不變。"
-          }
-        },
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "「システムに合わせる」はmacOSの外観モードに従います。「ライト」または「ダーク」を選ぶと、macOSの設定にかかわらずその外観のままになります。"
-          }
-        },
-        "de": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "„System“ folgt dem Erscheinungsbild von macOS. „Hell“ und „Dunkel“ gelten unabhängig von der macOS-Einstellung."
-          }
-        },
-        "fr": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "« Système » suit le mode d’apparence de macOS. « Clair » et « Sombre » s’appliquent quel que soit le réglage de macOS."
-          }
-        },
-        "es": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "«Sistema» sigue el aspecto de macOS. «Claro» y «Oscuro» se mantienen sea cual sea el ajuste de macOS."
-          }
-        },
-        "es-419": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "“Sistema” sigue el aspecto de macOS. “Claro” y “Obscuro” se mantienen sin importar la configuración de macOS."
-          }
-        },
-        "pt-BR": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "“Sistema” segue a aparência do macOS. “Tom claro” e “Tom escuro” são mantidos independentemente do ajuste do macOS."
-          }
-        },
-        "pt-PT": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "“Sistema” segue a apresentação do macOS. “Tons claros” e “Tons escuros” mantêm-se independentemente da definição do macOS."
-          }
-        },
-        "it": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "“Sistema” segue l’aspetto di macOS. “Chiaro” e “Scuro” restano tali a prescindere dall’impostazione di macOS."
-          }
-        },
-        "ko": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "‘시스템’은 macOS의 화면 모드를 따릅니다. ‘라이트’ 또는 ‘다크’를 선택하면 macOS 설정과 관계없이 그대로 유지됩니다."
-          }
-        }
-      }
-    },
     "Taskbar": {
       "comment": "钨极自己的窗口在窗口列表里的标题兜底（WindowDisplayTitle）",
       "localizations": {
@@ -16216,7 +16062,7 @@
       }
     },
     "Taskbar Size": {
-      "comment": "设置窗口 · 通用",
+      "comment": "状态栏菜单 · Dock 栏大小",
       "localizations": {
         "zh-Hans": {
           "stringUnit": {
@@ -18052,83 +17898,6 @@
         }
       }
     },
-    "Toggles the taskbar between always visible and your last auto-hide delay. Default: ⌥⇧⌘D.": {
-      "comment": "设置窗口 · 显隐快捷键说明",
-      "localizations": {
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "在常驻与上次的自动隐藏档位之间切换钨极 Dock 栏。默认 ⌥⇧⌘D。"
-          }
-        },
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Toggles the taskbar between always visible and your last auto-hide delay. Default: ⌥⇧⌘D."
-          }
-        },
-        "zh-Hant": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "在常駐與上次的自動隱藏時間之間切換工作列。預設為⌥⇧⌘D。"
-          }
-        },
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "タスクバーの表示を「常に表示」と、前回の呼び出し時間を使う自動非表示モードの間で切り替えます。デフォルトは⌥⇧⌘Dです。"
-          }
-        },
-        "de": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Schaltet die Taskleiste zwischen „immer sichtbar“ und deiner zuletzt gewählten Verzögerung zum automatischen Ausblenden um. Standard: ⌥⇧⌘D."
-          }
-        },
-        "fr": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Fait basculer la barre des tâches entre l’affichage permanent et votre dernier délai de masquage automatique. Par défaut : ⌥⇧⌘D."
-          }
-        },
-        "es": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Alterna la barra de tareas entre “siempre visible” y la última demora de ocultación automática que elegiste. Por omisión: ⌥⇧⌘D."
-          }
-        },
-        "es-419": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Alterna la barra de tareas entre “siempre visible” y la última demora de ocultación automática que elegiste. Predeterminado: ⌥⇧⌘D."
-          }
-        },
-        "pt-BR": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Alterna a barra de tarefas entre sempre visível e o último atraso de ocultação automática. Padrão: ⌥⇧⌘D."
-          }
-        },
-        "pt-PT": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Alterna a barra de tarefas entre sempre visível e o último atraso de ocultação automática. Predefinição: ⌥⇧⌘D."
-          }
-        },
-        "it": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Alterna la barra delle applicazioni tra sempre visibile e l’ultimo ritardo di nascondimento automatico impostato. Predefinita: ⌥⇧⌘D."
-          }
-        },
-        "ko": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "작업 표시줄을 ‘항상 보임’과 마지막으로 사용한 자동 가리기 지연 시간 사이에서 전환합니다. 기본값: ⌥⇧⌘D."
-          }
-        }
-      }
-    },
     "Too Many Attachments": {
       "comment": "反馈附件被拒 · 超过 3 个",
       "localizations": {
@@ -19581,83 +19350,6 @@
           "stringUnit": {
             "state": "translated",
             "value": "비디오가 너무 큼"
-          }
-        }
-      }
-    },
-    "Walks you through the first-launch recommendations again, including hiding the Dock.": {
-      "comment": "设置窗口 · 通用页「重新打开新手引导」的说明",
-      "localizations": {
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "重新过一遍首次启动时的引导，包括隐藏系统 Dock 那几条推荐设置。"
-          }
-        },
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Walks you through the first-launch recommendations again, including hiding the Dock."
-          }
-        },
-        "zh-Hant": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "再次引導你完成首次啟動時的建議設定，包括隱藏Dock。"
-          }
-        },
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Dockを非表示にする設定を含め、初回起動時のおすすめ設定をもう一度案内します。"
-          }
-        },
-        "de": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Führt dich noch einmal durch die Empfehlungen beim ersten Start – einschließlich des Ausblendens des Docks."
-          }
-        },
-        "fr": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Reprend les recommandations du premier lancement, y compris le masquage du Dock."
-          }
-        },
-        "es": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Repasa de nuevo las recomendaciones del primer inicio, incluida la de ocultar el Dock."
-          }
-        },
-        "es-419": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Repasa de nuevo las recomendaciones del primer inicio, incluida la de ocultar el Dock."
-          }
-        },
-        "pt-BR": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Repassa as recomendações do primeiro uso, incluindo ocultar o Dock."
-          }
-        },
-        "pt-PT": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Repassa as recomendações do primeiro arranque, incluindo ocultar a Dock."
-          }
-        },
-        "it": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Ripropone le impostazioni consigliate del primo avvio, compreso il nascondimento del Dock."
-          }
-        },
-        "ko": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Dock 가리기를 포함하여 처음 실행할 때의 권장 설정을 다시 안내합니다."
           }
         }
       }

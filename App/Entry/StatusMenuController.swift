@@ -82,6 +82,9 @@ final class StatusMenuController: NSObject, NSMenuDelegate {
     private let windowLiftItem = NSMenuItem(title: String(localized: "Keep maximized windows above the taskbar"), action: #selector(toggleWindowLift), keyEquivalent: "")
     private let nativeDockSliderView: PreferenceSliderMenuItemView
     private let edgeSliderView: PreferenceSliderMenuItemView
+    /// Hat and row of the taskbar height slider; the same value as the grip on the bar.
+    private let taskbarSizeSectionItem = NSMenuItem(title: "", action: nil, keyEquivalent: "")
+    private let taskbarSizeSliderView = TaskbarSizeMenuItemView(accessibilityTitle: String(localized: "Taskbar Size"))
 
     init(store: AppSettingsStore,
          settingsCoordinator: SettingsCoordinator,
@@ -204,6 +207,23 @@ final class StatusMenuController: NSObject, NSMenuDelegate {
         menu.addItem(edgeItem)
         menu.addItem(.separator())
 
+        // Live on both entry points, the taskbar-anchored menu included: the bar grows under
+        // the menu or leaves a gap below it, but never disappears from under it the way a
+        // wake-delay change could.
+        taskbarSizeSectionItem.attributedTitle = Self.sectionTitle(String(localized: "Taskbar Size"))
+        taskbarSizeSectionItem.isEnabled = false
+        menu.addItem(taskbarSizeSectionItem)
+        taskbarSizeSliderView.onEditingChanged = { [weak self] editing in
+            self?.settingsCoordinator.setTaskbarHeightEditing(editing)
+        }
+        taskbarSizeSliderView.onHeightChange = { [weak self] height in
+            self?.settingsCoordinator.setTaskbarHeight(height)
+        }
+        let taskbarSizeItem = NSMenuItem()
+        taskbarSizeItem.view = taskbarSizeSliderView
+        menu.addItem(taskbarSizeItem)
+        menu.addItem(.separator())
+
         nativeDockSectionItem.attributedTitle = Self.sectionTitle(AutoHideToggleMenuModel.nativeDockSectionTitle)
         nativeDockSectionItem.isEnabled = false
         menu.addItem(nativeDockSectionItem)
@@ -312,6 +332,8 @@ final class StatusMenuController: NSObject, NSMenuDelegate {
     func menuDidClose(_ menu: NSMenu) {
         isMenuOpen = false
         isPresentedFromTaskbar = false
+        // A menu dismissed mid-drag must not leave the bars in the resize transaction.
+        settingsCoordinator.setTaskbarHeightEditing(false)
         onMenuVisibilityChanged(false)
         // 关闭后再预热一次；所有结果只进缓存，供下次展示直接使用。
         refreshSystemTruth()
@@ -348,6 +370,7 @@ final class StatusMenuController: NSObject, NSMenuDelegate {
         nativeDockSliderView.sync(delay: store.nativeDockAutoHideDelay)
         nativeDockApplyItem.isHidden = true
         edgeSliderView.sync(delay: store.edgeAutoHideDelay)
+        taskbarSizeSliderView.sync(height: store.dockPanelHeight)
         refreshEdgeSectionTitle()
         rebuildTaskbarScreenMenu()
     }

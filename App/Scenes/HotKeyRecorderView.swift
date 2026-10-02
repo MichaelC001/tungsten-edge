@@ -63,6 +63,9 @@ final class HotKeyRecorderNSView: NSView {
 
     override var intrinsicContentSize: NSSize { NSSize(width: 132, height: 24) }
     override var acceptsFirstResponder: Bool { true }
+    /// Focus means "recording", so only a click may give it: left in the key-view loop, the
+    /// window hands it focus on open and the next shortcut typed rebinds the hot key.
+    override var canBecomeKeyView: Bool { false }
 
     override func mouseDown(with event: NSEvent) {
         if isRecording {
