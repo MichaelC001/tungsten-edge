@@ -173,8 +173,9 @@ struct FolderGridPopupView: View {
     /// Called after a file is opened (the coordinator closes the popup); the context menu's
     /// "open" actions use it too.
     var onFileOpened: () -> Void = {}
-    /// The content's size changed (drill-in, live refresh): the coordinator re-anchors the panel.
-    var onContentResize: () -> Void = {}
+    /// The content's size changed (drill-in, live refresh): the coordinator re-anchors the panel
+    /// at the window size given.
+    var onContentResize: (CGSize) -> Void = { _ in }
     /// 「Pin」 on a directory cell's menu. nil = not offered.
     var onPinFolder: ((URL) -> Void)?
     var isFolderPinned: ((URL) -> Bool)?
@@ -191,7 +192,7 @@ struct FolderGridPopupView: View {
          context: StackPopupContext,
          usesLiquidGlass: Bool,
          onFileOpened: @escaping () -> Void = {},
-         onContentResize: @escaping () -> Void = {},
+         onContentResize: @escaping (CGSize) -> Void = { _ in },
          onPinFolder: ((URL) -> Void)? = nil,
          isFolderPinned: ((URL) -> Bool)? = nil) {
         self.rootURL = rootURL
@@ -225,6 +226,7 @@ struct FolderGridPopupView: View {
                          layout: layout,
                          usesLiquidGlass: usesLiquidGlass,
                          arrow: context.arrow,
+                         onPanelSizeChange: onContentResize,
                          onBack: drillStack.isEmpty ? nil : { _ = drillStack.removeLast() },
                          gridAnimation: animatesGridChanges ? .easeInOut(duration: DrawerAnimation.duration) : nil,
                          gridAnimationKey: model.entries.map(\.url)) {
@@ -254,8 +256,6 @@ struct FolderGridPopupView: View {
             DispatchQueue.main.async { animatesGridChanges = true }
         }
         .onChange(of: drillStack) { _ in model.display(url: currentURL) }
-        .onChange(of: layout) { _ in onContentResize() }
-        .onChange(of: note) { _ in onContentResize() }
     }
 
     private func open(_ entry: FolderContentsLoader.Entry) {

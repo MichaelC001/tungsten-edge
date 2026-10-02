@@ -94,7 +94,7 @@ extension PanelCoordinator {
                 context: context,
                 usesLiquidGlass: usesLiquidGlass,
                 onFileOpened: { [weak self] in self?.closeFolderPopup() },
-                onContentResize: { [weak self] in self?.repositionFolderPopup(animated: true) },
+                onContentResize: { [weak self] size in self?.repositionFolderPopup(animated: true, contentSize: size) },
                 onPinFolder: { [weak self] url in self?.pinnedFolderStore.add(url.path) },
                 isFolderPinned: { [weak self] url in self?.pinnedFolderStore.contains(url.path) ?? true }
             ))
@@ -112,7 +112,7 @@ extension PanelCoordinator {
                 context: context,
                 usesLiquidGlass: usesLiquidGlass,
                 onClosePopup: { [weak self] in self?.closeFolderPopup() },
-                onContentResize: { [weak self] in self?.repositionFolderPopup(animated: true) },
+                onContentResize: { [weak self] size in self?.repositionFolderPopup(animated: true, contentSize: size) },
                 onPinFolder: { [weak self] url in self?.pinnedFolderStore.add(url.path) },
                 isFolderPinned: { [weak self] url in self?.pinnedFolderStore.contains(url.path) ?? true }
             ))
@@ -139,7 +139,7 @@ extension PanelCoordinator {
                 context: context,
                 usesLiquidGlass: usesLiquidGlass,
                 onClosePopup: { [weak self] in self?.closeFolderPopup() },
-                onContentResize: { [weak self] in self?.repositionFolderPopup(animated: true) },
+                onContentResize: { [weak self] size in self?.repositionFolderPopup(animated: true, contentSize: size) },
                 onOpenInFinder: { [weak self] in
                     self?.closeFolderPopup()
                     TrashStateStore.openTrashWindow(runtime: runtime, store: store)
@@ -276,15 +276,23 @@ extension PanelCoordinator {
     }
 
     /// 内容尺寸变化（首测/下钻/实时刷新）→ 按锚点重算目标帧。宽高都由内容推导（列数确定宽）。
-    private func repositionFolderPopup(animated: Bool) {
+    /// `contentSize` is the window size the content derived from its layout; nil measures it,
+    /// which is only valid outside a SwiftUI update (`fittingSize` reads zero inside one).
+    private func repositionFolderPopup(animated: Bool, contentSize: CGSize? = nil) {
         guard folderPopupWantsOpen,
               let panel = folderPopupPanel,
               let hosting = folderPopupContentHost,
               let dock = dockPanel else { return }
         // 入场窗口期内一律瞬时校正,不与入场淡入叠加出晃动（散装感修复）。
         let animated = animated && Date().timeIntervalSince(popupOpenedAt) > 0.25
-        let fitting = hosting.fittingSize
-        let size = CGSize(width: max(fitting.width, 160), height: max(fitting.height, 120))
+        let size: CGSize
+        if let contentSize {
+            size = contentSize
+        } else {
+            // Smaller than any plate = not laid out yet, never a size: keep the last good one.
+            let fitting = hosting.fittingSize
+            size = fitting.width >= 160 && fitting.height >= 100 ? fitting : lastPopupSize
+        }
         lastPopupSize = size
         let screen = panelCurrentScreen(panel: dock)
         let target = PanelGeometry.folderPopupTargetFrame(

@@ -27,6 +27,9 @@ struct StackPopupChrome<Grid: View>: View {
     let layout: StackGridLayout.Result
     let usesLiquidGlass: Bool
     @ObservedObject var arrow: StackPopupArrowModel
+    /// The popup window's new size whenever the plate's changes. No default: without it the
+    /// window stops following its content.
+    let onPanelSizeChange: (CGSize) -> Void
     /// Non-nil shows the back button (drilled into a subfolder).
     var onBack: (() -> Void)?
     /// Animates cells arriving and leaving; nil while the first population lands.
@@ -61,6 +64,8 @@ struct StackPopupChrome<Grid: View>: View {
         .padding(Metrics.panelMargin)
         // Only so the system scroller draws its light knob on this dark plate; nothing reads it.
         .environment(\.colorScheme, .dark)
+        // Derived, not measured: `fittingSize` read inside this update returns zero.
+        .onChange(of: plateSize) { onPanelSizeChange(Metrics.panelSize(forPlate: $0)) }
     }
 
     private var header: some View {

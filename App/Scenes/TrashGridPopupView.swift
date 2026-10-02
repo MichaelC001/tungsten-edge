@@ -10,7 +10,7 @@ struct TrashGridPopupView: View {
     let context: StackPopupContext
     let usesLiquidGlass: Bool
     var onClosePopup: () -> Void = {}
-    var onContentResize: () -> Void = {}
+    var onContentResize: (CGSize) -> Void = { _ in }
     var onOpenInFinder: () -> Void = {}
 
     private var items: [TrashItem] {
@@ -43,6 +43,7 @@ struct TrashGridPopupView: View {
                          layout: layout,
                          usesLiquidGlass: usesLiquidGlass,
                          arrow: context.arrow,
+                         onPanelSizeChange: onContentResize,
                          gridAnimation: .easeInOut(duration: DrawerAnimation.duration),
                          gridAnimationKey: items.map(\.url)) {
             ForEach(items, id: \.url) { item in
@@ -62,8 +63,6 @@ struct TrashGridPopupView: View {
                 }
             }
         }
-        .onChange(of: layout) { _ in onContentResize() }
-        .onChange(of: note) { _ in onContentResize() }
     }
 
     /// A click selects the item in the Trash window: Finder exposes no put-back command, so that

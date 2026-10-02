@@ -13,7 +13,7 @@ struct ShelfGridPopupView: View {
     /// Explicit, no default: every panel is its own hosting root (`AGENTS.md` no-default rule).
     let usesLiquidGlass: Bool
     var onClosePopup: () -> Void = {}
-    var onContentResize: () -> Void = {}
+    var onContentResize: (CGSize) -> Void = { _ in }
     var onPinFolder: ((URL) -> Void)?
     var isFolderPinned: ((URL) -> Bool)?
 
@@ -32,6 +32,7 @@ struct ShelfGridPopupView: View {
                          layout: layout,
                          usesLiquidGlass: usesLiquidGlass,
                          arrow: context.arrow,
+                         onPanelSizeChange: onContentResize,
                          gridAnimation: .easeInOut(duration: DrawerAnimation.duration),
                          gridAnimationKey: entries.map(\.url)) {
             ForEach(entries, id: \.url) { entry in
@@ -47,8 +48,6 @@ struct ShelfGridPopupView: View {
                 }
             }
         }
-        .onChange(of: layout) { _ in onContentResize() }
-        .onChange(of: note) { _ in onContentResize() }
     }
 
     private static func note(for entries: [FolderContentsLoader.Entry]) -> String? {

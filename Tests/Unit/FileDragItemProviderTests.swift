@@ -34,7 +34,8 @@ final class FileDragItemProviderTests: XCTestCase {
         let contentType = try XCTUnwrap(url.resourceValues(forKeys: [.contentTypeKey]).contentType,
                                         file: file, line: line)
 
-        XCTAssertEqual(provider.suggestedName, url.lastPathComponent, file: file, line: line)
+        // A suggested name makes SwiftUI drag a cache copy instead of the file itself.
+        XCTAssertNil(provider.suggestedName, file: file, line: line)
         XCTAssertTrue(provider.registeredTypeIdentifiers.contains(UTType.fileURL.identifier),
                       file: file, line: line)
         XCTAssertFalse(provider.registeredTypeIdentifiers.contains(contentType.identifier),
