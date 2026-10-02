@@ -1,4 +1,5 @@
 import AppKit
+import SwiftUI
 import XCTest
 
 /// Continuous bar height: the two clamps plus the native baseline stand in for the old tiers.
@@ -366,6 +367,26 @@ final class ScreenRectReaderTests: XCTestCase {
                              "直边外推必须落在实际尖端之下——差的那截才是圆头")
         // **胶囊，不是圆角矩形**：圆角必须正好是高的一半。
         XCTAssertEqual(native.cornerRadius, native.height / 2)
+    }
+
+    /// The panel is sized from `fittingSize` in the same turn the title is swapped in. A label
+    /// whose width came from an AppKit view's intrinsic size was still reporting the previous
+    /// title there, and the bubble was cut to the old width (owner, 2026-10-02).
+    func testBubbleRemeasuresInTheSameTurnWhenTheTitleChanges() {
+        for scheme in [ColorScheme.light, .dark] {
+            func bubble(_ title: String) -> AnyView {
+                AnyView(WindowTitleTooltipView(title: title, style: .native, usesLiquidGlass: false)
+                    .environment(\.colorScheme, scheme))
+            }
+            let host = NSHostingView(rootView: bubble("Notes"))
+            let short = host.fittingSize
+            host.rootView = bubble("Adobe Illustrator 2026")
+            let long = host.fittingSize
+            let fresh = NSHostingView(rootView: bubble("Adobe Illustrator 2026")).fittingSize
+            XCTAssertEqual(long.width, fresh.width, accuracy: 0.5, "\(scheme): stale width after a title change")
+            XCTAssertGreaterThan(long.width, short.width + 60, "\(scheme)")
+            XCTAssertEqual(long.height, short.height, accuracy: 0.5, "\(scheme)")
+        }
     }
 
     /// 尖角必须画在同一条闭合路径里：叠一个三角形会在接缝处交叉出一条横线。

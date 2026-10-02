@@ -705,9 +705,12 @@ struct WindowTitleTooltipView: View {
                 .lineLimit(1)
                 .truncationMode(.tail)
         } else {
-            UnsmoothedLabel(title: title, fontSize: style.fontSize, tint: theme.tooltipText,
-                            maximumWidth: style.maximumWidth)
-                .fixedSize()
+            // The frame is computed here, from the title, not taken from the AppKit view: the panel
+            // is sized from `fittingSize` in the same turn the title is swapped in, and a
+            // representable's intrinsic size still describes the previous title at that point.
+            let size = UnsmoothedLabel.size(of: title, fontSize: style.fontSize, maximumWidth: style.maximumWidth)
+            UnsmoothedLabel(title: title, fontSize: style.fontSize, tint: theme.tooltipText)
+                .frame(width: size.width, height: size.height)
         }
     }
 
@@ -760,14 +763,17 @@ private struct UnsmoothedLabel: NSViewRepresentable {
     let title: String
     let fontSize: CGFloat
     let tint: DockTint
-    let maximumWidth: CGFloat
+
+    private static func font(_ size: CGFloat) -> NSFont { .systemFont(ofSize: size, weight: .regular) }
+
+    /// The label's layout size, in whole points; wider titles are truncated to `maximumWidth`.
+    static func size(of title: String, fontSize: CGFloat, maximumWidth: CGFloat) -> CGSize {
+        let size = (title as NSString).size(withAttributes: [.font: font(fontSize)])
+        return CGSize(width: min(ceil(size.width), maximumWidth), height: ceil(size.height))
+    }
 
     func makeNSView(context: Context) -> UnsmoothedLabelView {
         let view = UnsmoothedLabelView()
-        for orientation in [NSLayoutConstraint.Orientation.horizontal, .vertical] {
-            view.setContentHuggingPriority(.required, for: orientation)
-            view.setContentCompressionResistancePriority(.required, for: orientation)
-        }
         apply(to: view)
         return view
     }
@@ -780,30 +786,23 @@ private struct UnsmoothedLabel: NSViewRepresentable {
         paragraph.lineBreakMode = .byTruncatingTail
         let colour = NSColor(white: tint.base == .white ? 1 : 0, alpha: tint.opacity)
         view.set(NSAttributedString(string: title, attributes: [
-            .font: NSFont.systemFont(ofSize: fontSize, weight: .regular),
+            .font: Self.font(fontSize),
             .foregroundColor: colour,
             .paragraphStyle: paragraph,
-        ]), maximumWidth: maximumWidth)
+        ]))
     }
 }
 
+/// Draws into whatever frame SwiftUI gives it; it has no intrinsic size on purpose (see the call site).
 final class UnsmoothedLabelView: NSView {
     private var text = NSAttributedString()
-    private var maximumWidth: CGFloat = .greatestFiniteMagnitude
 
     override var isFlipped: Bool { true }
 
-    func set(_ text: NSAttributedString, maximumWidth: CGFloat) {
-        guard text != self.text || maximumWidth != self.maximumWidth else { return }
+    func set(_ text: NSAttributedString) {
+        guard text != self.text else { return }
         self.text = text
-        self.maximumWidth = maximumWidth
-        invalidateIntrinsicContentSize()
         needsDisplay = true
-    }
-
-    override var intrinsicContentSize: NSSize {
-        let size = text.size()
-        return NSSize(width: min(ceil(size.width), maximumWidth), height: ceil(size.height))
     }
 
     override func hitTest(_ point: NSPoint) -> NSView? { nil }
