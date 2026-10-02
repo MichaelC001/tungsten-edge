@@ -7,15 +7,11 @@ import UniformTypeIdentifiers
 /// Finder automation. Same panel, grid and cells as the folder and shelf popups.
 struct TrashGridPopupView: View {
     @ObservedObject var trashStore: TrashStateStore
-    let maxContentHeight: CGFloat
+    let context: StackPopupContext
     let usesLiquidGlass: Bool
     var onClosePopup: () -> Void = {}
     var onContentResize: () -> Void = {}
     var onOpenInFinder: () -> Void = {}
-
-    private let theme = DockThemeTokens.standard
-    @State private var gridHeight: CGFloat = 0
-    private typealias Style = FolderPopupStyle
 
     private var items: [TrashItem] {
         if case let .loaded(items, _) = trashStore.listing { return items }
@@ -25,90 +21,49 @@ struct TrashGridPopupView: View {
     private var canEmpty: Bool { trashStore.status != .denied }
     private var tailCellCount: Int { canEmpty ? 2 : 1 }
 
-    var body: some View {
-        let columnCount = min(Style.maxColumns, max(Style.minColumns, items.count + tailCellCount))
-        let contentWidth = CGFloat(columnCount) * Style.cellWidth
-            + CGFloat(columnCount - 1) * Style.cellSpacing
-            + Style.contentPadding * 2
-        let availableGridHeight = min(max(140, maxContentHeight), Style.maxGridHeight)
-        ZStack(alignment: .bottomLeading) {
-            DockPanelBackdrop(theme: theme,
-                              cornerRadius: DockShape.panelCornerRadius,
-                              usesLiquidGlass: usesLiquidGlass)
-            Group {
-                if gridHeight > availableGridHeight + 0.5 {
-                    ScrollView(.vertical, showsIndicators: true) { gridBody(contentWidth: contentWidth, columnCount: columnCount) }
-                        .frame(height: availableGridHeight)
-                } else {
-                    gridBody(contentWidth: contentWidth, columnCount: columnCount)
-                }
-            }
-            .clipShape(RoundedRectangle(cornerRadius: DockShape.panelCornerRadius, style: .continuous))
-        }
-        .dockPanelRim(cornerRadius: DockShape.panelCornerRadius,
-                      style: theme.panelRimStyle,
-                      lineWidth: theme.panelRimLineWidth,
-                      usesLiquidGlass: usesLiquidGlass)
-        .dockShadow(theme.popupShadow)
-        .padding(PanelCoordinator.shadowPadding)
-        .onChange(of: gridHeight) { _ in onContentResize() }
-        .onChange(of: columnCount) { _ in onContentResize() }
+    private var layout: StackGridLayout.Result {
+        StackGridLayout.resolve(cellCount: items.count + tailCellCount, limits: context.limits, hasNote: note != nil)
     }
 
-    private func gridBody(contentWidth: CGFloat, columnCount: Int) -> some View {
-        VStack(spacing: 0) {
-            statusLine
-            LazyVGrid(columns: Array(repeating: GridItem(.fixed(Style.cellWidth), spacing: Style.cellSpacing), count: columnCount),
-                      spacing: Style.cellSpacing) {
-                ForEach(items, id: \.url) { item in
-                    FolderGridCell(iconPath: nil,
-                                   staticIcon: TrashItemIcon.icon(for: item),
-                                   label: item.name,
-                                   contextMenu: { itemMenu(for: item) }) { reveal(item) }
-                }
-                FolderGridCell.openInFinder {
-                    onOpenInFinder()
-                }
-                if canEmpty {
-                    FolderGridCell(iconPath: nil, staticIcon: Self.emptyIcon, label: String(localized: "Empty Trash…")) {
-                        // The confirmation is modal; the popup's click-away monitor would close it anyway.
-                        onClosePopup()
-                        trashStore.emptyTrash()
-                    }
-                }
-            }
-            .animation(.easeInOut(duration: DrawerAnimation.duration), value: items)
-        }
-        .padding(Style.contentPadding)
-        .frame(width: contentWidth)
-        .background(GeometryReader { g in
-            Color.clear.preference(key: TrashGridHeightKey.self, value: g.size.height)
-        })
-        .onPreferenceChange(TrashGridHeightKey.self) { gridHeight = $0 }
-    }
-
-    @ViewBuilder
-    private var statusLine: some View {
+    private var note: String? {
         switch trashStore.listing {
         case .idle, .loading:
-            note(String(localized: "Reading Trash…"))
+            return String(localized: "Reading Trash…")
         case .unavailable:
-            note(String(localized: "Allow Finder automation to see what’s in the Trash"))
+            return String(localized: "Allow Finder automation to see what’s in the Trash")
         case let .loaded(items, hidden):
-            if items.isEmpty {
-                note(String(localized: "Trash is empty"))
-            } else if hidden > 0 {
-                note(String(localized: "Open in Finder to see the rest"))
-            }
+            if items.isEmpty { return String(localized: "Trash is empty") }
+            return hidden > 0 ? String(localized: "Open in Finder to see the rest") : nil
         }
     }
 
-    private func note(_ text: String) -> some View {
-        Text(text)
-            .font(.system(size: Style.labelSize))
-            .foregroundStyle(theme.popupSecondaryText.color)
-            .frame(maxWidth: .infinity)
-            .padding(.vertical, 14)
+    var body: some View {
+        StackPopupChrome(title: String(localized: "Trash"),
+                         note: note,
+                         layout: layout,
+                         usesLiquidGlass: usesLiquidGlass,
+                         arrow: context.arrow,
+                         gridAnimation: .easeInOut(duration: DrawerAnimation.duration),
+                         gridAnimationKey: items.map(\.url)) {
+            ForEach(items, id: \.url) { item in
+                FolderGridCell(iconPath: nil,
+                               staticIcon: TrashItemIcon.icon(for: item),
+                               label: item.name,
+                               contextMenu: { itemMenu(for: item) }) { reveal(item) }
+            }
+            FolderGridCell.openInFinder {
+                onOpenInFinder()
+            }
+            if canEmpty {
+                FolderGridCell(iconPath: nil, staticIcon: Self.emptyIcon, label: String(localized: "Empty Trash…")) {
+                    // The confirmation is modal; the popup's click-away monitor would close it anyway.
+                    onClosePopup()
+                    trashStore.emptyTrash()
+                }
+            }
+        }
+        .onChange(of: layout) { _ in onContentResize() }
+        .onChange(of: note) { _ in onContentResize() }
     }
 
     /// A click selects the item in the Trash window: Finder exposes no put-back command, so that
@@ -152,12 +107,5 @@ enum TrashItemIcon {
         let icon = NSWorkspace.shared.icon(for: type)
         cache[key] = icon
         return icon
-    }
-}
-
-private struct TrashGridHeightKey: PreferenceKey {
-    static var defaultValue: CGFloat = 0
-    static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) {
-        value = max(value, nextValue())
     }
 }

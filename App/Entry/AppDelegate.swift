@@ -132,6 +132,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         setvbuf(stdout, nil, _IOLBF, 0)
 
         startMainLoopStallProbeIfTracing()
+        StackPopupSnapshotProbe.runIfRequested()
 
         // 首装时间戳：**故意放在所有分支判断之前**，搬家引导、权限引导、正常启动都要记。
         // 这三条分支的用户都是真的运行过钨极的人，将来转收费判定老用户时不该把谁漏掉。

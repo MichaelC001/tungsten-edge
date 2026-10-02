@@ -83,15 +83,15 @@ extension PanelCoordinator {
         // 首帧完整**包含图标**：预热首批可见格（8 列 × 网格高上限 ≈ 40 格,取 48 宽裕值）的图标缓存,
         // 否则格子先出、图标按解析顺序从左上角逐个浮现（owner 2026-07-07 报的"从左上角出现"真因）。
         if let entries = preloadedEntries {
-            FolderIconResolver.warm(paths: entries.prefix(48).map(\.url.path), timeout: 0.1)
+            FolderIconResolver.warm(paths: entries.prefix(Self.popupWarmCount).map(\.url.path), timeout: 0.1)
         }
 
-        presentPopup(content: .folder(path: path), anchorVisibleRect: anchorVisibleRect) { [weak self] maxContentHeight in
+        presentPopup(content: .folder(path: path), anchorVisibleRect: anchorVisibleRect) { [weak self] context in
             NSHostingView(rootView: FolderGridPopupView(
                 rootURL: rootURL,
                 initialEntries: preloadedEntries,
                 sortOrder: sortOrder,
-                maxContentHeight: maxContentHeight,
+                context: context,
                 usesLiquidGlass: usesLiquidGlass,
                 onFileOpened: { [weak self] in self?.closeFolderPopup() },
                 onContentResize: { [weak self] in self?.repositionFolderPopup(animated: true) },
@@ -104,12 +104,12 @@ extension PanelCoordinator {
     private func openShelfPopup(anchorVisibleRect: CGRect) {
         shelfStore.prune()   // 打开即剔除已失效的引用（文件被移走/删除）
         // 同 openFolderPopup：首帧图标全亮,不逐个浮现。
-        FolderIconResolver.warm(paths: Array(shelfStore.itemPaths.prefix(48)), timeout: 0.1)
+        FolderIconResolver.warm(paths: Array(shelfStore.itemPaths.prefix(Self.popupWarmCount)), timeout: 0.1)
 
-        presentPopup(content: .shelf, anchorVisibleRect: anchorVisibleRect) { [weak self, shelfStore] maxContentHeight in
+        presentPopup(content: .shelf, anchorVisibleRect: anchorVisibleRect) { [weak self, shelfStore] context in
             NSHostingView(rootView: ShelfGridPopupView(
                 shelfStore: shelfStore,
-                maxContentHeight: maxContentHeight,
+                context: context,
                 usesLiquidGlass: usesLiquidGlass,
                 onClosePopup: { [weak self] in self?.closeFolderPopup() },
                 onContentResize: { [weak self] in self?.repositionFolderPopup(animated: true) },
@@ -120,7 +120,7 @@ extension PanelCoordinator {
     }
 
     /// 共享的弹窗呈现路径（文件夹/中转同一面板同一套动画与监视器）。内容构建交给 makeHosting
-    /// （入参 = 网格可用高度上限）；调用方负责先做好各自的预载（首帧完整,AGENTS 护栏）。
+    /// （入参 = `StackPopupContext`：本屏的行列上限 + 箭头）；调用方负责先做好各自的预载（首帧完整,AGENTS 护栏）。
     func toggleTrashPopup(anchorVisibleRect: CGRect) {
         if folderPopupWantsOpen, openPopupContent == .trash {
             closeFolderPopup()
@@ -133,10 +133,10 @@ extension PanelCoordinator {
     /// Finder answers the listing in ~1s, far too long to hold the first frame for.
     private func openTrashPopup(anchorVisibleRect: CGRect) {
         let store = TrashStateStore.shared
-        presentPopup(content: .trash, anchorVisibleRect: anchorVisibleRect) { [weak self, runtime] maxContentHeight in
+        presentPopup(content: .trash, anchorVisibleRect: anchorVisibleRect) { [weak self, runtime] context in
             NSHostingView(rootView: TrashGridPopupView(
                 trashStore: store,
-                maxContentHeight: maxContentHeight,
+                context: context,
                 usesLiquidGlass: usesLiquidGlass,
                 onClosePopup: { [weak self] in self?.closeFolderPopup() },
                 onContentResize: { [weak self] in self?.repositionFolderPopup(animated: true) },
@@ -158,7 +158,18 @@ extension PanelCoordinator {
         if openPopupContent == .trash { TrashStateStore.shared.clearListing() }
     }
 
-    private func presentPopup(content: PopupContent, anchorVisibleRect: CGRect, makeHosting: (CGFloat) -> NSView) {
+    /// Type icons warmed before the popup shows: one screenful on a large display.
+    private static let popupWarmCount = 60
+
+    /// Every frame the popup window gets goes through here: the arrow has to follow the chip
+    /// whenever the plate is clamped off-centre, mid-tween included.
+    private func setFolderPopupFrame(_ frame: NSRect, on panel: NSPanel, display: Bool) {
+        panel.setFrame(frame, display: display)
+        let offset = popupAnchorVisibleRect.midX - frame.midX
+        if folderPopupArrow?.offsetFromCenter != offset { folderPopupArrow?.offsetFromCenter = offset }
+    }
+
+    private func presentPopup(content: PopupContent, anchorVisibleRect: CGRect, makeHosting: (StackPopupContext) -> NSView) {
         guard let mainPanel = dockPanel else { return }
         onAccessoryWillOpen?(self, .popup)
         // 可打断：面板可见时换内容**原地切换**——不 orderOut（根除黑一下的 blink），
@@ -185,14 +196,20 @@ extension PanelCoordinator {
 
         let screen = panelCurrentScreen(panel: mainPanel)
         let screenGeometry = Self.screenGeometry(screen)
-        let maxContentHeight = PanelGeometry.maxFolderPopupContentHeight(
-            anchorVisibleRect: anchorVisibleRect, on: screenGeometry, metrics: layoutMetrics)
+        let arrow = StackPopupArrowModel()
+        let context = StackPopupContext(
+            limits: StackGridLayout.limits(
+                screenSize: screenGeometry.frame.size,
+                availablePlateHeight: PanelGeometry.stackPopupAvailablePlateHeight(
+                    anchorVisibleRect: anchorVisibleRect, on: screenGeometry)),
+            arrow: arrow)
 
-        let hosting = makeHosting(maxContentHeight)
+        let hosting = makeHosting(context)
         hosting.wantsLayer = true
         hosting.layer?.backgroundColor = NSColor(white: 1.0, alpha: 0.0).cgColor
 
         popupAnchorVisibleRect = anchorVisibleRect
+        folderPopupArrow = arrow
         if content != .trash { clearTrashListingIfShowing() }
         openPopupContent = content
         folderPopupWantsOpen = true
@@ -228,8 +245,10 @@ extension PanelCoordinator {
             // （内容层不再另做缩放/透明度,见 FolderGridPopupView）。
             NSAnimationContext.runAnimationGroup { ctx in
                 ctx.duration = 0
-                panel.setFrame(initialFrame, display: false)
+                setFolderPopupFrame(initialFrame, on: panel, display: false)
             }
+            // The arrow's position was only known with the frame: lay it out before the first show.
+            hosting.layoutSubtreeIfNeeded()
             if !panel.isVisible { panel.alphaValue = 0 }
             panel.orderFrontRegardless()
             pinOverlappingPanelIfNeeded(panel)
@@ -283,7 +302,7 @@ extension PanelCoordinator {
                 panel: panel, to: target,
                 duration: Self.layoutAnimationDuration, timingFunction: CAMediaTimingFunction(name: .easeInEaseOut))
         } else {
-            panel.setFrame(target, display: true)
+            setFolderPopupFrame(target, on: panel, display: true)
         }
     }
 
@@ -317,7 +336,7 @@ extension PanelCoordinator {
 
         let start = panel.frame
         guard start != target, duration > 0, let dock = dockPanel else {
-            panel.setFrame(target, display: true)
+            setFolderPopupFrame(target, on: panel, display: true)
             return
         }
         let screen = Self.screenGeometry(panelCurrentScreen(panel: dock))
@@ -328,7 +347,11 @@ extension PanelCoordinator {
         let startCenterX = start.midX
         let endCenterX = popupAnchorVisibleRect.midX
         let startBottomY = start.minY
-        let endBottomY = popupAnchorVisibleRect.maxY + 8
+        let endBottomY = PanelGeometry.folderPopupDesiredBottomY(anchorVisibleRect: popupAnchorVisibleRect)
+        // The screen margins are a tweened quantity too: starting from the ones the current frame
+        // holds keeps p=0 on that frame; ending on the new anchor's lands p=1 on the target.
+        let startMargins = PanelGeometry.folderPopupScreenMargins(holding: start, on: screen)
+        let endMargins = PanelGeometry.folderPopupScreenMargins(anchorCenterX: popupAnchorVisibleRect.midX, on: screen)
         let clockStart = CACurrentMediaTime()
 
         let timer = Timer(timeInterval: 1.0 / 60.0, repeats: true) { [weak self] t in
@@ -339,7 +362,7 @@ extension PanelCoordinator {
                 }
                 let raw = min(max((CACurrentMediaTime() - clockStart) / duration, 0), 1)
                 if raw >= 1 {
-                    panel.setFrame(target, display: true)   // 落到精确目标值,不依赖浮点误差刚好踩中 1.0
+                    self.setFolderPopupFrame(target, on: panel, display: true)   // 落到精确目标值,不依赖浮点误差刚好踩中 1.0
                     self.folderPopupFrameTimer = nil
                     self.folderPopupTweenTarget = nil
                     t.invalidate()
@@ -351,8 +374,11 @@ extension PanelCoordinator {
                     let origin = PanelGeometry.folderPopupClampedOrigin(
                         desiredCenterX: startCenterX + (endCenterX - startCenterX) * p,
                         desiredBottomY: startBottomY + (endBottomY - startBottomY) * p,
-                        size: CGSize(width: width, height: height), on: screen)
-                    panel.setFrame(NSRect(origin: origin, size: CGSize(width: width, height: height)), display: true)
+                        size: CGSize(width: width, height: height),
+                        margins: startMargins.interpolated(to: endMargins, progress: p),
+                        on: screen)
+                    self.setFolderPopupFrame(NSRect(origin: origin, size: CGSize(width: width, height: height)),
+                                             on: panel, display: true)
                 }
             }
         }
@@ -394,7 +420,8 @@ extension PanelCoordinator {
     private func dismissFolderPopupIfOutside() {
         guard folderPopupWantsOpen, let panel = folderPopupPanel else { return }
         let mouse = NSEvent.mouseLocation
-        guard !panel.frame.contains(mouse),
+        // The plate, not the window: its 40pt transparent border must dismiss like any outside click.
+        guard !PanelGeometry.folderPopupPlateFrame(panelFrame: panel.frame).contains(mouse),
               !popupAnchorVisibleRect.insetBy(dx: -4, dy: -4).contains(mouse) else { return }
         closeFolderPopup()
     }

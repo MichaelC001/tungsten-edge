@@ -104,23 +104,62 @@ final class PanelGeometryTests: XCTestCase {
         let popup = PanelGeometry.folderPopupTargetFrame(
             anchorVisibleRect: anchor, size: CGSize(width: 400, height: 300), on: screen, metrics: metrics
         )
+        let plate = PanelGeometry.folderPopupPlateFrame(panelFrame: popup)
 
-        XCTAssertEqual(popup.minY, anchor.maxY + 8)
+        // The arrow's tip (bottom of the visible part) floats 3pt above the chip.
+        XCTAssertEqual(plate.minY, anchor.maxY + StackPopupMetrics.tipGap)
         XCTAssertEqual(popup.midX, anchor.midX)
         XCTAssertEqual(popup.height, 300)
     }
 
-    func testFolderPopupClampsHorizontallyIntoScreen() {
+    func testFolderPopupKeepsThePlateInsideTheScreenMargin() {
         let screen = screen(frame: CGRect(x: 0, y: 0, width: 1512, height: 982))
-        let leftAnchor = CGRect(x: 4, y: 8, width: 44, height: 52)
-        let rightAnchor = CGRect(x: 1500, y: 8, width: 44, height: 52)
+        // Near the edges, but far enough in that the margin does not have to give way.
+        let leftAnchor = CGRect(x: 100, y: 8, width: 44, height: 52)
+        let rightAnchor = CGRect(x: 1368, y: 8, width: 44, height: 52)
         let size = CGSize(width: 400, height: 300)
 
         let left = PanelGeometry.folderPopupTargetFrame(anchorVisibleRect: leftAnchor, size: size, on: screen, metrics: metrics)
         let right = PanelGeometry.folderPopupTargetFrame(anchorVisibleRect: rightAnchor, size: size, on: screen, metrics: metrics)
 
-        XCTAssertEqual(left.minX, screen.frame.minX)
-        XCTAssertEqual(right.maxX, screen.frame.maxX)
+        // The window overhangs the screen by its transparent border; the plate never does.
+        XCTAssertEqual(PanelGeometry.folderPopupPlateFrame(panelFrame: left).minX,
+                       screen.frame.minX + StackPopupMetrics.screenMargin)
+        XCTAssertEqual(PanelGeometry.folderPopupPlateFrame(panelFrame: right).maxX,
+                       screen.frame.maxX - StackPopupMetrics.screenMargin)
+    }
+
+    /// Clamp and arrow together: wherever the chip is, the arrow's tip ends up on its centre —
+    /// the plate gives up its screen margin before the arrow gives up the chip.
+    func testFolderPopupArrowLandsOnTheAnchorCenter() {
+        let screen = screen(frame: CGRect(x: 0, y: 0, width: 1512, height: 982))
+        let size = StackPopupMetrics.panelSize(forPlate: StackPopupMetrics.plateSize(columns: 7, rows: 4, hasNote: false))
+        // Mid-screen, the nearest centre the arrow can still reach (minimum margin + arrow inset),
+        // and the same on the right. Nearer than `reach` the arrow is off by `reach − distance`:
+        // 7pt for the first chip of a full-width bar at the default height, 18pt at the smallest.
+        let reach = StackPopupMetrics.minimumScreenMargin + StackPopupMetrics.arrowInset
+        for center in [756, 200, 81, reach, 1512 - reach, 1431, 1300] as [CGFloat] {
+            let anchor = CGRect(x: center - 20, y: 8, width: 40, height: 47)
+            let popup = PanelGeometry.folderPopupTargetFrame(anchorVisibleRect: anchor, size: size, on: screen, metrics: metrics)
+            let plate = PanelGeometry.folderPopupPlateFrame(panelFrame: popup)
+            let arrow = StackPopupOutline.clampedArrowCenterX(plate.width / 2 + (anchor.midX - popup.midX), plateWidth: plate.width)
+            XCTAssertEqual(plate.minX + arrow, anchor.midX, accuracy: 0.001, "anchor centre \(center)")
+            XCTAssertGreaterThanOrEqual(plate.minX, screen.frame.minX + StackPopupMetrics.minimumScreenMargin)
+            XCTAssertLessThanOrEqual(plate.maxX, screen.frame.maxX - StackPopupMetrics.minimumScreenMargin)
+        }
+        // Closer than that — whatever put the chip there: a full-width bar (39), one just short of
+        // the width cap at the smallest height (33), the smallest bar at full width (28) — the
+        // plate stops at the minimum margin and the arrow is off by exactly `reach − distance`.
+        for distance in [39, 33, 28] as [CGFloat] {
+            for center in [distance, 1512 - distance] {
+                let anchor = CGRect(x: center - 12, y: 8, width: 24, height: 28)
+                let popup = PanelGeometry.folderPopupTargetFrame(anchorVisibleRect: anchor, size: size, on: screen, metrics: metrics)
+                let plate = PanelGeometry.folderPopupPlateFrame(panelFrame: popup)
+                let arrow = StackPopupOutline.clampedArrowCenterX(plate.width / 2 + (anchor.midX - popup.midX), plateWidth: plate.width)
+                XCTAssertEqual(abs(plate.minX + arrow - anchor.midX), reach - distance, accuracy: 0.001, "distance \(distance)")
+                XCTAssertEqual(min(plate.minX, 1512 - plate.maxX), StackPopupMetrics.minimumScreenMargin, accuracy: 0.001)
+            }
+        }
     }
 
     func testFolderPopupHeightCappedByTopUsableY() {
@@ -134,10 +173,64 @@ final class PanelGeometryTests: XCTestCase {
         let popup = PanelGeometry.folderPopupTargetFrame(
             anchorVisibleRect: anchor, size: CGSize(width: 400, height: 2000), on: screen, metrics: metrics
         )
-        let maxContent = PanelGeometry.maxFolderPopupContentHeight(anchorVisibleRect: anchor, on: screen, metrics: metrics)
 
-        XCTAssertEqual(popup.maxY, screen.topUsableY)
-        XCTAssertEqual(maxContent, (screen.topUsableY - (anchor.maxY + 8)) - 2 * metrics.shadowPadding)
+        XCTAssertEqual(PanelGeometry.folderPopupPlateFrame(panelFrame: popup).maxY, screen.topUsableY)
+    }
+
+    func testStackPopupRowsFitUnderTheMenuBar() {
+        let screen = PanelScreenGeometry(
+            frame: CGRect(x: 0, y: 0, width: 1352, height: 878),
+            visibleFrame: CGRect(x: 0, y: 0, width: 1352, height: 845),
+            safeAreaTop: 0
+        )
+        let anchor = CGRect(x: 700, y: 8, width: 44, height: 47)
+
+        let available = PanelGeometry.stackPopupAvailablePlateHeight(anchorVisibleRect: anchor, on: screen)
+        let limits = StackGridLayout.limits(screenSize: screen.frame.size, availablePlateHeight: available)
+        XCTAssertEqual(limits, .init(maxColumns: 7, nominalRows: 4, fitRows: 5, fitRowsWithNote: 5))
+        // The tallest plate those limits allow — with and without a status line — clears the menu bar.
+        for (rows, hasNote) in [(limits.fitRows, false), (limits.fitRowsWithNote, true)] {
+            let plate = StackPopupMetrics.plateSize(columns: limits.maxColumns, rows: rows, hasNote: hasNote)
+            let popup = PanelGeometry.folderPopupTargetFrame(
+                anchorVisibleRect: anchor, size: StackPopupMetrics.panelSize(forPlate: plate), on: screen, metrics: metrics
+            )
+            XCTAssertEqual(popup.height, StackPopupMetrics.panelSize(forPlate: plate).height)
+            XCTAssertLessThanOrEqual(PanelGeometry.folderPopupPlateFrame(panelFrame: popup).maxY,
+                                     screen.topUsableY - PanelGeometry.stackPopupTopGap)
+        }
+    }
+
+    /// The switch tween feeds the clamp an interpolated centre and interpolated margins. Its first
+    /// tick must reproduce the frame on screen and its last the target — also when the popup it
+    /// starts from hugs the screen edge with a margin that gave way.
+    func testFolderPopupSwitchTweenStartsOnTheCurrentFrameAndEndsOnTheTarget() {
+        let screen = screen(frame: CGRect(x: 0, y: 0, width: 1512, height: 982))
+        let size = StackPopupMetrics.panelSize(forPlate: StackPopupMetrics.plateSize(columns: 3, rows: 1, hasNote: false))
+        func tick(from start: CGRect, to anchor: CGRect, progress p: CGFloat) -> CGPoint {
+            let startMargins = PanelGeometry.folderPopupScreenMargins(holding: start, on: screen)
+            let endMargins = PanelGeometry.folderPopupScreenMargins(anchorCenterX: anchor.midX, on: screen)
+            let endBottom = PanelGeometry.folderPopupDesiredBottomY(anchorVisibleRect: anchor)
+            return PanelGeometry.folderPopupClampedOrigin(
+                desiredCenterX: start.midX + (anchor.midX - start.midX) * p,
+                desiredBottomY: start.minY + (endBottom - start.minY) * p,
+                size: size, margins: startMargins.interpolated(to: endMargins, progress: p), on: screen)
+        }
+        // Edge chip → its neighbour, neighbour → mid-screen, mid-screen → the far edge, and a
+        // re-switch from a frame caught mid-flight.
+        let anchors = [39, 81, 700, 1484].map { CGRect(x: CGFloat($0) - 20, y: 8, width: 40, height: 47) }
+        var starts = anchors.map { PanelGeometry.folderPopupTargetFrame(anchorVisibleRect: $0, size: size, on: screen, metrics: metrics) }
+        starts.append(CGRect(origin: tick(from: starts[0], to: anchors[2], progress: 0.4), size: size))
+        for start in starts {
+            for anchor in anchors {
+                let target = PanelGeometry.folderPopupTargetFrame(anchorVisibleRect: anchor, size: size, on: screen, metrics: metrics)
+                let first = tick(from: start, to: anchor, progress: 0)
+                let last = tick(from: start, to: anchor, progress: 1)
+                XCTAssertEqual(first.x, start.minX, accuracy: 0.001)
+                XCTAssertEqual(first.y, start.minY, accuracy: 0.001)
+                XCTAssertEqual(last.x, target.minX, accuracy: 0.001)
+                XCTAssertEqual(last.y, target.minY, accuracy: 0.001)
+            }
+        }
     }
 
     // MARK: - Window title tooltip

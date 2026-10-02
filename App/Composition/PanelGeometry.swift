@@ -161,21 +161,69 @@ enum PanelGeometry {
         )
     }
 
-    /// 弹窗锚定+钳位的**单一真相**：给定"期望中心 X / 期望底边 Y / 尺寸"，算出贴屏钳位后的 origin。
-    /// folderPopupTargetFrame（首帧/重定位）和切换动画的每帧插值都走它，避免钳位规则在两处各写一份漂移。
+    // MARK: Folder / shelf / Trash popup
+    //
+    // The popup window is the plate plus a transparent `StackPopupMetrics.panelMargin` border on
+    // every side (the glass's own shadow lives there) and the arrow strip under the plate. These
+    // functions speak in window frames; `folderPopupPlateFrame` converts back to what is visible.
+
+    /// Bottom edge of the popup window for an anchor: the arrow's tip floats `tipGap` above the
+    /// chip, the transparent border hangs below the tip.
+    static func folderPopupDesiredBottomY(anchorVisibleRect: CGRect) -> CGFloat {
+        anchorVisibleRect.maxY + StackPopupMetrics.tipGap - StackPopupMetrics.panelMargin
+    }
+
+    /// How close the popup's **plate** may come to the screen's left and right edges.
+    struct StackPopupScreenMargins: Equatable {
+        var left: CGFloat
+        var right: CGFloat
+
+        func interpolated(to other: StackPopupScreenMargins, progress: CGFloat) -> StackPopupScreenMargins {
+            .init(left: left + (other.left - left) * progress, right: right + (other.right - right) * progress)
+        }
+    }
+
+    /// Margins for an anchor: `screenMargin` (native), giving way down to `minimumScreenMargin`
+    /// on the side the anchor hugs, so the arrow — never closer than `arrowInset` to the plate's
+    /// side — still lands on that chip. They belong to the **anchor**, never to an interpolated
+    /// centre: the switch tween interpolates them (`folderPopupScreenMargins(holding:)` → these).
+    static func folderPopupScreenMargins(anchorCenterX: CGFloat, on screen: PanelScreenGeometry) -> StackPopupScreenMargins {
+        let m = StackPopupMetrics.self
+        func margin(_ distanceToEdge: CGFloat) -> CGFloat {
+            min(m.screenMargin, max(m.minimumScreenMargin, distanceToEdge - m.arrowInset))
+        }
+        return .init(left: margin(anchorCenterX - screen.frame.minX), right: margin(screen.frame.maxX - anchorCenterX))
+    }
+
+    /// The margins a popup window already on screen satisfies — a tween's starting point, so its
+    /// first tick reproduces the current frame instead of re-clamping it.
+    static func folderPopupScreenMargins(holding panelFrame: CGRect, on screen: PanelScreenGeometry) -> StackPopupScreenMargins {
+        let m = StackPopupMetrics.self
+        let plate = folderPopupPlateFrame(panelFrame: panelFrame)
+        func margin(_ distanceToEdge: CGFloat) -> CGFloat { min(m.screenMargin, max(0, distanceToEdge)) }
+        return .init(left: margin(plate.minX - screen.frame.minX), right: margin(screen.frame.maxX - plate.maxX))
+    }
+
+    /// The single truth for anchoring and clamping: first frame, re-anchoring and every tick of
+    /// the switch tween go through it. The plate stays `margins` inside the screen; the window
+    /// itself may overhang the screen by its transparent border.
     static func folderPopupClampedOrigin(
         desiredCenterX: CGFloat,
         desiredBottomY: CGFloat,
         size: CGSize,
+        margins: StackPopupScreenMargins,
         on screen: PanelScreenGeometry
     ) -> CGPoint {
-        let bottom = max(desiredBottomY, screen.frame.minY)
-        let x = min(max(desiredCenterX - size.width / 2, screen.frame.minX), screen.frame.maxX - size.width)
-        return CGPoint(x: x, y: bottom)
+        let m = StackPopupMetrics.self
+        let minX = screen.frame.minX + margins.left - m.panelMargin
+        let maxX = screen.frame.maxX - margins.right + m.panelMargin - size.width
+        // Wider than the screen allows: centre it rather than favour one edge.
+        let x = maxX >= minX ? min(max(desiredCenterX - size.width / 2, minX), maxX) : screen.frame.midX - size.width / 2
+        return CGPoint(x: x, y: desiredBottomY)
     }
 
-    /// 固定文件夹弹窗：锚点（chip 可视矩形，屏幕坐标）上方 8pt，水平居中钳进屏，
-    /// 只向上生长、topUsableY 封顶——同 drawer 的底锚策略。`size` 为含阴影的整面板尺寸。
+    /// The popup window's frame: centred on the anchor chip, clamped into the screen, growing
+    /// upward only and capped where the plate would cross `topUsableY`. `size` is the whole window.
     static func folderPopupTargetFrame(
         anchorVisibleRect: CGRect,
         size: CGSize,
@@ -183,19 +231,29 @@ enum PanelGeometry {
         metrics: PanelLayoutMetrics = .tungstenEdge
     ) -> CGRect {
         let origin = folderPopupClampedOrigin(
-            desiredCenterX: anchorVisibleRect.midX, desiredBottomY: anchorVisibleRect.maxY + 8,
-            size: size, on: screen)
-        let height = min(size.height, max(metrics.minimumDrawerExtent, screen.topUsableY - origin.y))
+            desiredCenterX: anchorVisibleRect.midX,
+            desiredBottomY: folderPopupDesiredBottomY(anchorVisibleRect: anchorVisibleRect),
+            size: size,
+            margins: folderPopupScreenMargins(anchorCenterX: anchorVisibleRect.midX, on: screen),
+            on: screen)
+        let top = screen.topUsableY + StackPopupMetrics.panelMargin
+        let height = min(size.height, max(metrics.minimumDrawerExtent, top - origin.y))
         return CGRect(x: origin.x, y: origin.y, width: size.width, height: height)
     }
 
-    static func maxFolderPopupContentHeight(
-        anchorVisibleRect: CGRect,
-        on screen: PanelScreenGeometry,
-        metrics: PanelLayoutMetrics = .tungstenEdge
-    ) -> CGFloat {
-        let bottom = anchorVisibleRect.maxY + 8
-        return max(metrics.minimumDrawerExtent, (screen.topUsableY - bottom) - 2 * metrics.shadowPadding)
+    /// Height the plate may take above the anchor, leaving `stackPopupTopGap` under the menu bar;
+    /// feeds `StackGridLayout.limits`, which takes a status line's height off it when there is one.
+    static func stackPopupAvailablePlateHeight(anchorVisibleRect: CGRect, on screen: PanelScreenGeometry) -> CGFloat {
+        let plateBottom = anchorVisibleRect.maxY + StackPopupMetrics.tipGap + StackPopupMetrics.arrowHeight
+        return screen.topUsableY - stackPopupTopGap - plateBottom
+    }
+
+    static let stackPopupTopGap: CGFloat = 8
+
+    /// The visible part of the popup window — plate plus arrow strip. Hit tests use this, never
+    /// the window frame: the border is 40pt of nothing.
+    static func folderPopupPlateFrame(panelFrame: CGRect) -> CGRect {
+        panelFrame.insetBy(dx: StackPopupMetrics.panelMargin, dy: StackPopupMetrics.panelMargin)
     }
 
     /// Window-title tooltip panel frame. The panel includes transparent padding for its SwiftUI

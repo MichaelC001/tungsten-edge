@@ -24,10 +24,6 @@ final class DockThemeTests: XCTestCase {
             ("zoneDivider", theme.zoneDivider),
             ("capsuleGlyph", theme.capsuleGlyph),
             ("folderDropRing", theme.folderDropRing),
-            ("popupCellLabel", theme.popupCellLabel),
-            ("popupCellHover", theme.popupCellHover),
-            ("popupSecondaryText", theme.popupSecondaryText),
-            ("backChipFill", theme.backChipFill),
             ("tooltipText", theme.tooltipText),
         ]
         for (name, tint) in mustBeBlack {
@@ -155,6 +151,21 @@ final class DockThemeTests: XCTestCase {
     func testShadowsFitInsideShadowPaddingBudget() {
         XCTAssertLessThanOrEqual(theme.stripShadow.verticalExtent, shadowPadding)
         XCTAssertLessThanOrEqual(theme.popupShadow.verticalExtent, shadowPadding)
+    }
+
+    /// The stack popup is the one dark surface (the native Dock's stack grid is dark glass in both
+    /// system appearances): black text on it would vanish the way white does on the light bar.
+    func testStackPopupForegroundsAreWhite() {
+        for tint in [theme.stackPopupText, theme.stackPopupNote, theme.stackPopupGlyph,
+                     theme.stackPopupBackFill, theme.stackPopupHairline] {
+            XCTAssertEqual(tint.base, .white)
+        }
+        XCTAssertGreaterThan(theme.stackPopupText.opacity, theme.stackPopupNote.opacity)
+    }
+
+    /// The frosted fallback's shadow lives in the popup window's own transparent border.
+    func testStackPopupShadowFitsInsideItsPanelMargin() {
+        XCTAssertLessThanOrEqual(theme.stackPopupShadow.verticalExtent, StackPopupMetrics.panelMargin)
     }
 
     /// 手调时容易顺手写超。
@@ -295,8 +306,8 @@ private extension DockThemeTokens {
          shelfDropGlow,
          capsuleGlyph, capsuleStashGlow,
          folderDropRing, folderThumbHairline,
-         popupCellLabel, popupCellHover, popupPrimaryText, popupSecondaryText,
-         backChipFill, backChipRim, backChipGlyph,
+         stackPopupText, stackPopupNote, stackPopupGlyph, stackPopupBackFill,
+         stackPopupHairline, stackPopupShadow.tint,
          tooltipRim, tooltipText, tooltipShadow.tint]
     }
 }

@@ -1,4 +1,5 @@
 import AppKit
+import QuickLookThumbnailing
 import SwiftUI
 
 /// 固定文件夹弹窗的数据层：后台枚举 + 目录监视实时刷新。
@@ -62,31 +63,38 @@ final class FolderPopupModel: ObservableObject {
     }
 }
 
-/// 弹窗格子图标的解析 + 缓存（照 `AppIconResolver` 的形状：命名空间 enum 持 NSCache，与视图解耦）。
-/// 协调器开窗前 `warm` 首批可见格，格子 init 同步查 `cached`，保证首帧"整体一块"（含图标）；
-/// 没预热到的（滚动到深处/下钻）由格子 `.task` 走 `resolve` 兜底,解析好瞬间显示、**不逐格淡入**。
+/// Icons for the popup's cells, cached apart from the views (same shape as `AppIconResolver`).
+/// Two levels: the type icon (`NSWorkspace`, cheap, warmed before the popup shows so the first
+/// frame is whole) and the content thumbnail (QuickLook, async, shown the moment it arrives —
+/// never faded in cell by cell, which read as "the popup appears from the top-left").
 enum FolderIconResolver {
     private static let cache: NSCache<NSString, NSImage> = {
         let c = NSCache<NSString, NSImage>()
-        c.countLimit = 512   // 有界,免长会话里每开一个文件夹都往里堆图标
+        c.countLimit = 512
         return c
     }()
+    private static let thumbnails: NSCache<NSString, NSImage> = {
+        let c = NSCache<NSString, NSImage>()
+        c.countLimit = 256
+        return c
+    }()
+    /// Set by `StackPopupSnapshotProbe` to hear why a thumbnail did not come back.
+    static var onThumbnailFailure: ((String) -> Void)?
 
     static func cached(_ path: String) -> NSImage? {
         cache.object(forKey: path as NSString)
     }
 
-    /// 命中返回缓存,否则解析并写回（主线程同步够快：LazyVGrid 只实例化可见格）。
-    static func resolve(_ path: String, size: CGFloat = 64) -> NSImage {
+    static func resolve(_ path: String, size: CGFloat = StackPopupMetrics.iconSize) -> NSImage {
         if let hit = cache.object(forKey: path as NSString) { return hit }
         let img = makeIcon(path, size: size)
         cache.setObject(img, forKey: path as NSString)
         return img
     }
 
-    /// 开窗前预热：后台取首批可见格子的图标进缓存,最多阻塞 timeout（冷路径的取舍,换首帧图标全亮；
-    /// NSWorkspace 图标一般 <2ms/个,热路径全命中时 ≈ 0ms）。超时后后台块继续跑完自然写入缓存,
-    /// 首帧读不到的个别图标由格子 `.task` 兜底瞬间补上。
+    /// Warms the first screenful of type icons before the popup shows, blocking at most `timeout`
+    /// (a cold-path trade for a whole first frame; warm path ≈ 0ms). Anything it misses is filled
+    /// by the cell's own `.task`.
     static func warm(paths: [String], timeout: TimeInterval) {
         let pending = paths.filter { cache.object(forKey: $0 as NSString) == nil }
         guard !pending.isEmpty else { return }
@@ -100,58 +108,94 @@ enum FolderIconResolver {
         _ = semaphore.wait(timeout: .now() + timeout)
     }
 
-    /// 共享缓存对象必须 copy 再改 size（AppMenuFragments 惯例）。
-    private static func makeIcon(_ path: String, size: CGFloat = 64) -> NSImage {
+    /// A shared cached image must be copied before its size is changed.
+    private static func makeIcon(_ path: String, size: CGFloat = StackPopupMetrics.iconSize) -> NSImage {
         let icon = NSWorkspace.shared.icon(forFile: path)
         guard let copy = icon.copy() as? NSImage else { return icon }
         copy.size = NSSize(width: size, height: size)
         return copy
     }
+
+    // MARK: Content thumbnails
+
+    /// One rendering of one version of one file: the modification date gives an edited file a
+    /// fresh preview, the scale keeps a 1× screen's bitmap off a 2× screen.
+    struct ThumbnailID: Hashable {
+        var path: String
+        var stamp: Date?
+        var scale: CGFloat
+
+        fileprivate var cacheKey: NSString {
+            "\(path)|\(stamp?.timeIntervalSinceReferenceDate ?? 0)|\(scale)" as NSString
+        }
+    }
+
+    static func cachedThumbnail(_ id: ThumbnailID) -> NSImage? {
+        thumbnails.object(forKey: id.cacheKey)
+    }
+
+    /// Generates the thumbnail the native Dock shows — QuickLook's icon mode at the cell's icon
+    /// size — into the cache; read it back with `cachedThumbnail`. Runs on QuickLook's own queue,
+    /// not the Swift cooperative pool (`AGENTS.md`: a click must not queue behind inventory reads).
+    static func loadThumbnail(_ id: ThumbnailID) async {
+        let key = id.cacheKey
+        guard thumbnails.object(forKey: key) == nil else { return }
+        let side = StackPopupMetrics.iconSize
+        let request = QLThumbnailGenerator.Request(fileAt: URL(fileURLWithPath: id.path),
+                                                   size: CGSize(width: side, height: side),
+                                                   scale: max(1, id.scale),
+                                                   representationTypes: .thumbnail)
+        request.iconMode = true
+        await withCheckedContinuation { (done: CheckedContinuation<Void, Never>) in
+            // A failure is not remembered: QuickLook also fails transiently, and a remembered miss
+            // would pin the type icon for the life of the process.
+            QLThumbnailGenerator.shared.generateBestRepresentation(for: request) { representation, error in
+                if let representation {
+                    thumbnails.setObject(NSImage(cgImage: representation.cgImage, size: NSSize(width: side, height: side)),
+                                         forKey: key)
+                } else {
+                    onThumbnailFailure?("\(id.path): \(error.map { String(describing: $0) } ?? "no representation")")
+                }
+                done.resume()
+            }
+        }
+    }
 }
 
-/// 固定文件夹弹窗网格——对齐原生 Stacks 网格（owner 2026-07-06）：
-/// **无表头**；「在访达中打开」是网格**尾格**（带访达图标）；下钻后左上角浮小返回箭头。
-/// 64pt 大图标、96pt 格宽、列数 = clamp(总格数, 3, 8)——宽度由条目数**推导**（确定值），
-/// 不是测量值，无 fittingSize 反馈环；小文件夹面板自动收窄（原生同款）。
-/// 排序跟随用户所选（逐文件夹记忆），与 chip 封面同口径（当前排序第一张文件）。
+/// The pinned-folder popup, laid out as the native Dock's stack grid (`StackPopupChrome`): the
+/// folder's name on top, cells, 「Open in Finder」 as the tail cell, a back button once drilled in.
+/// Sort follows the folder's own setting, the same one its chip cover uses.
 struct FolderGridPopupView: View {
     let rootURL: URL
-    /// 网格可用高度上限（锚点上方 → 屏幕上沿，PanelCoordinator 算好传入），超出内部滚动。
-    let maxContentHeight: CGFloat
-    /// 底板走不走原生 Liquid Glass。**显式传入、无默认值**（同 `scale` / `hoverStyle`）——
-    /// 每个面板都是独立的 hosting 根视图，漏传就会出现「这个面板是玻璃、旁边那个还是
-    /// 毛玻璃」这种一眼可见的不一致。
+    let context: StackPopupContext
+    /// Explicit, no default: every panel is its own hosting root (`AGENTS.md` no-default rule).
     let usesLiquidGlass: Bool
-    /// 打开文件后回调（协调器关弹窗）。右键菜单的「打开类」动作也走它（关闭语义评审拍板）。
+    /// Called after a file is opened (the coordinator closes the popup); the context menu's
+    /// "open" actions use it too.
     var onFileOpened: () -> Void = {}
-    /// 下钻/刷新导致内容尺寸（宽或高）变化 → 协调器动画重定位面板。
+    /// The content's size changed (drill-in, live refresh): the coordinator re-anchors the panel.
     var onContentResize: () -> Void = {}
-    /// 目录条目右键「固定到固定区」（协调器接 PinnedFolderStore）。nil = 不显示该项。
+    /// 「Pin」 on a directory cell's menu. nil = not offered.
     var onPinFolder: ((URL) -> Void)?
-    /// 已固定判定（已固定的目录不再显示「固定到固定区」）。
     var isFolderPinned: ((URL) -> Bool)?
 
-    private let theme = DockThemeTokens.standard
-
     @StateObject private var model: FolderPopupModel
-    /// 下钻栈：空 = 根目录；push 子文件夹 URL。
+    /// Empty = the root folder.
     @State private var drillStack: [URL] = []
-    /// 网格自然高度（量出来）。超过可用高度就内部滚动（同 DrawerView 的封顶策略）。
-    @State private var gridHeight: CGFloat = 0
-    /// 首次内容就位**之后**才开网格增删动画——首播（预载或超时回填）一律整块出现,不逐格插入。
+    /// Off until the first content is in: the first population appears whole, never cell by cell.
     @State private var animatesGridChanges = false
 
     init(rootURL: URL,
          initialEntries: [FolderContentsLoader.Entry]?,
          sortOrder: FolderSortOrder = .default,
-         maxContentHeight: CGFloat,
+         context: StackPopupContext,
          usesLiquidGlass: Bool,
          onFileOpened: @escaping () -> Void = {},
          onContentResize: @escaping () -> Void = {},
          onPinFolder: ((URL) -> Void)? = nil,
          isFolderPinned: ((URL) -> Bool)? = nil) {
         self.rootURL = rootURL
-        self.maxContentHeight = maxContentHeight
+        self.context = context
         self.usesLiquidGlass = usesLiquidGlass
         self.onFileOpened = onFileOpened
         self.onContentResize = onContentResize
@@ -165,127 +209,53 @@ struct FolderGridPopupView: View {
         }())
     }
 
-    private typealias Style = FolderPopupStyle
-
     private var currentURL: URL { drillStack.last ?? rootURL }
 
-    /// 总格数 = 条目 + 尾格「在访达中打开」。列数由它推导（确定值,非测量）。
-    private var totalCellCount: Int { model.entries.count + 1 }
-    private var columnCount: Int { min(Style.maxColumns, max(Style.minColumns, totalCellCount)) }
-    private var columns: [GridItem] {
-        Array(repeating: GridItem(.fixed(Style.cellWidth), spacing: Style.cellSpacing), count: columnCount)
+    /// Entries plus the 「Open in Finder」 tail cell.
+    private var layout: StackGridLayout.Result {
+        StackGridLayout.resolve(cellCount: model.entries.count + 1, limits: context.limits, hasNote: note != nil)
     }
-    private var contentWidth: CGFloat {
-        CGFloat(columnCount) * Style.cellWidth
-            + CGFloat(columnCount - 1) * Style.cellSpacing
-            + Style.contentPadding * 2
+    private var note: String? {
+        model.loadFailed ? String(localized: "Can’t read this folder") : nil
     }
-    private var availableGridHeight: CGFloat { min(max(140, maxContentHeight), Style.maxGridHeight) }
 
     var body: some View {
-        ZStack(alignment: .bottomLeading) {
-            DockPanelBackdrop(theme: theme,
-                              cornerRadius: DockShape.panelCornerRadius,
-                              usesLiquidGlass: usesLiquidGlass)
-
-            Group {
-                if gridHeight > availableGridHeight + 0.5 {
-                    ScrollView(.vertical, showsIndicators: true) { gridBody }
-                        .frame(height: availableGridHeight)
-                } else {
-                    gridBody
-                }
+        StackPopupChrome(title: FileManager.default.displayName(atPath: currentURL.path),
+                         note: note,
+                         layout: layout,
+                         usesLiquidGlass: usesLiquidGlass,
+                         arrow: context.arrow,
+                         onBack: drillStack.isEmpty ? nil : { _ = drillStack.removeLast() },
+                         gridAnimation: animatesGridChanges ? .easeInOut(duration: DrawerAnimation.duration) : nil,
+                         gridAnimationKey: model.entries.map(\.url)) {
+            ForEach(model.entries, id: \.url) { entry in
+                FolderGridCell(iconPath: entry.url.path,
+                               staticIcon: nil,
+                               label: entry.name,
+                               preview: entry.isDirectory ? nil : .init(stamp: entry.dateModified),
+                               dragURL: entry.url,
+                               contextMenu: { cellMenu(for: entry) }) { open(entry) }
             }
-            .clipShape(RoundedRectangle(cornerRadius: DockShape.panelCornerRadius, style: .continuous))
+            FolderGridCell.openInFinder {
+                NSWorkspace.shared.open(currentURL)
+                onFileOpened()
+            }
         }
-        .dockPanelRim(cornerRadius: DockShape.panelCornerRadius,
-                      style: theme.panelRimStyle,
-                      lineWidth: theme.panelRimLineWidth,
-                      usesLiquidGlass: usesLiquidGlass)
-        // 原生同款：下钻后左上角浮返回箭头（无表头,不占布局）。
-        .overlay(alignment: .topLeading) { backChip }
-        // 面板整体的淡入淡出由协调器在 AppKit 层做（panel.alphaValue，含背景/阴影一起淡）,
-        // 内容层不再另加缩放/透明度——两层淡入叠加=曲线相乘,且缩放对大内容会呈现"从角落展开"。
-        // 阴影延伸(radius+|y|)必须 ≤ shadowPadding(20),否则在面板透明边处被硬切（owner 反馈的裁切感）。
-        .dockShadow(theme.popupShadow)
-        .padding(PanelCoordinator.shadowPadding)
+        // The panel as a whole fades in and out in AppKit (`panel.alphaValue`); the content adds
+        // no scale or opacity of its own.
         .onAppear {
             model.display(url: rootURL)
-            if model.didFirstLoad { animatesGridChanges = true }   // 预载路径:首帧已完整,后续变化可动画
+            if model.didFirstLoad { animatesGridChanges = true }
         }
         .onDisappear { model.stop() }
         .onChange(of: model.didFirstLoad) { loaded in
             guard loaded else { return }
-            // 超时兜底路径:首次回填那一帧不动画,下一个 runloop 才开——整块出现。
+            // Timeout path: the first fill lands unanimated; animation opens one turn later.
             DispatchQueue.main.async { animatesGridChanges = true }
         }
         .onChange(of: drillStack) { _ in model.display(url: currentURL) }
-        .onChange(of: gridHeight) { _ in onContentResize() }
-        // 列数变化会只变宽不变高（如 5→6 格同一行）,高度探针不触发,单独驱动重定位。
-        .onChange(of: columnCount) { _ in onContentResize() }
-    }
-
-    // MARK: - 返回浮标（仅下钻时）
-
-    @ViewBuilder
-    private var backChip: some View {
-        if !drillStack.isEmpty {
-            Image(systemName: "chevron.left")
-                .font(.system(size: 12, weight: .semibold))
-                .foregroundStyle(theme.backChipGlyph.color)
-                .frame(width: Style.backChipSize, height: Style.backChipSize)
-                .background(Circle().fill(theme.backChipFill.color))
-                .overlay(Circle().strokeBorder(theme.backChipRim.color, lineWidth: 0.5))
-                .contentShape(Circle())
-                .onTapGesture { _ = drillStack.removeLast() }
-                .help(Text("Back"))
-                .padding(10)
-                .transition(.opacity)
-        }
-    }
-
-    // MARK: - 网格
-
-    private var gridBody: some View {
-        VStack(spacing: 0) {
-            if model.loadFailed {
-                Text("Can’t read this folder")
-                    .font(.system(size: 12, weight: .medium))
-                    .foregroundStyle(theme.popupPrimaryText.color)
-                    .frame(maxWidth: .infinity)
-                    .padding(.vertical, 14)
-            } else if model.entries.isEmpty && model.didFirstLoad {
-                Text("This folder is empty")
-                    .font(.system(size: Style.labelSize))
-                    .foregroundStyle(theme.popupSecondaryText.color)
-                    .frame(maxWidth: .infinity)
-                    .padding(.vertical, 14)
-            }
-            LazyVGrid(columns: columns, spacing: Style.cellSpacing) {
-                ForEach(model.entries, id: \.url) { entry in
-                    FolderGridCell(iconPath: entry.url.path,
-                                   staticIcon: nil,
-                                   label: entry.name,
-                                   dragURL: entry.url,
-                                   contextMenu: { cellMenu(for: entry) }) { open(entry) }
-                }
-                // 原生同款尾格：在访达中打开当前目录。
-                FolderGridCell.openInFinder {
-                    NSWorkspace.shared.open(currentURL)
-                    onFileOpened()
-                }
-            }
-            .animation(animatesGridChanges ? .easeInOut(duration: DrawerAnimation.duration) : nil,
-                       value: model.entries.map(\.url))
-        }
-        // 下钻时顶部多留出返回浮标的高度,浮标不压第一行格子。
-        .padding(.top, drillStack.isEmpty ? Style.contentPadding : Style.contentPadding + Style.backChipSize + 4)
-        .padding([.horizontal, .bottom], Style.contentPadding)
-        .frame(width: contentWidth)
-        .background(GeometryReader { g in
-            Color.clear.preference(key: FolderGridHeightKey.self, value: g.size.height)
-        })
-        .onPreferenceChange(FolderGridHeightKey.self) { gridHeight = $0 }
+        .onChange(of: layout) { _ in onContentResize() }
+        .onChange(of: note) { _ in onContentResize() }
     }
 
     private func open(_ entry: FolderContentsLoader.Entry) {
@@ -297,7 +267,7 @@ struct FolderGridPopupView: View {
         }
     }
 
-    /// 条目右键菜单（手搓 NSMenu,AGENTS 护栏）。目录且未固定才给「固定到固定区」。
+    /// Hand-built `NSMenu` (rule file). 「Pin」 only for a directory that is not pinned yet.
     private func cellMenu(for entry: FolderContentsLoader.Entry) -> NSMenu {
         let canPin = entry.isDirectory && !(isFolderPinned?(entry.url) ?? true)
         return FileItemMenuBuilder.menu(for: .init(
@@ -309,47 +279,40 @@ struct FolderGridPopupView: View {
     }
 }
 
-/// 弹窗网格的共享尺寸常量（文件夹弹窗 + 中转弹窗共用,别在两边各写一份漂移）。
-/// 列数派生口径：columnCount = clamp(总格数, minColumns, maxColumns),宽度由列数**推导**,
-/// 绝不回退成测量值（fittingSize 反馈环）;maxColumns=8 是 owner「再宽一些」的拍板,勿改回 6。
-enum FolderPopupStyle {
-    static let iconSize: CGFloat = 64          // 原生 Stacks 同款大图标
-    static let cellWidth: CGFloat = 96
-    static let cellHeight: CGFloat = 104
-    static let cellSpacing: CGFloat = 10
-    static let contentPadding: CGFloat = 16
-    static let minColumns = 3
-    static let maxColumns = 8                  // 满列内容宽 ≈ 870pt（owner:再宽一些）
-    /// 网格显示高度上限（约 4 行出头,超出内部滚动;owner:矮一些）。
-    static let maxGridHeight: CGFloat = 470
-    static let labelSize: CGFloat = 11
-    static let backChipSize: CGFloat = 26
-}
-
-/// 单个格子：64pt 图标 + 两行小字名，悬停浮白底。独立 struct 才能各自持有 hover 态。
-/// 条目格与「在访达中打开」尾格共用（尾格无拖拽/无菜单）。中转弹窗（阶段 B）复用,故 internal。
-/// `dragURL` 非 nil → 挂系统文件拖拽 `.onDrag`（真文件拖出到别的 app;系统拖影=原生效果,
-/// AGENTS「No System Drag Image」护栏限任务条/抽屉 chip 拖拽,文件拖出在豁免范围）。
+/// One cell of the stack grid, to the native measurements in `StackPopupMetrics`: a 100pt icon
+/// and one line of name. No hover highlight — the native grid has none. Shared by the folder,
+/// shelf and Trash popups.
+/// `dragURL` non-nil attaches the system file drag (dragging a real file out to another app).
 struct FolderGridCell: View {
+    /// Asks for a QuickLook content thumbnail on top of the type icon.
+    struct Preview: Equatable {
+        /// The file's modification date: a changed file gets a new thumbnail.
+        var stamp: Date?
+    }
+
     let iconPath: String?
     let staticIcon: NSImage?
-    /// `staticIcon` is a black template glyph drawn the way native Stacks draws its
-    /// 「在访达中打开」 cell: mid-grey with plus-darker blending, so it takes the backdrop's hue.
+    /// `staticIcon` is a template glyph drawn the way the native grid draws 「Open in Finder」:
+    /// added to the plate (plus-lighter), so it takes the backdrop's hue.
     let staticIconIsGlyph: Bool
     let label: String
+    let preview: Preview?
     var dragURL: URL? = nil
     var contextMenu: (() -> NSMenu)? = nil
     let onTap: () -> Void
 
     private let theme = DockThemeTokens.standard
+    private typealias Metrics = StackPopupMetrics
 
-    @State private var isHovering = false
+    @Environment(\.displayScale) private var displayScale
     @State private var resolvedIcon: NSImage?
+    @State private var thumbnail: NSImage?
 
     init(iconPath: String?,
          staticIcon: NSImage?,
          staticIconIsGlyph: Bool = false,
          label: String,
+         preview: Preview? = nil,
          dragURL: URL? = nil,
          contextMenu: (() -> NSMenu)? = nil,
          onTap: @escaping () -> Void) {
@@ -357,13 +320,26 @@ struct FolderGridCell: View {
         self.staticIcon = staticIcon
         self.staticIconIsGlyph = staticIconIsGlyph
         self.label = label
+        self.preview = preview
         self.dragURL = dragURL
         self.contextMenu = contextMenu
         self.onTap = onTap
-        // 首帧同步查缓存：协调器开窗前已预热（FolderIconResolver.warm）,命中则首帧图标就亮。
-        // 没有这一步,所有图标都走异步补——逐个从左上角往右下浮现,就是 owner 报的
-        // "弹窗从左上角开始出现"的真因（2026-07-07,48a2415 引入）。
+        // Read both caches synchronously: the coordinator warmed the type icons before showing
+        // the popup, so the first frame already has them. Without this every icon arrives async
+        // and they surface one by one from the top-left.
         _resolvedIcon = State(initialValue: iconPath.flatMap { FolderIconResolver.cached($0) })
+        // The scale is not known before the view is in a window; the main screen's is the one
+        // the popup almost always opens on. A wrong guess only costs the first-frame hit.
+        let scale = NSScreen.main?.backingScaleFactor ?? 2
+        _thumbnail = State(initialValue: iconPath.flatMap { path in
+            preview.flatMap { FolderIconResolver.cachedThumbnail(.init(path: path, stamp: $0.stamp, scale: scale)) }
+        })
+    }
+
+    /// What the icon task is keyed on: a rewritten file or another screen's scale restarts it.
+    private var thumbnailID: FolderIconResolver.ThumbnailID? {
+        guard let iconPath else { return nil }
+        return .init(path: iconPath, stamp: preview?.stamp, scale: displayScale)
     }
 
     var body: some View {
@@ -375,68 +351,76 @@ struct FolderGridCell: View {
     }
 
     private var core: some View {
-        VStack(spacing: 5) {
+        VStack(spacing: 0) {
             iconImage
-                .frame(width: 64, height: 64)
-                .opacity(resolvedIcon == nil && staticIcon == nil ? 0 : 1)
-                .task(id: iconPath) {
-                    guard let path = iconPath, resolvedIcon == nil else { return }
-                    // 兜底路径（预热没赶上/滚动到深处/下钻的格子）：off-main 解析+写缓存,再从线程安全
-                    // 缓存读回（不跨 actor 传 NSImage,免 macOS 14 Sendable 警告）。解析好直接显示、
-                    // **不做逐格淡入**——带动画的逐格淡入会按完成顺序从左上角扫到右下,复现 owner 报的方向感。
-                    await Task.detached(priority: .userInitiated) { _ = FolderIconResolver.resolve(path) }.value
-                    resolvedIcon = FolderIconResolver.cached(path)
-                }
+                .frame(width: Metrics.iconSize, height: Metrics.iconSize)
+                .opacity(thumbnail == nil && resolvedIcon == nil && staticIcon == nil ? 0 : 1)
+                .task(id: thumbnailID) { await loadIcons() }
             Text(label)
-                .font(.system(size: 11))
-                .foregroundStyle(theme.popupCellLabel.color)
-                .lineLimit(2)
-                .multilineTextAlignment(.center)
+                .font(.system(size: Metrics.labelSize))
+                .foregroundStyle(theme.stackPopupText.color)
+                .lineLimit(1)
                 .truncationMode(.middle)
-                .frame(maxWidth: .infinity)
-            Spacer(minLength: 0)
+                .fixedSize(horizontal: labelFits, vertical: false)
+                .frame(width: labelFits ? Metrics.cell : Metrics.labelWidth, height: Metrics.labelHeight)
         }
-        .padding(.top, 6)
-        .frame(width: 96, height: 104)
-        .background(
-            RoundedRectangle(cornerRadius: 12, style: .continuous)
-                .fill(theme.popupCellHover.color(active: isHovering))
-        )
+        .padding(.top, Metrics.iconTop)
+        .frame(width: Metrics.cell, height: Metrics.cell, alignment: .top)
         .contentShape(Rectangle())
-        .onHover { isHovering = $0 }
         .onTapGesture { onTap() }
         .nativeContextMenu { contextMenu?() ?? NSMenu() }
         .help(label)
-        .animation(.easeInOut(duration: 0.12), value: isHovering)
     }
 
-    private var currentIcon: NSImage {
-        if let s = staticIcon { return s }
-        if let r = resolvedIcon { return r }
-        return Self.placeholderIcon
+    /// The native rule has two widths: a name as wide as the cell is shown whole; a longer one is
+    /// cut in the middle to the narrower `labelWidth`.
+    private var labelFits: Bool {
+        let font = NSFont.systemFont(ofSize: Metrics.labelSize)
+        return (label as NSString).size(withAttributes: [.font: font]).width <= Metrics.cell
+    }
+
+    /// Fallback for cells the warm-up missed (deep scroll, drill-in), then the thumbnail. Images
+    /// never cross actors: each step writes a thread-safe cache and reads it back here.
+    private func loadIcons() async {
+        guard let path = iconPath else { return }
+        if resolvedIcon == nil {
+            await withCheckedContinuation { (done: CheckedContinuation<Void, Never>) in
+                DispatchQueue.global(qos: .userInitiated).async {
+                    _ = FolderIconResolver.resolve(path)
+                    done.resume()
+                }
+            }
+            resolvedIcon = FolderIconResolver.cached(path)
+        }
+        guard preview != nil, let id = thumbnailID else { return }
+        await FolderIconResolver.loadThumbnail(id)
+        // A newer version's task may already be running: this one must not write over it.
+        guard !Task.isCancelled else { return }
+        // No preview for the new version keeps the old picture rather than flashing the type icon.
+        if let fresh = FolderIconResolver.cachedThumbnail(id) { thumbnail = fresh }
     }
 
     @ViewBuilder
     private var iconImage: some View {
         if staticIconIsGlyph, let staticIcon {
-            // Native measurement: the glyph reads exactly backdrop − 127 per channel, i.e. grey
-            // 128/255 composited plus-darker. A fixed tint would only match one backdrop.
+            // Native reading: the glyph is the plate plus 124 per channel, on any backdrop.
             Image(nsImage: staticIcon)
                 .renderingMode(.template)
                 .resizable()
                 .interpolation(.high)
                 .aspectRatio(contentMode: .fit)
-                .foregroundStyle(Color(white: 128.0 / 255.0))
-                .blendMode(.plusDarker)
+                .foregroundStyle(theme.stackPopupGlyph.color)
+                .blendMode(.plusLighter)
         } else {
-            Image(nsImage: currentIcon)
+            Image(nsImage: staticIcon ?? thumbnail ?? resolvedIcon ?? Self.placeholderIcon)
                 .resizable()
                 .interpolation(.high)
                 .aspectRatio(contentMode: .fit)
         }
     }
 
-    private static let placeholderIcon = NSImage(size: NSSize(width: 64, height: 64))
+    private static let placeholderIcon = NSImage(size: NSSize(width: StackPopupMetrics.iconSize,
+                                                              height: StackPopupMetrics.iconSize))
 }
 
 extension FolderGridCell {
@@ -454,20 +438,18 @@ extension FolderGridCell {
     }
 }
 
+/// The Dock's own stack artwork, read from `Dock.app` at runtime — never copied into the bundle.
 enum NativeStackArtwork {
+    private static let dockBundle = Bundle(path: "/System/Library/CoreServices/Dock.app")
+
     static let openInFinder: NSImage? = {
-        guard let image = Bundle(path: "/System/Library/CoreServices/Dock.app")?
-            .image(forResource: "openinfinder") else { return nil }
+        guard let image = dockBundle?.image(forResource: "openinfinder") else { return nil }
         image.isTemplate = true
         return image
     }()
 
-    static let finderAppIcon: NSImage = FolderIconResolver.resolve("/System/Library/CoreServices/Finder.app")
-}
+    /// A grey plate with a lighter chevron; the native grid composites it plus-lighter.
+    static let backButton: NSImage? = dockBundle?.image(forResource: "back-button-dark")
 
-private struct FolderGridHeightKey: PreferenceKey {
-    static var defaultValue: CGFloat = 0
-    static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) {
-        value = max(value, nextValue())
-    }
+    static let finderAppIcon: NSImage = FolderIconResolver.resolve("/System/Library/CoreServices/Finder.app")
 }

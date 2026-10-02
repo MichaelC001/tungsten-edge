@@ -127,6 +127,8 @@ enum DebugSwitch: String, CaseIterable, Sendable {
     case panelLevel = "DOCK_PANEL_LEVEL"
     /// 实验：面板材质名
     case panelMaterial = "DOCK_PANEL_MATERIAL"
+    /// A folder path: its popup content is drawn off-screen to a PNG (`StackPopupSnapshotProbe`).
+    case stackPopupSnapshot = "DOCK_STACK_POPUP_SNAPSHOT"
     /// 实验：面板饱和度
     case panelSaturation = "DOCK_PANEL_SATURATION"
     /// 实验：面板厚度档（=1 开）
@@ -186,7 +188,7 @@ enum DebugSwitch: String, CaseIterable, Sendable {
              .liquidGlassWhiteOverlay, .liquidGlassDimming, .liquidGlassBorder, .liquidGlassBorderEdge,
              .liquidGlassBorderCut, .liquidGlassBorderSpread, .liquidGlassBorderWidth, .liquidGlassBorderInner,
              .liquidGlassBackgroundOpacity, .liquidGlassWindowBlur, .liquidGlassContentInset,
-             .liquidGlassSystemVariant:
+             .liquidGlassSystemVariant, .stackPopupSnapshot:
             return .value
         }
     }

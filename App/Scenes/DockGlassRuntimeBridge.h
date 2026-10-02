@@ -1,4 +1,5 @@
 #import <Foundation/Foundation.h>
+#import <CoreGraphics/CoreGraphics.h>
 
 NS_ASSUME_NONNULL_BEGIN
 
@@ -10,6 +11,10 @@ BOOL TEDockGlassSetWindowBackgroundBlurRadius(NSInteger windowNumber, uint32_t r
 BOOL TEDockGlassSupportsSystemVariant(void);
 /// Applies a private glass variant to an `NSGlassEffectView`. Returns NO and does nothing if unsupported.
 BOOL TEDockGlassSetSystemVariant(id glassView, NSInteger variant);
+/// Shapes an `NSGlassEffectView` with the private `_setPath:` (view-local, y up) — how the Dock gives
+/// a stack's plate its arrow. Returns NO and does nothing if unsupported; the caller keeps a
+/// plain rounded plate.
+BOOL TEDockGlassSetPath(id glassView, CGPathRef _Nullable path);
 /// The white fill opacity of the material AppKit actually resolves for `variant`, read from a
 /// throwaway glass view in a never-shown window; -1 when it cannot be read. The variant number is
 /// private and unversioned: a system that maps it to the regular material paints a milky plate.

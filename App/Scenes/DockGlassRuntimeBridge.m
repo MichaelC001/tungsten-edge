@@ -71,6 +71,18 @@ BOOL TEDockGlassSetSystemVariant(id glassView, NSInteger variant) {
     }
 }
 
+BOOL TEDockGlassSetPath(id glassView, CGPathRef path) {
+    SEL selector = NSSelectorFromString(@"_setPath:");
+    if (glassView == nil || ![glassView respondsToSelector:selector]) return NO;
+    @try {
+        IMP implementation = [glassView methodForSelector:selector];
+        ((void (*)(id, SEL, CGPathRef))implementation)(glassView, selector, path);
+        return YES;
+    } @catch (__unused NSException *exception) {
+        return NO;
+    }
+}
+
 static double TEDockGlassFillOpacityInLayer(CALayer *layer) {
     double result = -1;
     for (id filter in layer.filters) {

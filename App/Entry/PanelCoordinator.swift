@@ -138,6 +138,8 @@ final class PanelCoordinator: NSObject {
     /// 弹窗锚点（chip 可视矩形,屏幕坐标）。click-away 判定要排除它——监视器在 mouseDown 关、
     /// chip 的 onTapGesture 在 mouseUp 又开,不排除锚点则同 chip 点击永远无法收合。
     var popupAnchorVisibleRect: CGRect = .zero
+    /// The open popup's arrow; rewritten by `setFolderPopupFrame` with every frame.
+    var folderPopupArrow: StackPopupArrowModel?
     /// 当前弹窗内容（nil = 没开）。
     var openPopupContent: PopupContent?
     /// 便捷视图：仅当弹窗装的是文件夹时给 path（排序订阅/移除关窗等文件夹专属逻辑用）。
@@ -450,6 +452,7 @@ final class PanelCoordinator: NSObject {
         drawerHosting = nil
         drawerHostedMaxContentHeight = nil
         folderPopupContentHost = nil
+        folderPopupArrow = nil
         windowTitleTooltipHosting = nil
         windowTitleTooltipHost = nil
         tearDownTaskbarGlassBackground()

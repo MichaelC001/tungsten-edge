@@ -156,6 +156,12 @@
 		A00000000000000000009291 /* FolderSortTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A00000000000000000009290 /* FolderSortTests.swift */; };
 		A00000000000000000009301 /* StripDropRouting.swift in Sources */ = {isa = PBXBuildFile; fileRef = A00000000000000000009300 /* StripDropRouting.swift */; };
 		A00000000000000000009302 /* StripDropRouting.swift in Sources */ = {isa = PBXBuildFile; fileRef = A00000000000000000009300 /* StripDropRouting.swift */; };
+		A0000000000000000000BD01 /* StackPopupGeometry.swift in Sources */ = {isa = PBXBuildFile; fileRef = A0000000000000000000BD00 /* StackPopupGeometry.swift */; };
+		A0000000000000000000BD02 /* StackPopupGeometry.swift in Sources */ = {isa = PBXBuildFile; fileRef = A0000000000000000000BD00 /* StackPopupGeometry.swift */; };
+		A0000000000000000000BD11 /* StackPopupBackdrop.swift in Sources */ = {isa = PBXBuildFile; fileRef = A0000000000000000000BD10 /* StackPopupBackdrop.swift */; };
+		A0000000000000000000BD21 /* StackPopupChrome.swift in Sources */ = {isa = PBXBuildFile; fileRef = A0000000000000000000BD20 /* StackPopupChrome.swift */; };
+		A0000000000000000000BD41 /* StackPopupSnapshotProbe.swift in Sources */ = {isa = PBXBuildFile; fileRef = A0000000000000000000BD40 /* StackPopupSnapshotProbe.swift */; };
+		A0000000000000000000BD31 /* StackPopupGeometryTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A0000000000000000000BD30 /* StackPopupGeometryTests.swift */; };
 		A00000000000000000009901 /* FolderDropPlan.swift in Sources */ = {isa = PBXBuildFile; fileRef = A00000000000000000009900 /* FolderDropPlan.swift */; };
 		A00000000000000000009902 /* FolderDropPlan.swift in Sources */ = {isa = PBXBuildFile; fileRef = A00000000000000000009900 /* FolderDropPlan.swift */; };
 		A000000000000000000DE501 /* FileDragItemProvider.swift in Sources */ = {isa = PBXBuildFile; fileRef = A000000000000000000DE500 /* FileDragItemProvider.swift */; };
@@ -783,6 +789,11 @@
 		A00000000000000000009260 /* FileItemMenuBuilder.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FileItemMenuBuilder.swift; sourceTree = "<group>"; };
 		A00000000000000000009290 /* FolderSortTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FolderSortTests.swift; sourceTree = "<group>"; };
 		A00000000000000000009300 /* StripDropRouting.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StripDropRouting.swift; sourceTree = "<group>"; };
+		A0000000000000000000BD00 /* StackPopupGeometry.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StackPopupGeometry.swift; sourceTree = "<group>"; };
+		A0000000000000000000BD10 /* StackPopupBackdrop.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StackPopupBackdrop.swift; sourceTree = "<group>"; };
+		A0000000000000000000BD20 /* StackPopupChrome.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StackPopupChrome.swift; sourceTree = "<group>"; };
+		A0000000000000000000BD40 /* StackPopupSnapshotProbe.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StackPopupSnapshotProbe.swift; sourceTree = "<group>"; };
+		A0000000000000000000BD30 /* StackPopupGeometryTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StackPopupGeometryTests.swift; sourceTree = "<group>"; };
 		A00000000000000000009900 /* FolderDropPlan.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FolderDropPlan.swift; sourceTree = "<group>"; };
 		A000000000000000000DE500 /* FileDragItemProvider.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FileDragItemProvider.swift; sourceTree = "<group>"; };
 		A00000000000000000009910 /* FileMover.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FileMover.swift; sourceTree = "<group>"; };
@@ -926,6 +937,7 @@
 				A00000000000000000000001 /* MacOSDockCCV2App.swift */,
 				A00000000000000000000066 /* AppDelegate.swift */,
 				A00000000000000000008020 /* StatusMenuController.swift */,
+				A0000000000000000000BD40 /* StackPopupSnapshotProbe.swift */,
 				D10000000000000000000001 /* SettingsWindowController.swift */,
 				A0000000000000000000006C /* PanelCoordinator.swift */,
 				B10000000000000000000121 /* TaskbarScreenOrchestrator.swift */,
@@ -1034,6 +1046,8 @@
 				A00000000000000000009AA0 /* ShelfTrayArt.swift */,
 				A00000000000000000009330 /* ShelfGridPopupView.swift */,
 				A0000000000000000000FF50 /* TrashGridPopupView.swift */,
+				A0000000000000000000BD10 /* StackPopupBackdrop.swift */,
+				A0000000000000000000BD20 /* StackPopupChrome.swift */,
 				A0000000000000000000FC00 /* DockTheme.swift */,
 				A0000000000000000000FE00 /* DockGlassBackdrop.swift */,
 				E10000000000000000000002 /* DockGlassRuntimeBridge.h */,
@@ -1071,6 +1085,7 @@
 				A00000000000000000000F02 /* FolderInteraction.swift */,
 				A00000000000000000000F03 /* FinderAppleEventMatcher.swift */,
 				A00000000000000000009300 /* StripDropRouting.swift */,
+				A0000000000000000000BD00 /* StackPopupGeometry.swift */,
 				A00000000000000000009900 /* FolderDropPlan.swift */,
 				A000000000000000000DE500 /* FileDragItemProvider.swift */,
 				A00000000000000000009400 /* LauncherMenuPlan.swift */,
@@ -1382,6 +1397,7 @@
 				A00000000000000000009280 /* FolderContentsLoaderTests.swift */,
 				A00000000000000000009290 /* FolderSortTests.swift */,
 				A00000000000000000009340 /* StripDropRoutingTests.swift */,
+				A0000000000000000000BD30 /* StackPopupGeometryTests.swift */,
 				A00000000000000000009920 /* FolderDropPlanTests.swift */,
 				A000000000000000000DE520 /* FileDragItemProviderTests.swift */,
 				A00000000000000000009930 /* FileMoverTests.swift */,
@@ -1726,6 +1742,7 @@
 					A00000000000000000009231 /* PinnedFolderCoverStore.swift in Sources */,
 					A00000000000000000009261 /* FileItemMenuBuilder.swift in Sources */,
 					A00000000000000000009301 /* StripDropRouting.swift in Sources */,
+					A0000000000000000000BD01 /* StackPopupGeometry.swift in Sources */,
 					A00000000000000000009901 /* FolderDropPlan.swift in Sources */,
 					A000000000000000000DE501 /* FileDragItemProvider.swift in Sources */,
 					A00000000000000000009911 /* FileMover.swift in Sources */,
@@ -1781,6 +1798,9 @@
 				A00000000000000000009AA1 /* ShelfTrayArt.swift in Sources */,
 					A00000000000000000009331 /* ShelfGridPopupView.swift in Sources */,
 					A0000000000000000000FF51 /* TrashGridPopupView.swift in Sources */,
+					A0000000000000000000BD11 /* StackPopupBackdrop.swift in Sources */,
+					A0000000000000000000BD21 /* StackPopupChrome.swift in Sources */,
+					A0000000000000000000BD41 /* StackPopupSnapshotProbe.swift in Sources */,
 					A00000000000000000009241 /* FolderGridPopupView.swift in Sources */,
 					A00000000000000000009251 /* PinnedFolderChip.swift in Sources */,
 					A000000000000000000019A2 /* BadgeStore.swift in Sources */,
@@ -1950,6 +1970,7 @@
 				A00000000000000000009281 /* FolderContentsLoaderTests.swift in Sources */,
 				A00000000000000000009291 /* FolderSortTests.swift in Sources */,
 				A00000000000000000009302 /* StripDropRouting.swift in Sources */,
+				A0000000000000000000BD02 /* StackPopupGeometry.swift in Sources */,
 				A00000000000000000009902 /* FolderDropPlan.swift in Sources */,
 				A000000000000000000DE502 /* FileDragItemProvider.swift in Sources */,
 				A00000000000000000009912 /* FileMover.swift in Sources */,
@@ -1988,6 +2009,7 @@
 				A00000000000000000009362 /* FolderChipDropZone.swift in Sources */,
 				A00000000000000000009312 /* ShelfStore.swift in Sources */,
 				A00000000000000000009341 /* StripDropRoutingTests.swift in Sources */,
+				A0000000000000000000BD31 /* StackPopupGeometryTests.swift in Sources */,
 				A00000000000000000009921 /* FolderDropPlanTests.swift in Sources */,
 				A000000000000000000DE521 /* FileDragItemProviderTests.swift in Sources */,
 				A00000000000000000009931 /* FileMoverTests.swift in Sources */,

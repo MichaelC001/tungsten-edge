@@ -371,7 +371,8 @@ extension PanelCoordinator {
         if let dock = dockPanel, dock.frame.contains(mouse) { return false }
         if let capsule = capsulePanel, capsule.frame.contains(mouse) { return false }
         if drawerWantsOpen, let drawer = drawerPanel, drawer.frame.contains(mouse) { return false }
-        if folderPopupWantsOpen, let popup = folderPopupPanel, popup.frame.contains(mouse) { return false }
+        if folderPopupWantsOpen, let popup = folderPopupPanel,
+           PanelGeometry.folderPopupPlateFrame(panelFrame: popup.frame).contains(mouse) { return false }
         // 唤醒热区贯穿整条屏幕底边，比居中的任务条/胶囊窄矩形宽得多；停在热区内但任务条范围外
         // 若判"已离开"会立刻武装 idle-hide，与刚触发的唤醒反复打架（唤醒→隐藏→唤醒…闪烁）。
         // 只在有限唤醒延迟下才压住——999/-1 两种模式没有这种打架，不该额外改变行为（见规则注释）。

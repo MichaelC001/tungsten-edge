@@ -282,17 +282,22 @@ struct DockThemeTokens: Equatable {
     /// 真缩略图封面的细描边（图标封面不描边）。
     let folderThumbHairline: DockTint
 
-    // MARK: 文件夹 / 中转弹窗
+    // MARK: Folder / shelf / Trash popup
 
-    let popupCellLabel: DockTint
-    let popupCellHover: DockTint
-    /// 「无法读取文件夹内容」这类主提示。
-    let popupPrimaryText: DockTint
-    /// 「文件夹是空的」「拖文件到中转格暂存」这类次级提示。
-    let popupSecondaryText: DockTint
-    let backChipFill: DockTint
-    let backChipRim: DockTint
-    let backChipGlyph: DockTint
+    // The one fixed-dark surface of this light table: the native Dock's stack grid is dark glass
+    // with white text in both system appearances, so these are white where everything else on
+    // the bar is black. Values are native readings, not taste.
+    /// Title and cell names.
+    let stackPopupText: DockTint
+    /// The status line (empty shelf, Trash state, unreadable folder).
+    let stackPopupNote: DockTint
+    /// 「Open in Finder」 ring, composited plus-lighter: the native glyph reads backdrop + 124.
+    let stackPopupGlyph: DockTint
+    /// Back-button plate when the Dock's own art cannot be loaded (plus-lighter is not used there).
+    let stackPopupBackFill: DockTint
+    /// Frosted fallback only — the glass draws its own edge and shadow.
+    let stackPopupHairline: DockTint
+    let stackPopupShadow: DockShadow
 
     // MARK: 窗口标题 tooltip
 
@@ -388,13 +393,12 @@ extension DockThemeTokens {
         folderDropRing: .black(0.45),
         folderThumbHairline: .black(0.15),
 
-        popupCellLabel: .black(0.85),
-        popupCellHover: .black(0.06),
-        popupPrimaryText: .black(0.7),
-        popupSecondaryText: .black(0.45),
-        backChipFill: .black(0.06),
-        backChipRim: .black(0.12),
-        backChipGlyph: .black(0.75),
+        stackPopupText: .white(0.95),
+        stackPopupNote: .white(0.6),
+        stackPopupGlyph: .white(124.0 / 255.0),
+        stackPopupBackFill: .white(60.0 / 255.0),
+        stackPopupHairline: .white(0.18),
+        stackPopupShadow: DockShadow(tint: .black(0.3), radius: 18, y: 6),
 
         // 2026-08-17 对着原生截图的边缘剖面定的（黑底、@2x）：
         // 原生是「0 → 191 → **209** → 173 173 173…」——一圈**比填充更亮**的 1px 高光，
