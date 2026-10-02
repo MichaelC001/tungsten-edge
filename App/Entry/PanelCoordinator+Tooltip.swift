@@ -128,11 +128,8 @@ extension PanelCoordinator {
             panel = created
         }
 
-        // The bubble scales with the bar height as a whole. `DockPanelHeight.scale` is already
-        // normalised to the native height (exactly 1.0 there → native pixels byte-for-byte).
-        // A height change goes through `tearDownForPanelHeightChange`, which dismisses the
-        // bubble first, so no extra invalidation is needed here.
-        let style = WindowTitleTooltipStyle(scale: settingsStore.dockPanelHeight.scale)
+        // The bubble keeps the native size at every bar height, as the native Dock's label does.
+        let style = WindowTitleTooltipStyle.native
         let contentHost: ManualPanelHost
         if let hosting = windowTitleTooltipHosting, let existingHost = windowTitleTooltipHost {
             hosting.rootView = WindowTitleTooltipView(title: request.title, style: style,

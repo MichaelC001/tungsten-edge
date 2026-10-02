@@ -540,13 +540,10 @@ enum WindowTitleTooltipEvent: Equatable {
 /// 6.5/5.5/4/3 @2x），所以它是固定尺寸的零件，不随气泡宽度变。中段斜率约 1.17（半宽/深度），
 /// 外推到 0 应在 7.1pt 处，实际 6.5pt 就收——**差的那截就是圆头**（owner 说的「更圆润」）。
 ///
-/// **整颗随任务条档位缩放**（owner 2026-08-17）：上表是**中档**的值，其余档位整体乘
-/// `DockPanelHeight.scale`。系数用现成的 `DockPanelHeight.scale` 就对——它已经是「原生高度归一」
-/// （`points / DockPanelHeight.native.points`），54pt 时恒等于 1.0，所以那一列
-/// 逐字保持实测原值。别再另算一个系数，更别拿条高除以某个字面量。
+/// **One size, whatever the bar height.** The native label is the same size on a small, default
+/// and large Dock (measured on all three), and so is its gap to the Dock — so this table has no
+/// scale factor and there is exactly one instance, `native`.
 struct WindowTitleTooltipStyle: Equatable {
-    /// 档位系数（中档 = 1）。
-    let scale: CGFloat
     let height: CGFloat
     let cornerRadius: CGFloat
     let horizontalPadding: CGFloat
@@ -563,25 +560,24 @@ struct WindowTitleTooltipStyle: Equatable {
     let tipGap: CGFloat
     let maximumWidth: CGFloat
 
-    init(scale: CGFloat) {
-        self.scale = scale
-        height = 26 * scale
-        // 胶囊：圆角恒为高的一半，缩放后依然是胶囊。
+    private init() {
+        height = 26
+        // 胶囊：圆角恒为高的一半。
         cornerRadius = height / 2
-        horizontalPadding = 13 * scale
-        fontSize = 14 * scale
-        tailWidth = 23 * scale
-        tailHeight = 6.5 * scale
-        tailShoulderDepth = 1.6 * scale
-        tailShoulderHalfWidth = 6.6 * scale
-        tailTipDepth = 5.6 * scale
-        tailTipHalfWidth = 1.9 * scale
-        tipGap = 6.5 * scale
-        maximumWidth = 360 * scale
+        horizontalPadding = 13
+        fontSize = 14
+        tailWidth = 23
+        tailHeight = 6.5
+        tailShoulderDepth = 1.6
+        tailShoulderHalfWidth = 6.6
+        tailTipDepth = 5.6
+        tailTipHalfWidth = 1.9
+        tipGap = 6.5
+        maximumWidth = 360
     }
 
-    /// 实测原表 = 中档。测试拿它锁住「缩放没有顺手改掉原生像素」。
-    static let native = WindowTitleTooltipStyle(scale: 1)
+    /// The measured native table — the only instance.
+    static let native = WindowTitleTooltipStyle()
 }
 
 /// 胶囊 + 向下水滴尖角。尖角画在**形状里**而不是叠一个三角形：

@@ -368,37 +368,6 @@ final class ScreenRectReaderTests: XCTestCase {
         XCTAssertEqual(native.cornerRadius, native.height / 2)
     }
 
-    /// 气泡随任务条档位缩放（owner 2026-08-17），但**中档必须一个像素不动**。
-    ///
-    /// 这条同时是那个分母陷阱的回归锁：系数得用 `DockPanelHeight.scale`（已按 54pt 归一），
-    /// 中档恒等于 1.0。若谁改成「条高 ÷ 某个字面量」，中档立刻不再是 1，签收过的原生像素就被改掉。
-    func testMediumTierKeepsTheNativePixelsAndOtherTiersScaleWholesale() {
-        XCTAssertEqual(DockPanelHeight.native.scale, 1.0, accuracy: 0.0000001)
-        let medium = WindowTitleTooltipStyle(scale: DockPanelHeight.native.scale)
-        XCTAssertEqual(medium, WindowTitleTooltipStyle.native)
-
-        for tier in sampleDockHeights {
-            let style = WindowTitleTooltipStyle(scale: tier.scale)
-            XCTAssertEqual(style.height, 26 * tier.scale, accuracy: 0.001)
-            XCTAssertEqual(style.fontSize, 14 * tier.scale, accuracy: 0.001)
-            XCTAssertEqual(style.tipGap, 6.5 * tier.scale, accuracy: 0.001)
-            XCTAssertEqual(style.horizontalPadding, 13 * tier.scale, accuracy: 0.001)
-            // 缩放后仍是胶囊。
-            XCTAssertEqual(style.cornerRadius, style.height / 2, accuracy: 0.001)
-        }
-    }
-
-    /// 尾巴那顶圆帽在任意档位都还在（直边外推必须过冲真实尖端）。
-    func testTailStaysRoundedAtEveryTier() {
-        for tier in sampleDockHeights {
-            let style = WindowTitleTooltipStyle(scale: tier.scale)
-            let slope = (style.tailShoulderHalfWidth - style.tailTipHalfWidth)
-                / (style.tailTipDepth - style.tailShoulderDepth)
-            let extrapolated = style.tailTipDepth + style.tailTipHalfWidth / slope
-            XCTAssertGreaterThan(extrapolated, style.tailHeight, "档位 \(tier) 的尖端不该变尖")
-        }
-    }
-
     /// 尖角必须画在同一条闭合路径里：叠一个三角形会在接缝处交叉出一条横线。
     /// 这里验证形状确实向下伸出尖角，且尖端落在水平中心。
     func testShapeExtendsADownwardTailAtTheHorizontalCentre() {
