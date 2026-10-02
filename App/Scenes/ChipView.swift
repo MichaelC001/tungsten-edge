@@ -72,6 +72,7 @@ struct ChipView: View {
     var showRunningDot: Bool = false
     /// 见 `EnvironmentValues.isDragCarrierSnapshot`：拍副本时不画圆点、不烘投影。
     @Environment(\.isDragCarrierSnapshot) private var isDragCarrierSnapshot
+    @Environment(\.chipPillUsesGlass) private var pillUsesGlass
     var drawerTap: (() -> Void)? = nil
     /// 外部手势（重击/中键预览）触发的脉冲信号：nonce 变化即触发一次 fireTapPulse，
     /// 给活访达窗口预览那 ~200ms 反查延迟一个"点到了"的即时确认。默认 0 = 不脉冲。
@@ -249,14 +250,23 @@ struct ChipView: View {
                 isTapPressed: isTapPressed,
                 showsHover: showsHover
             )
-            shape
-                .fill(theme.effectiveChipPillFill.color(emphasisProgress: Double(progress)))
-                .overlay(
-                    shape.strokeBorder(
-                        theme.chipPillRimStyle(emphasisProgress: Double(progress)),
-                        lineWidth: 0.5
+            if #available(macOS 26.0, *), pillUsesGlass, let glass = theme.chipPillGlass {
+                // The glass itself never changes per frame; only the lift over it animates.
+                shape
+                    .fill(Color.clear)
+                    .glassEffect(.regular.tint(glass.tint.color).interactive(false), in: shape)
+                    .overlay(shape.fill(DockTint(base: glass.hoverLift.base,
+                                                 opacity: glass.hoverLift.opacity * Double(progress)).color))
+            } else {
+                shape
+                    .fill(theme.effectiveChipPillFill.color(emphasisProgress: Double(progress)))
+                    .overlay(
+                        shape.strokeBorder(
+                            theme.chipPillRimStyle(emphasisProgress: Double(progress)),
+                            lineWidth: 0.5
+                        )
                     )
-                )
+            }
         }
         .animation(.easeInOut(duration: 0.18), value: showsHover)
     }

@@ -96,6 +96,25 @@ enum DockPanelMaterial: Equatable {
 // 图标下方的运行点（是否运行）、带标题卡片的 `labelActive` / `labelInactive`（是否在桌面）。
 // 理由与旧数值见 `Docs/27-product-decisions.md`。
 
+/// A title pill made of the system's regular glass (Liquid Glass path only): its edge light is
+/// what gives the card thickness. `tint` pulls the glass toward the side opposite the text, the
+/// same rule as `chipPillFill`; `hoverLift` is laid over it as the hover emphasis.
+struct DockChipPillGlass: Equatable {
+    let tint: DockTint
+    let hoverLift: DockTint
+}
+
+/// The dark title-pill looks under comparison (`DOCK_DARK_PILL`). Experiment scaffolding: once the
+/// owner has picked, delete the losers and the switch.
+enum DockDarkPillCandidate: String {
+    /// Tinted system glass; the flat darkening pill where there is no glass.
+    case glass
+    /// Flat darkening pill everywhere.
+    case sink
+    /// Flat lightening pill — fails the contrast floor over a white window (`DockThemeTests`).
+    case lift
+}
+
 /// How the hover bubble's surface is built when Liquid Glass is available.
 enum DockTooltipSurface: Equatable {
     /// Our near-white plate over clear glass, with our own rim and shadow (`tooltipPlate`).
@@ -245,6 +264,9 @@ struct DockThemeTokens: Equatable {
     let chipPillFill: DockTintPair
     let chipPillRimTop: DockTintPair
     let chipPillRimBottom: DockTint
+    /// Non-nil = the pill is system glass where Liquid Glass is available, and `chipPillFill` +
+    /// rim are only the fallback (frosted path, drag-carrier bitmap). `nil` = always the flat pill.
+    let chipPillGlass: DockChipPillGlass?
 
     // MARK: 文字
 
@@ -326,6 +348,10 @@ struct DockThemeTokens: Equatable {
     /// 反成暗边等于没有边，气泡会化在背景里（2026-08-17 实测原生剖面）。
     let tooltipRim: DockTint
     let tooltipText: DockTint
+    /// Whether the bubble's text is drawn with CoreGraphics font smoothing. Smoothing dilates
+    /// light-on-dark glyphs: measured on the same two characters, the native dark label's stems
+    /// are 1.15px against 2.07px smoothed and 1.14px unsmoothed.
+    let tooltipTextSmoothing: Bool
     let tooltipShadow: DockShadow
     /// Liquid Glass path only; the frosted path always draws the plate, rim and shadow above.
     let tooltipGlassSurface: DockTooltipSurface
@@ -383,6 +409,7 @@ extension DockThemeTokens {
         chipPillFill: DockTintPair(normal: .white(0.24), emphasized: .white(0.336)),
         chipPillRimTop: DockTintPair(normal: .white(0.55), emphasized: .white(0.7)),
         chipPillRimBottom: .black(0.1),
+        chipPillGlass: nil,
 
         labelActive: .black(0.85),
         labelInactive: .black(0.62),
@@ -419,6 +446,8 @@ extension DockThemeTokens {
         // 起始值，待实测标定（见字段注释里的三个目标点）。
         tooltipRim: .white(0.45),
         tooltipText: .black(0.85),
+        // The signed-off light bubble; not re-measured against the native one for stem width.
+        tooltipTextSmoothing: true,
         tooltipShadow: DockShadow(tint: .black(0.14), radius: 5, y: 2),
         // Regular glass alone was measured and rejected here: it follows the backdrop down to 45
         // on black, where the native light bubble stays 173 (`hover-bubble.md`).
@@ -430,14 +459,9 @@ extension DockThemeTokens {
     /// The plate is the system's (variant 3 under `darkAqua`), so nothing here colours it. It
     /// barely lifts a dark backdrop and dims a bright one — white 255 reads about 176 through it —
     /// which makes the bar over a white window the worst case for white text.
-    static let dark = darkColumn(pillLifts: false)
+    static let dark = darkColumn(pill: .glass)
 
-    /// Experiment only (`DOCK_DARK_PILL=lift`): the pill lightens instead of darkening. It reads
-    /// more like a card on a dark backdrop but fails the contrast floor over a white window
-    /// (`DockThemeTests`), so it cannot become the default as it stands.
-    static let darkLiftedPillCandidate = darkColumn(pillLifts: true)
-
-    private static func darkColumn(pillLifts: Bool) -> DockThemeTokens {
+    static func darkColumn(pill: DockDarkPillCandidate) -> DockThemeTokens {
         DockThemeTokens(
             // The theme rim is drawn only on the frosted / fallback plate; the system glass has its own.
             panelRimTop: .white(0.15),
@@ -460,11 +484,17 @@ extension DockThemeTokens {
             // Against the text, as in the light column: white text needs a darker pill. Worst case
             // (plate 176): 3.44 active / 2.37 inactive, at or above the light column's own worst case.
             // The pill and `labelInactive` are one pair — tune both, then re-run the contrast test.
-            chipPillFill: pillLifts
+            chipPillFill: pill == .lift
                 ? DockTintPair(normal: .white(0.10), emphasized: .white(0.14))
                 : DockTintPair(normal: .black(0.25), emphasized: .black(0.33)),
             chipPillRimTop: DockTintPair(normal: .white(0.22), emphasized: .white(0.34)),
             chipPillRimBottom: .white(0.04),
+            // Measured through the real materials (dark Dock plate under the pill): over a white
+            // backdrop the pill reads 111 — 2.9 inactive / 4.5 active, better than the flat pill —
+            // and over blue or black it sits at the plate's level, so the edge light carries the card.
+            chipPillGlass: pill == .glass
+                ? DockChipPillGlass(tint: .black(0.3), hoverLift: .white(0.07))
+                : nil,
 
             labelActive: .white(0.92),
             labelInactive: .white(0.6),
@@ -502,6 +532,7 @@ extension DockThemeTokens {
             tooltipPlateOpacity: 0.41,
             tooltipRim: .white(0.12),
             tooltipText: .white(0.96),
+            tooltipTextSmoothing: false,
             tooltipShadow: DockShadow(tint: .black(0.25), radius: 5, y: 2),
             tooltipGlassSurface: .regularGlassAlone
         )

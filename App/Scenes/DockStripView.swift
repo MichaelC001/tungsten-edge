@@ -221,6 +221,7 @@ struct DockStripView: View {
                 }
                 .onAppear { renderedLabelTitles = projection.labelTitleByChipID }
                 .environment(\.labelBoxWidthTick, onLabelBoxWidthTick)
+                .environment(\.chipPillUsesGlass, usesLiquidGlass)
             }
             .clipShape(RoundedRectangle(cornerRadius: taskbarCornerRadius, style: .continuous))
             .compatLeadingScrollAnchor()

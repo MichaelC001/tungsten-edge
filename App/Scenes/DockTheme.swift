@@ -63,13 +63,14 @@ enum DockEffectSwitches {
     /// 读一次就固定——调参期间改环境变量重启一次即可，也避免一次会话里前后不一致。
     static let environment = ProcessInfo.processInfo.environment
 
-    /// The dark column in effect: `DOCK_DARK_PILL=lift` swaps in the lightening-pill candidate.
-    static let darkColumn: DockThemeTokens = darkPillLifts(from: environment) ? .darkLiftedPillCandidate : .dark
+    /// The dark column in effect: `DOCK_DARK_PILL=glass|sink|lift` picks the title-pill candidate.
+    static let darkColumn: DockThemeTokens = .darkColumn(pill: darkPillCandidate(from: environment))
 
-    /// Only the exact word `lift` selects the candidate; unset or anything else keeps the default.
-    static func darkPillLifts(from environment: [String: String]) -> Bool {
-        DebugSwitch.darkPill.value(in: environment)?
-            .trimmingCharacters(in: .whitespacesAndNewlines).lowercased() == "lift"
+    /// Unset or unrecognised keeps the default (`glass`).
+    static func darkPillCandidate(from environment: [String: String]) -> DockDarkPillCandidate {
+        let raw = DebugSwitch.darkPill.value(in: environment)?
+            .trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        return raw.flatMap(DockDarkPillCandidate.init(rawValue:)) ?? .glass
     }
 
     /// `DOCK_PANEL_SATURATION=1.25`。未设 / 非数字 / 超出合理范围 → `1.0`（= 不加滤镜）。
@@ -149,7 +150,7 @@ enum DockEffectSwitches {
             print("[panel] DOCK_LABEL_INACTIVE=\"\(raw)\" → 实际生效 \(DockThemeTokens.light.effectiveLabelInactive.opacity)")
         }
         if let raw = DebugSwitch.darkPill.value(in: environment) {
-            print("[panel] DOCK_DARK_PILL=\"\(raw)\" → 深色卡底 \(darkPillLifts(from: environment) ? "lift" : "sink")")
+            print("[panel] DOCK_DARK_PILL=\"\(raw)\" → 深色卡底 \(darkPillCandidate(from: environment).rawValue)")
         }
     }
 }
@@ -353,6 +354,20 @@ extension View {
     /// 光晕不在「不烘投影」的范围内：它是卡自己的一部分（拖动中也该跟着走），不是落地要交接的投影。
     func dockGlow(_ tint: DockTint, radius: CGFloat, active: Bool) -> some View {
         self.shadow(color: tint.color(active: active), radius: active ? radius : 0)
+    }
+}
+
+struct ChipPillUsesGlassKey: EnvironmentKey {
+    static let defaultValue = false
+}
+
+extension EnvironmentValues {
+    /// Whether title pills may be drawn as system glass. Set only by the taskbar, from its panel's
+    /// `usesLiquidGlass`. The default is the safe side on purpose: a drag-carrier bitmap is rendered
+    /// off-window, where a glass effect captures as nothing, so it must get the flat pill.
+    var chipPillUsesGlass: Bool {
+        get { self[ChipPillUsesGlassKey.self] }
+        set { self[ChipPillUsesGlassKey.self] = newValue }
     }
 }
 

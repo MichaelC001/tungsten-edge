@@ -651,11 +651,7 @@ struct WindowTitleTooltipView: View {
 
     var body: some View {
         let shape = WindowTitleTooltipShape(style: style)
-        return Text(title)
-            .font(.system(size: style.fontSize, weight: .regular))
-            .foregroundStyle(theme.tooltipText.color)
-            .lineLimit(1)
-            .truncationMode(.tail)
+        return label
             .frame(maxWidth: style.maximumWidth)
             .padding(.horizontal, style.horizontalPadding)
             // 文字盒撑满主体高度并居中；尖角靠额外的下内边距占位，文字不会被它带偏。
@@ -700,6 +696,21 @@ struct WindowTitleTooltipView: View {
     /// 原生的行为是「近白半透板 + 背后被糊过」，所以板的代数一个字不改（`0.965 @ 0.70`，
     /// 三点实测标定过、也被 `DockThemeTests` 锁着），玻璃只负责**把透过来的那 30% 糊掉**。
     /// 两条路径因此代数完全相同，唯一区别是那 30% 清不清楚——回退路径不会跑偏。
+    @ViewBuilder
+    private var label: some View {
+        if theme.tooltipTextSmoothing {
+            Text(title)
+                .font(.system(size: style.fontSize, weight: .regular))
+                .foregroundStyle(theme.tooltipText.color)
+                .lineLimit(1)
+                .truncationMode(.tail)
+        } else {
+            UnsmoothedLabel(title: title, fontSize: style.fontSize, tint: theme.tooltipText,
+                            maximumWidth: style.maximumWidth)
+                .fixedSize()
+        }
+    }
+
     /// False only when the surface is the system's regular glass alone (`DockTooltipSurface`).
     private var drawsOwnChrome: Bool {
         guard #available(macOS 26.0, *), usesLiquidGlass else { return true }
@@ -739,5 +750,67 @@ struct WindowTitleTooltipView: View {
         } else {
             plate
         }
+    }
+}
+
+/// One line of text drawn with font smoothing off. SwiftUI's `Text` has no switch for it, and
+/// smoothing is what makes the bubble's light-on-dark text read bolder than the native label
+/// (`DockThemeTokens.tooltipTextSmoothing`).
+private struct UnsmoothedLabel: NSViewRepresentable {
+    let title: String
+    let fontSize: CGFloat
+    let tint: DockTint
+    let maximumWidth: CGFloat
+
+    func makeNSView(context: Context) -> UnsmoothedLabelView {
+        let view = UnsmoothedLabelView()
+        for orientation in [NSLayoutConstraint.Orientation.horizontal, .vertical] {
+            view.setContentHuggingPriority(.required, for: orientation)
+            view.setContentCompressionResistancePriority(.required, for: orientation)
+        }
+        apply(to: view)
+        return view
+    }
+
+    // SwiftUI re-runs update, never re-creates the view: the title and colour follow here.
+    func updateNSView(_ view: UnsmoothedLabelView, context: Context) { apply(to: view) }
+
+    private func apply(to view: UnsmoothedLabelView) {
+        let paragraph = NSMutableParagraphStyle()
+        paragraph.lineBreakMode = .byTruncatingTail
+        let colour = NSColor(white: tint.base == .white ? 1 : 0, alpha: tint.opacity)
+        view.set(NSAttributedString(string: title, attributes: [
+            .font: NSFont.systemFont(ofSize: fontSize, weight: .regular),
+            .foregroundColor: colour,
+            .paragraphStyle: paragraph,
+        ]), maximumWidth: maximumWidth)
+    }
+}
+
+final class UnsmoothedLabelView: NSView {
+    private var text = NSAttributedString()
+    private var maximumWidth: CGFloat = .greatestFiniteMagnitude
+
+    override var isFlipped: Bool { true }
+
+    func set(_ text: NSAttributedString, maximumWidth: CGFloat) {
+        guard text != self.text || maximumWidth != self.maximumWidth else { return }
+        self.text = text
+        self.maximumWidth = maximumWidth
+        invalidateIntrinsicContentSize()
+        needsDisplay = true
+    }
+
+    override var intrinsicContentSize: NSSize {
+        let size = text.size()
+        return NSSize(width: min(ceil(size.width), maximumWidth), height: ceil(size.height))
+    }
+
+    override func hitTest(_ point: NSPoint) -> NSView? { nil }
+
+    override func draw(_ dirtyRect: NSRect) {
+        guard let context = NSGraphicsContext.current?.cgContext else { return }
+        context.setShouldSmoothFonts(false)
+        text.draw(with: bounds, options: [.usesLineFragmentOrigin, .truncatesLastVisibleLine])
     }
 }
