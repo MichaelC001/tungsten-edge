@@ -328,11 +328,37 @@ struct SettingsWindowContent: View {
                 let report = DiagnosticReport.collect(appVersion: coordinator.versionTitle)
                 NSPasteboard.general.clearContents()
                 NSPasteboard.general.setString(report.text, forType: .string)
-                presentedAlert = SettingsAlert(
-                    title: String(localized: "Diagnostic Info Copied"),
-                    message: String(localized: "Paste it into a feedback message or send it to us. It contains only app, system and display details.")
-                )
+                Self.presentCopiedDiagnostics(report.text)
             }
+        }
+    }
+
+    /// Shows what was just copied, so the user sees exactly what they are about to paste.
+    /// An `NSAlert` sheet rather than `SettingsAlert`: a SwiftUI alert cannot hold a scrolling
+    /// text box, and the report as a plain message makes the alert a screen tall.
+    private static func presentCopiedDiagnostics(_ text: String) {
+        // The scrollable-text-view factory sizes the document to its content and starts at the
+        // top; a hand-built NSTextView in a scroll view opens scrolled one line down.
+        let scrollView = NSTextView.scrollableTextView()
+        scrollView.frame = NSRect(x: 0, y: 0, width: 420, height: 236)
+        scrollView.borderType = .bezelBorder
+        if let textView = scrollView.documentView as? NSTextView {
+            textView.isEditable = false
+            textView.isSelectable = true
+            textView.font = .monospacedSystemFont(ofSize: 11, weight: .regular)
+            textView.textContainerInset = NSSize(width: 6, height: 6)
+            textView.string = text
+        }
+
+        let alert = NSAlert()
+        alert.messageText = String(localized: "Diagnostic Info Copied")
+        alert.informativeText = String(localized: "Paste it into a feedback message or send it to us. It contains only the app, system and display details shown below — no personal information.")
+        alert.accessoryView = scrollView
+        alert.addButton(withTitle: String(localized: "OK"))
+        if let window = NSApp.keyWindow {
+            alert.beginSheetModal(for: window)
+        } else {
+            alert.runModal()
         }
     }
 
