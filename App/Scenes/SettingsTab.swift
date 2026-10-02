@@ -40,3 +40,23 @@ enum SettingsTab: String, CaseIterable {
 final class SettingsTabState: ObservableObject {
     @Published var selected: SettingsTab = .general
 }
+
+/// The feedback pane's four drafts. Owned by the controller, like `SettingsTabState`, because
+/// closing the window drops the whole SwiftUI tree — `@State` on the root dies with it and the
+/// user reopens to an empty form. Lives until the process exits; never written to UserDefaults.
+/// The height probe shares this instance too.
+@MainActor
+final class FeedbackDraftState: ObservableObject {
+    @Published var message = ""
+    @Published var contact = ""
+    @Published var category: FeedbackCategory = .bug
+    @Published var attachments: [FeedbackAttachment] = []
+
+    /// After a successful send only: a failed one keeps everything, attachments included.
+    func clear() {
+        message = ""
+        contact = ""
+        category = .bug
+        attachments = []
+    }
+}

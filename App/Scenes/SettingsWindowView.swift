@@ -14,6 +14,7 @@ struct SettingsWindowView: View {
     @ObservedObject var coordinator: SettingsCoordinator
     @ObservedObject var licenseStore: LicenseStore
     @ObservedObject var tabState: SettingsTabState
+    let feedbackDraft: FeedbackDraftState
     /// 「通用」页那颗「重新打开新手引导」按钮的动作。**不给默认值**：这里没有任何测试
     /// 会检查 SwiftUI 调用点，给了默认值就等于让"漏传"编译通过（AGENTS.md 的 no-default 铁律）。
     let onShowWelcomeGuide: () -> Void
@@ -28,6 +29,7 @@ struct SettingsWindowView: View {
                 coordinator: coordinator,
                 licenseStore: licenseStore,
                 tabState: tabState,
+                feedbackDraft: feedbackDraft,
                 onShowWelcomeGuide: onShowWelcomeGuide
             )
         }
@@ -40,18 +42,15 @@ struct SettingsWindowContent: View {
     @ObservedObject var coordinator: SettingsCoordinator
     @ObservedObject var licenseStore: LicenseStore
     @ObservedObject var tabState: SettingsTabState
+    /// Feedback drafts live on the controller, not in `@State`: they must survive closing the
+    /// window, which tears this whole tree down.
+    @ObservedObject var feedbackDraft: FeedbackDraftState
     let onShowWelcomeGuide: () -> Void
 
     @State private var presentedAlert: SettingsAlert?
     @State private var showsScrollReverserHelp = false
     @State private var subscriptionEmail = ""
     @State private var licenseKeyInput = ""
-    @State private var feedbackMessage = ""
-    @State private var feedbackContact = ""
-    // 反馈类型也是草稿：和 message/contact 一样必须留在根视图，下放进页级子视图 = 切页被清空。
-    @State private var feedbackCategory: FeedbackCategory = .bug
-    // 附件列表同理（2026-08-24）：切页回来必须还在，否则用户以为附件掉了会重加一遍。
-    @State private var feedbackAttachments: [FeedbackAttachment] = []
 
     var body: some View {
         Group {
@@ -86,8 +85,8 @@ struct SettingsWindowContent: View {
     }
 
     // 分区标题行随分页取消（窗口标题承担）。页体全部是**本根视图**的计算属性——
-    // 草稿 @State（presentedAlert / 订阅邮箱 / 授权码 / 反馈正文与联系方式）必须留在根上，
-    // 下放进页级子视图 = 切页即清空（settings.md 有对应规则）。
+    // 草稿 @State（presentedAlert / 订阅邮箱 / 授权码）必须留在根上，
+    // 下放进页级子视图 = 切页即清空（settings.md 有对应规则）。反馈的四份草稿在 `feedbackDraft`。
     /// Every pane is the system's own grouped `Form` on macOS 13+ (`systemForm`), so radius,
     /// fill and dividers follow each OS release; macOS 12 has no grouped form and keeps the
     /// hand-built layouts in the `else` branches.
@@ -627,7 +626,7 @@ struct SettingsWindowContent: View {
     }
 
     private var feedbackTypePicker: some View {
-        Picker("Type", selection: $feedbackCategory) {
+        Picker("Type", selection: $feedbackDraft.category) {
             ForEach(FeedbackCategory.allCases, id: \.self) { category in
                 Text(category.displayName).tag(category)
             }
@@ -636,12 +635,12 @@ struct SettingsWindowContent: View {
     }
 
     private var feedbackEditor: some View {
-        TextEditor(text: $feedbackMessage)
+        TextEditor(text: $feedbackDraft.message)
             .font(.callout)
             .frame(height: 140)
             .overlay(alignment: .topLeading) {
-                if feedbackMessage.isEmpty {
-                    Text(feedbackCategory.placeholder)
+                if feedbackDraft.message.isEmpty {
+                    Text(feedbackDraft.category.placeholder)
                         .font(.callout)
                         .foregroundStyle(Color(nsColor: .placeholderTextColor))
                         .padding(.horizontal, 5)
@@ -654,7 +653,7 @@ struct SettingsWindowContent: View {
         HStack(spacing: 10) {
             // Prompt plus hidden label: inside a grouped form a bare title becomes a leading
             // label and the field itself shows empty.
-            TextField(text: $feedbackContact, prompt: Text(String(localized: "Email or WeChat ID (optional)"))) {
+            TextField(text: $feedbackDraft.contact, prompt: Text(String(localized: "Email or WeChat ID (optional)"))) {
                 Text(String(localized: "Email or WeChat ID (optional)"))
             }
                 .labelsHidden()
@@ -663,7 +662,7 @@ struct SettingsWindowContent: View {
             Button(presentation.title) { submitFeedback() }
                 .disabled(
                     !presentation.isEnabled
-                        || feedbackMessage.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+                        || feedbackDraft.message.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
                 )
         }
     }
@@ -683,8 +682,8 @@ struct SettingsWindowContent: View {
     private func feedbackAttachmentRow(isEnabled: Bool) -> some View {
         HStack(spacing: 8) {
             Button(String(localized: "Add Screenshot or Recording…")) { addFeedbackAttachments() }
-                .disabled(!isEnabled || feedbackAttachments.count >= FeedbackAttachmentCheck.maximumCount)
-            ForEach(feedbackAttachments) { attachment in
+                .disabled(!isEnabled || feedbackDraft.attachments.count >= FeedbackAttachmentCheck.maximumCount)
+            ForEach(feedbackDraft.attachments) { attachment in
                 feedbackAttachmentChip(attachment, isEnabled: isEnabled)
             }
             Spacer(minLength: 0)
@@ -701,7 +700,7 @@ struct SettingsWindowContent: View {
             Text(attachment.sizeLabel)
                 .foregroundStyle(.secondary)
             Button {
-                feedbackAttachments.removeAll { $0.id == attachment.id }
+                feedbackDraft.attachments.removeAll { $0.id == attachment.id }
             } label: {
                 Image(systemName: "xmark.circle.fill")
                     .foregroundStyle(.secondary)
@@ -734,13 +733,13 @@ struct SettingsWindowContent: View {
             let name = url.lastPathComponent
             let byteCount = (try? url.resourceValues(forKeys: [.fileSizeKey]).fileSize) ?? 0
             if let rejection = FeedbackAttachmentCheck.validate(
-                adding: name, byteCount: byteCount, to: feedbackAttachments
+                adding: name, byteCount: byteCount, to: feedbackDraft.attachments
             ) {
                 presentedAlert = SettingsAlert(FeedbackAlertContent(attachmentRejection: rejection))
                 return
             }
             guard let mimeType = FeedbackAttachmentCheck.mimeType(forFileName: name) else { return }
-            feedbackAttachments.append(FeedbackAttachment(
+            feedbackDraft.attachments.append(FeedbackAttachment(
                 url: url, name: name, byteCount: byteCount, mimeType: mimeType
             ))
         }
@@ -754,11 +753,11 @@ struct SettingsWindowContent: View {
     private func submitFeedback() {
         // 先组装再上锁：空正文直接返回，不占 submitting 状态（按钮 disabled 已挡，这里兜底）。
         guard let composed = FeedbackComposition.compose(
-            category: feedbackCategory, message: feedbackMessage
+            category: feedbackDraft.category, message: feedbackDraft.message
         ) else { return }
         guard coordinator.beginFeedback() else { return }
-        let contact = feedbackContact
-        let attachments = feedbackAttachments
+        let contact = feedbackDraft.contact
+        let attachments = feedbackDraft.attachments
         Task {
             let content = await coordinator.performFeedback(
                 message: composed, contact: contact, attachments: attachments
@@ -766,10 +765,7 @@ struct SettingsWindowContent: View {
             coordinator.finishFeedback()
             // 失败时草稿**全保留**（含附件列表）：40MB 重选一遍是很实在的惩罚。
             if content.didSend {
-                feedbackMessage = ""
-                feedbackContact = ""
-                feedbackCategory = .bug
-                feedbackAttachments = []
+                feedbackDraft.clear()
             }
             presentedAlert = SettingsAlert(content)
         }

@@ -18,6 +18,9 @@ final class SettingsWindowController: NSObject, NSWindowDelegate {
     /// 所选标签（2026-08-24 分页）。controller 持有唯一一份 = 会话内记忆；
     /// 量高探针必须共享它，否则量的是别的页。有意不跨重启持久化。
     private let tabState = SettingsTabState()
+    /// Feedback drafts outlive the window for the same reason: closing drops the host, and with
+    /// it every `@State`. Deliberately not persisted across launches.
+    private let feedbackDraft = FeedbackDraftState()
 
     init(
         store: AppSettingsStore,
@@ -43,6 +46,7 @@ final class SettingsWindowController: NSObject, NSWindowDelegate {
                 coordinator: coordinator,
                 licenseStore: licenseStore,
                 tabState: tabState,
+                feedbackDraft: feedbackDraft,
                 onShowWelcomeGuide: onShowWelcomeGuide
             )
         )
@@ -89,7 +93,7 @@ final class SettingsWindowController: NSObject, NSWindowDelegate {
         sessionSubscriptions.removeAll()
         window.contentView = NSView()
         hostingView = nil
-        // tabState 有意不重置：重开回到同一标签（会话记忆）。
+        // tabState 与 feedbackDraft 有意不重置：重开回到同一标签，写了一半的反馈还在。
     }
 
     // MARK: 标签页
@@ -152,6 +156,7 @@ final class SettingsWindowController: NSObject, NSWindowDelegate {
                 coordinator: coordinator,
                 licenseStore: licenseStore,
                 tabState: tabState,
+                feedbackDraft: feedbackDraft,
                 onShowWelcomeGuide: onShowWelcomeGuide
             )
             .frame(width: SettingsWindowView.contentWidth)

@@ -248,4 +248,22 @@ final class FeedbackAttachmentTests: XCTestCase {
         }
         XCTAssertFalse(reachedLoader, "读不出来就不该发出请求")
     }
+
+    /// The drafts outlive the settings window, so a successful send is the only thing that
+    /// empties them — all four, or the next feedback goes out with last time's attachment.
+    @MainActor
+    func testClearingTheDraftResetsAllFourFields() {
+        let draft = FeedbackDraftState()
+        draft.message = "条在外接屏上不出来"
+        draft.contact = "someone@example.com"
+        draft.category = .suggestion
+        draft.attachments = [attachment("shot.png", 1024)]
+
+        draft.clear()
+
+        XCTAssertEqual(draft.message, "")
+        XCTAssertEqual(draft.contact, "")
+        XCTAssertEqual(draft.category, .bug)
+        XCTAssertEqual(draft.attachments, [])
+    }
 }
