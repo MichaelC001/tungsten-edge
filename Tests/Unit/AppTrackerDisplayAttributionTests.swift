@@ -97,12 +97,50 @@ final class AppTrackerDisplayAttributionTests: XCTestCase {
         XCTAssertFalse(tracker.refreshDisplayAttributionFromCGForTesting(
             cgSnapshot: cgSnapshot(bounds: [cgWindow: frameOnAMoved])
         ))
+        // The first tick that sees the new display only proposes it; the second agreeing tick applies it.
+        XCTAssertFalse(tracker.refreshDisplayAttributionFromCGForTesting(
+            cgSnapshot: cgSnapshot(bounds: [cgWindow: frameOnB])
+        ))
+        XCTAssertEqual(tracker.fixtureAppForTesting(pid: pid)?.windowsByID[cgWindow]?.displayUUID, "A")
         XCTAssertTrue(tracker.refreshDisplayAttributionFromCGForTesting(
             cgSnapshot: cgSnapshot(bounds: [cgWindow: frameOnB])
         ))
         XCTAssertEqual(tracker.fixtureAppForTesting(pid: pid)?.windowsByID[cgWindow]?.displayUUID, "B")
         // 只改键，不碰 AX 帧（`frameKey` / `seatsAtFrame` 靠它）。
         XCTAssertEqual(tracker.fixtureAppForTesting(pid: pid)?.windowsByID[cgWindow]?.bounds, frameOnA)
+    }
+
+    /// The minimize animation drives the CG bounds across to the system Dock's display before the AX
+    /// `min=true` read lands. A tick that samples it mid-flight must not move the seat — the minimize
+    /// would then freeze it on the wrong display.
+    func testATickDuringTheMinimizeAnimationDoesNotMoveTheSeat() {
+        let tracker = makeTracker()
+        tracker.installFixtureForTesting(makeApp(displayUUID: "A"))
+        let midAnimation = CGRect(x: 1400, y: 500, width: 120, height: 90)
+
+        XCTAssertFalse(tracker.refreshDisplayAttributionFromCGForTesting(
+            cgSnapshot: cgSnapshot(bounds: [cgWindow: midAnimation])
+        ))
+        _ = tracker.reconcileFixtureForTesting(
+            pid: pid, cgSnapshot: cgSnapshot(), now: Date(),
+            eligible: [makeSnapshot(bounds: frameOnA, isMinimized: true)],
+            readOutcome: .success(count: 1)
+        )
+        XCTAssertEqual(tracker.fixtureAppForTesting(pid: pid)?.windowsByID[cgWindow]?.displayUUID, "A")
+
+        // Restored and sampled mid-flight again: the earlier proposal is gone, so this is a first sighting.
+        _ = tracker.reconcileFixtureForTesting(
+            pid: pid, cgSnapshot: cgSnapshot(), now: Date(),
+            eligible: [makeSnapshot(bounds: frameOnA, isMinimized: false)],
+            readOutcome: .success(count: 1)
+        )
+        XCTAssertFalse(tracker.refreshDisplayAttributionFromCGForTesting(
+            cgSnapshot: cgSnapshot(bounds: [cgWindow: frameOnA])
+        ))
+        XCTAssertFalse(tracker.refreshDisplayAttributionFromCGForTesting(
+            cgSnapshot: cgSnapshot(bounds: [cgWindow: midAnimation])
+        ))
+        XCTAssertEqual(tracker.fixtureAppForTesting(pid: pid)?.windowsByID[cgWindow]?.displayUUID, "A")
     }
 
     func testUnknownCGBoundsLeaveTheKeyAlone() {
@@ -189,6 +227,7 @@ final class AppTrackerDisplayAttributionTests: XCTestCase {
         // 回滚（hold: .none）立刻生效且不冻结。
         XCTAssertTrue(tracker.noteWindowMoved(pid: pid, cgWindowID: cgWindow, displayUUID: "B"))
         XCTAssertTrue(tracker.noteWindowMoved(pid: pid, cgWindowID: cgWindow, displayUUID: "A", hold: .none))
+        XCTAssertFalse(tracker.refreshDisplayAttributionFromCGForTesting(cgSnapshot: cgSnapshot(bounds: [cgWindow: frameOnB])))
         XCTAssertTrue(tracker.refreshDisplayAttributionFromCGForTesting(cgSnapshot: cgSnapshot(bounds: [cgWindow: frameOnB])))
         XCTAssertFalse(tracker.noteWindowMoved(pid: pid, cgWindowID: 999, displayUUID: "B"), "不在册的座位不认")
     }

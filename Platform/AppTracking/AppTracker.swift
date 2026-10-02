@@ -1009,13 +1009,23 @@ final class AppTracker: ObservableObject {
 
     // MARK: - Display attribution（多屏 ④）
 
-    /// 5s tick：按 CG bounds 给**所有**可见座位重算所在屏——覆盖被跳读门控跳过、没有 AX 读的 pid
-    /// （非前台 app 的窗口被挪到另一块屏，最多 5s 换屏）。只改归属键，**不碰 `bounds`**（那是 AX 帧，
-    /// `frameKey` / `seatsAtFrame` 靠它）、不碰跳读门控状态。CG 读不到 / 不沾任何屏 → 保留旧键。
+    /// Display changes the CG pass proposed on the previous tick, waiting for a second tick to agree.
+    private var pendingCGDisplayKeys: [CGWindowID: String] = [:]
+
+    /// 5s tick: re-attribute **every** visible seat from its CG bounds, covering pids the skip gate left
+    /// without an AX read (a background app's window moved to another display). Changes only the key —
+    /// never `bounds` (the AX frame `frameKey` / `seatsAtFrame` rely on) and never the skip-gate state.
+    /// No CG bounds / bounds touching no display → the old key stays.
+    ///
+    /// A new key applies only when two consecutive ticks agree. While a window minimizes or restores its
+    /// CG bounds are not a position: they travel to the system Dock and back (~0.5s), crossing onto the
+    /// Dock's display, and the AX `min=true` read lands only after the animation — a single mid-animation
+    /// tick would move the seat and the minimize would then freeze it on the wrong display.
     private func refreshDisplayAttributionFromCG(_ cgSnapshot: AppTrackerCGWindowSnapshot) -> Bool {
         guard !cgSnapshot.boundsByWindowID.isEmpty, !displayTable.displays.isEmpty else { return false }
         let now = Date()
         var changed = false
+        var pending: [CGWindowID: String] = [:]
         for pid in appOrder {
             guard let app = apps[pid], !app.isHidden else { continue }
             for cgID in app.windowOrder {
@@ -1024,10 +1034,15 @@ final class AppTracker: ObservableObject {
                       let rect = cgSnapshot.boundsByWindowID[cgID],
                       let key = WindowDisplayAttribution.displayUUID(for: rect, table: displayTable),
                       key != seat.displayUUID else { continue }
+                guard pendingCGDisplayKeys[cgID] == key else {
+                    pending[cgID] = key
+                    continue
+                }
                 apps[pid]?.windowsByID[cgID]?.displayUUID = key
                 changed = true
             }
         }
+        pendingCGDisplayKeys = pending
         return changed
     }
 
