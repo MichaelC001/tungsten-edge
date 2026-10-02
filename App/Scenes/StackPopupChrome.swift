@@ -55,10 +55,18 @@ struct StackPopupChrome<Grid: View>: View {
             gridArea
         }
         .frame(width: plateSize.width, height: plateSize.height, alignment: .top)
-        .background(alignment: .top) {
-            StackPopupBackdrop(plateSize: plateSize,
-                               arrowCenterX: plateSize.width / 2 + arrow.offsetFromCenter,
-                               usesLiquidGlass: usesLiquidGlass)
+        // The plate is what the window leaves for it, not `plateSize`: while the coordinator
+        // tweens the window to a new content size the plate changes with it and stays on the
+        // chip. The content keeps its final layout, rides the plate's top edge and is clipped by
+        // it. The ideal size is still the content's, which is what `fittingSize` reports.
+        .frame(minWidth: 0, maxWidth: .infinity, minHeight: 0, maxHeight: .infinity, alignment: .top)
+        .clipShape(RoundedRectangle(cornerRadius: Metrics.cornerRadius, style: .continuous))
+        .background {
+            GeometryReader { proxy in
+                StackPopupBackdrop(plateSize: proxy.size,
+                                   arrowCenterX: proxy.size.width / 2 + arrow.offsetFromCenter,
+                                   usesLiquidGlass: usesLiquidGlass)
+            }
         }
         .padding(.bottom, Metrics.arrowHeight)
         .padding(Metrics.panelMargin)
