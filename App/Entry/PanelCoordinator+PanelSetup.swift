@@ -83,8 +83,6 @@ extension PanelCoordinator {
         contentPanelFrame: NSRect
     ) -> (NonConstrainingPanel, DockTaskbarLiquidGlassBackgroundView)? {
         guard DockGlassPresentation.shouldAttemptTaskbarComposite else { return nil }
-        // Resolve the variant self-check here: it builds a window, which a SwiftUI body must not do.
-        _ = DockGlassPresentation.activeSystemVariant
 
         let configuration = DockGlassPresentation.configuration
         let backgroundFrame = DockLiquidGlassPanelGeometry.backgroundFrame(

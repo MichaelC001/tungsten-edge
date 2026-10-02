@@ -15,11 +15,6 @@ BOOL TEDockGlassSetSystemVariant(id glassView, NSInteger variant);
 /// a stack's plate its arrow. Returns NO and does nothing if unsupported; the caller keeps a
 /// plain rounded plate.
 BOOL TEDockGlassSetPath(id glassView, CGPathRef _Nullable path);
-/// The white fill opacity of the material AppKit actually resolves for `variant`, read from a
-/// throwaway glass view in a never-shown window; -1 when it cannot be read. The variant number is
-/// private and unversioned: a system that maps it to the regular material paints a milky plate.
-/// Main thread only, and never from inside a SwiftUI update.
-double TEDockGlassVariantFillOpacity(NSInteger variant);
 /// Copies supported background filters before changing their refraction. Other filters stay intact.
 BOOL TEDockGlassSetRefraction(id layer, double height, double amount);
 /// Copies a supported system rim effect; a nil amount preserves native light strength.
