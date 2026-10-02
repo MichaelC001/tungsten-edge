@@ -200,6 +200,78 @@ final class WindowLiftAvoidanceTests: XCTestCase {
         XCTAssertFalse(WindowLiftAvoidance.externalFrameIsUserEra(state: .idle, at: 500))
     }
 
+    func testUserFrameMemoryConfirmsOnlyAFrameThatSatStill() {
+        let small = CGRect(x: 300, y: 200, width: 800, height: 600)
+        let grown = CGRect(x: 300, y: 200, width: 900, height: 700)
+        var memory = WindowLiftAvoidance.UserFrameMemory(frame: small, at: 10)
+        XCTAssertNil(memory.confirmed)
+        memory.observe(small, at: 10.2)
+        XCTAssertNil(memory.confirmed, "0.2s is not still enough")
+        memory.observe(small, at: 10 + WindowLiftAvoidance.userFrameConfirmationInterval)
+        XCTAssertEqual(memory.confirmed, small)
+
+        // A zoom animation passing through: the candidate restarts, the confirmed frame stays.
+        memory.observe(grown, at: 11)
+        XCTAssertEqual(memory.confirmed, small)
+        memory.observe(grown, at: 11.1)
+        XCTAssertEqual(memory.confirmed, small)
+        memory.observe(grown, at: 11 + WindowLiftAvoidance.userFrameConfirmationInterval)
+        XCTAssertEqual(memory.confirmed, grown)
+    }
+
+    func testClickCounterSamplerPairsTwoDownsIntoOneDoubleClick() {
+        var sampler = WindowLiftAvoidance.ClickCounterSampler()
+        let a = CGPoint(x: 100, y: 900)
+        let b = CGPoint(x: 101, y: 901)
+        XCTAssertNil(sampler.sample(count: 40, location: a, at: 1, doubleClickInterval: 0.55), "first sample only sets the baseline")
+        XCTAssertNil(sampler.sample(count: 40, location: a, at: 1.05, doubleClickInterval: 0.55))
+        XCTAssertNil(sampler.sample(count: 41, location: a, at: 1.1, doubleClickInterval: 0.55), "one click is not a double-click")
+        XCTAssertEqual(
+            sampler.sample(count: 42, location: b, at: 1.3, doubleClickInterval: 0.55),
+            WindowLiftAvoidance.DoubleClick(location: b, at: 1.3)
+        )
+        XCTAssertNil(sampler.sample(count: 43, location: a, at: 1.4, doubleClickInterval: 0.55), "the pair was consumed; a third click starts over")
+
+        // Two downs inside one sampling tick.
+        XCTAssertEqual(
+            sampler.sample(count: 45, location: b, at: 3, doubleClickInterval: 0.55),
+            WindowLiftAvoidance.DoubleClick(location: b, at: 3)
+        )
+
+        // Clicks farther apart than the interval never pair.
+        XCTAssertNil(sampler.sample(count: 46, location: a, at: 5, doubleClickInterval: 0.55))
+        XCTAssertNil(sampler.sample(count: 47, location: a, at: 5.6, doubleClickInterval: 0.55))
+
+        // A reset forgets the baseline: clicks made while sampling paused do not pile up.
+        sampler.reset()
+        XCTAssertNil(sampler.sample(count: 90, location: a, at: 9, doubleClickInterval: 0.55))
+    }
+
+    func testUserZoomToggleNeedsARecentTitleRegionDoubleClickAfterTheSettle() {
+        let lifted = CGRect(x: 0, y: 56, width: 1920, height: 994)
+        let titleBar = CGPoint(x: 900, y: 1040)
+        let settledAt: TimeInterval = 100
+        func toggle(_ location: CGPoint, clickAt: TimeInterval, now: TimeInterval) -> Bool {
+            WindowLiftAvoidance.isUserZoomToggle(
+                WindowLiftAvoidance.DoubleClick(location: location, at: clickAt),
+                liftedFrame: lifted,
+                settledAt: settledAt,
+                at: now
+            )
+        }
+        XCTAssertTrue(toggle(titleBar, clickAt: 105, now: 105.4))
+        XCTAssertTrue(toggle(
+            CGPoint(x: 900, y: lifted.maxY - WindowLiftAvoidance.zoomToggleRegionHeight),
+            clickAt: 105,
+            now: 105.4
+        ))
+        XCTAssertFalse(toggle(titleBar, clickAt: 99.9, now: 100.3), "the click that maximized the window is not its own undo")
+        XCTAssertFalse(toggle(titleBar, clickAt: 105, now: 105 + WindowLiftAvoidance.zoomToggleClickWindow + 0.01), "too old")
+        XCTAssertFalse(toggle(CGPoint(x: 900, y: 500), clickAt: 105, now: 105.4), "content area, not the title region")
+        XCTAssertFalse(toggle(CGPoint(x: 900, y: 1060), clickAt: 105, now: 105.4), "menu bar, outside the window")
+        XCTAssertFalse(WindowLiftAvoidance.isUserZoomToggle(nil, liftedFrame: lifted, settledAt: settledAt, at: 105))
+    }
+
     func testSuppressionReleasesOnANewEligibleFrameOnlyInTheUserEra() {
         let full = tileGeometry.visibleFrame
         func releases(_ frame: CGRect, native: CGRect, userEra: Bool = true, tiles: Bool = true) -> Bool {

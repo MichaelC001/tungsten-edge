@@ -204,6 +204,9 @@ final class WindowLiftAvoidanceController {
         let nativeQuartz: CGRect
         let targetQuartz: CGRect
         let primaryScreenHeight: CGFloat
+        /// Set only on a user-zoom-toggle restore: the remembered pre-maximize frame to write
+        /// instead of `nativeQuartz`.
+        var userRestoreQuartz: CGRect? = nil
     }
 
     private enum ValidationStage: String {
@@ -293,6 +296,11 @@ final class WindowLiftAvoidanceController {
     private var lastContexts: [WindowLiftAvoidanceContext] = []
     /// 每个会话归属的那块屏的上下文（多屏下各会话不同屏）。随 `states` 增删，探测时按它分别处理。
     private var sessionContexts: [WindowLiftAvoidance.WindowKey: WindowLiftAvoidanceContext] = [:]
+    /// Each on-screen window's last settled non-eligible frame — what the system zoom's undo would
+    /// return to, had our lift not poisoned it. Fed by every scan, used by `restoreUserFrame`.
+    private var userFrames: [WindowLiftAvoidance.WindowKey: WindowLiftAvoidance.UserFrameMemory] = [:]
+    private var clickSampler = WindowLiftAvoidance.ClickCounterSampler()
+    private var lastDoubleClick: WindowLiftAvoidance.DoubleClick?
     private var nextGeneration: UInt64 = 0
     private var scanGeneration: UInt64 = 0
     private var trackedProbeGeneration: UInt64 = 0
@@ -530,6 +538,8 @@ final class WindowLiftAvoidanceController {
         restoreSettledWindowsAndClearSessions()
         lastContexts = []
         sessionContexts.removeAll()
+        userFrames.removeAll()
+        lastDoubleClick = nil
     }
 
     func stopAndRestore() async {
@@ -735,6 +745,7 @@ final class WindowLiftAvoidanceController {
     private func stopTrackedProbe() {
         trackedProbeTimer?.invalidate()
         trackedProbeTimer = nil
+        clickSampler.reset()
         trackedProbeGeneration &+= 1
         trackedProbeTask?.cancel()
         trackedProbeTask = nil
@@ -760,6 +771,7 @@ final class WindowLiftAvoidanceController {
             updateTrackedProbeLifecycle()
             return
         }
+        sampleClicks()
 
         trackedProbeGeneration &+= 1
         let generation = trackedProbeGeneration
@@ -791,6 +803,7 @@ final class WindowLiftAvoidanceController {
             stopTrackedProbe()
             return
         }
+        guard restoreTask == nil else { return }
 
         for (key, quartzFrame) in quartzFrames {
             // 会话归属的屏必须仍在集合里；不在（那块屏的条藏了 / 拔了）的由 reconcileContexts 已整体还原。
@@ -837,6 +850,9 @@ final class WindowLiftAvoidanceController {
         if case .lifted = state, classification == .native {
             guard NSRunningApplication(processIdentifier: key.pid)?.isActive == true,
                   hostContexts().contains(context) else {
+                return true
+            }
+            if restoreUserFrameIfZoomToggled(for: key, state: state, frames: frames) {
                 return true
             }
         }
@@ -897,6 +913,9 @@ final class WindowLiftAvoidanceController {
         // 已经排队的扫描回调也要过闸门：光给几个清理函数加 guard 挡不住在飞的工作。
         guard canMutateSessions() else { return }
         guard hostContexts() == contexts else { return }
+        // A restore queued after this scan started (user zoom toggle) owns the window now; a
+        // candidate captured before the restore wrote would start a lift against it.
+        guard restoreTask == nil else { return }
 
         if let liveWindowKeys = result.liveWindowKeys {
             pruneDeadWindowStates(
@@ -909,6 +928,7 @@ final class WindowLiftAvoidanceController {
             contexts: contexts,
             observationGeneration: observationGeneration
         )
+        rememberUserFrames(result.onScreenFrames, contexts: contexts)
 
         // 每块屏各自的候选；跨屏窗口只归面积主体所在的那块屏。只有前台 app 的窗口会抬，
         // 所以按屏序取第一个能过全部闸的候选即可。
@@ -976,6 +996,13 @@ final class WindowLiftAvoidanceController {
               !app.isTerminated,
               app.activationPolicy == .regular || app.activationPolicy == .accessory else {
             return false
+        }
+
+        if let state = states[candidate.key],
+           let frames = managedFrames[candidate.key],
+           WindowLiftAvoidance.framesMatch(appKitFrame, frames.nativeAppKit),
+           restoreUserFrameIfZoomToggled(for: candidate.key, state: state, frames: frames) {
+            return true
         }
 
         let operationGeneration = observationGeneration
@@ -2177,6 +2204,12 @@ final class WindowLiftAvoidanceController {
         validationGenerations.removeAll()
         lastTraceClassifications.removeAll()
         stopTrackedProbe()
+        launchRestoreTask(cancelledWrites: cancelledWrites)
+    }
+
+    /// One pass over `pendingRestorations`, after `cancelledWrites` have drained. Scans and the
+    /// tracked probe pause while it runs (`restoreTask`), so nothing re-lifts a window mid-restore.
+    private func launchRestoreTask(cancelledWrites: [Task<Void, Never>]) {
         guard !pendingRestorations.isEmpty || !cancelledWrites.isEmpty, restoreTask == nil else {
             updatePollTimerLifecycle()
             return
@@ -2213,11 +2246,127 @@ final class WindowLiftAvoidanceController {
             await MainActor.run { [weak self] in
                 guard let self, self.restoreGeneration == generation else { return }
                 self.restoreTask = nil
+                // A user-frame restore queued while this pass ran gets its own pass.
+                if self.pendingRestorations.keys.contains(where: { items[$0] == nil }) {
+                    self.launchRestoreTask(cancelledWrites: [])
+                    return
+                }
                 self.updatePollTimerLifecycle()
                 if self.isEnabled { self.poll() }
             }
         }
         updatePollTimerLifecycle()
+    }
+
+    // MARK: - User zoom toggle
+
+    /// Each tracked-probe tick samples the session-wide left-mouse-down counter; two downs within
+    /// the double-click interval (or in one tick) are a double-click at the pointer's location.
+    private func sampleClicks() {
+        let count = CGEventSource.counterForEventType(.combinedSessionState, eventType: .leftMouseDown)
+        guard let click = clickSampler.sample(
+            count: count,
+            location: NSEvent.mouseLocation,
+            at: ProcessInfo.processInfo.systemUptime,
+            doubleClickInterval: NSEvent.doubleClickInterval + Self.trackedProbeInterval
+        ) else { return }
+        lastDoubleClick = click
+        if traceEnabled {
+            logger.info(
+                "lift trace double-click x=\(click.location.x, privacy: .public) y=\(click.location.y, privacy: .public)"
+            )
+        }
+    }
+
+    /// Every scan's on-screen list feeds the per-window user-frame memory: windows with no session
+    /// and a non-eligible frame. Entries leave with the window (off screen, closed).
+    private func rememberUserFrames(
+        _ quartzFrames: [WindowLiftAvoidance.WindowKey: CGRect],
+        contexts: [WindowLiftAvoidanceContext]
+    ) {
+        let now = ProcessInfo.processInfo.systemUptime
+        let screenCGFrames = contexts.map(\.screenCGFrame)
+        userFrames = userFrames.filter {
+            quartzFrames[$0.key] != nil || states[$0.key] != nil || pendingRestorations[$0.key] != nil
+        }
+        for (key, quartzFrame) in quartzFrames {
+            guard states[key] == nil,
+                  pendingRestorations[key] == nil,
+                  let index = WindowLiftAvoidance.owningContextIndex(
+                      for: quartzFrame,
+                      screenCGFrames: screenCGFrames
+                  ) else { continue }
+            let context = contexts[index]
+            let frame = WindowLiftAvoidance.appKitFrame(
+                fromQuartz: quartzFrame,
+                primaryScreenHeight: context.primaryScreenHeight
+            )
+            guard !context.geometry.isLiftEligible(frame, includesTiles: includesTiles) else { continue }
+            if userFrames[key] == nil {
+                userFrames[key] = WindowLiftAvoidance.UserFrameMemory(frame: frame, at: now)
+            } else {
+                userFrames[key]?.observe(frame, at: now)
+            }
+        }
+    }
+
+    /// A lifted window shows its native (maximized) frame again right after a double-click in its
+    /// title region: that is the system zoom re-maximizing it instead of undoing the zoom (our
+    /// lifted frame is "not zoomed"). Answer with the undo the user asked for. Only `.lifted`
+    /// qualifies — during `.writing` the click that maximized the window cannot be told apart.
+    private func restoreUserFrameIfZoomToggled(
+        for key: WindowLiftAvoidance.WindowKey,
+        state: WindowLiftAvoidance.SessionState,
+        frames: ManagedFrames
+    ) -> Bool {
+        guard case let .lifted(session) = state,
+              WindowLiftAvoidance.isUserZoomToggle(
+                  lastDoubleClick,
+                  liftedFrame: frames.targetAppKit,
+                  settledAt: session.settledAt,
+                  at: ProcessInfo.processInfo.systemUptime
+              ) else {
+            return false
+        }
+        lastDoubleClick = nil
+        guard let userFrame = userFrames[key]?.confirmed else {
+            if traceEnabled {
+                logger.info(
+                    "lift trace zoom toggle without a user frame pid=\(key.pid, privacy: .public) wid=\(key.cgWindowID, privacy: .public)"
+                )
+            }
+            return false
+        }
+        restoreUserFrame(userFrame, for: key, frames: frames)
+        return true
+    }
+
+    /// Puts the window where the system zoom's undo would have: its remembered pre-maximize frame.
+    /// Rides the stop-path restore queue so no scan lifts it again before the write lands.
+    private func restoreUserFrame(
+        _ userFrame: CGRect,
+        for key: WindowLiftAvoidance.WindowKey,
+        frames: ManagedFrames
+    ) {
+        guard canMutateSessions() else { return }
+        clearManagedSession(for: key, cancelWriter: true, reason: "userZoomToggle")
+        let cancelledWrites = writeDrainTasks.removeValue(forKey: key) ?? []
+        pendingRestorations[key] = ManagedFrames(
+            nativeAppKit: frames.nativeAppKit,
+            targetAppKit: frames.targetAppKit,
+            nativeQuartz: frames.nativeQuartz,
+            targetQuartz: frames.targetQuartz,
+            primaryScreenHeight: frames.primaryScreenHeight,
+            userRestoreQuartz: WindowLiftAvoidance.quartzFrame(
+                fromAppKit: userFrame,
+                primaryScreenHeight: frames.primaryScreenHeight
+            )
+        )
+        pendingRestorationStartTimes[key] = ProcessLiveness.startTime(pid: key.pid)
+        logger.notice(
+            "lift user zoom toggle pid=\(key.pid, privacy: .public) wid=\(key.cgWindowID, privacy: .public) restore=\(String(describing: userFrame), privacy: .public)"
+        )
+        launchRestoreTask(cancelledWrites: cancelledWrites)
     }
 
     /// 长时间冻结之后才还原，中间什么都可能变过，所以每一项都要重新验一遍：
@@ -2263,12 +2412,16 @@ final class WindowLiftAvoidanceController {
         ) {
         case .target, .managedTrajectory:
             break
-        case .native, .external:
+        case .native:
+            // The native frame is where a plain restore wants the window; a user-zoom-toggle
+            // restore finds it there and still has to move it.
+            guard frames.userRestoreQuartz != nil else { return .handled }
+        case .external:
             return .handled
         }
 
         _ = reader.setFrame(
-            frames.nativeQuartz,
+            frames.userRestoreQuartz ?? frames.nativeQuartz,
             for: handle.element,
             messagingTimeout: windowLiftAXMessagingTimeout,
             verificationTolerance: WindowLiftAvoidance.verificationTolerance,

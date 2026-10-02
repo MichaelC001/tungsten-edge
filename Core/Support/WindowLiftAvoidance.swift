@@ -728,6 +728,110 @@ enum WindowLiftAvoidance {
         )
     }
 
+    // MARK: - User zoom toggle (double-click on a lifted window's title bar)
+
+    /// A frame must sit still this long before it counts as the window's remembered user frame;
+    /// the system zoom animates through intermediate frames that must never be remembered.
+    static let userFrameConfirmationInterval: TimeInterval = 0.5
+    /// How long after a double-click a maximized reappearance still counts as the system zoom
+    /// answering that click (zoom animation + our own detection latency).
+    static let zoomToggleClickWindow: TimeInterval = 1.5
+    /// Height of the strip under a window's top edge where a double-click zooms it: the title bar,
+    /// Chrome's tab strip, Safari's unified toolbar.
+    static let zoomToggleRegionHeight: CGFloat = 100
+
+    /// The frame a window had before it was maximized, as the system zoom's own undo memory would
+    /// have kept it — except that our lift poisons that memory (the lifted frame is "not zoomed",
+    /// so the next zoom saves *it*), which is why we keep our own copy.
+    struct UserFrameMemory: Equatable {
+        private(set) var confirmed: CGRect?
+        private(set) var candidate: CGRect
+        private(set) var candidateSince: TimeInterval
+
+        init(frame: CGRect, at now: TimeInterval) {
+            candidate = frame
+            candidateSince = now
+        }
+
+        mutating func observe(_ frame: CGRect, at now: TimeInterval) {
+            if framesMatch(frame, candidate) {
+                if now - candidateSince >= userFrameConfirmationInterval {
+                    confirmed = candidate
+                }
+            } else {
+                candidate = frame
+                candidateSince = now
+            }
+        }
+    }
+
+    struct DoubleClick: Equatable {
+        /// AppKit global coordinates.
+        let location: CGPoint
+        let at: TimeInterval
+    }
+
+    /// Turns samples of the session-wide left-mouse-down counter into double-clicks. Sampling
+    /// (50ms, with the tracked-window probe) instead of a resident global event monitor keeps the
+    /// system's event stream out of this process (`menus.md`: a resident tap lags our own menus).
+    struct ClickCounterSampler: Equatable {
+        private(set) var lastCount: UInt32?
+        private(set) var pendingClick: DoubleClick?
+
+        /// Returns the double-click when this sample completes one.
+        mutating func sample(
+            count: UInt32,
+            location: CGPoint,
+            at now: TimeInterval,
+            doubleClickInterval: TimeInterval
+        ) -> DoubleClick? {
+            defer { lastCount = count }
+            guard let lastCount else { return nil }
+            let delta = count &- lastCount
+            guard delta > 0 else { return nil }
+            let click = DoubleClick(location: location, at: now)
+            if delta >= 2 {
+                pendingClick = nil
+                return click
+            }
+            if let pendingClick, now - pendingClick.at <= doubleClickInterval {
+                self.pendingClick = nil
+                return click
+            }
+            pendingClick = click
+            return nil
+        }
+
+        /// Forget the baseline: clicks made while sampling was paused must not pile up into one.
+        mutating func reset() {
+            lastCount = nil
+            pendingClick = nil
+        }
+    }
+
+    /// Did the user just double-click the title region of a window we hold at `liftedFrame`?
+    /// The system zoom then re-maximizes it (our lifted frame is "not zoomed") instead of undoing
+    /// the zoom; the caller answers by restoring the remembered user frame.
+    ///
+    /// `settledAt` is the lift's own settle time: the double-click that maximized the window in
+    /// the first place lands in the same title region and must not read as its own undo.
+    static func isUserZoomToggle(
+        _ doubleClick: DoubleClick?,
+        liftedFrame: CGRect,
+        settledAt: TimeInterval,
+        at now: TimeInterval
+    ) -> Bool {
+        guard let doubleClick,
+              isValid(frame: liftedFrame),
+              doubleClick.at > settledAt,
+              now - doubleClick.at >= 0,
+              now - doubleClick.at <= zoomToggleClickWindow,
+              liftedFrame.contains(doubleClick.location) else {
+            return false
+        }
+        return doubleClick.location.y >= liftedFrame.maxY - zoomToggleRegionHeight
+    }
+
     // MARK: - Animation
 
     static func easeInOutCubic(_ progress: Double) -> Double {
