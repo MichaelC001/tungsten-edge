@@ -35,22 +35,26 @@ struct DrawerCapsuleButton: View {
     @State private var hoveredCell: Int?
     /// Press feedback per cell: a pure view-level signal, never fed to planner / frontmost.
     @State private var pressedCell: Int?
+    /// Which page of the drawer the capsule shows; per capsule, so per screen.
+    @StateObject private var pager = DrawerCapsulePager()
 
     private static let expandCell = DrawerCapsulePreviewMetrics.columns * DrawerCapsulePreviewMetrics.columns - 1
 
     private var iconSize: CGFloat { DrawerCapsulePreviewMetrics.iconSize * dockScale }
     private var gridSpacing: CGFloat { DrawerCapsulePreviewMetrics.gridSpacing * dockScale }
 
-    private var previewIDs: [String] {
+    /// Every visible drawer app in drawer order: the capsule pages through all of them.
+    private var memberIDs: [String] {
         let placements = AppMembershipProjection.drawerMembers(drawerIDs: drawerStore.bundleIDs)
         let ordered = drawerOrderStore.reconciled(members: placements)
-        return AppMembershipProjection.drawerPreview(
+        return AppMembershipProjection.visibleDrawerIDs(
             drawerIDs: ordered,
             keptIDs: keptAppStore.bundleIDs,
-            runningIDs: runningApplicationStore.runningBundleIDs,
-            limit: DrawerCapsulePreviewMetrics.limit
+            runningIDs: runningApplicationStore.runningBundleIDs
         )
     }
+
+    private var capsuleSide: CGFloat { settingsStore.dockPanelHeight.metrics.capsuleWidth }
 
     /// 胶囊是**另一棵**长期存活的 NSHostingView 根视图，必须自己观察同一个 store，
     /// 否则换档时任务条变了、胶囊里的四宫格还停在旧尺寸。
@@ -60,9 +64,10 @@ struct DrawerCapsuleButton: View {
     private var hoverEnabled: Bool { !isPanelHeightResizing && dragController.draggingPayload == nil }
 
     var body: some View {
-        let ids = previewIDs
-        let apps = Array(ids.prefix(DrawerCapsulePreviewMetrics.appSlots))
-        let more = Array(ids.dropFirst(DrawerCapsulePreviewMetrics.appSlots))
+        let ids = memberIDs
+        let pageCount = DrawerCapsulePaging.pageCount(memberCount: ids.count)
+        let page = DrawerCapsulePaging.clampedPage(pager.page, pageCount: pageCount)
+        let apps = DrawerCapsulePaging.apps(page: page, members: ids)
         return ZStack {
             DockPanelBackdrop(theme: theme,
                               cornerRadius: DockShape.panelCornerRadius * dockScale,
@@ -77,8 +82,7 @@ struct DrawerCapsuleButton: View {
                     .foregroundStyle(theme.capsuleGlyph.color)
                     .cellFeedback(hovered: hoverEnabled && hoveredCell != nil, pressed: pressedCell != nil)
             } else {
-                previewGrid(apps: apps, more: more)
-                    .padding(DrawerCapsulePreviewMetrics.gridPadding * dockScale)
+                pagedPreview(ids: ids, pageCount: pageCount, page: page)
             }
         }
         .dockPanelRim(cornerRadius: DockShape.panelCornerRadius * dockScale,
@@ -97,6 +101,19 @@ struct DrawerCapsuleButton: View {
         // The hit cells split the whole padded frame into quadrants, so each target is as large
         // as the capsule allows and reaches the screen edge.
         .overlay(hitGrid(apps: apps))
+        // Takes scroll events only (see `DrawerCapsuleScrollView.hitTest`); clicks fall through.
+        .overlay(DrawerCapsuleScrollReceiver(enabled: hoverEnabled && pageCount > 1) { event in
+            switch event {
+            case .step(let direction): pager.step(direction, pageCount: pageCount)
+            case .drag(let points): pager.drag(points: points, side: capsuleSide)
+            case .dragEnded: pager.endDrag(pageCount: pageCount)
+            }
+        })
+        // The three slots are worth their fixed places: once the pointer has left, the capsule
+        // goes back to the first page.
+        .onChange(of: hoveredCell == nil) { away in
+            if away { pager.scheduleReturn() } else { pager.cancelReturn() }
+        }
         // MenuHostNSView 只认右键 / Control-click，左键一律返回 nil 穿透下去，
         // 所以左键仍落到上面的格子；右键在任何一格都是钨极菜单（设置的后路入口不缩小）。
         .overlay(NativeMenuHost(popUpHandler: onRequestTaskbarMenu))
@@ -104,32 +121,51 @@ struct DrawerCapsuleButton: View {
 
     // MARK: Preview
 
-    private func previewGrid(apps: [String], more: [String]) -> some View {
+    /// All pages stacked vertically and slid as one column behind the capsule's own outline.
+    private func pagedPreview(ids: [String], pageCount: Int, page: Int) -> some View {
+        let side = capsuleSide
+        let position = DrawerCapsulePaging.displayedPosition(page: page, drag: pager.drag, pageCount: pageCount)
+        return VStack(spacing: 0) {
+            ForEach(Array(0..<pageCount), id: \.self) { index in
+                previewGrid(apps: DrawerCapsulePaging.apps(page: index, members: ids),
+                            more: DrawerCapsulePaging.more(page: index, members: ids),
+                            isCurrent: index == page)
+                    .frame(width: side, height: side)
+            }
+        }
+        .offset(y: -position * side)
+        .frame(width: side, height: side, alignment: .top)
+        .clipShape(RoundedRectangle(cornerRadius: DockShape.panelCornerRadius * dockScale, style: .continuous))
+    }
+
+    private func previewGrid(apps: [String], more: [String], isCurrent: Bool) -> some View {
         let columns = DrawerCapsulePreviewMetrics.columns
         return VStack(spacing: gridSpacing) {
             ForEach(0..<columns, id: \.self) { row in
                 HStack(spacing: gridSpacing) {
                     ForEach(0..<columns, id: \.self) { column in
-                        cellVisual(row * columns + column, apps: apps, more: more)
+                        cellVisual(row * columns + column, apps: apps, more: more, isCurrent: isCurrent)
                     }
                 }
             }
         }
     }
 
+    /// Hover and press belong to the resting page only; the other pages are just passing by.
     @ViewBuilder
-    private func cellVisual(_ index: Int, apps: [String], more: [String]) -> some View {
+    private func cellVisual(_ index: Int, apps: [String], more: [String], isCurrent: Bool) -> some View {
         if index < apps.count {
             DrawerCapsuleAppIcon(bundleID: apps[index],
                                  size: iconSize,
                                  bounceHeight: 3 * dockScale,
                                  isLaunching: runtime.launchingBundleIDs.contains(apps[index]))
-                .cellFeedback(hovered: hoverEnabled && hoveredCell == index, pressed: pressedCell == index)
+                .cellFeedback(hovered: isCurrent && hoverEnabled && hoveredCell == index,
+                              pressed: isCurrent && pressedCell == index)
         } else if index == Self.expandCell {
             // An app-less cell also expands the drawer, so its feedback shows here.
             expandVisual(more: more)
-                .cellFeedback(hovered: hoverEnabled && hoveredCell.map { $0 >= apps.count } == true,
-                              pressed: pressedCell.map { $0 >= apps.count } == true)
+                .cellFeedback(hovered: isCurrent && hoverEnabled && hoveredCell.map { $0 >= apps.count } == true,
+                              pressed: isCurrent && pressedCell.map { $0 >= apps.count } == true)
         } else {
             Color.clear.frame(width: iconSize, height: iconSize)
         }
@@ -231,6 +267,153 @@ private extension View {
             .animation(.easeOut(duration: 0.12), value: hovered)
             .chipPressScale(pressed)
     }
+}
+
+// MARK: - Capsule Paging
+
+/// Where the capsule rests (`page`) and how far a live trackpad gesture has pulled it (`drag`).
+/// The page is not clamped here — the member list changes underneath it — the view clamps on read.
+@MainActor
+final class DrawerCapsulePager: ObservableObject {
+    @Published private(set) var page = 0
+    @Published private(set) var drag: CGFloat = 0
+    private var returnTimer: Timer?
+
+    private static let turn = Animation.spring(response: 0.36, dampingFraction: 0.84)
+    private static let returnHome = Animation.spring(response: 0.5, dampingFraction: 0.9)
+    private static let returnDelay: TimeInterval = 3
+
+    deinit { returnTimer?.invalidate() }
+
+    /// A wheel notch: one page, animated.
+    func step(_ direction: Int, pageCount: Int) {
+        let target = DrawerCapsulePaging.clampedPage(
+            DrawerCapsulePaging.clampedPage(page, pageCount: pageCount) + direction, pageCount: pageCount)
+        withAnimation(Self.turn) {
+            page = target
+            drag = 0
+        }
+    }
+
+    /// Trackpad travel follows the fingers frame by frame, so it is never animated.
+    func drag(points: CGFloat, side: CGFloat) {
+        guard side > 0, points.isFinite else { return }
+        var transaction = Transaction(animation: nil)
+        transaction.disablesAnimations = true
+        withTransaction(transaction) {
+            drag = min(max(drag - points / side, -1), 1)
+        }
+    }
+
+    func endDrag(pageCount: Int) {
+        let target = DrawerCapsulePaging.settledPage(page: page, drag: drag, pageCount: pageCount)
+        withAnimation(Self.turn) {
+            page = target
+            drag = 0
+        }
+    }
+
+    func scheduleReturn() {
+        returnTimer?.invalidate()
+        guard page != 0 else { return }
+        let timer = Timer(timeInterval: Self.returnDelay, repeats: false) { [weak self] _ in
+            DispatchQueue.main.async {
+                guard let self else { return }
+                self.returnTimer = nil
+                withAnimation(Self.returnHome) {
+                    self.page = 0
+                    self.drag = 0
+                }
+            }
+        }
+        returnTimer = timer
+        RunLoop.main.add(timer, forMode: .common)
+    }
+
+    func cancelReturn() {
+        returnTimer?.invalidate()
+        returnTimer = nil
+    }
+}
+
+enum DrawerCapsuleScrollEvent {
+    /// A wheel notch: -1 = previous page, 1 = next.
+    case step(Int)
+    /// Trackpad travel in points, in the system's content direction.
+    case drag(CGFloat)
+    case dragEnded
+}
+
+struct DrawerCapsuleScrollReceiver: NSViewRepresentable {
+    let enabled: Bool
+    let onEvent: (DrawerCapsuleScrollEvent) -> Void
+
+    func makeNSView(context: Context) -> DrawerCapsuleScrollView { DrawerCapsuleScrollView() }
+
+    func updateNSView(_ view: DrawerCapsuleScrollView, context: Context) {
+        view.onEvent = onEvent
+        view.enabled = enabled
+    }
+
+    static func dismantleNSView(_ view: DrawerCapsuleScrollView, coordinator: ()) { view.finishTracking() }
+}
+
+final class DrawerCapsuleScrollView: NSView {
+    var onEvent: (DrawerCapsuleScrollEvent) -> Void = { _ in }
+    var enabled = true {
+        didSet { if oldValue && !enabled { finishTracking() } }
+    }
+    private var isTracking = false
+    private var lastStepTime: TimeInterval = 0
+    private var watchdog: Timer?
+
+    /// Fast wheel spins turn several pages, but never faster than one page per interval.
+    private static let stepInterval: TimeInterval = 0.12
+    /// A gesture whose end never arrives (the pointer left the capsule mid-swipe) still settles.
+    private static let trackingTimeout: TimeInterval = 0.3
+
+    override func hitTest(_ point: NSPoint) -> NSView? {
+        guard enabled, super.hitTest(point) != nil,
+              let event = NSApp.currentEvent, event.type == .scrollWheel else { return nil }
+        // End events carry zero deltas and still belong to this gesture.
+        return abs(event.scrollingDeltaY) >= abs(event.scrollingDeltaX) ? self : nil
+    }
+
+    override func scrollWheel(with event: NSEvent) {
+        guard enabled else { return }
+        // Paging settles on its own spring; the system's momentum tail would turn a second page.
+        guard event.momentumPhase.isEmpty else { return }
+        if event.phase.isEmpty {
+            let delta = event.scrollingDeltaY
+            guard delta != 0, event.timestamp - lastStepTime >= Self.stepInterval else { return }
+            lastStepTime = event.timestamp
+            onEvent(.step(delta > 0 ? -1 : 1))
+            return
+        }
+        if event.phase.contains(.began) { isTracking = true }
+        guard isTracking else { return }
+        if event.phase.contains(.ended) || event.phase.contains(.cancelled) {
+            finishTracking()
+            return
+        }
+        if event.scrollingDeltaY != 0 { onEvent(.drag(event.scrollingDeltaY)) }
+        watchdog?.invalidate()
+        let timer = Timer(timeInterval: Self.trackingTimeout, repeats: false) { [weak self] _ in
+            self?.finishTracking()
+        }
+        watchdog = timer
+        RunLoop.main.add(timer, forMode: .common)
+    }
+
+    func finishTracking() {
+        watchdog?.invalidate()
+        watchdog = nil
+        guard isTracking else { return }
+        isTracking = false
+        onEvent(.dragEnded)
+    }
+
+    deinit { watchdog?.invalidate() }
 }
 
 // MARK: - Capsule App Icon

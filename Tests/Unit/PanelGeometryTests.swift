@@ -356,6 +356,37 @@ final class PanelGeometryTests: XCTestCase {
         }
     }
 
+    func testCapsulePagingSplitsMembersIntoThreesWithTheNextFourAsPreview() {
+        let members = (0..<8).map { "app\($0)" }
+        XCTAssertEqual(DrawerCapsulePaging.pageCount(memberCount: 0), 1)
+        XCTAssertEqual(DrawerCapsulePaging.pageCount(memberCount: 3), 1)
+        XCTAssertEqual(DrawerCapsulePaging.pageCount(memberCount: 4), 2)
+        XCTAssertEqual(DrawerCapsulePaging.pageCount(memberCount: 8), 3)
+        XCTAssertEqual(DrawerCapsulePaging.apps(page: 0, members: members), ["app0", "app1", "app2"])
+        XCTAssertEqual(DrawerCapsulePaging.more(page: 0, members: members), ["app3", "app4", "app5", "app6"])
+        XCTAssertEqual(DrawerCapsulePaging.apps(page: 2, members: members), ["app6", "app7"])
+        XCTAssertEqual(DrawerCapsulePaging.more(page: 2, members: members), [])
+        XCTAssertEqual(DrawerCapsulePaging.apps(page: 3, members: members), [])
+    }
+
+    func testCapsulePagingTurnsAtMostOnePageAndStaysInRange() {
+        XCTAssertEqual(DrawerCapsulePaging.settledPage(page: 1, drag: 0.1, pageCount: 3), 1)
+        XCTAssertEqual(DrawerCapsulePaging.settledPage(page: 1, drag: 0.9, pageCount: 3), 2)
+        XCTAssertEqual(DrawerCapsulePaging.settledPage(page: 1, drag: -0.2, pageCount: 3), 0)
+        XCTAssertEqual(DrawerCapsulePaging.settledPage(page: 2, drag: 0.9, pageCount: 3), 2)
+        XCTAssertEqual(DrawerCapsulePaging.settledPage(page: 0, drag: -0.9, pageCount: 3), 0)
+        // A member list that shrank under a resting page clamps back into range.
+        XCTAssertEqual(DrawerCapsulePaging.settledPage(page: 5, drag: 0, pageCount: 2), 1)
+    }
+
+    func testCapsulePagingDampsTravelPastEitherEnd() {
+        XCTAssertEqual(DrawerCapsulePaging.displayedPosition(page: 1, drag: 0.5, pageCount: 3), 1.5)
+        XCTAssertEqual(DrawerCapsulePaging.displayedPosition(page: 0, drag: -1, pageCount: 3),
+                       -DrawerCapsulePaging.rubberBand)
+        XCTAssertEqual(DrawerCapsulePaging.displayedPosition(page: 2, drag: 1, pageCount: 3),
+                       2 + DrawerCapsulePaging.rubberBand)
+    }
+
     func testEveryHeightLaysOutBottomAnchoredAndCentered() {
         let screen = screen(frame: CGRect(x: -1512, y: -400, width: 1512, height: 982))
         for height in sampleHeights {

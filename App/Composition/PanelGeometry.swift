@@ -118,6 +118,51 @@ enum DrawerCapsulePreviewMetrics {
     }
 }
 
+/// Paging of the capsule preview: a page is three apps plus a mini grid of the next four.
+/// `page` is where the capsule rests; `drag` is the live trackpad travel in pages.
+enum DrawerCapsulePaging {
+    /// Travel past which a released trackpad gesture turns the page instead of springing back.
+    static let turnThreshold: CGFloat = 0.15
+    /// How much of the overscroll past the first / last page is shown.
+    static let rubberBand: CGFloat = 0.3
+
+    static func pageCount(memberCount: Int) -> Int {
+        let slots = DrawerCapsulePreviewMetrics.appSlots
+        return max(1, (memberCount + slots - 1) / slots)
+    }
+
+    static func apps(page: Int, members: [String]) -> [String] {
+        let start = page * DrawerCapsulePreviewMetrics.appSlots
+        guard page >= 0, start < members.count else { return [] }
+        return Array(members[start...].prefix(DrawerCapsulePreviewMetrics.appSlots))
+    }
+
+    static func more(page: Int, members: [String]) -> [String] {
+        let start = (page + 1) * DrawerCapsulePreviewMetrics.appSlots
+        guard page >= 0, start < members.count else { return [] }
+        return Array(members[start...].prefix(DrawerCapsulePreviewMetrics.miniLimit))
+    }
+
+    static func clampedPage(_ page: Int, pageCount: Int) -> Int {
+        min(max(0, page), max(0, pageCount - 1))
+    }
+
+    /// One gesture turns at most one page.
+    static func settledPage(page: Int, drag: CGFloat, pageCount: Int) -> Int {
+        guard abs(drag) > turnThreshold else { return clampedPage(page, pageCount: pageCount) }
+        return clampedPage(page + (drag > 0 ? 1 : -1), pageCount: pageCount)
+    }
+
+    /// Position in pages, with the travel beyond either end damped.
+    static func displayedPosition(page: Int, drag: CGFloat, pageCount: Int) -> CGFloat {
+        let last = CGFloat(max(0, pageCount - 1))
+        let raw = CGFloat(page) + drag
+        if raw < 0 { return raw * rubberBand }
+        if raw > last { return last + (raw - last) * rubberBand }
+        return raw
+    }
+}
+
 struct PanelScreenGeometry: Equatable {
     var frame: CGRect
     var visibleFrame: CGRect
