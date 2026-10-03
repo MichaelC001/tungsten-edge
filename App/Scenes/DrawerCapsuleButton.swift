@@ -149,6 +149,7 @@ struct DrawerCapsuleButton: View {
                     .font(.system(size: iconSize * 0.8, weight: .medium))
                     .foregroundStyle(theme.capsuleGlyph.color)
                     .cellFeedback(hovered: hoverEnabled && expandActive(hoveredCell), pressed: expandActive(pressedCell))
+                    .scaleEffect(DrawerCapsulePaging.endPullGlyphScale(position: position, memberCount: ids.count))
                     .position(x: side / 2 + centre * dockScale, y: side / 2 + centre * dockScale)
             }
             ForEach(Array(ids.enumerated()), id: \.element) { index, id in
@@ -258,7 +259,8 @@ private struct DrawerCapsuleFlow: ViewModifier, Animatable {
     }
 
     func body(content: Content) -> some View {
-        let pose = DrawerCapsulePaging.pose(index: index, position: position)
+        let pose = DrawerCapsulePaging.endPullPose(index: index, position: position, memberCount: memberCount)
+            ?? DrawerCapsulePaging.pose(index: index, position: position)
         // Hover is judged and scaled by the position on screen, so a turn hands it from one icon
         // to the next while neither is lifted. The timed animation only runs when the pointer
         // moves between cells; mid-turn the flag flips where the lift is already zero.
@@ -267,11 +269,10 @@ private struct DrawerCapsuleFlow: ViewModifier, Animatable {
         let lift = hovered
             ? 1 + (DrawerCapsulePreviewMetrics.hoverScale - 1) * DrawerCapsulePaging.hoverCalm(position: position)
             : 1
-        let endPull = DrawerCapsulePaging.endPullScale(index: index, position: position, memberCount: memberCount)
         content
             .scaleEffect(lift)
             .animation(.easeOut(duration: 0.12), value: hovered)
-            .scaleEffect(pose.size / DrawerCapsulePreviewMetrics.iconSize * endPull)
+            .scaleEffect(pose.size / DrawerCapsulePreviewMetrics.iconSize)
             .position(x: side / 2 + pose.x * unit, y: side / 2 + pose.y * unit)
             // The later app is always on top: turning forward the arriving icon covers the app it
             // replaces; turning back the leaving one shrinks away over the app coming back.

@@ -475,18 +475,37 @@ final class PanelGeometryTests: XCTestCase {
         XCTAssertGreaterThan(pulled.x, -12)
     }
 
-    func testCapsulePulledPastTheLastPageShrinksItsAppsInPlace() {
+    func testCapsulePulledPastTheLastPageMirrorsThePullBeforeTheFirst() {
         typealias P = DrawerCapsulePaging
         // Seven apps: pages 0, 1 and 2, the last holding app 6 alone.
         let fullPull = P.displayedPosition(page: 2, drag: 1, pageCount: 3)
+        let over = fullPull - 2
         // The held apps alone would not move at all within the rubber band's reach.
         XCTAssertEqual(P.pose(index: 6, position: fullPull), P.restPose(slot: 0))
-        XCTAssertEqual(P.endPullScale(index: 6, position: fullPull, memberCount: 7), 1 - P.rubberBand, accuracy: 1e-9)
-        XCTAssertEqual(P.endPullScale(index: 6, position: 2, memberCount: 7), 1)
-        // Mid-list and at the first page nothing extra applies.
-        XCTAssertEqual(P.endPullScale(index: 3, position: 1.1, memberCount: 7), 1)
-        XCTAssertEqual(P.endPullScale(index: 0, position: -0.1, memberCount: 7), 1)
-        XCTAssertEqual(P.endPullScale(index: 3, position: fullPull, memberCount: 7), 1)
+        // Pulled past the end, app 6 mirrors app 0 pulled as far before the first page: same size,
+        // same distance, the opposite way (up and to the leading side, with the fingers).
+        guard let end = P.endPullPose(index: 6, position: fullPull, memberCount: 7) else {
+            return XCTFail("no end pull past the last page")
+        }
+        let start = P.pose(index: 0, position: -over)
+        let rest = P.restPose(slot: 0)
+        XCTAssertEqual(end.size, start.size, accuracy: 1e-9)
+        XCTAssertLessThan(end.size, rest.size)
+        XCTAssertEqual(end.x - rest.x, rest.x - start.x, accuracy: 1e-9)
+        XCTAssertEqual(end.y - rest.y, rest.y - start.y, accuracy: 1e-9)
+        XCTAssertLessThan(end.x, rest.x)
+        XCTAssertLessThan(end.y, rest.y)
+        // Still inside the capsule's content.
+        let half = DrawerCapsulePreviewMetrics.contentWidth / 2
+        XCTAssertLessThan(abs(end.x) + end.size / 2, half)
+        XCTAssertLessThan(abs(end.y) + end.size / 2, half)
+        XCTAssertEqual(P.endPullGlyphScale(position: fullPull, memberCount: 7), 1 - P.rubberBand, accuracy: 1e-9)
+        // At rest, mid-list and at the first page there is no end pull.
+        XCTAssertNil(P.endPullPose(index: 6, position: 2, memberCount: 7))
+        XCTAssertNil(P.endPullPose(index: 3, position: 1.1, memberCount: 7))
+        XCTAssertNil(P.endPullPose(index: 0, position: -0.1, memberCount: 7))
+        XCTAssertNil(P.endPullPose(index: 3, position: fullPull, memberCount: 7))
+        XCTAssertEqual(P.endPullGlyphScale(position: 2, memberCount: 7), 1)
     }
 
     func testCapsuleHoverLiftFoldsAwayMidTurnAndFollowsTheScreen() {

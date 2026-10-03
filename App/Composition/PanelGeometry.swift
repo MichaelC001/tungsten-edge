@@ -302,16 +302,26 @@ enum DrawerCapsulePaging {
         return raw
     }
 
-    /// Extra scale for app `index` while the capsule is pulled past its last page. Nothing arrives
-    /// there and the apps hold their size for `leaveHold`, longer than the rubber band reaches, so
-    /// without this the end of the list would give no feedback at all. The last page's apps yield
-    /// in place by the overscroll itself, as a plain blend would.
-    static func endPullScale(index: Int, position: CGFloat, memberCount: Int) -> CGFloat {
+    /// The pose of app `index` while the capsule is pulled past its last page, nil otherwise.
+    /// Nothing arrives there and the apps hold their size for `leaveHold`, longer than the rubber
+    /// band reaches, so the plain pose would not move at all. Instead each of the last page's apps
+    /// mirrors, about its resting cell, the pose the same cell shows when pulled as far before the
+    /// first page: both ends answer alike, each moving with the fingers.
+    static func endPullPose(index: Int, position: CGFloat, memberCount: Int) -> IconPose? {
         let last = pageCount(memberCount: memberCount) - 1
         let over = position - CGFloat(last)
         let slot = index - last * DrawerCapsulePreviewMetrics.appSlots
-        guard over > 0, (0..<DrawerCapsulePreviewMetrics.appSlots).contains(slot) else { return 1 }
-        return 1 - over
+        guard over > 0, (0..<DrawerCapsulePreviewMetrics.appSlots).contains(slot) else { return nil }
+        let rest = restPose(slot: slot)
+        let pulled = pose(index: slot, position: -over)
+        return IconPose(x: 2 * rest.x - pulled.x, y: 2 * rest.y - pulled.y, size: pulled.size)
+    }
+
+    /// Scale of the expand glyph, which the last page shows in place of a mini grid: it gives way
+    /// with the apps when pulled past the end, as the mini icons do before the first page.
+    static func endPullGlyphScale(position: CGFloat, memberCount: Int) -> CGFloat {
+        let over = position - CGFloat(pageCount(memberCount: memberCount) - 1)
+        return over > 0 ? 1 - over : 1
     }
 }
 
