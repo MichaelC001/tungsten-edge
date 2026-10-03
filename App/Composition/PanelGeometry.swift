@@ -301,6 +301,18 @@ enum DrawerCapsulePaging {
         if raw > last { return last + (raw - last) * rubberBand }
         return raw
     }
+
+    /// Extra scale for app `index` while the capsule is pulled past its last page. Nothing arrives
+    /// there and the apps hold their size for `leaveHold`, longer than the rubber band reaches, so
+    /// without this the end of the list would give no feedback at all. The last page's apps yield
+    /// in place by the overscroll itself, as a plain blend would.
+    static func endPullScale(index: Int, position: CGFloat, memberCount: Int) -> CGFloat {
+        let last = pageCount(memberCount: memberCount) - 1
+        let over = position - CGFloat(last)
+        let slot = index - last * DrawerCapsulePreviewMetrics.appSlots
+        guard over > 0, (0..<DrawerCapsulePreviewMetrics.appSlots).contains(slot) else { return 1 }
+        return 1 - over
+    }
 }
 
 struct PanelScreenGeometry: Equatable {

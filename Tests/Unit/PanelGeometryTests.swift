@@ -475,6 +475,20 @@ final class PanelGeometryTests: XCTestCase {
         XCTAssertGreaterThan(pulled.x, -12)
     }
 
+    func testCapsulePulledPastTheLastPageShrinksItsAppsInPlace() {
+        typealias P = DrawerCapsulePaging
+        // Seven apps: pages 0, 1 and 2, the last holding app 6 alone.
+        let fullPull = P.displayedPosition(page: 2, drag: 1, pageCount: 3)
+        // The held apps alone would not move at all within the rubber band's reach.
+        XCTAssertEqual(P.pose(index: 6, position: fullPull), P.restPose(slot: 0))
+        XCTAssertEqual(P.endPullScale(index: 6, position: fullPull, memberCount: 7), 1 - P.rubberBand, accuracy: 1e-9)
+        XCTAssertEqual(P.endPullScale(index: 6, position: 2, memberCount: 7), 1)
+        // Mid-list and at the first page nothing extra applies.
+        XCTAssertEqual(P.endPullScale(index: 3, position: 1.1, memberCount: 7), 1)
+        XCTAssertEqual(P.endPullScale(index: 0, position: -0.1, memberCount: 7), 1)
+        XCTAssertEqual(P.endPullScale(index: 3, position: fullPull, memberCount: 7), 1)
+    }
+
     func testCapsuleHoverLiftFoldsAwayMidTurnAndFollowsTheScreen() {
         typealias P = DrawerCapsulePaging
         // Full lift at rest, none once the turn is a little way off either page, in both directions.

@@ -267,12 +267,14 @@ private struct DrawerCapsuleFlow: ViewModifier, Animatable {
         let lift = hovered
             ? 1 + (DrawerCapsulePreviewMetrics.hoverScale - 1) * DrawerCapsulePaging.hoverCalm(position: position)
             : 1
+        let endPull = DrawerCapsulePaging.endPullScale(index: index, position: position, memberCount: memberCount)
         content
             .scaleEffect(lift)
             .animation(.easeOut(duration: 0.12), value: hovered)
-            .scaleEffect(pose.size / DrawerCapsulePreviewMetrics.iconSize)
+            .scaleEffect(pose.size / DrawerCapsulePreviewMetrics.iconSize * endPull)
             .position(x: side / 2 + pose.x * unit, y: side / 2 + pose.y * unit)
-            // An arriving icon lands on top of the one it replaces, in either direction.
+            // The later app is always on top: turning forward the arriving icon covers the app it
+            // replaces; turning back the leaving one shrinks away over the app coming back.
             .zIndex(Double(index))
             .opacity(pose.size > 0 ? 1 : 0)
     }
