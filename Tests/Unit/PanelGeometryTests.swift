@@ -387,19 +387,26 @@ final class PanelGeometryTests: XCTestCase {
                        2 + DrawerCapsulePaging.rubberBand)
     }
 
-    /// A rolling page must be invisible before it has travelled far enough to reach the next cell:
-    /// that is what keeps a half-cut icon from ever showing.
-    func testCapsuleRollFadesOutBeforeReachingTheNeighbouringCell() {
-        XCTAssertEqual(DrawerCapsulePaging.rollOpacity(distance: 0), 1)
+    /// Mid-turn the leaving and the arriving icon share one cell: they must not overlap each
+    /// other, and neither may leave the cell's pitch (the cell plus half the gap on each side).
+    func testCapsuleRollKeepsBothIconsInsideTheCellWithoutOverlap() {
+        let icon = DrawerCapsulePreviewMetrics.iconSize
+        let pitch = icon + DrawerCapsulePreviewMetrics.gridSpacing
+        let travel = pitch * DrawerCapsulePaging.rollTravel
         XCTAssertEqual(DrawerCapsulePaging.rollScale(distance: 0), 1)
-        XCTAssertEqual(DrawerCapsulePaging.rollOpacity(distance: 1), 0)
-        XCTAssertEqual(DrawerCapsulePaging.rollOpacity(distance: -1), 0)
-        let pitch = DrawerCapsulePreviewMetrics.iconSize + DrawerCapsulePreviewMetrics.gridSpacing
-        let vanishing: CGFloat = 1 / 1.8
-        XCTAssertEqual(DrawerCapsulePaging.rollOpacity(distance: vanishing), 0, accuracy: 1e-9)
-        // Travel at the vanishing point stays within the gap plus a sliver of the neighbour.
-        XCTAssertLessThan(vanishing * pitch * DrawerCapsulePaging.rollTravel,
-                          2 * DrawerCapsulePreviewMetrics.gridSpacing)
+        XCTAssertEqual(DrawerCapsulePaging.rollScale(distance: 1), 0)
+        XCTAssertEqual(DrawerCapsulePaging.rollScale(distance: -2), 0)
+        for step in 0...20 {
+            let d = CGFloat(step) / 20
+            // Leaving icon: `d` pages above rest. Arriving icon: `1 - d` pages below it.
+            let leavingHalf = icon / 2 * DrawerCapsulePaging.rollScale(distance: -d)
+            let arrivingHalf = icon / 2 * DrawerCapsulePaging.rollScale(distance: 1 - d)
+            let leavingCentre = -d * travel
+            let arrivingCentre = (1 - d) * travel
+            XCTAssertGreaterThanOrEqual(leavingCentre - leavingHalf, -pitch / 2 - 1e-9, "d=\(d)")
+            XCTAssertLessThanOrEqual(arrivingCentre + arrivingHalf, pitch / 2 + 1e-9, "d=\(d)")
+            XCTAssertLessThanOrEqual(leavingCentre + leavingHalf, arrivingCentre - arrivingHalf + 1e-9, "d=\(d)")
+        }
     }
 
     func testEveryHeightLaysOutBottomAnchoredAndCentered() {

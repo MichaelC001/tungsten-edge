@@ -125,16 +125,15 @@ enum DrawerCapsulePaging {
     static let turnThreshold: CGFloat = 0.15
     /// How much of the overscroll past the first / last page is shown.
     static let rubberBand: CGFloat = 0.15
-    /// How far a page rolls per page of distance, as a share of the cell pitch.
+    /// How far a page's centre rolls per page of distance, as a share of the cell pitch.
     static let rollTravel: CGFloat = 0.5
 
-    /// A page is gone before it has rolled far enough to reach a neighbouring cell.
-    static func rollOpacity(distance: CGFloat) -> Double {
-        Double(max(0, 1 - 1.8 * abs(distance)))
-    }
-
+    /// A page shrinks to nothing as it rolls one page away, staying fully opaque: the leaving and
+    /// the arriving icon are both on screen for the whole turn. With `rollTravel` at half a pitch
+    /// the two never overlap and neither leaves the cell's pitch
+    /// (`PanelGeometryTests.testCapsuleRollKeepsBothIconsInsideTheCellWithoutOverlap`).
     static func rollScale(distance: CGFloat) -> CGFloat {
-        1 - 0.2 * min(abs(distance), 1)
+        max(0, 1 - abs(distance))
     }
 
     static func pageCount(memberCount: Int) -> Int {

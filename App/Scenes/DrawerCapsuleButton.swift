@@ -129,9 +129,9 @@ struct DrawerCapsuleButton: View {
 
     // MARK: Preview
 
-    /// Every cell turns in place: the page leaving rolls a short way up (or down) while it fades
-    /// and shrinks, the one arriving does the reverse. Nothing travels across a neighbouring cell
-    /// or the capsule's rim, so no icon is ever seen cut in half.
+    /// Every cell turns in place like a small drum: the page leaving rolls towards the cell's edge
+    /// while it shrinks, the one arriving grows in from the opposite edge. Both stay opaque and
+    /// inside the cell, so an icon is never cut in half and never out of sight.
     private func pagedPreview(ids: [String], pageCount: Int, page: Int) -> some View {
         let position = DrawerCapsulePaging.displayedPosition(page: page, drag: pager.drag, pageCount: pageCount)
         let columns = DrawerCapsulePreviewMetrics.columns
@@ -162,11 +162,9 @@ struct DrawerCapsuleButton: View {
     }
 
     /// One cell's pages stacked on the same spot, each posed by its distance from the resting
-    /// position. The window is the cell plus the gap around it: room for the hover growth and
-    /// the launch bounce, and by the time a rolling icon reaches its edge it is nearly faded out.
+    /// position. Nothing is clipped: the pose itself keeps a rolling icon inside the cell's pitch.
     private func rollingCell<Content: View>(position: CGFloat, pageCount: Int,
                                             @ViewBuilder content: @escaping (Int) -> Content) -> some View {
-        let window = iconSize + 2 * gridSpacing
         let travel = (iconSize + gridSpacing) * DrawerCapsulePaging.rollTravel
         return ZStack {
             ForEach(Array(0..<pageCount), id: \.self) { index in
@@ -174,8 +172,6 @@ struct DrawerCapsuleButton: View {
                     .modifier(DrawerCapsuleRoll(distance: CGFloat(index) - position, travel: travel))
             }
         }
-        .frame(width: window, height: window)
-        .clipped()
         .frame(width: iconSize, height: iconSize)
     }
 
@@ -293,7 +289,7 @@ private extension View {
 }
 
 /// Poses one page of a cell by its distance (in pages) from the resting position. The distance
-/// is the animatable value, so opacity and scale follow the roll instead of crossfading linearly.
+/// is the animatable value, so the scale follows the roll frame by frame.
 private struct DrawerCapsuleRoll: ViewModifier, Animatable {
     var distance: CGFloat
     let travel: CGFloat
@@ -306,7 +302,6 @@ private struct DrawerCapsuleRoll: ViewModifier, Animatable {
     func body(content: Content) -> some View {
         content
             .scaleEffect(DrawerCapsulePaging.rollScale(distance: distance))
-            .opacity(DrawerCapsulePaging.rollOpacity(distance: distance))
             .offset(y: distance * travel)
     }
 }
