@@ -44,21 +44,6 @@ final class FolderContentsLoaderTests: XCTestCase {
         XCTAssertEqual(sorted.map(\.name), ["a.txt", "b.txt", "file2.txt", "file10.txt"])
     }
 
-    func testNewestFileSkipsDirectories() {
-        let newest = FolderContentsLoader.newestFile(in: [
-            entry("newest-subfolder", isDirectory: true, added: 900),
-            entry("newest-file.png", added: 500),
-            entry("older-file.txt", added: 100),
-        ])
-        XCTAssertEqual(newest?.name, "newest-file.png")
-    }
-
-    func testNewestFileNilWhenOnlyDirectories() {
-        XCTAssertNil(FolderContentsLoader.newestFile(in: [
-            entry("sub", isDirectory: true, added: 900),
-        ]))
-    }
-
     func testEntriesWithNoDatesSortStablyByName() {
         let sorted = FolderContentsLoader.sortedByDateAdded([
             entry("zeta"),

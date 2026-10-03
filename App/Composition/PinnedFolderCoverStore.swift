@@ -1,18 +1,24 @@
 import AppKit
 import QuickLookThumbnailing
 
-/// 固定文件夹 chip 的封面：该文件夹当前排序第一张文件的 Quick Look 缩略图。
-/// 枚举在后台队列；每个文件夹带 generation 计数，QL 异步回调回来时核对
-/// generation 未变才发布，防旧结果覆盖新封面；@Published 只在 MainActor 写。
-/// chip 封面：isThumbnail 决定渲染方式——真缩略图方形裁切+细白边,图标（文件/文件夹）fit 不裁。
+/// A pinned folder chip's cover: the first items of the folder's current sort, stacked like a
+/// native Dock stack (front first). Enumeration runs on a background queue; each folder carries
+/// a generation counter and an async Quick Look result publishes only while it is unchanged, so
+/// a stale thumbnail cannot overwrite a fresh cover. `@Published` is written on the MainActor only.
 struct FolderCover: Equatable {
-    var image: NSImage
-    var isThumbnail: Bool
+    struct Layer: Equatable {
+        var image: NSImage
+        /// A real Quick Look thumbnail (drawn at its own aspect with a hairline) rather than an
+        /// icon, which carries its own transparent margin.
+        var isThumbnail: Bool
+    }
+    /// Front first; never empty (an empty folder shows its own icon).
+    var layers: [Layer]
 }
 
 @MainActor
 final class PinnedFolderCoverStore: ObservableObject {
-    /// path → 封面。兜底链：当前排序第一张文件的缩略图 → 其图标 → 文件夹图标（空文件夹）。
+    /// path → cover. Per layer: Quick Look thumbnail → the item's icon; an empty folder shows its own icon.
     @Published private(set) var covers: [String: FolderCover] = [:]
 
     private struct CacheEntry {
@@ -24,9 +30,12 @@ final class PinnedFolderCoverStore: ObservableObject {
 
     private var watchers: [String: DirectoryWatcher] = [:]
     private var generations: [String: Int] = [:]
+    /// One counter for all folders, never reset: a per-folder count restarts at 1 when a folder
+    /// is unpinned and pinned again, and a callback from before would pass the check.
+    private var lastGeneration = 0
     /// coverFilePath|modDate → 缩略图；封面文件没变就不再生成。
     private let thumbnailCache = NSCache<NSString, NSImage>()
-    /// 逐文件夹排序方式（AppDelegate 注入,读 PinnedFolderStore）：封面 = 当前排序下第一个文件,
+    /// 逐文件夹排序方式（AppDelegate 注入,读 PinnedFolderStore）：封面 = 当前排序下最前的几项,
     /// 与弹窗网格同口径（原生 Stacks 同款：改排序,chip 封面跟着换）。
     private let sortOrderProvider: (String) -> FolderSortOrder
 
@@ -62,7 +71,8 @@ final class PinnedFolderCoverStore: ObservableObject {
     }
 
     private func refresh(path: String) {
-        let generation = (generations[path] ?? 0) + 1
+        lastGeneration += 1
+        let generation = lastGeneration
         generations[path] = generation
         let folderURL = URL(fileURLWithPath: path)
         let order = sortOrderProvider(path)   // MainActor 上读定,后台块用值
@@ -70,41 +80,53 @@ final class PinnedFolderCoverStore: ObservableObject {
         Task.detached(priority: .utility) { [weak self] in
             let entries = (try? FolderContentsLoader.load(directory: folderURL)) ?? []
             let sortedEntries = FolderContentsLoader.sorted(entries, by: order)
-            let newest = FolderContentsLoader.coverFile(in: sortedEntries, order: order)
+            let stack = FolderContentsLoader.coverEntries(in: sortedEntries)
             await MainActor.run { [weak self] in
                 guard let self, self.generations[path] == generation else { return }
                 self.cache[path] = CacheEntry(order: order, entries: sortedEntries)
-                self.publishCover(path: path, newest: newest, generation: generation)
+                self.publishCover(path: path, stack: stack, generation: generation)
             }
         }
     }
 
-    private func publishCover(path: String, newest: FolderContentsLoader.Entry?, generation: Int) {
-        guard let newest else {
-            covers[path] = FolderCover(image: Self.icon(forPath: path), isThumbnail: false)
+    private func publishCover(path: String, stack: [FolderContentsLoader.Entry], generation: Int) {
+        guard !stack.isEmpty else {
+            covers[path] = FolderCover(layers: [.init(image: Self.icon(forPath: path), isThumbnail: false)])
             return
         }
-        let cacheKey = "\(newest.url.path)|\(newest.dateModified?.timeIntervalSince1970 ?? 0)"
-        if let cached = thumbnailCache.object(forKey: cacheKey as NSString) {
-            covers[path] = FolderCover(image: cached, isThumbnail: true)
-            return
+        var pending: [(index: Int, url: URL, cacheKey: String)] = []
+        let layers = stack.enumerated().map { index, entry -> FolderCover.Layer in
+            // Folders (and bundles) keep their icon, as on a native stack.
+            guard !entry.isDirectory else {
+                return .init(image: Self.icon(forPath: entry.url.path), isThumbnail: false)
+            }
+            let cacheKey = "\(entry.url.path)|\(entry.dateModified?.timeIntervalSince1970 ?? 0)"
+            if let cached = thumbnailCache.object(forKey: cacheKey as NSString) {
+                return .init(image: cached, isThumbnail: true)
+            }
+            // The file's icon stands in until its Quick Look thumbnail arrives.
+            pending.append((index, entry.url, cacheKey))
+            return .init(image: Self.icon(forPath: entry.url.path), isThumbnail: false)
         }
-        // 先用该文件的图标垫底，QL 缩略图好了再无感升级。
-        covers[path] = FolderCover(image: Self.icon(forPath: newest.url.path), isThumbnail: false)
+        covers[path] = FolderCover(layers: layers)
 
-        let request = QLThumbnailGenerator.Request(
-            fileAt: newest.url,
-            size: CGSize(width: 64, height: 64),
-            scale: 2,
-            representationTypes: .thumbnail
-        )
-        QLThumbnailGenerator.shared.generateBestRepresentation(for: request) { [weak self] representation, _ in
-            guard let cgImage = representation?.cgImage else { return }  // 生成失败保留图标垫底
-            let image = NSImage(cgImage: cgImage, size: .zero)
-            Task { @MainActor [weak self] in
-                guard let self, self.generations[path] == generation else { return }
-                self.thumbnailCache.setObject(image, forKey: cacheKey as NSString)
-                self.covers[path] = FolderCover(image: image, isThumbnail: true)
+        for (index, url, cacheKey) in pending {
+            let request = QLThumbnailGenerator.Request(
+                fileAt: url,
+                size: CGSize(width: 64, height: 64),
+                scale: 2,
+                representationTypes: .thumbnail
+            )
+            QLThumbnailGenerator.shared.generateBestRepresentation(for: request) { [weak self] representation, _ in
+                guard let cgImage = representation?.cgImage else { return }  // keep the icon on failure
+                let image = NSImage(cgImage: cgImage, size: .zero)
+                Task { @MainActor [weak self] in
+                    guard let self, self.generations[path] == generation,
+                          var cover = self.covers[path], cover.layers.indices.contains(index) else { return }
+                    self.thumbnailCache.setObject(image, forKey: cacheKey as NSString)
+                    cover.layers[index] = .init(image: image, isThumbnail: true)
+                    self.covers[path] = cover
+                }
             }
         }
     }

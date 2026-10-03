@@ -127,14 +127,13 @@ enum FolderContentsLoader {
         return ext
     }
 
-    /// 封面用：当前排序下的第一个**文件**（子文件夹不做封面）。默认排序时即旧口径「最新文件」。
-    static func coverFile(in entries: [Entry], order: FolderSortOrder = .default) -> Entry? {
-        sorted(entries, by: order).first { !$0.isDirectory }
-    }
+    /// How many items a folder chip's cover stacks, like a native Dock stack.
+    static let coverStackLimit = 3
 
-    /// 旧口径保留（单测在用）：最新的文件。
-    static func newestFile(in entries: [Entry]) -> Entry? {
-        coverFile(in: entries, order: .dateAdded)
+    /// The chip cover: the first items of the already-sorted listing, front first. Subfolders
+    /// count, as on a native Dock stack.
+    static func coverEntries(in sortedEntries: [Entry]) -> [Entry] {
+        Array(sortedEntries.prefix(coverStackLimit))
     }
 
     /// 中转格：按给定路径列表构造条目（保持传入顺序 = 暂存序），确定不存在的跳过。

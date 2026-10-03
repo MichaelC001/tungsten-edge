@@ -79,13 +79,17 @@ final class FolderSortTests: XCTestCase {
         XCTAssertEqual(sorted.map(\.name), ["dir", "a.png", "README"])
     }
 
-    func testCoverFileFollowsSortOrderAndSkipsDirectories() {
+    func testCoverStacksTheFirstThreeItemsOfTheSortIncludingDirectories() {
         let entries = [
             entry("zzz.png", added: 300),
             entry("aaa.png", added: 100),
             entry("newest-dir", isDirectory: true, added: 400),
+            entry("mmm.png", added: 200),
         ]
-        XCTAssertEqual(FolderContentsLoader.coverFile(in: entries, order: .dateAdded)?.name, "zzz.png")
-        XCTAssertEqual(FolderContentsLoader.coverFile(in: entries, order: .name)?.name, "aaa.png")
+        func cover(_ order: FolderSortOrder) -> [String] {
+            FolderContentsLoader.coverEntries(in: FolderContentsLoader.sorted(entries, by: order)).map(\.name)
+        }
+        XCTAssertEqual(cover(.dateAdded), ["newest-dir", "zzz.png", "mmm.png"])
+        XCTAssertEqual(cover(.name), ["aaa.png", "mmm.png", "newest-dir"])
     }
 }

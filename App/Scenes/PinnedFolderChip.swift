@@ -62,46 +62,66 @@ struct PinnedFolderChip: View {
         .animation(.easeOut(duration: 0.12), value: isDropTarget)
     }
 
-    /// The icon-card slot (40pt) with the cover and the drop-target ring, lifted as one piece.
+    /// The icon-card slot (40pt) with the cover stack and the drop-target ring, lifted as one piece.
     private var coverSlot: some View {
         let slot = ChipPillMetrics.bareIconSlot * scale
         let visible = ChipPillMetrics.bareIconVisibleSlot * scale
-        let corner = visible * Self.visibleCornerFraction
-        return coverImage(slot: slot, visible: visible, corner: corner)
-            .frame(width: slot, height: slot)
-            .overlay {
-                RoundedRectangle(cornerRadius: corner, style: .continuous)
-                    .strokeBorder(theme.folderDropRing.color(active: isDropTarget), lineWidth: 1.5)
-                    .frame(width: visible, height: visible)
+        let layers = cover?.layers
+            ?? [.init(image: PinnedFolderCoverStore.icon(forPath: path), isThumbnail: false)]
+        return ZStack {
+            // Back to front: the first item of the sort is drawn last, on top.
+            ForEach(Array(layers.prefix(StackLayout.depths.count).enumerated()).reversed(), id: \.offset) { index, layer in
+                layerImage(layer, canvas: slot * StackLayout.depths[index].canvas)
+                    .offset(y: slot * StackLayout.depths[index].centerY)
             }
-            .scaleEffect(isDropTarget ? 1.08 : 1)
+        }
+        .frame(width: slot, height: slot)
+        .overlay {
+            RoundedRectangle(cornerRadius: visible * Self.visibleCornerFraction, style: .continuous)
+                .strokeBorder(theme.folderDropRing.color(active: isDropTarget), lineWidth: 1.5)
+                .frame(width: visible, height: visible)
+        }
+        .scaleEffect(isDropTarget ? 1.08 : 1)
     }
 
-    /// Same squircle fraction as the self-drawn shelf tile, so a thumbnail reads as an icon.
+    /// Same squircle fraction as the self-drawn shelf tile (drop-target ring only).
     private static let visibleCornerFraction: CGFloat = 0.215
 
-    /// 封面：真缩略图满铺、方形裁切 + 细描边，按 app 图标的**可见方块**（32.5pt）画——
-    /// 缩略图没有苹果图标资源那圈透明边距，按槽位画会比邻居大一圈；
-    /// 文件图标 / 空文件夹图标自带留白，按槽位 fit 渲染，与 app 图标同口径。
+    /// The native Dock stack, as fractions of the icon slot: each item is fitted into a square
+    /// canvas centred on the slot's vertical axis; items behind shrink and climb, so the whole
+    /// pile spans the slot's height. Measured off the system Dock at tile size 40.
+    private enum StackLayout {
+        static let depths: [(canvas: CGFloat, centerY: CGFloat)] = [
+            (0.925, 0.05), (0.85, -0.04), (0.74, -0.13),
+        ]
+        /// A thumbnail has no transparent margin of its own, so it fits a smaller box than an icon.
+        static let thumbnailFraction: CGFloat = 0.87
+        static let thumbnailCornerFraction: CGFloat = 0.05
+    }
+
+    /// One item of the pile. Icons carry their own margin and fit the canvas; a thumbnail keeps
+    /// its own aspect ratio (never cropped square), with a hairline so a white page reads on glass.
     @ViewBuilder
-    private func coverImage(slot: CGFloat, visible: CGFloat, corner: CGFloat) -> some View {
-        if let cover, cover.isThumbnail {
-            Image(nsImage: cover.image)
+    private func layerImage(_ layer: FolderCover.Layer, canvas: CGFloat) -> some View {
+        if layer.isThumbnail {
+            let box = canvas * StackLayout.thumbnailFraction
+            let corner = canvas * StackLayout.thumbnailCornerFraction
+            Image(nsImage: layer.image)
                 .resizable()
                 .interpolation(.high)
-                .aspectRatio(contentMode: .fill)
-                .frame(width: visible, height: visible)
+                .aspectRatio(contentMode: .fit)
                 .clipShape(RoundedRectangle(cornerRadius: corner, style: .continuous))
                 .overlay(
                     RoundedRectangle(cornerRadius: corner, style: .continuous)
                         .strokeBorder(theme.folderThumbHairline.color, lineWidth: 0.5)
                 )
+                .frame(width: box, height: box)
         } else {
-            Image(nsImage: cover?.image ?? PinnedFolderCoverStore.icon(forPath: path))
+            Image(nsImage: layer.image)
                 .resizable()
                 .interpolation(.high)
                 .aspectRatio(contentMode: .fit)
-                .frame(width: slot, height: slot)
+                .frame(width: canvas, height: canvas)
         }
     }
 
