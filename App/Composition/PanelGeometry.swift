@@ -185,10 +185,26 @@ enum DrawerCapsulePaging {
         let from = restPose(slot: slot)
         guard t > 0 else { return from }
         let to = restPose(slot: slot - DrawerCapsulePreviewMetrics.appSlots)
-        let grown = sizeProgress(slot: slot, t: t)
-        return IconPose(x: from.x + (to.x - from.x) * t,
-                        y: from.y + (to.y - from.y) * t,
+        let u = cellProgress(slot: slot, t: t)
+        let grown = sizeProgress(slot: slot, t: u)
+        return IconPose(x: from.x + (to.x - from.x) * u,
+                        y: from.y + (to.y - from.y) * u,
                         size: from.size + (to.size - from.size) * grown)
+    }
+
+    /// How far ahead of the turn each app cell's handover runs (top-leading, top-trailing,
+    /// bottom-leading): the icon with the longest path leads by a hair, so the three read as one
+    /// move with a little depth rather than a stamp. Keep it small — a visible queue splits one
+    /// turn into three.
+    static let cellLead: [CGFloat] = [0.04, 0, -0.04]
+
+    /// The turn as seen by one app cell: the icon arriving there and the app it replaces share it.
+    /// Bends `t` without moving its ends and stays monotonic (`|lead| < 0.25`), so a gesture
+    /// stopped or reversed mid-turn never sends an icon backwards.
+    private static func cellProgress(slot: Int, t: CGFloat) -> CGFloat {
+        let appSlots = DrawerCapsulePreviewMetrics.appSlots
+        guard (0..<(2 * appSlots)).contains(slot) else { return t }
+        return t + 4 * cellLead[slot % appSlots] * t * (1 - t)
     }
 
     /// How far the size has moved towards the next page's, for the icon resting in `slot` on the

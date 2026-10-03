@@ -420,18 +420,35 @@ final class PanelGeometryTests: XCTestCase {
         // App 3 is the first mini icon on page 0 and the top-leading app on page 1.
         XCTAssertEqual(DrawerCapsulePaging.pose(index: 3, position: 0), DrawerCapsulePaging.restPose(slot: 3))
         XCTAssertEqual(DrawerCapsulePaging.pose(index: 3, position: 1), DrawerCapsulePaging.restPose(slot: 0))
-        let mid = DrawerCapsulePaging.pose(index: 3, position: 0.5)
-        XCTAssertEqual(mid.x, -2.5, accuracy: 1e-9)
+        // App 4 heads for the top-trailing cell, which runs on the turn's own clock.
+        let mid = DrawerCapsulePaging.pose(index: 4, position: 0.5)
+        XCTAssertEqual(mid.x, 14.5, accuracy: 1e-9)
         XCTAssertEqual(mid.y, -2.5, accuracy: 1e-9)
         XCTAssertEqual(mid.size, 14, accuracy: 1e-9)
         // The app it replaces holds its size for a moment, then shrinks in place: mid-turn it is
         // still about as large as the arriving icon. The last mini icon moves up to the first spot.
-        XCTAssertEqual(DrawerCapsulePaging.pose(index: 0, position: DrawerCapsulePaging.leaveHold),
-                       DrawerCapsulePaging.restPose(slot: 0))
-        let leaving = DrawerCapsulePaging.pose(index: 0, position: 0.5)
-        XCTAssertEqual(leaving.x, -12, accuracy: 1e-9)
+        XCTAssertEqual(DrawerCapsulePaging.pose(index: 1, position: DrawerCapsulePaging.leaveHold),
+                       DrawerCapsulePaging.restPose(slot: 1))
+        let leaving = DrawerCapsulePaging.pose(index: 1, position: 0.5)
+        XCTAssertEqual(leaving.x, 12, accuracy: 1e-9)
         XCTAssertEqual(leaving.y, -12, accuracy: 1e-9)
         XCTAssertEqual(leaving.size, 13.671875, accuracy: 1e-9)
+        // The longest path (top-leading) leads a hair and bottom-leading trails; the replaced app
+        // in each cell keeps the same clock as its replacement.
+        func travelled(_ index: Int) -> CGFloat {
+            let from = DrawerCapsulePaging.restPose(slot: index)
+            let to = DrawerCapsulePaging.restPose(slot: index - DrawerCapsulePreviewMetrics.appSlots)
+            return (DrawerCapsulePaging.pose(index: index, position: 0.5).y - from.y) / (to.y - from.y)
+        }
+        XCTAssertEqual(travelled(3), 0.54, accuracy: 1e-9)
+        XCTAssertEqual(travelled(4), 0.5, accuracy: 1e-9)
+        XCTAssertEqual(travelled(5), 0.46, accuracy: 1e-9)
+        XCTAssertLessThan(DrawerCapsulePaging.pose(index: 0, position: 0.5).size, leaving.size)
+        XCTAssertGreaterThan(DrawerCapsulePaging.pose(index: 2, position: 0.5).size, leaving.size)
+        for index in 0..<6 {
+            XCTAssertEqual(DrawerCapsulePaging.pose(index: index, position: 1),
+                           DrawerCapsulePaging.restPose(slot: index - DrawerCapsulePreviewMetrics.appSlots))
+        }
         XCTAssertEqual(DrawerCapsulePaging.pose(index: 0, position: 0.999).size, 0, accuracy: 0.01)
         XCTAssertEqual(DrawerCapsulePaging.pose(index: 0, position: 1).size, 0)
         XCTAssertEqual(DrawerCapsulePaging.pose(index: 6, position: 1), DrawerCapsulePaging.restPose(slot: 3))
