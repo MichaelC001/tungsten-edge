@@ -38,20 +38,28 @@ struct DrawerCapsuleButton: View {
     /// Which page of the drawer the capsule shows; per capsule, so per screen.
     @StateObject private var pager = DrawerCapsulePager()
 
-    private static let expandCell = DrawerCapsulePreviewMetrics.columns * DrawerCapsulePreviewMetrics.columns - 1
-
     private var iconSize: CGFloat { DrawerCapsulePreviewMetrics.iconSize * dockScale }
     private var gridSpacing: CGFloat { DrawerCapsulePreviewMetrics.gridSpacing * dockScale }
 
-    /// Every visible drawer app in drawer order: the capsule pages through all of them.
+    /// Every visible drawer app in the order the open drawer reads: the running zone first, then
+    /// the not-running one, each in drawer order. The zone split must stay the same predicate as
+    /// `DrawerView.runningZoneIDs` / `launchZoneIDs`, or the capsule pages disagree with the drawer.
     private var memberIDs: [String] {
         let placements = AppMembershipProjection.drawerMembers(drawerIDs: drawerStore.bundleIDs)
         let ordered = drawerOrderStore.reconciled(members: placements)
-        return AppMembershipProjection.visibleDrawerIDs(
+        let visible = AppMembershipProjection.visibleDrawerIDs(
             drawerIDs: ordered,
             keptIDs: keptAppStore.bundleIDs,
             runningIDs: runningApplicationStore.runningBundleIDs
         )
+        // The snapshot scan is only paid for while a launch session is open.
+        let launching = runtime.launchingBundleIDs
+        let windowBacked: Set<String> = launching.isEmpty ? [] : Set(
+            StripItem.items(from: runtime.snapshot).filter { !$0.isAppLevelFallback }.compactMap(\.bundleIdentifier))
+        func inRunningZone(_ id: String) -> Bool {
+            runningApplicationStore.isRunning(id) && !(launching.contains(id) && !windowBacked.contains(id))
+        }
+        return visible.filter(inRunningZone) + visible.filter { !inRunningZone($0) }
     }
 
     private var capsuleSide: CGFloat { settingsStore.dockPanelHeight.metrics.capsuleWidth }
@@ -121,30 +129,48 @@ struct DrawerCapsuleButton: View {
 
     // MARK: Preview
 
-    /// All pages stacked vertically and slid as one column behind the capsule's own outline.
+    /// Two columns of pages slide together: the three apps travel the whole capsule, the mini
+    /// grid turns inside its own cell. The app column is masked out of the bottom-trailing
+    /// quadrant, so an app on its way to the top row never crosses the mini grid.
     private func pagedPreview(ids: [String], pageCount: Int, page: Int) -> some View {
         let side = capsuleSide
         let position = DrawerCapsulePaging.displayedPosition(page: page, drag: pager.drag, pageCount: pageCount)
-        return VStack(spacing: 0) {
-            ForEach(Array(0..<pageCount), id: \.self) { index in
-                previewGrid(apps: DrawerCapsulePaging.apps(page: index, members: ids),
-                            more: DrawerCapsulePaging.more(page: index, members: ids),
-                            isCurrent: index == page)
-                    .frame(width: side, height: side)
+        let pages = Array(0..<pageCount)
+        let expandActive = { (cell: Int?) in cell.map { $0 >= DrawerCapsulePaging.apps(page: page, members: ids).count } == true }
+        return ZStack(alignment: .bottomTrailing) {
+            VStack(spacing: 0) {
+                ForEach(pages, id: \.self) { index in
+                    appGrid(apps: DrawerCapsulePaging.apps(page: index, members: ids), isCurrent: index == page)
+                        .frame(width: side, height: side)
+                }
             }
+            .offset(y: -position * side)
+            .frame(width: side, height: side, alignment: .top)
+            .mask(DrawerCapsuleAppColumnMask(cornerRadius: DockShape.panelCornerRadius * dockScale))
+
+            VStack(spacing: 0) {
+                ForEach(pages, id: \.self) { index in
+                    expandVisual(more: DrawerCapsulePaging.more(page: index, members: ids))
+                }
+            }
+            .offset(y: -position * iconSize)
+            .frame(width: iconSize, height: iconSize, alignment: .top)
+            .clipped()
+            // An app-less cell also expands the drawer, so its feedback shows here.
+            .cellFeedback(hovered: hoverEnabled && expandActive(hoveredCell), pressed: expandActive(pressedCell))
+            .padding(DrawerCapsulePreviewMetrics.gridPadding * dockScale)
         }
-        .offset(y: -position * side)
-        .frame(width: side, height: side, alignment: .top)
-        .clipShape(RoundedRectangle(cornerRadius: DockShape.panelCornerRadius * dockScale, style: .continuous))
+        .frame(width: side, height: side)
     }
 
-    private func previewGrid(apps: [String], more: [String], isCurrent: Bool) -> some View {
+    /// The three app cells of one page; the bottom-trailing cell is left to the mini grid.
+    private func appGrid(apps: [String], isCurrent: Bool) -> some View {
         let columns = DrawerCapsulePreviewMetrics.columns
         return VStack(spacing: gridSpacing) {
             ForEach(0..<columns, id: \.self) { row in
                 HStack(spacing: gridSpacing) {
                     ForEach(0..<columns, id: \.self) { column in
-                        cellVisual(row * columns + column, apps: apps, more: more, isCurrent: isCurrent)
+                        appCell(row * columns + column, apps: apps, isCurrent: isCurrent)
                     }
                 }
             }
@@ -153,7 +179,7 @@ struct DrawerCapsuleButton: View {
 
     /// Hover and press belong to the resting page only; the other pages are just passing by.
     @ViewBuilder
-    private func cellVisual(_ index: Int, apps: [String], more: [String], isCurrent: Bool) -> some View {
+    private func appCell(_ index: Int, apps: [String], isCurrent: Bool) -> some View {
         if index < apps.count {
             DrawerCapsuleAppIcon(bundleID: apps[index],
                                  size: iconSize,
@@ -161,11 +187,6 @@ struct DrawerCapsuleButton: View {
                                  isLaunching: runtime.launchingBundleIDs.contains(apps[index]))
                 .cellFeedback(hovered: isCurrent && hoverEnabled && hoveredCell == index,
                               pressed: isCurrent && pressedCell == index)
-        } else if index == Self.expandCell {
-            // An app-less cell also expands the drawer, so its feedback shows here.
-            expandVisual(more: more)
-                .cellFeedback(hovered: isCurrent && hoverEnabled && hoveredCell.map { $0 >= apps.count } == true,
-                              pressed: isCurrent && pressedCell.map { $0 >= apps.count } == true)
         } else {
             Color.clear.frame(width: iconSize, height: iconSize)
         }
@@ -266,6 +287,23 @@ private extension View {
         scaleEffect(hovered ? 1.1 : 1.0)
             .animation(.easeOut(duration: 0.12), value: hovered)
             .chipPressScale(pressed)
+    }
+}
+
+/// The capsule's outline minus its bottom-trailing quadrant.
+private struct DrawerCapsuleAppColumnMask: View {
+    let cornerRadius: CGFloat
+
+    var body: some View {
+        GeometryReader { proxy in
+            let size = proxy.size
+            Path { path in
+                path.addRect(CGRect(x: 0, y: 0, width: size.width, height: size.height / 2))
+                path.addRect(CGRect(x: 0, y: size.height / 2, width: size.width / 2, height: size.height / 2))
+            }
+            .fill(Color.black)
+        }
+        .clipShape(RoundedRectangle(cornerRadius: cornerRadius, style: .continuous))
     }
 }
 
