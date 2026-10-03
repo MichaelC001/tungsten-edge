@@ -260,10 +260,106 @@ final class StripDropRoutingTests: XCTestCase {
 
     /// 变化门控的判据。同一个空位重复喂必须判为「没变」。
     func testGhostEqualityGatesRedraws() {
-        let a = StripDropGhost(bundleID: "com.foo", insertIndex: 2)
-        XCTAssertEqual(a, StripDropGhost(bundleID: "com.foo", insertIndex: 2))
-        XCTAssertNotEqual(a, StripDropGhost(bundleID: "com.foo", insertIndex: 3))
-        XCTAssertNotEqual(a, StripDropGhost(bundleID: "com.other", insertIndex: 2))
+        let a = StripDropGhost(zone: .live(bundleID: "com.foo"), insertIndex: 2)
+        XCTAssertEqual(a, StripDropGhost(zone: .live(bundleID: "com.foo"), insertIndex: 2))
+        XCTAssertNotEqual(a, StripDropGhost(zone: .live(bundleID: "com.foo"), insertIndex: 3))
+        XCTAssertNotEqual(a, StripDropGhost(zone: .live(bundleID: "com.other"), insertIndex: 2))
+        XCTAssertNotEqual(a, StripDropGhost(zone: .folder, insertIndex: 2))
+    }
+
+    // MARK: - Folder dragged in: pin edges and the make-way gap
+
+    private let edge = StripDropRouting.folderPinEdgeFraction
+
+    /// 52pt chips → 13pt pin edges. /a is 152..204, /b is 212..264.
+    func testFolderDragPinsFromTheChipEdgesAndMovesIntoTheCentre() {
+        let paths = ["/a", "/b"]
+        let expected: [(CGFloat, StripDropRouting.Target)] = [
+            (160, .pin(insertIndex: 0)), (178, .moveInto(path: "/a")), (198, .pin(insertIndex: 1)),
+            (208, .pin(insertIndex: 1)), (216, .pin(insertIndex: 1)), (238, .moveInto(path: "/b")),
+            (258, .pin(insertIndex: 2)), (276, .pin(insertIndex: 2)),
+        ]
+        for (x, target) in expected {
+            XCTAssertEqual(
+                StripDropRouting.route(location: CGPoint(x: x, y: 26),
+                                       isApplicationDrag: false, isTrashItemDrag: false,
+                                       shelfFrame: shelf, trashFrame: nil, folderFrames: frames(paths),
+                                       orderedPaths: paths, pinEdgeFraction: edge),
+                target, "x=\(x)")
+        }
+    }
+
+    /// Lays the folders out with the gap already open at `gapIndex`, as the strip renders them
+    /// (the gap reports no frame), and returns the gap's own extent.
+    private func layout(_ paths: [String], gapIndex: Int, startX: CGFloat = 152)
+        -> (frames: [String: CGRect], gap: ClosedRange<CGFloat>) {
+        var result: [String: CGRect] = [:]
+        var x = startX
+        var gap: ClosedRange<CGFloat> = startX...startX
+        for index in 0...paths.count {
+            if index == gapIndex { gap = x...(x + 52); x += 60 }
+            guard index < paths.count else { break }
+            result["folder-" + paths[index]] = CGRect(x: x, y: 0, width: 52, height: 52)
+            x += 60
+        }
+        return (result, gap)
+    }
+
+    /// **The stability lock**: once the gap is open, a pointer anywhere inside it (and across the
+    /// spacing and pin edges on both sides) must keep resolving to that same slot — any other
+    /// answer closes the gap, which moves the chips, which reopens it.
+    func testPointerInsideTheOpenGapKeepsResolvingToTheSameSlot() {
+        let paths = ["/a", "/b"]
+        for shelfFrame in [shelf, nil] {
+            for gapIndex in 0...paths.count {
+                let (folders, gap) = layout(paths, gapIndex: gapIndex)
+                let openGap = StripDropRouting.OpenFolderGap(insertIndex: gapIndex, width: 60)
+                // 6pt each side: the 8pt spacing short of the neighbour's own edge (the shelf at 144).
+                for x in stride(from: gap.lowerBound - 6, through: gap.upperBound + 6, by: 2) {
+                    let target = StripDropRouting.route(
+                        location: CGPoint(x: x, y: 26), isApplicationDrag: false, isTrashItemDrag: false,
+                        shelfFrame: shelfFrame, trashFrame: nil, folderFrames: folders, orderedPaths: paths,
+                        pinEdgeFraction: edge, openGap: openGap)
+                    XCTAssertEqual(target, .pin(insertIndex: gapIndex),
+                                   "gap=\(gapIndex) x=\(x) shelf=\(String(describing: shelfFrame))")
+                }
+            }
+        }
+    }
+
+    func testFirstPinGapNextToTheShelfStaysOpen() {
+        // No folders yet: the gap sits right of the shelf (144) and is wider than the 24pt tail slack.
+        let openGap = StripDropRouting.OpenFolderGap(insertIndex: 0, width: 60)
+        for x: CGFloat in [150, 170, 190, 204] {
+            XCTAssertEqual(
+                StripDropRouting.route(location: CGPoint(x: x, y: 26), isApplicationDrag: false, isTrashItemDrag: false,
+                                       shelfFrame: shelf, trashFrame: nil, folderFrames: [:], orderedPaths: [],
+                                       pinEdgeFraction: edge, openGap: openGap),
+                .pin(insertIndex: 0), "x=\(x)")
+        }
+    }
+
+    /// A plain file among the folders keeps the old routing for the whole drag: on a chip's edge
+    /// the folders would pin and the file would be left behind.
+    func testOnlyAFoldersOnlyDragPinsFolders() {
+        XCTAssertTrue(StripDropRouting.dragPinsFolders(nonApplicationItemsAreDirectories: [true]))
+        XCTAssertTrue(StripDropRouting.dragPinsFolders(nonApplicationItemsAreDirectories: [true, true]))
+        XCTAssertFalse(StripDropRouting.dragPinsFolders(nonApplicationItemsAreDirectories: [true, false]))
+        XCTAssertFalse(StripDropRouting.dragPinsFolders(nonApplicationItemsAreDirectories: [false]))
+        XCTAssertFalse(StripDropRouting.dragPinsFolders(nonApplicationItemsAreDirectories: []))
+    }
+
+    func testFolderGhostFollowsPinSticksOverAChipAndClosesElsewhere() {
+        XCTAssertEqual(StripDropRouting.folderGhostIndex(current: nil, target: .pin(insertIndex: 1), pinsFolder: true), 1)
+        XCTAssertEqual(StripDropRouting.folderGhostIndex(current: 1, target: .pin(insertIndex: 2), pinsFolder: true), 2)
+        // Over a chip's centre the gap stays put, and none opens if there was none.
+        XCTAssertEqual(StripDropRouting.folderGhostIndex(current: 1, target: .moveInto(path: "/a"), pinsFolder: true), 1)
+        XCTAssertNil(StripDropRouting.folderGhostIndex(current: nil, target: .moveInto(path: "/a"), pinsFolder: true))
+        for target: StripDropRouting.Target in [.stash, .trash, .none, .keepApp] {
+            XCTAssertNil(StripDropRouting.folderGhostIndex(current: 1, target: target, pinsFolder: true), "\(target)")
+        }
+        // A plain file never opens a gap: it cannot be pinned.
+        XCTAssertNil(StripDropRouting.folderGhostIndex(current: nil, target: .pin(insertIndex: 1), pinsFolder: false))
     }
 
     func testHiddenShelfIgnoresStaleShelfCoordinates() {
@@ -284,20 +380,33 @@ final class StripDropRoutingTests: XCTestCase {
         )
     }
 
-    func testOnlyTheTrashDropsTheCursorBadge() {
-        XCTAssertTrue(StripDropRouting.usesGenericOperation(hoveredTarget: .trash, proposedIsCopy: true, sourceAllowsGeneric: true))
-        let others: [StripDropRouting.Target?] = [nil, .none, .stash, .keepApp, .moveInto(path: "/tmp/a"), .pin(insertIndex: 0)]
-        for target in others {
-            XCTAssertFalse(StripDropRouting.usesGenericOperation(hoveredTarget: target, proposedIsCopy: true, sourceAllowsGeneric: true),
-                           "\(String(describing: target))")
+    func testOnlyTheTrashAndAFolderPinSlotDropTheCursorBadge() {
+        for pinsFolder in [true, false] {
+            XCTAssertTrue(StripDropRouting.usesGenericOperation(hoveredTarget: .trash, pinsFolder: pinsFolder,
+                                                                proposedIsCopy: true, sourceAllowsGeneric: true))
+            let others: [StripDropRouting.Target?] = [nil, .none, .stash, .keepApp, .moveInto(path: "/tmp/a")]
+            for target in others {
+                XCTAssertFalse(StripDropRouting.usesGenericOperation(hoveredTarget: target, pinsFolder: pinsFolder,
+                                                                     proposedIsCopy: true, sourceAllowsGeneric: true),
+                               "\(String(describing: target))")
+            }
         }
+        XCTAssertTrue(StripDropRouting.usesGenericOperation(hoveredTarget: .pin(insertIndex: 0), pinsFolder: true,
+                                                            proposedIsCopy: true, sourceAllowsGeneric: true))
+        // A plain file over a chip gap pins nothing; its badge is left alone.
+        XCTAssertFalse(StripDropRouting.usesGenericOperation(hoveredTarget: .pin(insertIndex: 0), pinsFolder: false,
+                                                             proposedIsCopy: true, sourceAllowsGeneric: true))
     }
 
-    func testTrashKeepsTheAnswerWhenGenericIsNotOffered() {
-        // ⌥ held: the source offers copy only.
-        XCTAssertFalse(StripDropRouting.usesGenericOperation(hoveredTarget: .trash, proposedIsCopy: true, sourceAllowsGeneric: false))
-        // A refusal (e.g. Trash items) stays a refusal.
-        XCTAssertFalse(StripDropRouting.usesGenericOperation(hoveredTarget: .trash, proposedIsCopy: false, sourceAllowsGeneric: true))
+    func testBadgeAnswerIsKeptWhenGenericIsNotOffered() {
+        for target: StripDropRouting.Target in [.trash, .pin(insertIndex: 0)] {
+            // ⌥ held: the source offers copy only.
+            XCTAssertFalse(StripDropRouting.usesGenericOperation(hoveredTarget: target, pinsFolder: true,
+                                                                 proposedIsCopy: true, sourceAllowsGeneric: false))
+            // A refusal (e.g. Trash items) stays a refusal.
+            XCTAssertFalse(StripDropRouting.usesGenericOperation(hoveredTarget: target, pinsFolder: true,
+                                                                 proposedIsCopy: false, sourceAllowsGeneric: true))
+        }
     }
 
     private let home = URL(fileURLWithPath: "/Users/tester", isDirectory: true)

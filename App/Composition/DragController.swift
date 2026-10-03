@@ -639,8 +639,7 @@ final class DragController: ObservableObject {
     }
 
     /// 胶囊高亮只在「任务条卡/消息 chip 正悬在收纳区」时亮。
-    /// 反方向**没有**对称的整条高亮：抽屉图标拖回任务条靠卡片让位表达（owner 2026-08-20 对齐原生，
-    /// 见 `DockStripView.stripHighlighted`）。
+    /// 反方向**没有**对称的整条高亮：抽屉图标拖回任务条靠卡片让位表达（owner 2026-08-20 对齐原生）。
     var isOverStashZone: Bool {
         guard isOverDropZone, let s = draggingPayload?.source else { return false }
         return s == .strip || s == .messaging

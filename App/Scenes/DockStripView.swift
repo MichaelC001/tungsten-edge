@@ -274,16 +274,14 @@ struct DockStripView: View {
                 shouldClaim: { taskbarMenuZoneClaims(atScreen: $0) }
             ))
         }
-        // 外部拖目录悬停文件夹区（pin 落点）时整条高亮：在平时那圈边**之上**再叠一圈更亮的，
-        // 不再把玻璃亮边换掉（那正是「一圈黑边」的成因，见 `DockPanelRimPlan`）。
+        // The rim never changes during a drag: every drag-in (drawer icon, app, folder) is answered
+        // by the icons making way, and a rim that follows hover state is the surface that flickers.
         .dockPanelRim(
             cornerRadius: taskbarCornerRadius,
-            style: theme.panelRimStyle(highlighted: stripHighlighted),
-            lineWidth: theme.panelRimLineWidth(highlighted: stripHighlighted),
-            usesLiquidGlass: usesLiquidGlass,
-            highlighted: stripHighlighted
+            style: theme.panelRimStyle(highlighted: false),
+            lineWidth: theme.panelRimLineWidth(highlighted: false),
+            usesLiquidGlass: usesLiquidGlass
         )
-        .animation(.easeOut(duration: 0.15), value: stripHighlighted)
         // 外部拖放悬停期冻住条宽（理由见 `frozenStripWidth`）。**必须在下面那层
         // `.coordinateSpace(name: "strip")` 之前**：坐标空间视图的宽度因此在整段悬停里恒定，
         // `chipFrames` 与 `onDrop` 的落点仍然同源，挂载层一个字没动。
@@ -307,6 +305,12 @@ struct DockStripView: View {
             // chip 间距随档位缩放，「插到最前面」那段 slack 也得跟着缩，否则小档时它相对更宽、
             // 会吃掉首个文件夹左半边的移入区。
             headSlack: StripDropRouting.defaultHeadSlack * dockScale,
+            openFolderGap: externalDropGhost.flatMap { ghost in
+                guard ghost.zone == .folder else { return nil }
+                return StripDropRouting.OpenFolderGap(
+                    insertIndex: ghost.insertIndex,
+                    width: (ChipPillMetrics.cardWidth + Style.chipSpacing) * dockScale)
+            },
             onHoverBegan: { externalDropHoverBegan($0) },
             onHoverMoved: { externalDropHoverMoved($0) },
             onHoverEnded: { isLanding in externalDropHoverEnded(isLanding: isLanding) },
@@ -314,14 +318,15 @@ struct DockStripView: View {
             onCommitApplications: { urls, location in
                 handleExternalApplicationDrop(urls, atX: location.x)
             },
-            onGhostMoved: { bundleID, location in
-                updateExternalDropGhost(bundleID: bundleID, atX: location.x)
+            onGhostMoved: { target, bundleID, pinsFolder, location in
+                updateExternalDropGhost(target: target, bundleID: bundleID,
+                                        pinsFolder: pinsFolder, atX: location.x)
             },
             currentGhostIndex: { externalDropGhost?.insertIndex },
             currentFrozenWidth: { frozenStripWidth },
             currentStripRect: { stripRootScreenRect }
         ))
-        // No cursor badge over the Trash. **Must be an `.overlay` directly after `.onDrop`**: AppKit
+        // No cursor badge over the Trash or a folder's pin slot. **Must be an `.overlay` directly after `.onDrop`**: AppKit
         // gives the drag to the topmost registered view, and `.background` here lands below SwiftUI's.
         .overlay(StripDropBadgeOverlay())
         // 与 "strip" 命名空间同一视图 → 屏幕 frame 即 "strip" 空间原点，供抽屉拖回任务条做坐标映射 + 进出判定。

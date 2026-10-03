@@ -25,16 +25,17 @@ enum StripEntry: Identifiable, Hashable {
     case trash
     /// Visual separator between zones. 现在最多两条（消息|文件夹、文件夹|窗口），id 必须唯一。
     case divider(id: String)
-    /// 从访达拖应用进条时、悬停期让位让出来的那个**空档**（一张卡的宽度，不画任何东西）。
+    /// 从访达拖应用或文件夹进条时、悬停期让位让出来的那个**空档**（一张卡的宽度，不画任何东西）。
+    /// `key` only makes the id: the app's bundle id in the live zone, `"folder"` among the pinned folders.
     ///
     /// 纯渲染物：不进 `liveOrderIDs` / `appKeyByChipID`（顺序层记住幽灵 id 会为它留缺席锚点），
     /// 不上报 `ChipFramePreferenceKey`（`chipFrames` 是落点判定 `StripBlockLanding` 自己的输入，
-    /// 空档进去就会自我锚定、指针一动就抖），也不上报悬停帧、不挂菜单和手势。注入点在
-    /// `makeProjection` 的顺序层与多屏过滤**之后**（同多屏过滤的规矩）。
+    /// 空档进去就会自我锚定、指针一动就抖）和 `FolderChipFramePreferenceKey`，也不上报悬停帧、
+    /// 不挂菜单和手势。注入点在 `makeProjection` 的顺序层与多屏过滤**之后**（同多屏过滤的规矩）。
     ///
     /// 不画半透明图标副本：系统拖放期间 macOS 自己已经在光标下画着那个应用的图标，
     /// 再画一份就是两个图标；原生 Dock 同样是「系统拖影 + 空档」。
-    case externalDropGhost(bundleID: String)
+    case externalDropGhost(key: String)
 
     var id: String {
         switch self {
@@ -47,7 +48,7 @@ enum StripEntry: Identifiable, Hashable {
         case .shelf: return "shelf"
         case .trash: return "trash"
         case let .divider(id): return id
-        case let .externalDropGhost(bid): return "extghost-\(bid)"
+        case let .externalDropGhost(key): return "extghost-\(key)"
         }
     }
 }

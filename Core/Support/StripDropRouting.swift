@@ -45,6 +45,13 @@ enum StripDropRouting {
     ///     的唯一落点——首个 chip 整段会先被判成 `.moveInto`，不留这段就永远插不到最前面。
     ///   - tailSlack: 最后一个文件夹右侧仍算文件夹区的余量（有中转格且没有文件夹时挂在中转格
     ///     右侧，覆盖「第一次拖目录进来固定」的空区场景）。
+    ///   - pinEdgeFraction: the share of each chip's width, on both sides, that pins beside the chip
+    ///     instead of moving into it. `0` keeps the whole chip a move-into target; a folders-only
+    ///     drag (`dragPinsFolders`) passes `folderPinEdgeFraction`, or the only way to open the
+    ///     make-way gap between two chips would be their 2pt spacing.
+    ///   - openGap: the make-way gap currently open in the folder zone. It reports no frame, so at
+    ///     either end of the zone its width has to be added to the slack — otherwise the pointer
+    ///     resting inside the gap is outside the zone, the gap closes, and the two states loop.
     static func route(location: CGPoint,
                       isApplicationDrag: Bool,
                       isTrashItemDrag: Bool,
@@ -53,7 +60,9 @@ enum StripDropRouting {
                       folderFrames: [String: CGRect],
                       orderedPaths: [String],
                       headSlack: CGFloat = defaultHeadSlack,
-                      tailSlack: CGFloat = 24) -> Target {
+                      tailSlack: CGFloat = 24,
+                      pinEdgeFraction: CGFloat = 0,
+                      openGap: OpenFolderGap? = nil) -> Target {
         // Trash items are refused everywhere on the bar, the Trash chip and app landing included.
         if isTrashItemDrag { return .none }
 
@@ -73,19 +82,22 @@ enum StripDropRouting {
             if location.x <= shelfFrame.maxX { return .stash }
         } else {
             guard let zoneMinX = frames.map(\.minX).min() else { return .none }
-            if location.x < zoneMinX - headSlack { return .none }
+            let headGap = openGap.map { $0.insertIndex <= 0 ? $0.width : 0 } ?? 0
+            if location.x < zoneMinX - headSlack - headGap { return .none }
         }
 
         // onDrop 覆盖整条任务条的有效高度，路由保持既有的纯水平语义；不能用 contains，
         // 否则 chip 上下留白会意外退回 pin。
         if let path = orderedPaths.first(where: { path in
             guard let frame = folderFrames["folder-" + path] else { return false }
-            return location.x >= frame.minX && location.x <= frame.maxX
+            let edge = frame.width * min(max(pinEdgeFraction, 0), 0.5)
+            return location.x >= frame.minX + edge && location.x <= frame.maxX - edge
         }) {
             return .moveInto(path: path)
         }
 
-        guard let zoneMaxX = (frames.map(\.maxX).max() ?? shelfFrame?.maxX).map({ $0 + tailSlack }) else {
+        let tailGap = openGap.map { $0.insertIndex >= frames.count ? $0.width : 0 } ?? 0
+        guard let zoneMaxX = (frames.map(\.maxX).max() ?? shelfFrame?.maxX).map({ $0 + tailSlack + tailGap }) else {
             return .none
         }
         guard location.x <= zoneMaxX else { return .none }
@@ -99,7 +111,7 @@ enum StripDropRouting {
     }
 }
 
-/// 从访达拖应用进条时、悬停期让位让出来的那个空档。
+/// 从访达拖应用或文件夹进条时、悬停期让位让出来的那个空档。
 ///
 /// **存的是插入序号，不是「哪张卡的左/右」**，这一点是载重的。空档一插进去，它右边所有
 /// 卡片都往右挪了一张卡的宽度；下一次 `dropUpdated` 量到的就是挪过之后的帧。指针停在空档
@@ -108,12 +120,48 @@ enum StripDropRouting {
 /// 让一串「位置没变却重算整条任务条」的写入漏过去（这仓库实测过「1.2 秒拖动 46 次整条重算」）。
 /// 折成序号，两种说法归一，门控才真的挡得住。
 struct StripDropGhost: Equatable {
-    let bundleID: String
-    /// 空档插在 live 区显示序的第几位。
+    enum Zone: Equatable {
+        /// An app dragged in: the gap opens among the live-zone cards.
+        case live(bundleID: String)
+        /// A folder dragged in: the gap opens among the pinned folders.
+        case folder
+    }
+    let zone: Zone
+    /// 空档插在所在区显示序的第几位（live 区的卡 / 固定文件夹，都不含中转格）。
     let insertIndex: Int
 }
 
 extension StripDropRouting {
+    /// Share of a folder chip's width, on each side, that pins beside it while a folder is dragged.
+    static let folderPinEdgeFraction: CGFloat = 0.25
+
+    /// The make-way gap open among the pinned folders, as `route` needs it.
+    struct OpenFolderGap: Equatable {
+        /// Position among the pinned folders (the shelf is not counted).
+        let insertIndex: Int
+        /// Layout width the gap adds: one card plus one chip spacing.
+        let width: CGFloat
+    }
+
+    /// Whether a drag gets the folder-pin behaviour (gap, pin edges, no badge): every item that is
+    /// not an app is a directory. One plain file among them keeps the old routing for the whole
+    /// drag — on a chip's edge it would otherwise be left behind while the folders pin.
+    static func dragPinsFolders(nonApplicationItemsAreDirectories: [Bool]) -> Bool {
+        !nonApplicationItemsAreDirectories.isEmpty && nonApplicationItemsAreDirectories.allSatisfy { $0 }
+    }
+
+    /// The folder-zone gap for a hover target (pure, unit-tested). A pin target opens it at its
+    /// index; a move-into target keeps the gap where it is — closing it would slide the chips back
+    /// under a pointer that has not moved and hand the drop to the neighbour; anything else closes it.
+    static func folderGhostIndex(current: Int?, target: Target, pinsFolder: Bool) -> Int? {
+        guard pinsFolder else { return nil }
+        switch target {
+        case let .pin(insertIndex): return insertIndex
+        case .moveInto: return current
+        case .stash, .trash, .keepApp, .none: return nil
+        }
+    }
+
     /// `StripBlockLanding` 的（锚点卡, 左/右）折成插入序号（纯函数，进单测）。
     /// 锚点不在当前显示序里（那张卡刚消失 / 被换屏过滤掉）→ 落末尾，绝不返回越界下标。
     static func ghostInsertionIndex(orderedIDs: [String], targetID: String?, after: Bool) -> Int {
@@ -124,12 +172,19 @@ extension StripDropRouting {
     }
 
     /// Whether the strip answers a drag with the generic operation (no cursor badge) instead of
-    /// SwiftUI's `.copy` (the green plus). Only over the Trash, where Tungsten Edge moves the file
-    /// itself: `.copy` reads as "a copy goes in", and `.move` is never an option — it tells the source
+    /// SwiftUI's `.copy` (the green plus). Over the Trash, where Tungsten Edge moves the file
+    /// itself, and over a pin slot while a folder is dragged, where nothing is copied at all:
+    /// `.copy` reads as "a copy goes in", and `.move` is never an option — it tells the source
     /// the item left, and Finder deletes an app it dragged in. A source that does not offer generic
     /// (e.g. ⌥ held) keeps `.copy`.
-    static func usesGenericOperation(hoveredTarget: Target?, proposedIsCopy: Bool, sourceAllowsGeneric: Bool) -> Bool {
-        proposedIsCopy && sourceAllowsGeneric && hoveredTarget == .trash
+    static func usesGenericOperation(hoveredTarget: Target?, pinsFolder: Bool,
+                                     proposedIsCopy: Bool, sourceAllowsGeneric: Bool) -> Bool {
+        guard proposedIsCopy, sourceAllowsGeneric else { return false }
+        switch hoveredTarget {
+        case .trash: return true
+        case .pin: return pinsFolder
+        default: return false
+        }
     }
 
     /// The URLs a drop commits. The item providers are the authority; only when **none** of them

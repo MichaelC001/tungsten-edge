@@ -20,6 +20,9 @@ struct StripFileDropDelegate: DropDelegate {
     let folderFrames: () -> [String: CGRect]
     let orderedPaths: [String]
     var headSlack: CGFloat = StripDropRouting.defaultHeadSlack
+    /// The make-way gap open among the pinned folders right now (nil = none). No default: an
+    /// omission compiles into a gap that closes under a pointer resting in it at the zone's ends.
+    let openFolderGap: StripDropRouting.OpenFolderGap?
     /// dropEntered = 悬停会话开始;dropUpdated = 会话进行中移动;performDrop/dropExited = 会话结束。
     /// 视图侧据此做「高亮只能由 dropEntered 点亮 + 拖放结束看门狗」（见 externalDropHover*）。
     let onHoverBegan: (StripDropRouting.Target) -> Void
@@ -29,9 +32,9 @@ struct StripFileDropDelegate: DropDelegate {
     let onCommit: (StripDropRouting.Target, [URL]) -> Void
     /// 拖进来的应用 bundle + 落点 x（"strip" 空间）。见 `handleExternalApplicationDrop`。
     let onCommitApplications: ([URL], CGPoint) -> Void
-    /// 悬停期的让位空档：拖的是应用时给 (bundleID, 落点)，否则 `nil`（收空档）。
+    /// 悬停期的让位空档：(悬停目标, 拖的应用的 bundleID 或 nil, 这次拖放是不是只有文件夹, 落点)。
     /// 视图侧负责把它折成锚点并做变化门控——**这里每 ~50ms 就会调一次**。
-    let onGhostMoved: (String?, CGPoint) -> Void
+    let onGhostMoved: (StripDropRouting.Target, String?, Bool, CGPoint) -> Void
     /// 临时诊断用：此刻空档插在第几位（nil = 没有空档）、冻住的条宽、条的实际屏幕矩形。
     /// 后两个是用来验证「冻宽到底有没有生效」的——查清「加号闪烁」后删。
     let currentGhostIndex: () -> Int?
@@ -61,7 +64,15 @@ struct StripFileDropDelegate: DropDelegate {
                                trashFrame: trashFrame(),
                                folderFrames: folderFrames(),
                                orderedPaths: orderedPaths,
-                               headSlack: headSlack)
+                               headSlack: headSlack,
+                               pinEdgeFraction: DragPasteboardInspector.pinsFolders()
+                                   ? StripDropRouting.folderPinEdgeFraction : 0,
+                               openGap: openFolderGap)
+    }
+
+    private func reportGhost(_ target: StripDropRouting.Target, _ info: DropInfo) {
+        onGhostMoved(target, DragPasteboardInspector.applicationBundleID(),
+                     DragPasteboardInspector.pinsFolders(), info.location)
     }
 
     func validateDrop(info: DropInfo) -> Bool {
@@ -73,7 +84,7 @@ struct StripFileDropDelegate: DropDelegate {
         Self.hoveredTarget = target
         trace("entered", info, target: target)
         onHoverBegan(target)
-        onGhostMoved(DragPasteboardInspector.applicationBundleID(), info.location)
+        reportGhost(target, info)
     }
 
     /// Stays `.copy` over the Trash too: the badge-free answer is `StripDropBadgeOverlay`'s.
@@ -82,7 +93,7 @@ struct StripFileDropDelegate: DropDelegate {
         Self.hoveredTarget = target
         trace("updated", info, target: target)
         onHoverMoved(target)
-        onGhostMoved(DragPasteboardInspector.applicationBundleID(), info.location)
+        reportGhost(target, info)
         return DropProposal(operation: target == .none ? .forbidden : .copy)
     }
 
@@ -113,8 +124,15 @@ struct StripFileDropDelegate: DropDelegate {
         Self.hoveredTarget = nil
         trace("perform", info, target: target)
         // 落定即灭高亮,同步清（系统在这之后仍可能补发孤立 dropUpdated,已被门控忽略）。
-        // 传 true：空档要留到真图标进投影，由 `keepDroppedApplications` 收（外加兜底 Timer）。
-        onHoverEnded(true)
+        // 传 true：空档要留到真图标进投影，由 `keepDroppedApplications` / `handleExternalDrop` 的
+        // `.pin` 收（外加兜底 Timer）。A folder dropped *into* a chip fills no gap: close it now.
+        let fillsGap: Bool
+        switch target {
+        case .keepApp: fillsGap = true
+        case .pin: fillsGap = DragPasteboardInspector.pinsFolders()
+        default: fillsGap = false
+        }
+        onHoverEnded(fillsGap)
         guard target != .none else { return false }
         let providers = info.itemProviders(for: [UTType.fileURL])
         guard !providers.isEmpty else { return false }
@@ -174,6 +192,8 @@ struct StripFileDropDelegate: DropDelegate {
             let applicationBundleID: String?
             /// File URLs only, Trash items included (the caller filters them).
             let draggedURLs: [URL]
+            /// `StripDropRouting.dragPinsFolders` over the non-app items. Read from disk once per session.
+            let pinsFolders: Bool
         }
         private static var session: Session?
 
@@ -191,6 +211,12 @@ struct StripFileDropDelegate: DropDelegate {
 
         static func containsOnlyTrashItems() -> Bool {
             currentSession().containsOnlyTrashItems
+        }
+
+        /// Whether the drag is folders only, so the folder zone pins it: that is what opens the
+        /// make-way gap, splits a chip into pin edges and a move-into centre, and drops the badge.
+        static func pinsFolders() -> Bool {
+            currentSession().pinsFolders
         }
 
         /// The dragged file URLs, read synchronously. Readable only while the session is alive.
@@ -216,7 +242,11 @@ struct StripFileDropDelegate: DropDelegate {
                 containsOnlyTrashItems: !dragged.isEmpty && urls.isEmpty,
                 containsApplication: !apps.isEmpty,
                 applicationBundleID: apps.first.flatMap { Bundle(url: $0)?.bundleIdentifier },
-                draggedURLs: dragged.filter(\.isFileURL)
+                draggedURLs: dragged.filter(\.isFileURL),
+                pinsFolders: StripDropRouting.dragPinsFolders(
+                    nonApplicationItemsAreDirectories: urls.filter { !isApplication($0) }.map { url in
+                        url.isFileURL && ((try? url.resourceValues(forKeys: [.isDirectoryKey]))?.isDirectory ?? false)
+                    })
             )
             session = next
             return next
@@ -244,7 +274,8 @@ struct StripFileDropDelegate: DropDelegate {
     }
 }
 
-/// Removes the cursor badge over the Trash chip; everything else about the drop stays SwiftUI's.
+/// Removes the cursor badge over the Trash chip and a folder's pin slot; everything else about the
+/// drop stays SwiftUI's.
 ///
 /// SwiftUI's `.onDrop` only offers `.copy` (badge) / `.move` / `.forbidden`, and its real AppKit
 /// destination is a private subview spanning the strip — `NSWindow`'s dragging methods are never
@@ -317,6 +348,7 @@ struct StripDropBadgeOverlay: NSViewRepresentable {
         private func answer(_ proposed: NSDragOperation, _ sender: NSDraggingInfo) -> NSDragOperation {
             let generic = StripDropRouting.usesGenericOperation(
                 hoveredTarget: StripFileDropDelegate.hoveredTarget,
+                pinsFolder: StripFileDropDelegate.DragPasteboardInspector.pinsFolders(),
                 proposedIsCopy: proposed == .copy,
                 sourceAllowsGeneric: sender.draggingSourceOperationMask.contains(.generic)
             )

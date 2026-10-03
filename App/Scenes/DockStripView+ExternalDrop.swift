@@ -6,22 +6,6 @@ import UniformTypeIdentifiers
 // DockStripView · 外部文件拖入任务条：高亮、悬停目标、落下分发。
 // 2026-09-05 从 DockStripView.swift 按 extension 拆出，只搬不改。
 extension DockStripView {
-    /// 任务条整条高亮：**只**服务「外部拖目录悬停文件夹区（pin）」。
-    ///
-    /// **抽屉图标拖回任务条不再点亮**（owner 2026-08-20，对齐原生程序坞）：原生拖图标进 Dock 时
-    /// Dock 本身不描边也不发光，反馈全部由图标让位表达——而我们已经有让位了
-    /// （`updateDrawerToStripConvert` 一进任务条就把卡转正、邻居实时让开），而且它的判定框比
-    /// 这圈高亮的判定框（正好是可见条矩形）还大一圈，两者信息完全重复。
-    /// 外部拖目录那条路径没有让位反馈，整条高亮是它唯一的「能放这儿」信号，所以留着。
-    /// **拖应用进条时条的边缘不做任何变化**（owner 2026-09-08：「直接把任务条的边缘让他不要有变化」）。
-    /// 拖应用已经有让位空档做反馈，整条高亮是重复信息；而它恰恰是最扎眼的那个闪烁面——
-    /// 边缘不随状态变化，就不可能闪，这一条不依赖悬停进出是否彻底清零。
-    /// 外部拖**文件夹**钉住那条路径仍然点亮：它没有让位反馈，整条高亮是它唯一的「能放这儿」信号。
-    var stripHighlighted: Bool {
-        if case .pin = externalDropTarget { return true }
-        return false
-    }
-
     /// 外部拖入高亮的三个生命周期入口 + 看门狗。`externalDropTarget` 只在这一组里改。
     /// dropEntered：一次悬停会话开始 → 允许点亮。
     func externalDropHoverBegan(_ target: StripDropRouting.Target) {
@@ -31,6 +15,9 @@ extension DockStripView {
         if frozenStripWidth == nil, stripRootScreenRect != .zero {
             frozenStripWidth = stripRootScreenRect.width
         }
+        // A gap still waiting for the previous drop's landing now belongs to this session.
+        externalDropGhostTimeout?.invalidate()
+        externalDropGhostTimeout = nil
         setExternalDropTarget(target)
     }
 
@@ -66,11 +53,13 @@ extension DockStripView {
         }
     }
 
-    /// 悬停期更新让位空档。`bundleID == nil`（不是应用拖放 / bundle 读不出 id）→ 收空档。
+    /// 悬停期更新让位空档。应用拖放（`bundleID` 非空）→ live 区空档；带文件夹的拖放 →
+    /// 固定文件夹区空档（`StripDropRouting.folderGhostIndex`）；两者都不是 → 收空档。
     ///
     /// **变化门控是这个函数存在的理由**：`dropUpdated` 每 ~50ms 调一次，而写一次 `@State`
     /// 就是整条任务条重算一遍（实测过「1.2 秒拖动 46 次整条重算」）。锚点没变就一个字都不写。
-    func updateExternalDropGhost(bundleID: String?, atX x: CGFloat) {
+    func updateExternalDropGhost(target: StripDropRouting.Target, bundleID: String?,
+                                 pinsFolder: Bool, atX x: CGFloat) {
         // **门控与整条高亮同源，理由也同一条**：成功 drop 之后 ~330ms 系统会补发一次孤立的
         // `dropUpdated`。没有这道闸，那一次会把落定时刚收掉的空档重新开出来，而且顺手作废
         // 兜底 Timer——条上从此留一个永远不走的空位（2026-09-08 owner 实测，拖「查找」进条后
@@ -78,7 +67,10 @@ extension DockStripView {
         // 交接的空档抹掉，所以这里是直接返回，不是清空。
         guard externalDropHoverActive else { return }
         guard let bundleID else {
-            if externalDropGhost != nil { clearExternalDropGhost() }
+            let current = externalDropGhost.flatMap { $0.zone == .folder ? $0.insertIndex : nil }
+            let index = StripDropRouting.folderGhostIndex(current: current, target: target,
+                                                          pinsFolder: pinsFolder)
+            setExternalDropGhost(index.map { StripDropGhost(zone: .folder, insertIndex: $0) })
             return
         }
         // 落点判定与抽屉转正共用一份（`StripBlockLanding`）。空档不上报卡帧，所以 `chipFrames`
@@ -89,7 +81,12 @@ extension DockStripView {
         let index = StripDropRouting.ghostInsertionIndex(orderedIDs: orderedLiveIDs,
                                                          targetID: target?.id,
                                                          after: target?.after ?? false)
-        let next = StripDropGhost(bundleID: bundleID, insertIndex: index)
+        setExternalDropGhost(StripDropGhost(zone: .live(bundleID: bundleID), insertIndex: index))
+    }
+
+    /// The change gate. Closing keeps the frozen width: the hover session is still running, and
+    /// unfreezing mid-session re-centres the bar under the pointer (see `frozenStripWidth`).
+    private func setExternalDropGhost(_ next: StripDropGhost?) {
         guard next != externalDropGhost else { return }
         externalDropGhostTimeout?.invalidate()
         externalDropGhostTimeout = nil
@@ -162,6 +159,10 @@ extension DockStripView {
                 pinnedFolderStore.insert(url.path, at: index)
                 index += 1
             }
+            // The gap leaves in the same update that brings the chips in, so the neighbours do not
+            // move. An app's gap (mixed drag) is not ours to close — `keepDroppedApplications` does —
+            // and neither is the gap of a drag that began hovering before this commit arrived.
+            if externalDropGhost?.zone == .folder, !externalDropHoverActive { clearExternalDropGhost() }
         case .keepApp, .none:
             break
         }
