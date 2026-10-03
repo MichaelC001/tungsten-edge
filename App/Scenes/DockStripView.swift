@@ -507,16 +507,19 @@ struct DockStripView: View {
                                   after: point.x > hit.value.midX)
     }
 
-    /// 固定区右边界（"strip" 局部坐标）：中转格 + 所有文件夹 chip 里最靠右的那个的右缘。
-    /// 拖动中的 chip 本身位置不受隐藏影响（opacity 不改变布局），帧照常报,不需要排除自身。
+    /// 固定文件夹区左边界（"strip" 局部坐标）：最靠左那个文件夹 chip 的左缘。
+    /// 拖动中的 chip 本身位置不受隐藏影响（opacity 不改变布局），帧照常报,不需要排除自身；
+    /// 拖出条外占位收拢后它的帧才消失，那时的边界见 `FolderChipDropZone.zoneMinX`。
     ///
-    /// nil = 边界算不出来（首帧未测量，或中转格关着且暂无文件夹帧）。**不能把 nil 当成 0 或
-    /// 当成"没有固定区"**：拖文件夹时固定区必然存在，边界缺失只说明还没量到，此时若判成
-    /// 窗口区，原位松手会误删固定并打开 Finder。调用方遇到 nil 直接不装 geometry。
-    private var folderZoneMaxX: CGFloat? {
-        if let framesMaxX = folderChipFrames.values.map(\.maxX).max() { return framesMaxX }
-        guard settingsStore.showShelf, shelfFrame != .zero else { return nil }
-        return shelfFrame.maxX
+    /// nil = 边界算不出来（首帧未测量）。**不能把 nil 当成 0 或当成"没有固定区"**：拖文件夹时
+    /// 固定区必然存在，边界缺失只说明还没量到，此时若判成窗口区，原位松手会误删固定并打开 Finder。
+    /// 调用方遇到 nil 直接不装 geometry。
+    private var folderZoneMinX: CGFloat? {
+        FolderChipDropZone.zoneMinX(
+            folderMinX: folderChipFrames.values.map(\.minX).min(),
+            draggedSlotCollapsed: ownsActiveDrag && dragController.stripSlotCollapsed,
+            trashMinX: settingsStore.showTrash && trashFrame != .zero ? trashFrame.minX : nil,
+            stripWidth: stripRootScreenRect.width)
     }
 
     /// 文件夹 chip 拖动中的实时落点分类,写进 DragController 供载体视图（跨 SwiftUI 树）读取做淡出。
@@ -526,14 +529,13 @@ struct DockStripView: View {
               stripRootScreenRect != .zero,
               // 边界没量到就别装 geometry：DragController 对 nil geometry 回退 .folderZone（原位无动作），
               // 那是这里唯一安全的默认。
-              let folderZoneMaxX else {
+              let folderZoneMinX else {
             dragController.setFolderDragZone(nil)
             dragController.setFolderDropGeometry(nil)
             return
         }
         let geometry = FolderChipDropGeometry(stripScreenRect: stripRootScreenRect,
-                                              folderZoneMaxX: folderZoneMaxX,
-                                              trashMinX: settingsStore.showTrash && trashFrame != .zero ? trashFrame.minX : nil)
+                                              folderZoneMinX: folderZoneMinX)
         dragController.setFolderDropGeometry(geometry)
         dragController.setFolderDragZone(geometry.classify(screenPoint: dragController.globalLocation))
     }

@@ -1,102 +1,75 @@
 import XCTest
 
 /// 固定文件夹 chip 拖动松手落点分类（FolderChipDropZone.classify）。
-/// 布局假定："strip" 局部坐标,可见区域 0..400 x 0..92,固定区右边界在 x=200。
+/// 布局假定："strip" 局部坐标,可见区域 0..400 x 0..92；固定区（含废纸篓）占右端 200..400，
+/// 它左边是窗口区和消息区。
 final class FolderChipDropZoneTests: XCTestCase {
-    func testTrashIsNoOpButOutsideStripStillWins() {
-        let geometry = FolderChipDropGeometry(stripScreenRect: CGRect(x: 100, y: 500, width: 400, height: 92),
-                                              folderZoneMaxX: 200, trashMinX: 320)
-        XCTAssertEqual(geometry.classify(screenPoint: CGPoint(x: 440, y: 550)), .folderZone)
-        XCTAssertEqual(geometry.classify(screenPoint: CGPoint(x: 501, y: 550)), .outsideStrip)
-        XCTAssertEqual(geometry.classify(screenPoint: CGPoint(x: 440, y: 600)), .outsideStrip)
-        XCTAssertEqual(geometry.classify(screenPoint: CGPoint(x: 400, y: 550)), .liveZone)
-    }
     private let stripVisibleRect = CGRect(x: 0, y: 0, width: 400, height: 92)
-    private let folderZoneMaxX: CGFloat = 200
+    private let folderZoneMinX: CGFloat = 200
+    private let screenRect = CGRect(x: 100, y: 500, width: 400, height: 92)
 
-    func testPointWithinFolderZoneClassifiesAsFolderZone() {
-        let zone = FolderChipDropZone.classify(point: CGPoint(x: 100, y: 40),
-                                               stripVisibleRect: stripVisibleRect,
-                                               folderZoneMaxX: folderZoneMaxX, trashMinX: nil)
-        XCTAssertEqual(zone, .folderZone)
+    private func classify(_ x: CGFloat, _ y: CGFloat = 40) -> FolderChipDropZone {
+        FolderChipDropZone.classify(point: CGPoint(x: x, y: y), stripVisibleRect: stripVisibleRect,
+                                    folderZoneMinX: folderZoneMinX)
     }
 
-    func testPointRightOfFolderZoneButInsideStripClassifiesAsLiveZone() {
-        let zone = FolderChipDropZone.classify(point: CGPoint(x: 300, y: 40),
-                                               stripVisibleRect: stripVisibleRect,
-                                               folderZoneMaxX: folderZoneMaxX, trashMinX: nil)
-        XCTAssertEqual(zone, .liveZone)
+    func testEverythingFromTheZoneEdgeToTheBarEndIsFolderZone() {
+        // The Trash is the zone's last cell, so a release over it is a no-op too.
+        XCTAssertEqual(classify(200), .folderZone)
+        XCTAssertEqual(classify(300), .folderZone)
+        XCTAssertEqual(classify(399.9), .folderZone)
     }
 
-    func testPointOutsideStripHorizontallyClassifiesAsOutsideStrip() {
-        let left = FolderChipDropZone.classify(point: CGPoint(x: -10, y: 40),
-                                               stripVisibleRect: stripVisibleRect,
-                                               folderZoneMaxX: folderZoneMaxX, trashMinX: nil)
-        let right = FolderChipDropZone.classify(point: CGPoint(x: 410, y: 40),
-                                                stripVisibleRect: stripVisibleRect,
-                                                folderZoneMaxX: folderZoneMaxX, trashMinX: nil)
-        XCTAssertEqual(left, .outsideStrip)
-        XCTAssertEqual(right, .outsideStrip)
+    func testLeftOfTheZoneInsideTheStripIsLiveZone() {
+        XCTAssertEqual(classify(199.9), .liveZone)
+        XCTAssertEqual(classify(100), .liveZone)
+        XCTAssertEqual(classify(0), .liveZone)
     }
 
-    func testPointOutsideStripVerticallyClassifiesAsOutsideStrip() {
-        let above = FolderChipDropZone.classify(point: CGPoint(x: 100, y: -5),
-                                                stripVisibleRect: stripVisibleRect,
-                                                folderZoneMaxX: folderZoneMaxX, trashMinX: nil)
-        let below = FolderChipDropZone.classify(point: CGPoint(x: 100, y: 100),
-                                                stripVisibleRect: stripVisibleRect,
-                                                folderZoneMaxX: folderZoneMaxX, trashMinX: nil)
-        XCTAssertEqual(above, .outsideStrip)
-        XCTAssertEqual(below, .outsideStrip)
+    func testOutsideTheStripWinsWithNoBuffer() {
+        // owner 反馈：命中范围按可见区域算，不留大缓冲区——紧贴边界外就该判定为移出。
+        XCTAssertEqual(classify(-10), .outsideStrip)
+        XCTAssertEqual(classify(400.5), .outsideStrip)
+        XCTAssertEqual(classify(300, -5), .outsideStrip)
+        XCTAssertEqual(classify(300, 100), .outsideStrip)
     }
 
-    func testNoBufferJustOutsideStripEdgeIsOutsideStrip() {
-        // owner 反馈：命中范围按可见区域算，不留大缓冲区——紧贴边界外 1pt 就该判定为移出。
-        let zone = FolderChipDropZone.classify(point: CGPoint(x: 400.5, y: 40),
-                                               stripVisibleRect: stripVisibleRect,
-                                               folderZoneMaxX: folderZoneMaxX, trashMinX: nil)
-        XCTAssertEqual(zone, .outsideStrip)
+    func testScreenPointsConvertToStripSpace() {
+        let geometry = FolderChipDropGeometry(stripScreenRect: screenRect, folderZoneMinX: folderZoneMinX)
+        XCTAssertEqual(geometry.classify(screenPoint: CGPoint(x: 350, y: 552)), .folderZone)
+        XCTAssertEqual(geometry.classify(screenPoint: CGPoint(x: 250, y: 552)), .liveZone)
+        XCTAssertEqual(geometry.classify(screenPoint: CGPoint(x: 501, y: 552)), .outsideStrip)
+        XCTAssertEqual(geometry.classify(screenPoint: CGPoint(x: 350, y: 600)), .outsideStrip)
     }
 
-    func testExactlyOnStripEdgeIsStillInside() {
-        let zone = FolderChipDropZone.classify(point: CGPoint(x: 399.9, y: 40),
-                                               stripVisibleRect: stripVisibleRect,
-                                               folderZoneMaxX: folderZoneMaxX, trashMinX: nil)
-        XCTAssertEqual(zone, .liveZone)
+    func testZoneEdgeSurvivesTheOnlyFolderCollapsingOffTheBar() {
+        // Frames present: they win, collapsed or not.
+        XCTAssertEqual(FolderChipDropZone.zoneMinX(folderMinX: 200, draggedSlotCollapsed: false,
+                                                   trashMinX: 340, stripWidth: 400), 200)
+        XCTAssertEqual(FolderChipDropZone.zoneMinX(folderMinX: 200, draggedSlotCollapsed: true,
+                                                   trashMinX: 340, stripWidth: 400), 200)
+        // No frames and no collapse = not measured yet: no geometry, the drop is a no-op.
+        XCTAssertNil(FolderChipDropZone.zoneMinX(folderMinX: nil, draggedSlotCollapsed: false,
+                                                 trashMinX: 340, stripWidth: 400))
+        // The only folder left the bar: the zone is the Trash alone, or the bar's right edge.
+        XCTAssertEqual(FolderChipDropZone.zoneMinX(folderMinX: nil, draggedSlotCollapsed: true,
+                                                   trashMinX: 340, stripWidth: 400), 340)
+        XCTAssertEqual(FolderChipDropZone.zoneMinX(folderMinX: nil, draggedSlotCollapsed: true,
+                                                   trashMinX: nil, stripWidth: 400), 400)
     }
 
-    func testExactlyAtFolderZoneBoundaryIsFolderZone() {
-        let zone = FolderChipDropZone.classify(point: CGPoint(x: 200, y: 40),
-                                               stripVisibleRect: stripVisibleRect,
-                                               folderZoneMaxX: folderZoneMaxX, trashMinX: nil)
-        XCTAssertEqual(zone, .folderZone)
+    func testOnlyFolderDraggedOffTheBarStillUnpins() {
+        for trashMinX: CGFloat? in [340, nil] {
+            let minX = FolderChipDropZone.zoneMinX(folderMinX: nil, draggedSlotCollapsed: true,
+                                                   trashMinX: trashMinX, stripWidth: 400)!
+            let geometry = FolderChipDropGeometry(stripScreenRect: screenRect, folderZoneMinX: minX)
+            XCTAssertEqual(geometry.classify(screenPoint: CGPoint(x: 300, y: 700)), .outsideStrip)
+            XCTAssertEqual(geometry.classify(screenPoint: CGPoint(x: 250, y: 552)), .liveZone)
+        }
     }
 
-    func testJustPastFolderZoneBoundaryIsLiveZone() {
-        let zone = FolderChipDropZone.classify(point: CGPoint(x: 200.1, y: 40),
-                                               stripVisibleRect: stripVisibleRect,
-                                               folderZoneMaxX: folderZoneMaxX, trashMinX: nil)
-        XCTAssertEqual(zone, .liveZone)
-    }
-
-    func testScreenPointWithinFolderZoneClassifiesAsFolderZone() {
-        let geometry = FolderChipDropGeometry(stripScreenRect: CGRect(x: 100, y: 500, width: 400, height: 92),
-                                              folderZoneMaxX: folderZoneMaxX, trashMinX: nil)
-        let zone = geometry.classify(screenPoint: CGPoint(x: 250, y: 552))
-        XCTAssertEqual(zone, .folderZone)
-    }
-
-    func testScreenPointWithinLiveZoneClassifiesAsLiveZone() {
-        let geometry = FolderChipDropGeometry(stripScreenRect: CGRect(x: 100, y: 500, width: 400, height: 92),
-                                              folderZoneMaxX: folderZoneMaxX, trashMinX: nil)
-        let zone = geometry.classify(screenPoint: CGPoint(x: 401, y: 552))
-        XCTAssertEqual(zone, .liveZone)
-    }
-
-    func testScreenPointJustOutsideStripClassifiesAsOutsideStrip() {
-        let geometry = FolderChipDropGeometry(stripScreenRect: CGRect(x: 100, y: 500, width: 400, height: 92),
-                                              folderZoneMaxX: folderZoneMaxX, trashMinX: nil)
-        let zone = geometry.classify(screenPoint: CGPoint(x: 501, y: 552))
-        XCTAssertEqual(zone, .outsideStrip)
+    func testUnmeasuredStripIsOutside() {
+        let geometry = FolderChipDropGeometry(stripScreenRect: .zero, folderZoneMinX: folderZoneMinX)
+        XCTAssertEqual(geometry.classify(screenPoint: CGPoint(x: 350, y: 552)), .outsideStrip)
     }
 }

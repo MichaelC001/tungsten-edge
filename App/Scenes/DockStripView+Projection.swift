@@ -200,7 +200,6 @@ extension DockStripView {
             pinnedEntries.insert(.externalDropGhost(key: "folder"),
                                  at: min(max(ghost.insertIndex, 0), pinnedEntries.count))
         }
-        let folderEntries = (settingsStore.showShelf ? [StripEntry.shelf] : []) + pinnedEntries
         // 拖出即合拢（owner 2026-09-03）：条上起拖的那张卡离开了条 → 从渲染里去掉（不是透明），
         // HStack 弹簧合拢、面板缩短（`PanelCoordinator` 订阅 `stripSlotCollapsed`）。**只在渲染数组里剔**：
         // `liveOrderIDs` / `messagingIDs` 喂顺序层与区内判定的仍是全集——顺序层子集不同会把它打成缺席
@@ -211,7 +210,12 @@ extension DockStripView {
             if p.source == .folder { return StripEntry.pinnedFolder(path: p.id).id }
             return Self.stripEntryID(for: p)
         }()
-        var zones = [messaging, folderEntries, liveWithGhost, settingsStore.showTrash ? [.trash] : []]
+        // The shelf is the last cell of the pinned-app (messaging) zone and shares its divider.
+        // Folders sit at the bar's tail in one zone with the Trash, as on the native Dock: no
+        // divider between them.
+        let headEntries = messaging + (settingsStore.showShelf ? [StripEntry.shelf] : [])
+        let tailEntries = pinnedEntries + (settingsStore.showTrash ? [StripEntry.trash] : [])
+        var zones = [headEntries, liveWithGhost, tailEntries]
             .map { zone in zone.filter { $0.id != collapsedEntryID } }
             .filter { !$0.isEmpty }
         var entries: [StripEntry] = []

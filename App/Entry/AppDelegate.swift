@@ -48,7 +48,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     )
     /// lazy：sortOrderProvider 要引用 pinnedFolderStore（封面跟随该文件夹当前排序的第一个文件）。
     private(set) lazy var folderCoverStore = PinnedFolderCoverStore(
-        sortOrderProvider: { [pinnedFolderStore] path in pinnedFolderStore.sortOrder(for: path) }
+        sortOrderProvider: { [pinnedFolderStore] path in pinnedFolderStore.sortOrder(for: path) },
+        isUnopenedSeed: { [pinnedFolderStore] path in pinnedFolderStore.isUnopenedSeed(path) }
     )
     private var panelCoordinator: TaskbarScreenOrchestrator?
     private var windowLiftAvoidanceController: WindowLiftAvoidanceController?
@@ -150,6 +151,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         if isFreshInstall {
             settingsStore.seedWindowLiftEnabledForFreshInstall(lineage: installLineage)
             settingsStore.armTaskbarPerDisplaySeedForFreshInstall(lineage: installLineage)
+            pinnedFolderStore.seedDownloadsForFreshInstall(lineage: installLineage)
         }
 
         // The appearance setting is applied here and only here (`nil` = follow macOS). The frosted

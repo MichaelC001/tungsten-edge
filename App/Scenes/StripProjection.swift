@@ -17,13 +17,12 @@ enum StripEntry: Identifiable, Hashable {
     /// id 恒为 "app-\(bid)"——与 AppTracker rebuildSnapshot() 的无窗口 fallback token 同串，
     /// 是退出↔占位切换时 live 序连续的命门。
     case keptApp(bundleID: String)
-    /// 固定文件夹区的一格（消息区右侧、窗口区左侧）。path 即身份。
+    /// 固定文件夹区的一格（窗口区右侧、紧挨废纸篓左边，与废纸篓同一区、中间无分割线）。path 即身份。
     case pinnedFolder(path: String)
-    /// 中转格：文件夹区固定头位的暂存格（不可拖拽,常驻——它也是文件夹区永不为空的保证,
-    /// 让「拖目录进来固定」在还没固定过任何文件夹时就有落区）。
+    /// 中转格：固定应用区（消息区）最右一格的暂存格，与该区同组、共用其后的分割线；不可拖拽。
     case shelf
     case trash
-    /// Visual separator between zones. 现在最多两条（消息|文件夹、文件夹|窗口），id 必须唯一。
+    /// Visual separator between zones. 现在最多两条（消息+中转格|窗口、窗口|文件夹+废纸篓），id 必须唯一。
     case divider(id: String)
     /// 从访达拖应用或文件夹进条时、悬停期让位让出来的那个**空档**（一张卡的宽度，不画任何东西）。
     /// `key` only makes the id: the app's bundle id in the live zone, `"folder"` among the pinned folders.

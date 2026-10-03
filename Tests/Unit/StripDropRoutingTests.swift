@@ -51,12 +51,18 @@ final class StripDropRoutingTests: XCTestCase {
         XCTAssertEqual(target, .none)
     }
 
-    func testNoFoldersPinsAtZeroWithinTailSlack() {
-        // 中转格右缘 144 + 24pt 余量内 → 首次固定,插 0 位。
-        let target = StripDropRouting.route(location: CGPoint(x: 160, y: 26),
-                                            isApplicationDrag: false, isTrashItemDrag: false,
-                                            shelfFrame: shelf, trashFrame: nil, folderFrames: [:], orderedPaths: [])
-        XCTAssertEqual(target, .pin(insertIndex: 0))
+    func testNoFoldersPinsAtZeroJustLeftOfTheTrash() {
+        // No pinned folder yet: the zone is the Trash alone and its head slack is the first-pin target.
+        let trash = CGRect(x: 320, y: 0, width: 40, height: 54)
+        func route(_ x: CGFloat, trash: CGRect?) -> StripDropRouting.Target {
+            StripDropRouting.route(location: CGPoint(x: x, y: 26), isApplicationDrag: false, isTrashItemDrag: false,
+                                   shelfFrame: shelf, trashFrame: trash, folderFrames: [:], orderedPaths: [])
+        }
+        XCTAssertEqual(route(315, trash: trash), .pin(insertIndex: 0))
+        XCTAssertEqual(route(311, trash: trash), .none)
+        // The shelf no longer heads the folder zone: beside it is not a pin target.
+        XCTAssertEqual(route(160, trash: trash), .none)
+        XCTAssertEqual(route(160, trash: nil), .none)
     }
 
     func testDropOnLeftHalfOfFirstFolderMovesIntoIt() {
@@ -96,7 +102,7 @@ final class StripDropRoutingTests: XCTestCase {
     func testMissingFrameDoesNotBecomeMoveTarget() {
         let paths = ["/a", "/b"]
         let partial = ["folder-/b": CGRect(x: 212, y: 0, width: 52, height: 52)]
-        let target = StripDropRouting.route(location: CGPoint(x: 160, y: 26),
+        let target = StripDropRouting.route(location: CGPoint(x: 206, y: 26),
                                             isApplicationDrag: false, isTrashItemDrag: false,
                                             shelfFrame: shelf, trashFrame: nil, folderFrames: partial, orderedPaths: paths)
         XCTAssertEqual(target, .pin(insertIndex: 0))
@@ -327,15 +333,28 @@ final class StripDropRoutingTests: XCTestCase {
         }
     }
 
-    func testFirstPinGapNextToTheShelfStaysOpen() {
-        // No folders yet: the gap sits right of the shelf (144) and is wider than the 24pt tail slack.
+    func testFirstPinGapNextToTheTrashStaysOpen() {
+        // No folders yet: the gap opens left of the Trash (already pushed to 300) and is wider
+        // than the head slack.
+        let trash = CGRect(x: 300, y: 0, width: 40, height: 54)
         let openGap = StripDropRouting.OpenFolderGap(insertIndex: 0, width: 60)
-        for x: CGFloat in [150, 170, 190, 204] {
+        for x: CGFloat in [234, 260, 299] {
             XCTAssertEqual(
                 StripDropRouting.route(location: CGPoint(x: x, y: 26), isApplicationDrag: false, isTrashItemDrag: false,
-                                       shelfFrame: shelf, trashFrame: nil, folderFrames: [:], orderedPaths: [],
+                                       shelfFrame: shelf, trashFrame: trash, folderFrames: [:], orderedPaths: [],
                                        pinEdgeFraction: edge, openGap: openGap),
                 .pin(insertIndex: 0), "x=\(x)")
+        }
+    }
+
+    /// The shelf lives in the pinned-app zone: its whole width stashes, folder drag or not.
+    func testShelfStashesAcrossItsWholeWidthEvenForAFolderDrag() {
+        for x in [shelf.minX, shelf.midX, shelf.maxX] {
+            XCTAssertEqual(
+                StripDropRouting.route(location: CGPoint(x: x, y: 26), isApplicationDrag: false, isTrashItemDrag: false,
+                                       shelfFrame: shelf, trashFrame: nil, folderFrames: frames(["/a"], startX: 300),
+                                       orderedPaths: ["/a"], pinEdgeFraction: StripDropRouting.folderPinEdgeFraction),
+                .stash, "x=\(x)")
         }
     }
 

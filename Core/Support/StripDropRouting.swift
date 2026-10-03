@@ -41,10 +41,11 @@ enum StripDropRouting {
     ///     旧帧会一直留着，关掉后落在原位置仍会误判成 `.stash`。
     ///   - folderFrames: 文件夹 chip 帧（键 = StripEntry id，即 "folder-<path>"）。
     ///   - orderedPaths: 当前固定文件夹显示序（PinnedFolderStore.folderPaths）。
-    ///   - headSlack: 第一个文件夹**左侧**仍算文件夹区的余量。没有中转格时它是「插到第 0 位」
-    ///     的唯一落点——首个 chip 整段会先被判成 `.moveInto`，不留这段就永远插不到最前面。
-    ///   - tailSlack: 最后一个文件夹右侧仍算文件夹区的余量（有中转格且没有文件夹时挂在中转格
-    ///     右侧，覆盖「第一次拖目录进来固定」的空区场景）。
+    ///   - headSlack: 第一个文件夹**左侧**仍算文件夹区的余量。它是「插到第 0 位」的唯一落点——
+    ///     首个 chip 整段会先被判成 `.moveInto`，不留这段就永远插不到最前面。还没有文件夹时
+    ///     它挂在废纸篓左侧，是第一次固定的落点。
+    ///   - tailSlack: 最后一个文件夹右侧仍算文件夹区的余量。The Trash, when shown, sits right
+    ///     after the zone and wins from its left edge on, so the slack only exists without it.
     ///   - pinEdgeFraction: the share of each chip's width, on both sides, that pins beside the chip
     ///     instead of moving into it. `0` keeps the whole chip a move-into target; a folders-only
     ///     drag (`dragPinsFolders`) passes `folderPinEdgeFraction`, or the only way to open the
@@ -72,19 +73,21 @@ enum StripDropRouting {
 
         if let trashFrame, trashFrame != .zero, location.x >= trashFrame.minX { return .trash }
 
-        let frames = orderedPaths.compactMap { folderFrames["folder-" + $0] }
-
-        // 区左边界：有中转格就是它的左缘（并且落在它身上 = 暂存）；没有就退到首个文件夹
-        // 左侧的 headSlack。两者都没有 → 固定区根本不存在，整条拒绝。
+        // The shelf is its own target, away from the folders (last cell of the pinned-app zone).
         if let shelfFrame {
             guard shelfFrame != .zero else { return .none }   // 中转格开着但帧未就绪（首帧）不接
-            if location.x < shelfFrame.minX { return .none }
-            if location.x <= shelfFrame.maxX { return .stash }
-        } else {
-            guard let zoneMinX = frames.map(\.minX).min() else { return .none }
-            let headGap = openGap.map { $0.insertIndex <= 0 ? $0.width : 0 } ?? 0
-            if location.x < zoneMinX - headSlack - headGap { return .none }
+            if location.x >= shelfFrame.minX, location.x <= shelfFrame.maxX { return .stash }
         }
+
+        let frames = orderedPaths.compactMap { folderFrames["folder-" + $0] }
+
+        // 文件夹区左边界：首个文件夹左侧的 headSlack。还没有文件夹时退到废纸篓左缘——区里只有
+        // 废纸篓，它左边那段 headSlack 是「第一次拖目录进来固定」的唯一落点。两者都没有 →
+        // 固定区根本不存在，拒绝。
+        let trashMinX = trashFrame.flatMap { $0 != .zero ? $0.minX : nil }
+        guard let zoneMinX = frames.map(\.minX).min() ?? trashMinX else { return .none }
+        let headGap = openGap.map { $0.insertIndex <= 0 ? $0.width : 0 } ?? 0
+        if location.x < zoneMinX - headSlack - headGap { return .none }
 
         // onDrop 覆盖整条任务条的有效高度，路由保持既有的纯水平语义；不能用 contains，
         // 否则 chip 上下留白会意外退回 pin。
@@ -97,10 +100,7 @@ enum StripDropRouting {
         }
 
         let tailGap = openGap.map { $0.insertIndex >= frames.count ? $0.width : 0 } ?? 0
-        guard let zoneMaxX = (frames.map(\.maxX).max() ?? shelfFrame?.maxX).map({ $0 + tailSlack + tailGap }) else {
-            return .none
-        }
-        guard location.x <= zoneMaxX else { return .none }
+        guard location.x <= (frames.map(\.maxX).max() ?? zoneMinX) + tailSlack + tailGap else { return .none }
 
         // 插入序号 = 中点在落点左侧的文件夹个数（落在某 chip 左半边 → 插它前面）。
         let index = orderedPaths.filter { path in

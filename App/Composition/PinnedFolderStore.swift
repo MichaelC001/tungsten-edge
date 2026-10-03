@@ -7,12 +7,46 @@ final class PinnedFolderStore: ObservableObject {
     @Published private(set) var folderPaths: [String] = []
     /// 逐文件夹排序方式（normalized path → FolderSortOrder.rawValue）。缺省 = 默认排序，不落盘。
     @Published private(set) var sortOrders: [String: String] = [:]
+    /// Pinned by us, not by the user, and not opened yet: nothing may read such a folder (no cover
+    /// enumeration, no watcher), or a privacy-protected one — Downloads — raises the system's
+    /// access prompt at first launch with no user action behind it. Cleared by the first open.
+    private(set) var unopenedSeedPaths: Set<String> = []
     private let key = "pinnedFolderPaths"
     private let sortKey = "pinnedFolderSortOrders"
+    private let unopenedSeedKey = "pinnedFolderUnopenedSeeds"
 
     init() {
         folderPaths = UserDefaults.standard.stringArray(forKey: key) ?? []
         sortOrders = UserDefaults.standard.dictionary(forKey: sortKey) as? [String: String] ?? [:]
+        unopenedSeedPaths = Set(UserDefaults.standard.stringArray(forKey: unopenedSeedKey) ?? [])
+    }
+
+    /// A fresh install starts with Downloads pinned, as the native Dock does. Fresh is decided by
+    /// `InstallLineage` only (AGENTS.md): an upgrader who never pinned a folder has no key either.
+    func seedDownloadsForFreshInstall(lineage: InstallLineage) {
+        guard lineage == .pristine,
+              UserDefaults.standard.object(forKey: key) == nil,
+              let downloads = FileManager.default.urls(for: .downloadsDirectory, in: .userDomainMask).first
+        else { return }
+        // Before `add`: its publication is what makes the cover store look at the folder.
+        setUnopenedSeeds([Self.normalized(downloads.path)])
+        add(downloads.path)
+    }
+
+    func isUnopenedSeed(_ path: String) -> Bool { unopenedSeedPaths.contains(Self.normalized(path)) }
+
+    /// The user opened the folder: from here on it is read like any other. Returns whether it
+    /// was an unopened seed, so the caller knows to refresh its cover.
+    @discardableResult
+    func noteOpened(_ path: String) -> Bool {
+        guard isUnopenedSeed(path) else { return false }
+        setUnopenedSeeds(unopenedSeedPaths.subtracting([Self.normalized(path)]))
+        return true
+    }
+
+    private func setUnopenedSeeds(_ paths: Set<String>) {
+        unopenedSeedPaths = paths
+        UserDefaults.standard.set(paths.sorted(), forKey: unopenedSeedKey)
     }
 
     func contains(_ path: String) -> Bool { folderPaths.contains(Self.normalized(path)) }
@@ -54,6 +88,7 @@ final class PinnedFolderStore: ObservableObject {
     func remove(_ path: String) {
         let normalized = Self.normalized(path)
         folderPaths.removeAll { $0 == normalized }
+        if unopenedSeedPaths.contains(normalized) { setUnopenedSeeds(unopenedSeedPaths.subtracting([normalized])) }
         if sortOrders.removeValue(forKey: normalized) != nil {
             UserDefaults.standard.set(sortOrders, forKey: sortKey)
         }
