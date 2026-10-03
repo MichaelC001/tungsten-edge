@@ -435,6 +435,18 @@ final class PanelGeometryTests: XCTestCase {
         XCTAssertEqual(DrawerCapsulePaging.pose(index: 0, position: 0.999).size, 0, accuracy: 0.01)
         XCTAssertEqual(DrawerCapsulePaging.pose(index: 0, position: 1).size, 0)
         XCTAssertEqual(DrawerCapsulePaging.pose(index: 6, position: 1), DrawerCapsulePaging.restPose(slot: 3))
+        XCTAssertEqual(DrawerCapsulePaging.pose(index: 6, position: 0.5).size, DrawerCapsulePreviewMetrics.miniIconSize)
+        // New mini icons wait until their spot has emptied; the one taking the spot the fourth mini
+        // icon leaves waits longest. All of them end at full mini size.
+        XCTAssertEqual(DrawerCapsulePaging.pose(index: 7, position: DrawerCapsulePaging.fillDelay).size, 0)
+        XCTAssertEqual(DrawerCapsulePaging.pose(index: 9, position: DrawerCapsulePaging.lastFillDelay).size, 0)
+        XCTAssertGreaterThan(DrawerCapsulePaging.pose(index: 7, position: 0.5).size,
+                             DrawerCapsulePaging.pose(index: 9, position: 0.5).size)
+        XCTAssertGreaterThan(DrawerCapsulePaging.pose(index: 9, position: 0.5).size, 0)
+        for index in 7...9 {
+            XCTAssertEqual(DrawerCapsulePaging.pose(index: index, position: 1),
+                           DrawerCapsulePaging.restPose(slot: index - DrawerCapsulePreviewMetrics.appSlots))
+        }
         // Overscroll before the first page pulls the apps a little towards the mini grid.
         let pulled = DrawerCapsulePaging.pose(index: 0, position: -0.1)
         XCTAssertLessThan(pulled.size, DrawerCapsulePreviewMetrics.iconSize)

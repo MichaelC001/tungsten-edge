@@ -170,6 +170,10 @@ enum DrawerCapsulePaging {
     /// Share of a turn during which a replaced app keeps its full size before it starts to shrink,
     /// so mid-turn the cell still holds two near-even icons instead of two small ones.
     static let leaveHold: CGFloat = 0.2
+    /// Share of a turn before a new mini icon starts to grow: its spot is still held by the icon
+    /// leaving it. The last spot waits longer — the fourth mini icon crosses the grid to vacate it.
+    static let fillDelay: CGFloat = 0.3
+    static let lastFillDelay: CGFloat = 0.45
 
     /// The pose of app `index` while the capsule is at `position` pages: a straight path between
     /// its resting poses on the two neighbouring pages. Turning forward, the first three mini
@@ -198,6 +202,11 @@ enum DrawerCapsulePaging {
         case appSlots..<(2 * appSlots):
             // A mini icon growing onto an app cell settles into its full size.
             return smoothstep(t)
+        case DrawerCapsulePreviewMetrics.limit..<(DrawerCapsulePreviewMetrics.limit + appSlots):
+            // A new mini icon grows only once its spot has emptied, so it never crowds the leaver.
+            let isLastSpot = slot == DrawerCapsulePreviewMetrics.limit + appSlots - 1
+            let delay = isLastSpot ? lastFillDelay : fillDelay
+            return smoothstep((t - delay) / (1 - delay))
         default:
             return t
         }
