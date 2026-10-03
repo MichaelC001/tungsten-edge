@@ -377,6 +377,17 @@ final class PanelGeometryTests: XCTestCase {
         XCTAssertEqual(DrawerCapsulePaging.settledPage(page: 0, drag: -0.9, pageCount: 3), 0)
         // A member list that shrank under a resting page clamps back into range.
         XCTAssertEqual(DrawerCapsulePaging.settledPage(page: 5, drag: 0, pageCount: 2), 1)
+        // ...and a turn from there starts at the page actually shown, not the stale one.
+        XCTAssertEqual(DrawerCapsulePaging.settledPage(page: 5, drag: -0.5, pageCount: 2), 0)
+    }
+
+    func testCapsuleClickLandsOnThePageNearestToWhatIsShown() {
+        XCTAssertEqual(DrawerCapsulePaging.hitPage(page: 1, drag: 0, pageCount: 3), 1)
+        XCTAssertEqual(DrawerCapsulePaging.hitPage(page: 1, drag: 0.4, pageCount: 3), 1)
+        XCTAssertEqual(DrawerCapsulePaging.hitPage(page: 1, drag: 0.9, pageCount: 3), 2)
+        XCTAssertEqual(DrawerCapsulePaging.hitPage(page: 1, drag: -0.9, pageCount: 3), 0)
+        XCTAssertEqual(DrawerCapsulePaging.hitPage(page: 2, drag: 0.9, pageCount: 3), 2)
+        XCTAssertEqual(DrawerCapsulePaging.hitPage(page: 5, drag: -0.9, pageCount: 2), 0)
     }
 
     func testCapsulePagingDampsTravelPastEitherEnd() {

@@ -157,10 +157,19 @@ enum DrawerCapsulePaging {
         min(max(0, page), max(0, pageCount - 1))
     }
 
-    /// One gesture turns at most one page.
+    /// One gesture turns at most one page. The resting page is clamped first: the member list
+    /// may have shrunk under it, and the turn starts from the page actually shown.
     static func settledPage(page: Int, drag: CGFloat, pageCount: Int) -> Int {
-        guard abs(drag) > turnThreshold else { return clampedPage(page, pageCount: pageCount) }
-        return clampedPage(page + (drag > 0 ? 1 : -1), pageCount: pageCount)
+        let shown = clampedPage(page, pageCount: pageCount)
+        guard abs(drag) > turnThreshold else { return shown }
+        return clampedPage(shown + (drag > 0 ? 1 : -1), pageCount: pageCount)
+    }
+
+    /// The page a click lands on: the one nearest to what is on screen. While a trackpad gesture
+    /// holds the capsule on the next page, that page — not the resting one — takes the click.
+    static func hitPage(page: Int, drag: CGFloat, pageCount: Int) -> Int {
+        let shown = clampedPage(page, pageCount: pageCount)
+        return clampedPage(shown + Int(drag.rounded()), pageCount: pageCount)
     }
 
     /// Position in pages, with the travel beyond either end damped.

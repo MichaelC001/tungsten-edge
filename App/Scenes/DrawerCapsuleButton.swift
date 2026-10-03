@@ -75,7 +75,10 @@ struct DrawerCapsuleButton: View {
         let ids = memberIDs
         let pageCount = DrawerCapsulePaging.pageCount(memberCount: ids.count)
         let page = DrawerCapsulePaging.clampedPage(pager.page, pageCount: pageCount)
-        let apps = DrawerCapsulePaging.apps(page: page, members: ids)
+        // Clicks, hover and press follow the page nearest to what is on screen, which differs from
+        // the resting page while a trackpad gesture holds the capsule on its neighbour.
+        let hitPage = DrawerCapsulePaging.hitPage(page: pager.page, drag: pager.drag, pageCount: pageCount)
+        let apps = DrawerCapsulePaging.apps(page: hitPage, members: ids)
         return ZStack {
             DockPanelBackdrop(theme: theme,
                               cornerRadius: DockShape.panelCornerRadius * dockScale,
@@ -90,7 +93,7 @@ struct DrawerCapsuleButton: View {
                     .foregroundStyle(theme.capsuleGlyph.color)
                     .cellFeedback(hovered: hoverEnabled && hoveredCell != nil, pressed: pressedCell != nil)
             } else {
-                pagedPreview(ids: ids, pageCount: pageCount, page: page)
+                pagedPreview(ids: ids, pageCount: pageCount, page: page, hitPage: hitPage)
             }
         }
         .dockPanelRim(cornerRadius: DockShape.panelCornerRadius * dockScale,
@@ -120,7 +123,7 @@ struct DrawerCapsuleButton: View {
         // The three slots are worth their fixed places: once the pointer has left, the capsule
         // goes back to the first page.
         .onChange(of: hoveredCell == nil) { away in
-            if away { pager.scheduleReturn() } else { pager.cancelReturn() }
+            pager.pointerAway = away
         }
         // MenuHostNSView 只认右键 / Control-click，左键一律返回 nil 穿透下去，
         // 所以左键仍落到上面的格子；右键在任何一格都是钨极菜单（设置的后路入口不缩小）。
@@ -132,11 +135,11 @@ struct DrawerCapsuleButton: View {
     /// Every cell turns in place like a small drum: the page leaving rolls towards the cell's edge
     /// while it shrinks, the one arriving grows in from the opposite edge. Both stay opaque and
     /// inside the cell, so an icon is never cut in half and never out of sight.
-    private func pagedPreview(ids: [String], pageCount: Int, page: Int) -> some View {
+    private func pagedPreview(ids: [String], pageCount: Int, page: Int, hitPage: Int) -> some View {
         let position = DrawerCapsulePaging.displayedPosition(page: page, drag: pager.drag, pageCount: pageCount)
         let columns = DrawerCapsulePreviewMetrics.columns
-        let restingApps = DrawerCapsulePaging.apps(page: page, members: ids).count
-        let expandActive = { (cell: Int?) in cell.map { $0 >= restingApps } == true }
+        let hitApps = DrawerCapsulePaging.apps(page: hitPage, members: ids).count
+        let expandActive = { (cell: Int?) in cell.map { $0 >= hitApps } == true }
         return VStack(spacing: gridSpacing) {
             ForEach(0..<columns, id: \.self) { row in
                 HStack(spacing: gridSpacing) {
@@ -145,7 +148,7 @@ struct DrawerCapsuleButton: View {
                         if cell < DrawerCapsulePreviewMetrics.appSlots {
                             rollingCell(position: position, pageCount: pageCount) { index in
                                 appCell(cell, apps: DrawerCapsulePaging.apps(page: index, members: ids),
-                                        isCurrent: index == page)
+                                        isCurrent: index == hitPage)
                             }
                         } else {
                             rollingCell(position: position, pageCount: pageCount) { index in
@@ -175,7 +178,7 @@ struct DrawerCapsuleButton: View {
         .frame(width: iconSize, height: iconSize)
     }
 
-    /// Hover and press belong to the resting page only; the other pages are just passing by.
+    /// Hover and press belong to the page that takes clicks; the other pages are just passing by.
     @ViewBuilder
     private func appCell(_ index: Int, apps: [String], isCurrent: Bool) -> some View {
         if index < apps.count {
@@ -315,6 +318,14 @@ final class DrawerCapsulePager: ObservableObject {
     @Published private(set) var page = 0
     @Published private(set) var drag: CGFloat = 0
     private var returnTimer: Timer?
+    /// Whether the pointer is off the capsule. Kept here, not only reacted to, because a turn can
+    /// settle after the pointer has already left — the return must be armed at that point too.
+    var pointerAway = true {
+        didSet {
+            guard pointerAway != oldValue else { return }
+            if pointerAway { scheduleReturn() } else { cancelReturn() }
+        }
+    }
 
     private static let turn = Animation.spring(response: 0.36, dampingFraction: 0.84)
     private static let returnHome = Animation.spring(response: 0.5, dampingFraction: 0.9)
@@ -330,6 +341,7 @@ final class DrawerCapsulePager: ObservableObject {
             page = target
             drag = 0
         }
+        if pointerAway { scheduleReturn() }
     }
 
     /// Trackpad travel follows the fingers frame by frame, so it is never animated.
@@ -348,9 +360,10 @@ final class DrawerCapsulePager: ObservableObject {
             page = target
             drag = 0
         }
+        if pointerAway { scheduleReturn() }
     }
 
-    func scheduleReturn() {
+    private func scheduleReturn() {
         returnTimer?.invalidate()
         guard page != 0 else { return }
         let timer = Timer(timeInterval: Self.returnDelay, repeats: false) { [weak self] _ in
@@ -367,7 +380,7 @@ final class DrawerCapsulePager: ObservableObject {
         RunLoop.main.add(timer, forMode: .common)
     }
 
-    func cancelReturn() {
+    private func cancelReturn() {
         returnTimer?.invalidate()
         returnTimer = nil
     }
@@ -407,6 +420,8 @@ final class DrawerCapsuleScrollView: NSView {
     /// Fast wheel spins turn several pages, but never faster than one page per interval.
     private static let stepInterval: TimeInterval = 0.12
     /// A gesture whose end never arrives (the pointer left the capsule mid-swipe) still settles.
+    /// Resting fingers send no events either, so the watchdog only ends a gesture once the
+    /// pointer is off the capsule.
     private static let trackingTimeout: TimeInterval = 0.3
 
     override func hitTest(_ point: NSPoint) -> NSView? {
@@ -434,12 +449,23 @@ final class DrawerCapsuleScrollView: NSView {
             return
         }
         if event.scrollingDeltaY != 0 { onEvent(.drag(event.scrollingDeltaY)) }
+        armWatchdog()
+    }
+
+    private func armWatchdog() {
         watchdog?.invalidate()
         let timer = Timer(timeInterval: Self.trackingTimeout, repeats: false) { [weak self] _ in
-            self?.finishTracking()
+            guard let self else { return }
+            if self.isPointerInside { self.armWatchdog() } else { self.finishTracking() }
         }
         watchdog = timer
         RunLoop.main.add(timer, forMode: .common)
+    }
+
+    private var isPointerInside: Bool {
+        guard let window else { return false }
+        let inWindow = window.convertPoint(fromScreen: NSEvent.mouseLocation)
+        return bounds.contains(convert(inWindow, from: nil))
     }
 
     func finishTracking() {
