@@ -420,9 +420,10 @@ final class PanelGeometryTests: XCTestCase {
         // App 3 is the first mini icon on page 0 and the top-leading app on page 1.
         XCTAssertEqual(DrawerCapsulePaging.pose(index: 3, position: 0), DrawerCapsulePaging.restPose(slot: 3))
         XCTAssertEqual(DrawerCapsulePaging.pose(index: 3, position: 1), DrawerCapsulePaging.restPose(slot: 0))
-        // App 4 heads for the top-trailing cell, which runs on the turn's own clock.
+        // App 4 heads for the top-trailing cell, which runs on the turn's own clock; mid-turn its
+        // path bows towards the capsule's inside by the full bend.
         let mid = DrawerCapsulePaging.pose(index: 4, position: 0.5)
-        XCTAssertEqual(mid.x, 14.5, accuracy: 1e-9)
+        XCTAssertEqual(mid.x, 14.5 + DrawerCapsulePaging.cellBend[1].x, accuracy: 1e-9)
         XCTAssertEqual(mid.y, -2.5, accuracy: 1e-9)
         XCTAssertEqual(mid.size, 14, accuracy: 1e-9)
         // The app it replaces holds its size for a moment, then shrinks in place: mid-turn it is
@@ -433,18 +434,27 @@ final class PanelGeometryTests: XCTestCase {
         XCTAssertEqual(leaving.x, 12, accuracy: 1e-9)
         XCTAssertEqual(leaving.y, -12, accuracy: 1e-9)
         XCTAssertEqual(leaving.size, 13.671875, accuracy: 1e-9)
-        // The longest path (top-leading) leads a hair and bottom-leading trails; the replaced app
-        // in each cell keeps the same clock as its replacement.
-        func travelled(_ index: Int) -> CGFloat {
+        // Each cell runs the turn ahead or behind by its lead, measured along the axis its path does
+        // not bow on; the replaced app in that cell keeps the same clock as its replacement.
+        let lead = DrawerCapsulePaging.cellLead
+        XCTAssertEqual(lead[1], 0, "the top-trailing cell is the reference clock")
+        func travelled(_ index: Int, along axis: KeyPath<DrawerCapsulePaging.IconPose, CGFloat>) -> CGFloat {
             let from = DrawerCapsulePaging.restPose(slot: index)
             let to = DrawerCapsulePaging.restPose(slot: index - DrawerCapsulePreviewMetrics.appSlots)
-            return (DrawerCapsulePaging.pose(index: index, position: 0.5).y - from.y) / (to.y - from.y)
+            return (DrawerCapsulePaging.pose(index: index, position: 0.5)[keyPath: axis] - from[keyPath: axis])
+                / (to[keyPath: axis] - from[keyPath: axis])
         }
-        XCTAssertEqual(travelled(3), 0.54, accuracy: 1e-9)
-        XCTAssertEqual(travelled(4), 0.5, accuracy: 1e-9)
-        XCTAssertEqual(travelled(5), 0.46, accuracy: 1e-9)
-        XCTAssertLessThan(DrawerCapsulePaging.pose(index: 0, position: 0.5).size, leaving.size)
-        XCTAssertGreaterThan(DrawerCapsulePaging.pose(index: 2, position: 0.5).size, leaving.size)
+        XCTAssertEqual(travelled(3, along: \.y), 0.5 + lead[0], accuracy: 1e-9)
+        XCTAssertEqual(travelled(4, along: \.y), 0.5, accuracy: 1e-9)
+        XCTAssertEqual(travelled(5, along: \.x), 0.5 + lead[2], accuracy: 1e-9)
+        for cell in [0, 2] {
+            XCTAssertEqual(DrawerCapsulePaging.pose(index: cell, position: 0.5).size,
+                           DrawerCapsulePaging.pose(index: 1, position: 0.5 + lead[cell]).size, accuracy: 1e-9)
+        }
+        // The bottom-leading path bows up, towards the capsule's inside.
+        let low = DrawerCapsulePaging.pose(index: 5, position: 0.5)
+        let lowStraightY: CGFloat = 17 - 5 * (0.5 + lead[2])
+        XCTAssertLessThan(low.y, lowStraightY)
         for index in 0..<6 {
             XCTAssertEqual(DrawerCapsulePaging.pose(index: index, position: 1),
                            DrawerCapsulePaging.restPose(slot: index - DrawerCapsulePreviewMetrics.appSlots))

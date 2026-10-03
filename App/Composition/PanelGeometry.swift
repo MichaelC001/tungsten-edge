@@ -187,16 +187,31 @@ enum DrawerCapsulePaging {
         let to = restPose(slot: slot - DrawerCapsulePreviewMetrics.appSlots)
         let u = cellProgress(slot: slot, t: t)
         let grown = sizeProgress(slot: slot, t: u)
-        return IconPose(x: from.x + (to.x - from.x) * u,
-                        y: from.y + (to.y - from.y) * u,
+        let bend = travelBend(slot: slot)
+        let arc = 4 * u * (1 - u)
+        return IconPose(x: from.x + (to.x - from.x) * u + arc * bend.x,
+                        y: from.y + (to.y - from.y) * u + arc * bend.y,
                         size: from.size + (to.size - from.size) * grown)
     }
 
     /// How far ahead of the turn each app cell's handover runs (top-leading, top-trailing,
     /// bottom-leading): the icon with the longest path leads by a hair, so the three read as one
     /// move with a little depth rather than a stamp. Keep it small — a visible queue splits one
-    /// turn into three.
+    /// turn into three. All zeros turns the stagger off.
     static let cellLead: [CGFloat] = [0.04, 0, -0.04]
+
+    /// Mid-turn offset from a straight path for the icon travelling onto each app cell
+    /// (top-leading, top-trailing, bottom-leading). The two side paths bow a point and a half
+    /// towards the capsule's inside, which also keeps the growing icons within the resting icons'
+    /// outer edge; the diagonal stays straight. No rotation and no overshoot: in a cell this
+    /// small either competes with the icons themselves.
+    static let cellBend: [(x: CGFloat, y: CGFloat)] = [(0, 0), (-1.5, 0), (0, -1.5)]
+
+    private static func travelBend(slot: Int) -> (x: CGFloat, y: CGFloat) {
+        let appSlots = DrawerCapsulePreviewMetrics.appSlots
+        guard (appSlots..<(2 * appSlots)).contains(slot) else { return (0, 0) }
+        return cellBend[slot - appSlots]
+    }
 
     /// The turn as seen by one app cell: the icon arriving there and the app it replaces share it.
     /// Bends `t` without moving its ends and stays monotonic (`|lead| < 0.25`), so a gesture
