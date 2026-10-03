@@ -107,6 +107,13 @@ enum DrawerCapsulePreviewMetrics {
     static let gridPadding: CGFloat = 4
     static let miniIconSize: CGFloat = 8
     static let miniSpacing: CGFloat = 2
+    /// Each cell is a reel window one pitch tall (the cell plus half the gap on either side);
+    /// pages sit one pitch apart, so at rest only the current one is inside it. Hover growth and
+    /// the launch bounce must stay inside that margin or the window would cut them
+    /// (`PanelGeometryTests.testCapsuleReelWindowHoldsHoverAndBounce`).
+    static var cellPitch: CGFloat { iconSize + gridSpacing }
+    static let hoverScale: CGFloat = 1.1
+    static let bounceHeight: CGFloat = 2
 
     /// The mini grid sits centred in one app cell and must not outgrow it.
     static var miniGridWidth: CGFloat {
@@ -125,17 +132,6 @@ enum DrawerCapsulePaging {
     static let turnThreshold: CGFloat = 0.15
     /// How much of the overscroll past the first / last page is shown.
     static let rubberBand: CGFloat = 0.15
-    /// How far a page's centre rolls per page of distance, as a share of the cell pitch.
-    static let rollTravel: CGFloat = 0.5
-
-    /// A page shrinks to nothing as it rolls one page away, staying fully opaque: the leaving and
-    /// the arriving icon are both on screen for the whole turn. With `rollTravel` at half a pitch
-    /// the two never overlap and neither leaves the cell's pitch
-    /// (`PanelGeometryTests.testCapsuleRollKeepsBothIconsInsideTheCellWithoutOverlap`).
-    static func rollScale(distance: CGFloat) -> CGFloat {
-        max(0, 1 - abs(distance))
-    }
-
     static func pageCount(memberCount: Int) -> Int {
         let slots = DrawerCapsulePreviewMetrics.appSlots
         return max(1, (memberCount + slots - 1) / slots)

@@ -398,26 +398,14 @@ final class PanelGeometryTests: XCTestCase {
                        2 + DrawerCapsulePaging.rubberBand)
     }
 
-    /// Mid-turn the leaving and the arriving icon share one cell: they must not overlap each
-    /// other, and neither may leave the cell's pitch (the cell plus half the gap on each side).
-    func testCapsuleRollKeepsBothIconsInsideTheCellWithoutOverlap() {
+    func testCapsuleReelWindowHoldsHoverAndBounce() {
         let icon = DrawerCapsulePreviewMetrics.iconSize
-        let pitch = icon + DrawerCapsulePreviewMetrics.gridSpacing
-        let travel = pitch * DrawerCapsulePaging.rollTravel
-        XCTAssertEqual(DrawerCapsulePaging.rollScale(distance: 0), 1)
-        XCTAssertEqual(DrawerCapsulePaging.rollScale(distance: 1), 0)
-        XCTAssertEqual(DrawerCapsulePaging.rollScale(distance: -2), 0)
-        for step in 0...20 {
-            let d = CGFloat(step) / 20
-            // Leaving icon: `d` pages above rest. Arriving icon: `1 - d` pages below it.
-            let leavingHalf = icon / 2 * DrawerCapsulePaging.rollScale(distance: -d)
-            let arrivingHalf = icon / 2 * DrawerCapsulePaging.rollScale(distance: 1 - d)
-            let leavingCentre = -d * travel
-            let arrivingCentre = (1 - d) * travel
-            XCTAssertGreaterThanOrEqual(leavingCentre - leavingHalf, -pitch / 2 - 1e-9, "d=\(d)")
-            XCTAssertLessThanOrEqual(arrivingCentre + arrivingHalf, pitch / 2 + 1e-9, "d=\(d)")
-            XCTAssertLessThanOrEqual(leavingCentre + leavingHalf, arrivingCentre - arrivingHalf + 1e-9, "d=\(d)")
-        }
+        let margin = (DrawerCapsulePreviewMetrics.cellPitch - icon) / 2
+        XCTAssertLessThanOrEqual(icon * (DrawerCapsulePreviewMetrics.hoverScale - 1) / 2, margin)
+        XCTAssertLessThanOrEqual(DrawerCapsulePreviewMetrics.bounceHeight, margin)
+        // The neighbouring page, one pitch away, lies wholly outside the window at rest.
+        XCTAssertGreaterThanOrEqual(DrawerCapsulePreviewMetrics.cellPitch - icon / 2,
+                                    DrawerCapsulePreviewMetrics.cellPitch / 2)
     }
 
     func testEveryHeightLaysOutBottomAnchoredAndCentered() {
