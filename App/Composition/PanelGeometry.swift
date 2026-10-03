@@ -212,6 +212,30 @@ enum DrawerCapsulePaging {
         }
     }
 
+    /// Share of a turn over which the hover lift folds away after leaving a page, and comes back
+    /// before reaching the next one.
+    static let hoverSettle: CGFloat = 0.08
+
+    /// How much of the hover lift may show at `position`: all of it at rest, none mid-turn. A
+    /// function of the position, not of time, so hover never resizes an icon while it travels.
+    static func hoverCalm(position: CGFloat) -> CGFloat {
+        let t = position - position.rounded(.down)
+        return 1 - smoothstep(min(t, 1 - t) / hoverSettle)
+    }
+
+    /// Whether app `index` answers to `hoveredCell`, judged on the page nearest to what is on
+    /// screen at `position` (not the resting page, which jumps ahead when a wheel turn starts). An
+    /// app cell lights its own app; the expand cell — or a cell with no app — lights the mini grid.
+    static func isHovered(index: Int, position: CGFloat, hoveredCell: Int?, memberCount: Int) -> Bool {
+        guard let hoveredCell else { return false }
+        typealias M = DrawerCapsulePreviewMetrics
+        let page = clampedPage(Int(position.rounded()), pageCount: pageCount(memberCount: memberCount))
+        let slot = index - page * M.appSlots
+        let appsOnPage = min(M.appSlots, max(0, memberCount - page * M.appSlots))
+        if (0..<M.appSlots).contains(slot) { return hoveredCell == slot }
+        return (M.appSlots..<M.limit).contains(slot) && hoveredCell >= appsOnPage
+    }
+
     private static func smoothstep(_ x: CGFloat) -> CGFloat {
         let c = min(max(x, 0), 1)
         return c * c * (3 - 2 * c)

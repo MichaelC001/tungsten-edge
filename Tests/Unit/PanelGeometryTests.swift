@@ -453,6 +453,31 @@ final class PanelGeometryTests: XCTestCase {
         XCTAssertGreaterThan(pulled.x, -12)
     }
 
+    func testCapsuleHoverLiftFoldsAwayMidTurnAndFollowsTheScreen() {
+        typealias P = DrawerCapsulePaging
+        // Full lift at rest, none once the turn is a little way off either page, in both directions.
+        XCTAssertEqual(P.hoverCalm(position: 0), 1)
+        XCTAssertEqual(P.hoverCalm(position: 2), 1)
+        XCTAssertEqual(P.hoverCalm(position: 0.5), 0)
+        XCTAssertEqual(P.hoverCalm(position: P.hoverSettle), 0, accuracy: 1e-9)
+        XCTAssertEqual(P.hoverCalm(position: 1 - P.hoverSettle), 0, accuracy: 1e-9)
+        XCTAssertEqual(P.hoverCalm(position: P.hoverSettle / 2), 0.5, accuracy: 1e-9)
+        XCTAssertEqual(P.hoverCalm(position: -P.hoverSettle / 2), 0.5, accuracy: 1e-9)
+
+        // Pointer on the top-leading app cell: the app there owns hover until the turn passes halfway.
+        XCTAssertTrue(P.isHovered(index: 0, position: 0.4, hoveredCell: 0, memberCount: 10))
+        XCTAssertFalse(P.isHovered(index: 3, position: 0.4, hoveredCell: 0, memberCount: 10))
+        XCTAssertTrue(P.isHovered(index: 3, position: 0.6, hoveredCell: 0, memberCount: 10))
+        XCTAssertFalse(P.isHovered(index: 0, position: 0.6, hoveredCell: 0, memberCount: 10))
+        // Pointer on the expand cell: the whole mini grid, and nothing else.
+        XCTAssertEqual((0..<10).filter { P.isHovered(index: $0, position: 0, hoveredCell: 3, memberCount: 10) },
+                       [3, 4, 5, 6])
+        // On a last page with one app, an app-less cell is an expand cell; the app keeps its own.
+        XCTAssertTrue(P.isHovered(index: 3, position: 1, hoveredCell: 0, memberCount: 4))
+        XCTAssertFalse(P.isHovered(index: 3, position: 1, hoveredCell: 1, memberCount: 4))
+        XCTAssertFalse(P.isHovered(index: 0, position: 0, hoveredCell: nil, memberCount: 4))
+    }
+
     func testEveryHeightLaysOutBottomAnchoredAndCentered() {
         let screen = screen(frame: CGRect(x: -1512, y: -400, width: 1512, height: 982))
         for height in sampleHeights {

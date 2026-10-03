@@ -152,8 +152,9 @@ struct DrawerCapsuleButton: View {
                     .position(x: side / 2 + centre * dockScale, y: side / 2 + centre * dockScale)
             }
             ForEach(Array(ids.enumerated()), id: \.element) { index, id in
-                // Hover and press go to the icons the click page holds: an app cell lights its own
-                // app, the expand cell (or an app-less cell) lights the whole mini grid.
+                // Press goes to the icons the click page holds: an app cell dips its own app, the
+                // expand cell (or an app-less cell) the whole mini grid. Hover follows the same
+                // split but is resolved by `DrawerCapsuleFlow`, against what is on screen.
                 let slot = index - hitPage * appSlots
                 let isApp = (0..<appSlots).contains(slot)
                 let isMini = (appSlots..<DrawerCapsulePreviewMetrics.limit).contains(slot)
@@ -161,10 +162,10 @@ struct DrawerCapsuleButton: View {
                                      size: iconSize,
                                      bounceHeight: DrawerCapsulePreviewMetrics.bounceHeight * dockScale,
                                      isLaunching: isApp && runtime.launchingBundleIDs.contains(id))
-                    .cellFeedback(
-                        hovered: hoverEnabled && (isApp ? hoveredCell == slot : isMini && expandActive(hoveredCell)),
-                        pressed: isApp ? pressedCell == slot : isMini && expandActive(pressedCell))
-                    .modifier(DrawerCapsuleFlow(index: index, position: position, side: side, unit: dockScale))
+                    .chipPressScale(isApp ? pressedCell == slot : isMini && expandActive(pressedCell))
+                    .modifier(DrawerCapsuleFlow(index: index, position: position, side: side, unit: dockScale,
+                                                hoveredCell: hoverEnabled ? hoveredCell : nil,
+                                                memberCount: ids.count))
             }
         }
         .frame(width: side, height: side)
@@ -247,6 +248,9 @@ private struct DrawerCapsuleFlow: ViewModifier, Animatable {
     var position: CGFloat
     let side: CGFloat
     let unit: CGFloat
+    /// Nil while hover is disabled.
+    let hoveredCell: Int?
+    let memberCount: Int
 
     var animatableData: CGFloat {
         get { position }
@@ -255,7 +259,17 @@ private struct DrawerCapsuleFlow: ViewModifier, Animatable {
 
     func body(content: Content) -> some View {
         let pose = DrawerCapsulePaging.pose(index: index, position: position)
+        // Hover is judged and scaled by the position on screen, so a turn hands it from one icon
+        // to the next while neither is lifted. The timed animation only runs when the pointer
+        // moves between cells; mid-turn the flag flips where the lift is already zero.
+        let hovered = DrawerCapsulePaging.isHovered(index: index, position: position,
+                                                    hoveredCell: hoveredCell, memberCount: memberCount)
+        let lift = hovered
+            ? 1 + (DrawerCapsulePreviewMetrics.hoverScale - 1) * DrawerCapsulePaging.hoverCalm(position: position)
+            : 1
         content
+            .scaleEffect(lift)
+            .animation(.easeOut(duration: 0.12), value: hovered)
             .scaleEffect(pose.size / DrawerCapsulePreviewMetrics.iconSize)
             .position(x: side / 2 + pose.x * unit, y: side / 2 + pose.y * unit)
             // An arriving icon lands on top of the one it replaces, in either direction.
