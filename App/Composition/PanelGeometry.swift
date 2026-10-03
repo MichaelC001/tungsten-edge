@@ -198,7 +198,7 @@ enum DrawerCapsulePaging {
     /// bottom-leading): the icon with the longest path leads by a hair, so the three read as one
     /// move with a little depth rather than a stamp. Keep it small — a visible queue splits one
     /// turn into three. All zeros turns the stagger off.
-    static let cellLead: [CGFloat] = [0.04, 0, -0.04]
+    static let cellLead: [CGFloat] = [0, 0, 0]
 
     /// Mid-turn offset from a straight path for the icon travelling onto each app cell
     /// (top-leading, top-trailing, bottom-leading). The two side paths bow a point and a half
