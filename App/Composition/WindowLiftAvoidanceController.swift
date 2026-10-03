@@ -260,6 +260,11 @@ final class WindowLiftAvoidanceController {
     }
 
     private static let trackedProbeInterval = WindowLiftAvoidance.trackedSessionProbeInterval
+    /// For the static restore path, which cannot reach the instance logger.
+    private static let restoreLogger = Logger(
+        subsystem: "com.caye.macosdockcc.v2",
+        category: "WindowLiftAvoidance"
+    )
 
     private weak var host: WindowLiftAvoidanceHost?
     private let logger = Logger(
@@ -2219,6 +2224,8 @@ final class WindowLiftAvoidanceController {
         let generation = restoreGeneration
         let items = pendingRestorations
         let startTimes = pendingRestorationStartTimes
+        let animate = usesAnimatedLift
+        let trace = traceEnabled
         restoreTask = Task.detached { [weak self] in
             // A cancelled AX call cannot be interrupted mid-message. Drain every old writer before
             // allowing the next context to scan, so a late rollback cannot overwrite a new lift.
@@ -2230,17 +2237,35 @@ final class WindowLiftAvoidanceController {
             let liveWindowKeys = WindowLiftCGWindowProbe.liveWindowKeys()
             for (key, frames) in items {
                 guard !Task.isCancelled else { break }
-                let outcome = Self.restoreOne(
+                let outcome = await Self.restoreOne(
                     key: key,
                     frames: frames,
                     expectedStartTime: startTimes[key],
                     reader: reader,
-                    liveWindowKeys: liveWindowKeys
+                    liveWindowKeys: liveWindowKeys,
+                    animated: animate,
+                    trace: trace
                 )
                 guard outcome == .handled else { continue }
                 await MainActor.run { [weak self] in
-                    self?.pendingRestorations.removeValue(forKey: key)
-                    self?.pendingRestorationStartTimes.removeValue(forKey: key)
+                    guard let self else { return }
+                    self.pendingRestorations.removeValue(forKey: key)
+                    self.pendingRestorationStartTimes.removeValue(forKey: key)
+                    if let userFrame = frames.userRestoreQuartz {
+                        // Pin the memory to the requested frame, not the landing (see the init).
+                        self.userFrames[key] = WindowLiftAvoidance.UserFrameMemory(
+                            confirmed: WindowLiftAvoidance.appKitFrame(
+                                fromQuartz: userFrame,
+                                primaryScreenHeight: frames.primaryScreenHeight
+                            ),
+                            at: ProcessInfo.processInfo.systemUptime
+                        )
+                        if self.traceEnabled {
+                            self.logger.info(
+                                "lift trace user frame pinned pid=\(key.pid, privacy: .public) wid=\(key.cgWindowID, privacy: .public)"
+                            )
+                        }
+                    }
                 }
             }
             await MainActor.run { [weak self] in
@@ -2302,10 +2327,22 @@ final class WindowLiftAvoidanceController {
                 primaryScreenHeight: context.primaryScreenHeight
             )
             guard !context.geometry.isLiftEligible(frame, includesTiles: includesTiles) else { continue }
+            let before = userFrames[key]?.confirmed
+            let candidateBefore = userFrames[key]?.candidate
             if userFrames[key] == nil {
                 userFrames[key] = WindowLiftAvoidance.UserFrameMemory(frame: frame, at: now)
             } else {
                 userFrames[key]?.observe(frame, at: now)
+            }
+            if traceEnabled, userFrames[key]?.candidate != candidateBefore {
+                logger.info(
+                    "lift trace user frame candidate pid=\(key.pid, privacy: .public) wid=\(key.cgWindowID, privacy: .public) was=\(String(describing: candidateBefore), privacy: .public) now=\(String(describing: frame), privacy: .public)"
+                )
+            }
+            if traceEnabled, let after = userFrames[key]?.confirmed, after != before {
+                logger.info(
+                    "lift trace user frame confirmed pid=\(key.pid, privacy: .public) wid=\(key.cgWindowID, privacy: .public) frame=\(String(describing: after), privacy: .public)"
+                )
             }
         }
     }
@@ -2377,8 +2414,10 @@ final class WindowLiftAvoidanceController {
         frames: ManagedFrames,
         expectedStartTime: timeval?,
         reader: AXWindowReader,
-        liveWindowKeys: Set<WindowLiftAvoidance.WindowKey>?
-    ) -> RestoreOutcome {
+        liveWindowKeys: Set<WindowLiftAvoidance.WindowKey>?,
+        animated: Bool,
+        trace: Bool
+    ) async -> RestoreOutcome {
         if let expected = expectedStartTime {
             guard let current = ProcessLiveness.startTime(pid: key.pid),
                   current.tv_sec == expected.tv_sec,
@@ -2420,7 +2459,18 @@ final class WindowLiftAvoidanceController {
             return .handled
         }
 
-        _ = reader.setFrame(
+        if let userFrame = frames.userRestoreQuartz, animated {
+            await animateUserRestore(
+                reader: reader,
+                element: handle.element,
+                key: key,
+                from: currentAXFrame,
+                to: userFrame,
+                trace: trace
+            )
+            return .handled
+        }
+        let result = reader.setFrame(
             frames.userRestoreQuartz ?? frames.nativeQuartz,
             for: handle.element,
             messagingTimeout: windowLiftAXMessagingTimeout,
@@ -2428,7 +2478,108 @@ final class WindowLiftAvoidanceController {
             onlyIfCurrentMatches: currentAXFrame,
             restoreOnFailureTo: currentAXFrame
         )
+        if trace, frames.userRestoreQuartz != nil {
+            restoreLogger.info(
+                "lift user zoom restore mode=instant pid=\(key.pid, privacy: .public) wid=\(key.cgWindowID, privacy: .public) result=\(String(describing: result), privacy: .public)"
+            )
+        }
         return .handled
+    }
+
+    /// The system's undo-zoom is animated; so is ours. Every write is preconditioned on the last
+    /// frame we confirmed. A mismatch whose actual frame already sits on the end frame is done; one
+    /// still inside the start→end envelope is the app applying late (stall ≠ failure, as in the lift
+    /// loop) and the animation continues; one outside it is a takeover by the user or the app and
+    /// the animation stops without forcing the end frame. Scans and the tracked probe are paused
+    /// for the whole run (`restoreTask`); how long that is depends on the app's AX responsiveness.
+    nonisolated private static func animateUserRestore(
+        reader: AXWindowReader,
+        element: AXUIElement,
+        key: WindowLiftAvoidance.WindowKey,
+        from start: CGRect,
+        to end: CGRect,
+        trace: Bool
+    ) async {
+        enum Step { case proceed, done, takeover }
+        let duration = WindowLiftAvoidance.userRestoreAnimationDuration
+        let frameInterval = 1.0 / WindowLiftAvoidance.animationFramesPerSecond
+        let startedAt = ProcessInfo.processInfo.systemUptime
+        var nextDeadline = startedAt + frameInterval
+        var lastAcknowledged = start
+        var writtenFrames = 0
+
+        func absorb(_ result: AXWindowFrameWriteResult) -> Step {
+            switch result {
+            case let .success(actual):
+                lastAcknowledged = actual
+                writtenFrames += 1
+                return WindowLiftAvoidance.framesMatch(actual, end) ? .done : .proceed
+            case let .failure(.initialFrameMismatch(_, actual), _),
+                 let .failure(.verificationMismatch(_, actual), _):
+                switch WindowLiftAvoidance.userRestoreObservation(actual, from: start, to: end) {
+                case .reached:
+                    lastAcknowledged = actual
+                    return .done
+                case .late:
+                    lastAcknowledged = actual
+                    return .proceed
+                case .takeover:
+                    return .takeover
+                }
+            case .failure:
+                // Unreadable or unwritable this frame: skip it, the loop is time-bounded.
+                return .proceed
+            }
+        }
+        func finish(_ step: Step) {
+            guard trace else { return }
+            let elapsed = ProcessInfo.processInfo.systemUptime - startedAt
+            restoreLogger.info(
+                "lift user zoom restore mode=animated outcome=\(step == .done ? "done" : "takeover", privacy: .public) pid=\(key.pid, privacy: .public) wid=\(key.cgWindowID, privacy: .public) frames=\(writtenFrames, privacy: .public) elapsed=\(elapsed, privacy: .public) last=\(String(describing: lastAcknowledged), privacy: .public)"
+            )
+        }
+        func write(_ frame: CGRect) -> Step {
+            absorb(reader.setFrame(
+                frame,
+                for: element,
+                messagingTimeout: windowLiftAXMessagingTimeout,
+                verificationTolerance: WindowLiftAvoidance.verificationTolerance,
+                onlyIfCurrentMatches: lastAcknowledged,
+                restoreOnFailureTo: nil
+            ))
+        }
+
+        while ProcessInfo.processInfo.systemUptime - startedAt < duration {
+            let elapsed = ProcessInfo.processInfo.systemUptime - startedAt
+            let frame = WindowLiftAvoidance.userRestoreFrame(
+                from: start,
+                to: end,
+                progress: elapsed / duration
+            )
+            let step = write(frame)
+            if step != .proceed {
+                finish(step)
+                return
+            }
+            let sleepDuration = nextDeadline - ProcessInfo.processInfo.systemUptime
+            nextDeadline += frameInterval
+            if sleepDuration > 0 {
+                try? await Task.sleep(nanoseconds: UInt64(sleepDuration * 1_000_000_000))
+            }
+        }
+        for attempt in 0..<3 {
+            let step = write(end)
+            if step != .proceed {
+                finish(step)
+                return
+            }
+            if attempt < 2 {
+                try? await Task.sleep(nanoseconds: 50_000_000)
+            }
+        }
+        restoreLogger.notice(
+            "lift user zoom restore incomplete pid=\(key.pid, privacy: .public) wid=\(key.cgWindowID, privacy: .public) frames=\(writtenFrames, privacy: .public) last=\(String(describing: lastAcknowledged), privacy: .public)"
+        )
     }
 
     private func store(

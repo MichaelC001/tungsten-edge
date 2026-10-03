@@ -21,6 +21,10 @@ enum WindowLiftAvoidance {
     static let verificationTolerance: CGFloat = 2
     static let clearance: CGFloat = 2
     static let animationDuration: TimeInterval = 0.5
+    /// The user-zoom-toggle restore (maximized → remembered frame): shorter than the lift, close to
+    /// the system's own zoom animation, so the undo reads as one motion after the system's bulge.
+    /// An interpolation plan, not a bound — each frame's AX round-trips add on top.
+    static let userRestoreAnimationDuration: TimeInterval = 0.25
     static let animationFramesPerSecond: Double = 30
     static let globalDetectionInterval: TimeInterval = 0.2
     static let trackedSessionProbeInterval: TimeInterval = 0.05
@@ -753,13 +757,27 @@ enum WindowLiftAvoidance {
             candidateSince = now
         }
 
+        /// Seeded right after a user restore with the frame we *asked* for. An app may land a point
+        /// off (Chrome answers 800 with 801); remembering the landing instead would move the target
+        /// by that point on every toggle. Later observations within tolerance keep this frame.
+        init(confirmed frame: CGRect, at now: TimeInterval) {
+            confirmed = frame
+            candidate = frame
+            candidateSince = now
+        }
+
         mutating func observe(_ frame: CGRect, at now: TimeInterval) {
             if framesMatch(frame, candidate) {
                 if now - candidateSince >= userFrameConfirmationInterval {
                     confirmed = candidate
                 }
             } else {
-                candidate = frame
+                // A new candidate within tolerance of the confirmed frame snaps onto it: the
+                // window server reports a restore's frames a beat late, so the first scan after
+                // a pin still sees the previous animation frame and would otherwise reseat the
+                // candidate on the landing (801 for a requested 800), drifting the target a point
+                // per toggle.
+                candidate = confirmed.map { framesMatch(frame, $0) ? $0 : frame } ?? frame
                 candidateSince = now
             }
         }
@@ -855,6 +873,51 @@ enum WindowLiftAvoidance {
             width: interpolate(start.width, end.width),
             height: interpolate(start.height, end.height)
         )
+    }
+
+    /// One frame of the user-zoom-toggle restore: all four components move, every value integral
+    /// (1x displays round or drop fractional requests, which then trips the verification tolerance).
+    static func userRestoreFrame(from start: CGRect, to end: CGRect, progress: Double) -> CGRect {
+        let frame = interpolatedFrame(from: start, to: end, progress: progress)
+        return CGRect(
+            x: frame.minX.rounded(),
+            y: frame.minY.rounded(),
+            width: frame.width.rounded(),
+            height: frame.height.rounded()
+        )
+    }
+
+    enum UserRestoreObservation: Equatable {
+        case reached
+        case late
+        case takeover
+    }
+
+    /// What a frame observed during the user restore means. `reached` wins even when the write's
+    /// precondition failed: a late app can land on the end frame before our next write. `late` is
+    /// a coarse envelope test — every component inside the start→end interval (±tolerance) — so a
+    /// drag or relayout that stays inside the envelope reads as late and gets overwritten; only a
+    /// frame outside the envelope is a takeover. The precondition read and the two attribute writes
+    /// are not atomic either, so this is "stop on what we can see", not a guarantee.
+    static func userRestoreObservation(
+        _ frame: CGRect,
+        from start: CGRect,
+        to end: CGRect,
+        tolerance: CGFloat = verificationTolerance
+    ) -> UserRestoreObservation {
+        guard isValid(frame: frame), isValid(frame: start), isValid(frame: end),
+              tolerance.isFinite, tolerance >= 0 else {
+            return .takeover
+        }
+        if framesMatch(frame, end, tolerance: tolerance) { return .reached }
+        func within(_ value: CGFloat, _ a: CGFloat, _ b: CGFloat) -> Bool {
+            value >= min(a, b) - tolerance && value <= max(a, b) + tolerance
+        }
+        let inside = within(frame.minX, start.minX, end.minX)
+            && within(frame.minY, start.minY, end.minY)
+            && within(frame.width, start.width, end.width)
+            && within(frame.height, start.height, end.height)
+        return inside ? .late : .takeover
     }
 
     /// Maps the remaining portion of one hard-deadline animation back onto 0...1 after a rebase.

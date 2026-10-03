@@ -217,6 +217,26 @@ final class WindowLiftAvoidanceTests: XCTestCase {
         XCTAssertEqual(memory.confirmed, small)
         memory.observe(grown, at: 11 + WindowLiftAvoidance.userFrameConfirmationInterval)
         XCTAssertEqual(memory.confirmed, grown)
+
+        // Seeded after a restore with the requested frame: a landing one point off keeps it.
+        var seeded = WindowLiftAvoidance.UserFrameMemory(confirmed: small, at: 20)
+        XCTAssertEqual(seeded.confirmed, small)
+        let landed = CGRect(x: 300, y: 200, width: 801, height: 600)
+        seeded.observe(landed, at: 21)
+        seeded.observe(landed, at: 22)
+        XCTAssertEqual(seeded.confirmed, small, "an in-tolerance landing must not move the target")
+        // The window server reports the restore's frames a beat late: the first scan after the
+        // pin sees the previous animation frame, the next the landing. Neither moves the target.
+        var late = WindowLiftAvoidance.UserFrameMemory(confirmed: small, at: 30)
+        late.observe(CGRect(x: 291, y: 192, width: 832, height: 613), at: 30.01)
+        late.observe(landed, at: 30.7)
+        late.observe(landed, at: 31.5)
+        XCTAssertEqual(late.confirmed, small)
+        XCTAssertEqual(late.candidate, small)
+        let dragged = CGRect(x: 400, y: 200, width: 801, height: 600)
+        seeded.observe(dragged, at: 23)
+        seeded.observe(dragged, at: 24)
+        XCTAssertEqual(seeded.confirmed, dragged)
     }
 
     func testClickCounterSamplerPairsTwoDownsIntoOneDoubleClick() {
@@ -270,6 +290,49 @@ final class WindowLiftAvoidanceTests: XCTestCase {
         XCTAssertFalse(toggle(CGPoint(x: 900, y: 500), clickAt: 105, now: 105.4), "content area, not the title region")
         XCTAssertFalse(toggle(CGPoint(x: 900, y: 1060), clickAt: 105, now: 105.4), "menu bar, outside the window")
         XCTAssertFalse(WindowLiftAvoidance.isUserZoomToggle(nil, liftedFrame: lifted, settledAt: settledAt, at: 105))
+    }
+
+    func testUserRestoreFrameMovesAllFourEdgesWithIntegralValues() {
+        let maximized = CGRect(x: 0, y: 30, width: 1920, height: 1020)
+        let small = CGRect(x: 301, y: 203, width: 803, height: 601)
+        XCTAssertEqual(WindowLiftAvoidance.userRestoreFrame(from: maximized, to: small, progress: 0), maximized)
+        XCTAssertEqual(WindowLiftAvoidance.userRestoreFrame(from: maximized, to: small, progress: 1), small)
+        let mid = WindowLiftAvoidance.userRestoreFrame(from: maximized, to: small, progress: 0.37)
+        for value in [mid.minX, mid.minY, mid.width, mid.height] {
+            XCTAssertEqual(value, value.rounded())
+        }
+        XCTAssertGreaterThan(mid.minX, maximized.minX)
+        XCTAssertLessThan(mid.minX, small.minX)
+        XCTAssertLessThan(mid.width, maximized.width)
+        XCTAssertGreaterThan(mid.width, small.width)
+        XCTAssertLessThan(
+            WindowLiftAvoidance.userRestoreAnimationDuration,
+            WindowLiftAvoidance.animationDuration
+        )
+    }
+
+    func testUserRestoreObservationTellsReachedLateAndTakeoverApart() {
+        let maximized = CGRect(x: 0, y: 30, width: 1920, height: 1050)
+        let small = CGRect(x: 300, y: 200, width: 800, height: 600)
+        func observe(_ frame: CGRect) -> WindowLiftAvoidance.UserRestoreObservation {
+            WindowLiftAvoidance.userRestoreObservation(frame, from: maximized, to: small)
+        }
+        // Reached wins even as the "actual" of a failed precondition.
+        XCTAssertEqual(observe(small), .reached)
+        XCTAssertEqual(observe(CGRect(x: 302, y: 198, width: 801, height: 602)), .reached)
+        // Late: anywhere inside the start→end envelope, including the start itself.
+        XCTAssertEqual(observe(maximized), .late)
+        let midpoint = CGRect(x: 150, y: 115, width: 1360, height: 825)
+        XCTAssertEqual(observe(midpoint), .late)
+        XCTAssertEqual(observe(CGRect(x: 152, y: 113, width: 1362, height: 823)), .late)
+        // Takeover: outside the envelope on any component.
+        XCTAssertEqual(observe(CGRect(x: -60, y: 115, width: 1360, height: 825)), .takeover)
+        XCTAssertEqual(observe(CGRect(x: 150, y: 115, width: 1990, height: 825)), .takeover)
+        XCTAssertEqual(observe(CGRect(x: 150, y: 115, width: 1360, height: 500)), .takeover)
+        XCTAssertEqual(observe(CGRect(x: 150, y: 115, width: 0, height: 825)), .takeover)
+        // Known boundary of the coarse envelope: a 40pt drag of the midpoint still reads as late and
+        // gets overwritten to the end frame. Tightening this changes the documented promise.
+        XCTAssertEqual(observe(CGRect(x: 190, y: 115, width: 1360, height: 825)), .late)
     }
 
     func testSuppressionReleasesOnANewEligibleFrameOnlyInTheUserEra() {
