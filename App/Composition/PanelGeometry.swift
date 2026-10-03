@@ -100,14 +100,17 @@ enum DrawerCapsulePreviewMetrics {
     static let miniColumns = 2
     static let miniLimit = miniColumns * miniColumns
     static let limit = appSlots + miniLimit
-    static let iconSize: CGFloat = 17
+    // Proportions follow the system's app-library tile: icon 0.39 of the tile, mini icon 0.4
+    // of an icon, the mini grid inset inside its cell.
+    static let iconSize: CGFloat = 20
     static let gridSpacing: CGFloat = 4
-    static let gridPadding: CGFloat = 7
+    static let gridPadding: CGFloat = 4
+    static let miniIconSize: CGFloat = 8
     static let miniSpacing: CGFloat = 2
 
-    /// The mini grid fills exactly one app cell.
-    static var miniIconSize: CGFloat {
-        (iconSize - CGFloat(miniColumns - 1) * miniSpacing) / CGFloat(miniColumns)
+    /// The mini grid sits centred in one app cell and must not outgrow it.
+    static var miniGridWidth: CGFloat {
+        CGFloat(miniColumns) * miniIconSize + CGFloat(miniColumns - 1) * miniSpacing
     }
 
     static var contentWidth: CGFloat {

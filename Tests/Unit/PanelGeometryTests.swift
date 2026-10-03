@@ -349,8 +349,7 @@ final class PanelGeometryTests: XCTestCase {
         // 2 × 2 preview: columns × icon + spacing + 2 × padding must fit the capsule at every height.
         XCTAssertEqual(DrawerCapsulePreviewMetrics.appSlots, 3)
         XCTAssertEqual(DrawerCapsulePreviewMetrics.limit, 7)
-        XCTAssertEqual(DrawerCapsulePreviewMetrics.miniIconSize * 2 + DrawerCapsulePreviewMetrics.miniSpacing,
-                       DrawerCapsulePreviewMetrics.iconSize)
+        XCTAssertLessThan(DrawerCapsulePreviewMetrics.miniGridWidth, DrawerCapsulePreviewMetrics.iconSize)
         for height in sampleHeights {
             let content = DrawerCapsulePreviewMetrics.contentWidth * height.scale
             XCTAssertLessThanOrEqual(content, height.metrics.capsuleWidth, "\(height.points)pt 胶囊内容超宽")
