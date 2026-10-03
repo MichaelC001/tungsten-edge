@@ -244,6 +244,10 @@ struct DrawerCapsuleButton: View {
 
     private func hitCell(_ index: Int, bundleID: String?) -> some View {
         let isLaunching = bundleID.map { runtime.launchingBundleIDs.contains($0) } ?? false
+        // Mid-turn an app slot shows the leaving and the arriving page at once, whatever the
+        // arriving page holds there (an app or nothing): a click then would be a guess. Gated by
+        // slot, not by content; the expand cell never changes meaning and stays live.
+        let isMidTurn = index < DrawerCapsulePreviewMetrics.appSlots && pager.isTurning
         return Color.clear
             .frame(maxWidth: .infinity, maxHeight: .infinity)
             .contentShape(Rectangle())
@@ -251,9 +255,8 @@ struct DrawerCapsuleButton: View {
                 if hovering { hoveredCell = index } else if hoveredCell == index { hoveredCell = nil }
             }
             .onTapGesture {
-                guard let bundleID else { return action() }
-                // Mid-turn the cell shows two apps at once; a click then would be a guess.
-                if !pager.isTurning { activate(bundleID) }
+                guard !isMidTurn else { return }
+                if let bundleID { activate(bundleID) } else { action() }
             }
             // A tap during a launch session or a turn is a no-op, so it gets no press feedback either.
             .chipPressGesture(
@@ -262,7 +265,7 @@ struct DrawerCapsuleButton: View {
                     set: { pressed in
                         if pressed { pressedCell = index } else if pressedCell == index { pressedCell = nil }
                     }),
-                isEnabled: !isLaunching && !(bundleID != nil && pager.isTurning)
+                isEnabled: !isLaunching && !isMidTurn
             )
             .help(bundleID.map { AppDisplayNameResolver.displayName(for: $0) } ?? "")
     }
