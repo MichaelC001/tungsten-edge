@@ -347,11 +347,181 @@ final class PanelGeometryTests: XCTestCase {
 
     func testCapsuleGridContentFitsEveryHeight() {
         // 2 × 2 preview: columns × icon + spacing + 2 × padding must fit the capsule at every height.
-        XCTAssertEqual(DrawerCapsulePreviewMetrics.limit, 4)
+        XCTAssertEqual(DrawerCapsulePreviewMetrics.appSlots, 3)
+        XCTAssertEqual(DrawerCapsulePreviewMetrics.limit, 7)
+        XCTAssertLessThan(DrawerCapsulePreviewMetrics.miniGridWidth, DrawerCapsulePreviewMetrics.iconSize)
         for height in sampleHeights {
             let content = DrawerCapsulePreviewMetrics.contentWidth * height.scale
             XCTAssertLessThanOrEqual(content, height.metrics.capsuleWidth, "\(height.points)pt 胶囊内容超宽")
         }
+    }
+
+    func testCapsulePagingSplitsMembersIntoThreesWithTheNextFourAsPreview() {
+        let members = (0..<8).map { "app\($0)" }
+        XCTAssertEqual(DrawerCapsulePaging.pageCount(memberCount: 0), 1)
+        XCTAssertEqual(DrawerCapsulePaging.pageCount(memberCount: 3), 1)
+        XCTAssertEqual(DrawerCapsulePaging.pageCount(memberCount: 4), 2)
+        XCTAssertEqual(DrawerCapsulePaging.pageCount(memberCount: 8), 3)
+        XCTAssertEqual(DrawerCapsulePaging.apps(page: 0, members: members), ["app0", "app1", "app2"])
+        XCTAssertEqual(DrawerCapsulePaging.more(page: 0, members: members), ["app3", "app4", "app5", "app6"])
+        XCTAssertEqual(DrawerCapsulePaging.apps(page: 2, members: members), ["app6", "app7"])
+        XCTAssertEqual(DrawerCapsulePaging.more(page: 2, members: members), [])
+        XCTAssertEqual(DrawerCapsulePaging.apps(page: 3, members: members), [])
+    }
+
+    func testCapsulePagingTurnsAtMostOnePageAndStaysInRange() {
+        XCTAssertEqual(DrawerCapsulePaging.settledPage(page: 1, drag: 0.1, pageCount: 3), 1)
+        XCTAssertEqual(DrawerCapsulePaging.settledPage(page: 1, drag: 0.9, pageCount: 3), 2)
+        XCTAssertEqual(DrawerCapsulePaging.settledPage(page: 1, drag: -0.2, pageCount: 3), 0)
+        XCTAssertEqual(DrawerCapsulePaging.settledPage(page: 2, drag: 0.9, pageCount: 3), 2)
+        XCTAssertEqual(DrawerCapsulePaging.settledPage(page: 0, drag: -0.9, pageCount: 3), 0)
+        // A member list that shrank under a resting page clamps back into range.
+        XCTAssertEqual(DrawerCapsulePaging.settledPage(page: 5, drag: 0, pageCount: 2), 1)
+        // ...and a turn from there starts at the page actually shown, not the stale one.
+        XCTAssertEqual(DrawerCapsulePaging.settledPage(page: 5, drag: -0.5, pageCount: 2), 0)
+    }
+
+    func testCapsuleClickLandsOnThePageNearestToWhatIsShown() {
+        XCTAssertEqual(DrawerCapsulePaging.hitPage(page: 1, drag: 0, pageCount: 3), 1)
+        XCTAssertEqual(DrawerCapsulePaging.hitPage(page: 1, drag: 0.4, pageCount: 3), 1)
+        XCTAssertEqual(DrawerCapsulePaging.hitPage(page: 1, drag: 0.9, pageCount: 3), 2)
+        XCTAssertEqual(DrawerCapsulePaging.hitPage(page: 1, drag: -0.9, pageCount: 3), 0)
+        XCTAssertEqual(DrawerCapsulePaging.hitPage(page: 2, drag: 0.9, pageCount: 3), 2)
+        XCTAssertEqual(DrawerCapsulePaging.hitPage(page: 5, drag: -0.9, pageCount: 2), 0)
+    }
+
+    func testCapsulePagingDampsTravelPastEitherEnd() {
+        XCTAssertEqual(DrawerCapsulePaging.displayedPosition(page: 1, drag: 0.5, pageCount: 3), 1.5)
+        XCTAssertEqual(DrawerCapsulePaging.displayedPosition(page: 0, drag: -1, pageCount: 3),
+                       -DrawerCapsulePaging.rubberBand)
+        XCTAssertEqual(DrawerCapsulePaging.displayedPosition(page: 2, drag: 1, pageCount: 3),
+                       2 + DrawerCapsulePaging.rubberBand)
+    }
+
+    func testCapsuleRestPosesFillTheGridAndStayInsideTheCapsule() {
+        typealias M = DrawerCapsulePreviewMetrics
+        let half = M.contentWidth / 2
+        for slot in 0..<M.limit {
+            let pose = DrawerCapsulePaging.restPose(slot: slot)
+            XCTAssertEqual(pose.size, slot < M.appSlots ? M.iconSize : M.miniIconSize)
+            XCTAssertLessThanOrEqual(abs(pose.x) + pose.size / 2, half - M.gridPadding + 1e-9, "slot \(slot)")
+            XCTAssertLessThanOrEqual(abs(pose.y) + pose.size / 2, half - M.gridPadding + 1e-9, "slot \(slot)")
+        }
+        // Top-leading app cell and the first mini icon, relative to the capsule's centre.
+        XCTAssertEqual(DrawerCapsulePaging.restPose(slot: 0), .init(x: -12, y: -12, size: 20))
+        XCTAssertEqual(DrawerCapsulePaging.restPose(slot: 3), .init(x: 7, y: 7, size: 8))
+        // Neighbouring pages rest at zero size.
+        for slot in [-6, -3, -1, 7, 9, 12] {
+            XCTAssertEqual(DrawerCapsulePaging.restPose(slot: slot).size, 0, "slot \(slot)")
+        }
+    }
+
+    func testCapsuleTurnCarriesTheMiniIconsOntoTheAppCells() {
+        // App 3 is the first mini icon on page 0 and the top-leading app on page 1.
+        XCTAssertEqual(DrawerCapsulePaging.pose(index: 3, position: 0), DrawerCapsulePaging.restPose(slot: 3))
+        XCTAssertEqual(DrawerCapsulePaging.pose(index: 3, position: 1), DrawerCapsulePaging.restPose(slot: 0))
+        // App 4 heads for the top-trailing cell, which runs on the turn's own clock; mid-turn its
+        // path bows towards the capsule's inside by the full bend.
+        let mid = DrawerCapsulePaging.pose(index: 4, position: 0.5)
+        XCTAssertEqual(mid.x, 14.5 + DrawerCapsulePaging.cellBend[1].x, accuracy: 1e-9)
+        XCTAssertEqual(mid.y, -2.5, accuracy: 1e-9)
+        XCTAssertEqual(mid.size, 14, accuracy: 1e-9)
+        // The app it replaces holds its size for a moment, then shrinks in place: mid-turn it is
+        // still about as large as the arriving icon. The last mini icon moves up to the first spot.
+        XCTAssertEqual(DrawerCapsulePaging.pose(index: 1, position: DrawerCapsulePaging.leaveHold),
+                       DrawerCapsulePaging.restPose(slot: 1))
+        let leaving = DrawerCapsulePaging.pose(index: 1, position: 0.5)
+        XCTAssertEqual(leaving.x, 12, accuracy: 1e-9)
+        XCTAssertEqual(leaving.y, -12, accuracy: 1e-9)
+        XCTAssertEqual(leaving.size, 13.671875, accuracy: 1e-9)
+        // The three cells hand over in lockstep, measured along the axis each path does not bow on.
+        func travelled(_ index: Int, along axis: KeyPath<DrawerCapsulePaging.IconPose, CGFloat>) -> CGFloat {
+            let from = DrawerCapsulePaging.restPose(slot: index)
+            let to = DrawerCapsulePaging.restPose(slot: index - DrawerCapsulePreviewMetrics.appSlots)
+            return (DrawerCapsulePaging.pose(index: index, position: 0.5)[keyPath: axis] - from[keyPath: axis])
+                / (to[keyPath: axis] - from[keyPath: axis])
+        }
+        XCTAssertEqual(travelled(3, along: \.y), 0.5, accuracy: 1e-9)
+        XCTAssertEqual(travelled(4, along: \.y), 0.5, accuracy: 1e-9)
+        XCTAssertEqual(travelled(5, along: \.x), 0.5, accuracy: 1e-9)
+        for cell in [0, 2] {
+            XCTAssertEqual(DrawerCapsulePaging.pose(index: cell, position: 0.5).size, leaving.size, accuracy: 1e-9)
+        }
+        // The bottom-leading path bows up, towards the capsule's inside.
+        let low = DrawerCapsulePaging.pose(index: 5, position: 0.5)
+        XCTAssertEqual(low.y, 17 - 5 * 0.5 + DrawerCapsulePaging.cellBend[2].y, accuracy: 1e-9)
+        for index in 0..<6 {
+            XCTAssertEqual(DrawerCapsulePaging.pose(index: index, position: 1),
+                           DrawerCapsulePaging.restPose(slot: index - DrawerCapsulePreviewMetrics.appSlots))
+        }
+        XCTAssertEqual(DrawerCapsulePaging.pose(index: 0, position: 0.999).size, 0, accuracy: 0.01)
+        XCTAssertEqual(DrawerCapsulePaging.pose(index: 0, position: 1).size, 0)
+        XCTAssertEqual(DrawerCapsulePaging.pose(index: 6, position: 1), DrawerCapsulePaging.restPose(slot: 3))
+        XCTAssertEqual(DrawerCapsulePaging.pose(index: 6, position: 0.5).size, DrawerCapsulePreviewMetrics.miniIconSize)
+        // New mini icons wait until their spot has emptied; the one taking the spot the fourth mini
+        // icon leaves waits longest. All of them end at full mini size.
+        XCTAssertEqual(DrawerCapsulePaging.pose(index: 7, position: DrawerCapsulePaging.fillDelay).size, 0)
+        XCTAssertEqual(DrawerCapsulePaging.pose(index: 9, position: DrawerCapsulePaging.lastFillDelay).size, 0)
+        XCTAssertGreaterThan(DrawerCapsulePaging.pose(index: 7, position: 0.5).size,
+                             DrawerCapsulePaging.pose(index: 9, position: 0.5).size)
+        XCTAssertGreaterThan(DrawerCapsulePaging.pose(index: 9, position: 0.5).size, 0)
+        for index in 7...9 {
+            XCTAssertEqual(DrawerCapsulePaging.pose(index: index, position: 1),
+                           DrawerCapsulePaging.restPose(slot: index - DrawerCapsulePreviewMetrics.appSlots))
+        }
+        // Overscroll before the first page pulls the apps a little towards the mini grid.
+        let pulled = DrawerCapsulePaging.pose(index: 0, position: -0.1)
+        XCTAssertLessThan(pulled.size, DrawerCapsulePreviewMetrics.iconSize)
+        XCTAssertGreaterThan(pulled.x, -12)
+    }
+
+    func testCapsulePulledPastTheLastPageAnswersLikeThePullBeforeTheFirst() {
+        typealias P = DrawerCapsulePaging
+        // Seven apps: pages 0, 1 and 2, the last holding app 6 alone.
+        let fullPull = P.displayedPosition(page: 2, drag: 1, pageCount: 3)
+        let over = fullPull - 2
+        // The held apps alone would not move at all within the rubber band's reach.
+        XCTAssertEqual(P.pose(index: 6, position: fullPull), P.restPose(slot: 0))
+        // Pulled past the end, app 6 does exactly what app 0 does pulled as far before the first
+        // page: it gathers towards the mini grid (down and to the trailing side) and shrinks.
+        XCTAssertEqual(P.endPullPose(index: 6, position: fullPull, memberCount: 7), P.pose(index: 0, position: -over))
+        let end = P.pose(index: 0, position: -over)
+        let rest = P.restPose(slot: 0)
+        XCTAssertLessThan(end.size, rest.size)
+        XCTAssertGreaterThan(end.x, rest.x)
+        XCTAssertGreaterThan(end.y, rest.y)
+        XCTAssertEqual(P.endPullGlyphScale(position: fullPull, memberCount: 7), 1 - P.rubberBand, accuracy: 1e-9)
+        // At rest, mid-list and at the first page there is no end pull.
+        XCTAssertNil(P.endPullPose(index: 6, position: 2, memberCount: 7))
+        XCTAssertNil(P.endPullPose(index: 3, position: 1.1, memberCount: 7))
+        XCTAssertNil(P.endPullPose(index: 0, position: -0.1, memberCount: 7))
+        XCTAssertNil(P.endPullPose(index: 3, position: fullPull, memberCount: 7))
+        XCTAssertEqual(P.endPullGlyphScale(position: 2, memberCount: 7), 1)
+    }
+
+    func testCapsuleHoverLiftFoldsAwayMidTurnAndFollowsTheScreen() {
+        typealias P = DrawerCapsulePaging
+        // Full lift at rest, none once the turn is a little way off either page, in both directions.
+        XCTAssertEqual(P.hoverCalm(position: 0), 1)
+        XCTAssertEqual(P.hoverCalm(position: 2), 1)
+        XCTAssertEqual(P.hoverCalm(position: 0.5), 0)
+        XCTAssertEqual(P.hoverCalm(position: P.hoverSettle), 0, accuracy: 1e-9)
+        XCTAssertEqual(P.hoverCalm(position: 1 - P.hoverSettle), 0, accuracy: 1e-9)
+        XCTAssertEqual(P.hoverCalm(position: P.hoverSettle / 2), 0.5, accuracy: 1e-9)
+        XCTAssertEqual(P.hoverCalm(position: -P.hoverSettle / 2), 0.5, accuracy: 1e-9)
+
+        // Pointer on the top-leading app cell: the app there owns hover until the turn passes halfway.
+        XCTAssertTrue(P.isHovered(index: 0, position: 0.4, hoveredCell: 0, memberCount: 10))
+        XCTAssertFalse(P.isHovered(index: 3, position: 0.4, hoveredCell: 0, memberCount: 10))
+        XCTAssertTrue(P.isHovered(index: 3, position: 0.6, hoveredCell: 0, memberCount: 10))
+        XCTAssertFalse(P.isHovered(index: 0, position: 0.6, hoveredCell: 0, memberCount: 10))
+        // Pointer on the expand cell: the whole mini grid, and nothing else.
+        XCTAssertEqual((0..<10).filter { P.isHovered(index: $0, position: 0, hoveredCell: 3, memberCount: 10) },
+                       [3, 4, 5, 6])
+        // On a last page with one app, an app-less cell is an expand cell; the app keeps its own.
+        XCTAssertTrue(P.isHovered(index: 3, position: 1, hoveredCell: 0, memberCount: 4))
+        XCTAssertFalse(P.isHovered(index: 3, position: 1, hoveredCell: 1, memberCount: 4))
+        XCTAssertFalse(P.isHovered(index: 0, position: 0, hoveredCell: nil, memberCount: 4))
     }
 
     func testEveryHeightLaysOutBottomAnchoredAndCentered() {

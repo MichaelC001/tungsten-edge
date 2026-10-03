@@ -89,18 +89,238 @@ struct PanelLayoutMetrics: Equatable {
     static let tungstenEdge = DockPanelHeight.native.metrics
 }
 
-/// The drawer capsule's four-up preview (2 × 2). Values are at the native height and scale with the
-/// bar: `columns × icon + spacing + 2 × padding` must fit `capsuleWidth` at every height
-/// (`PanelGeometryTests.testCapsuleGridContentFitsEveryHeight`).
+/// The drawer capsule's preview (2 × 2): three directly clickable apps plus a bottom-trailing
+/// "expand" cell that shows the next four as a mini grid. Values are at the native height and
+/// scale with the bar: `columns × icon + spacing + 2 × padding` must fit `capsuleWidth` at every
+/// height (`PanelGeometryTests.testCapsuleGridContentFitsEveryHeight`).
 enum DrawerCapsulePreviewMetrics {
     static let columns = 2
-    static let limit = columns * columns
-    static let iconSize: CGFloat = 17
+    /// Every cell but the bottom-trailing one launches an app.
+    static let appSlots = columns * columns - 1
+    static let miniColumns = 2
+    static let miniLimit = miniColumns * miniColumns
+    static let limit = appSlots + miniLimit
+    // Proportions follow the system's app-library tile: icon 0.39 of the tile, mini icon 0.4
+    // of an icon, the mini grid inset inside its cell.
+    static let iconSize: CGFloat = 20
     static let gridSpacing: CGFloat = 4
-    static let gridPadding: CGFloat = 7
+    static let gridPadding: CGFloat = 4
+    static let miniIconSize: CGFloat = 8
+    static let miniSpacing: CGFloat = 2
+    static let hoverScale: CGFloat = 1.1
+    static let bounceHeight: CGFloat = 3
+
+    /// The mini grid sits centred in one app cell and must not outgrow it.
+    static var miniGridWidth: CGFloat {
+        CGFloat(miniColumns) * miniIconSize + CGFloat(miniColumns - 1) * miniSpacing
+    }
 
     static var contentWidth: CGFloat {
         CGFloat(columns) * iconSize + CGFloat(columns - 1) * gridSpacing + 2 * gridPadding
+    }
+}
+
+/// Paging of the capsule preview: a page is three apps plus a mini grid of the next four.
+/// `page` is where the capsule rests; `drag` is the live trackpad travel in pages.
+enum DrawerCapsulePaging {
+    /// Travel past which a released trackpad gesture turns the page instead of springing back.
+    static let turnThreshold: CGFloat = 0.15
+    /// How much of the overscroll past the first / last page is shown.
+    static let rubberBand: CGFloat = 0.15
+    /// Where one app's icon is drawn: its centre relative to the capsule's centre and its side
+    /// length, both at the native height.
+    struct IconPose: Equatable {
+        var x: CGFloat
+        var y: CGFloat
+        var size: CGFloat
+    }
+
+    /// The pose of the icon resting in `slot`, counted from the first app of the shown page:
+    /// 0...2 are the three app cells, 3...6 the mini grid. The page before (-3...-1) has shrunk
+    /// to nothing in its app cell; the three after the mini grid (7...9) wait at zero size on the
+    /// mini spots they are about to take. Everything further away is at zero size.
+    static func restPose(slot: Int) -> IconPose {
+        typealias M = DrawerCapsulePreviewMetrics
+        let pitch = M.iconSize + M.gridSpacing
+        func cell(_ index: Int) -> (x: CGFloat, y: CGFloat) {
+            let wrapped = ((index % M.appSlots) + M.appSlots) % M.appSlots
+            return (x: (CGFloat(wrapped % M.columns) - 0.5) * pitch, y: (CGFloat(wrapped / M.columns) - 0.5) * pitch)
+        }
+        func mini(_ index: Int) -> (x: CGFloat, y: CGFloat) {
+            let miniPitch = M.miniIconSize + M.miniSpacing
+            return (x: pitch / 2 + (CGFloat(index % M.miniColumns) - 0.5) * miniPitch,
+                    y: pitch / 2 + (CGFloat(index / M.miniColumns) - 0.5) * miniPitch)
+        }
+        switch slot {
+        case 0..<M.appSlots:
+            let c = cell(slot)
+            return IconPose(x: c.x, y: c.y, size: M.iconSize)
+        case M.appSlots..<M.limit:
+            let c = mini(slot - M.appSlots)
+            return IconPose(x: c.x, y: c.y, size: M.miniIconSize)
+        case M.limit..<(M.limit + M.appSlots):
+            let c = mini(slot - 2 * M.appSlots)
+            return IconPose(x: c.x, y: c.y, size: 0)
+        default:
+            let c = cell(slot)
+            return IconPose(x: c.x, y: c.y, size: 0)
+        }
+    }
+
+    /// Share of a turn during which a replaced app keeps its full size before it starts to shrink,
+    /// so mid-turn the cell still holds two near-even icons instead of two small ones.
+    static let leaveHold: CGFloat = 0.2
+    /// Share of a turn before a new mini icon starts to grow: its spot is still held by the icon
+    /// leaving it. The last spot waits longer — the fourth mini icon crosses the grid to vacate it.
+    static let fillDelay: CGFloat = 0.3
+    static let lastFillDelay: CGFloat = 0.45
+
+    /// The pose of app `index` while the capsule is at `position` pages: a path between its
+    /// resting poses on the two neighbouring pages (bowed slightly for two of the app cells, see
+    /// `cellBend`). Turning forward, the first three mini icons grow and travel onto the three app
+    /// cells while the apps there shrink away beneath.
+    static func pose(index: Int, position: CGFloat) -> IconPose {
+        let lower = position.rounded(.down)
+        let t = position - lower
+        let slot = index - Int(lower) * DrawerCapsulePreviewMetrics.appSlots
+        let from = restPose(slot: slot)
+        guard t > 0 else { return from }
+        let to = restPose(slot: slot - DrawerCapsulePreviewMetrics.appSlots)
+        let grown = sizeProgress(slot: slot, t: t)
+        let bend = travelBend(slot: slot)
+        let arc = 4 * t * (1 - t)
+        return IconPose(x: from.x + (to.x - from.x) * t + arc * bend.x,
+                        y: from.y + (to.y - from.y) * t + arc * bend.y,
+                        size: from.size + (to.size - from.size) * grown)
+    }
+
+    /// Mid-turn offset from a straight path for the icon travelling onto each app cell
+    /// (top-leading, top-trailing, bottom-leading). The two side paths bow a point and a half
+    /// towards the capsule's inside, which also keeps the growing icons within the resting icons'
+    /// outer edge; the diagonal stays straight. No rotation and no overshoot: in a cell this
+    /// small either competes with the icons themselves.
+    static let cellBend: [(x: CGFloat, y: CGFloat)] = [(0, 0), (-1.5, 0), (0, -1.5)]
+
+    private static func travelBend(slot: Int) -> (x: CGFloat, y: CGFloat) {
+        let appSlots = DrawerCapsulePreviewMetrics.appSlots
+        guard (appSlots..<(2 * appSlots)).contains(slot) else { return (0, 0) }
+        return cellBend[slot - appSlots]
+    }
+
+    /// How far the size has moved towards the next page's, for the icon resting in `slot` on the
+    /// lower page. Only a function of the position, so a turn played backwards retraces it.
+    private static func sizeProgress(slot: Int, t: CGFloat) -> CGFloat {
+        let appSlots = DrawerCapsulePreviewMetrics.appSlots
+        switch slot {
+        case 0..<appSlots:
+            // A replaced app holds, then shrinks; it reaches zero (and is hidden) only at the end.
+            return smoothstep((t - leaveHold) / (1 - leaveHold))
+        case appSlots..<(2 * appSlots):
+            // A mini icon growing onto an app cell settles into its full size.
+            return smoothstep(t)
+        case DrawerCapsulePreviewMetrics.limit..<(DrawerCapsulePreviewMetrics.limit + appSlots):
+            // A new mini icon grows only once its spot has emptied, so it never crowds the leaver.
+            let isLastSpot = slot == DrawerCapsulePreviewMetrics.limit + appSlots - 1
+            let delay = isLastSpot ? lastFillDelay : fillDelay
+            return smoothstep((t - delay) / (1 - delay))
+        default:
+            return t
+        }
+    }
+
+    /// Share of a turn over which the hover lift folds away after leaving a page, and comes back
+    /// before reaching the next one.
+    static let hoverSettle: CGFloat = 0.08
+
+    /// How much of the hover lift may show at `position`: all of it at rest, none mid-turn. A
+    /// function of the position, not of time, so hover never resizes an icon while it travels.
+    static func hoverCalm(position: CGFloat) -> CGFloat {
+        let t = position - position.rounded(.down)
+        return 1 - smoothstep(min(t, 1 - t) / hoverSettle)
+    }
+
+    /// Whether app `index` answers to `hoveredCell`, judged on the page nearest to what is on
+    /// screen at `position` (not the resting page, which jumps ahead when a wheel turn starts). An
+    /// app cell lights its own app; the expand cell — or a cell with no app — lights the mini grid.
+    static func isHovered(index: Int, position: CGFloat, hoveredCell: Int?, memberCount: Int) -> Bool {
+        guard let hoveredCell else { return false }
+        typealias M = DrawerCapsulePreviewMetrics
+        let page = clampedPage(Int(position.rounded()), pageCount: pageCount(memberCount: memberCount))
+        let slot = index - page * M.appSlots
+        let appsOnPage = min(M.appSlots, max(0, memberCount - page * M.appSlots))
+        if (0..<M.appSlots).contains(slot) { return hoveredCell == slot }
+        return (M.appSlots..<M.limit).contains(slot) && hoveredCell >= appsOnPage
+    }
+
+    private static func smoothstep(_ x: CGFloat) -> CGFloat {
+        let c = min(max(x, 0), 1)
+        return c * c * (3 - 2 * c)
+    }
+
+    static func pageCount(memberCount: Int) -> Int {
+        let slots = DrawerCapsulePreviewMetrics.appSlots
+        return max(1, (memberCount + slots - 1) / slots)
+    }
+
+    static func apps(page: Int, members: [String]) -> [String] {
+        let start = page * DrawerCapsulePreviewMetrics.appSlots
+        guard page >= 0, start < members.count else { return [] }
+        return Array(members[start...].prefix(DrawerCapsulePreviewMetrics.appSlots))
+    }
+
+    static func more(page: Int, members: [String]) -> [String] {
+        let start = (page + 1) * DrawerCapsulePreviewMetrics.appSlots
+        guard page >= 0, start < members.count else { return [] }
+        return Array(members[start...].prefix(DrawerCapsulePreviewMetrics.miniLimit))
+    }
+
+    static func clampedPage(_ page: Int, pageCount: Int) -> Int {
+        min(max(0, page), max(0, pageCount - 1))
+    }
+
+    /// One gesture turns at most one page. The resting page is clamped first: the member list
+    /// may have shrunk under it, and the turn starts from the page actually shown.
+    static func settledPage(page: Int, drag: CGFloat, pageCount: Int) -> Int {
+        let shown = clampedPage(page, pageCount: pageCount)
+        guard abs(drag) > turnThreshold else { return shown }
+        return clampedPage(shown + (drag > 0 ? 1 : -1), pageCount: pageCount)
+    }
+
+    /// The page a click lands on: the one nearest to what is on screen. While a trackpad gesture
+    /// holds the capsule on the next page, that page — not the resting one — takes the click.
+    static func hitPage(page: Int, drag: CGFloat, pageCount: Int) -> Int {
+        let shown = clampedPage(page, pageCount: pageCount)
+        return clampedPage(shown + Int(drag.rounded()), pageCount: pageCount)
+    }
+
+    /// Position in pages, with the travel beyond either end damped.
+    static func displayedPosition(page: Int, drag: CGFloat, pageCount: Int) -> CGFloat {
+        let last = CGFloat(max(0, pageCount - 1))
+        let raw = CGFloat(page) + drag
+        if raw < 0 { return raw * rubberBand }
+        if raw > last { return last + (raw - last) * rubberBand }
+        return raw
+    }
+
+    /// The pose of app `index` while the capsule is pulled past its last page, nil otherwise.
+    /// Nothing arrives there and the apps hold their size for `leaveHold`, longer than the rubber
+    /// band reaches, so the plain pose would not move at all. Instead each of the last page's apps
+    /// takes exactly the pose the same cell shows when pulled as far before the first page: at
+    /// both ends the apps gather together towards the mini grid. Not a mirror — mirrored, the apps
+    /// spread apart towards the rim, which reads as a different gesture.
+    static func endPullPose(index: Int, position: CGFloat, memberCount: Int) -> IconPose? {
+        let last = pageCount(memberCount: memberCount) - 1
+        let over = position - CGFloat(last)
+        let slot = index - last * DrawerCapsulePreviewMetrics.appSlots
+        guard over > 0, (0..<DrawerCapsulePreviewMetrics.appSlots).contains(slot) else { return nil }
+        return pose(index: slot, position: -over)
+    }
+
+    /// Scale of the expand glyph, which the last page shows in place of a mini grid: it gives way
+    /// with the apps when pulled past the end, as the mini icons do before the first page.
+    static func endPullGlyphScale(position: CGFloat, memberCount: Int) -> CGFloat {
+        let over = position - CGFloat(pageCount(memberCount: memberCount) - 1)
+        return over > 0 ? 1 - over : 1
     }
 }
 

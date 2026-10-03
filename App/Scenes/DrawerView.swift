@@ -99,6 +99,8 @@ struct DrawerView: View {
     private func isHiddenInSnapshot(_ id: String) -> Bool { runningApplicationStore.isHidden(id) }
 
     /// 运行区 = 收纳 + 在跑 + 不在启动门控期。
+    /// The drawer capsule pages through the drawer in this same zone order
+    /// (`DrawerCapsuleButton.memberIDs`); change the two zone predicates together.
     private var runningZoneIDs: [String] {
         visibleMembers.filter { isRunning($0) && !isLaunchingWithoutWindow($0) }
     }
