@@ -67,7 +67,7 @@ struct DrawerCapsuleButton: View {
     /// 否则换档时任务条变了、胶囊里的四宫格还停在旧尺寸。
     private var dockScale: CGFloat { settingsStore.dockPanelHeight.scale }
 
-    /// 拖动时 hover 让位给拖入反馈：draggingPayload 非空则不弹（drag 优先）。
+    /// While a card is dragged, hover gives way to the drop feedback (the drag wins).
     private var hoverEnabled: Bool { !isPanelHeightResizing && dragController.draggingPayload == nil }
 
     var body: some View {
@@ -124,8 +124,9 @@ struct DrawerCapsuleButton: View {
         .onChange(of: hoveredCell == nil) { away in
             pager.pointerAway = away
         }
-        // MenuHostNSView 只认右键 / Control-click，左键一律返回 nil 穿透下去，
-        // 所以左键仍落到上面的格子；右键在任何一格都是钨极菜单（设置的后路入口不缩小）。
+        // MenuHostNSView takes only right / Control-clicks and lets left clicks through to the
+        // cells above, so a right click anywhere on the capsule is the Tungsten menu — the
+        // settings fallback entry keeps the whole capsule.
         .overlay(NativeMenuHost(popUpHandler: onRequestTaskbarMenu))
     }
 
