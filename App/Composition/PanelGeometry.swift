@@ -175,9 +175,10 @@ enum DrawerCapsulePaging {
     static let fillDelay: CGFloat = 0.3
     static let lastFillDelay: CGFloat = 0.45
 
-    /// The pose of app `index` while the capsule is at `position` pages: a straight path between
-    /// its resting poses on the two neighbouring pages. Turning forward, the first three mini
-    /// icons grow and travel onto the three app cells while the apps there shrink away beneath.
+    /// The pose of app `index` while the capsule is at `position` pages: a path between its
+    /// resting poses on the two neighbouring pages (bowed slightly for two of the app cells, see
+    /// `cellBend`). Turning forward, the first three mini icons grow and travel onto the three app
+    /// cells while the apps there shrink away beneath.
     static func pose(index: Int, position: CGFloat) -> IconPose {
         let lower = position.rounded(.down)
         let t = position - lower
@@ -185,20 +186,13 @@ enum DrawerCapsulePaging {
         let from = restPose(slot: slot)
         guard t > 0 else { return from }
         let to = restPose(slot: slot - DrawerCapsulePreviewMetrics.appSlots)
-        let u = cellProgress(slot: slot, t: t)
-        let grown = sizeProgress(slot: slot, t: u)
+        let grown = sizeProgress(slot: slot, t: t)
         let bend = travelBend(slot: slot)
-        let arc = 4 * u * (1 - u)
-        return IconPose(x: from.x + (to.x - from.x) * u + arc * bend.x,
-                        y: from.y + (to.y - from.y) * u + arc * bend.y,
+        let arc = 4 * t * (1 - t)
+        return IconPose(x: from.x + (to.x - from.x) * t + arc * bend.x,
+                        y: from.y + (to.y - from.y) * t + arc * bend.y,
                         size: from.size + (to.size - from.size) * grown)
     }
-
-    /// How far ahead of the turn each app cell's handover runs (top-leading, top-trailing,
-    /// bottom-leading): the icon with the longest path leads by a hair, so the three read as one
-    /// move with a little depth rather than a stamp. Keep it small — a visible queue splits one
-    /// turn into three. All zeros turns the stagger off.
-    static let cellLead: [CGFloat] = [0, 0, 0]
 
     /// Mid-turn offset from a straight path for the icon travelling onto each app cell
     /// (top-leading, top-trailing, bottom-leading). The two side paths bow a point and a half
@@ -211,15 +205,6 @@ enum DrawerCapsulePaging {
         let appSlots = DrawerCapsulePreviewMetrics.appSlots
         guard (appSlots..<(2 * appSlots)).contains(slot) else { return (0, 0) }
         return cellBend[slot - appSlots]
-    }
-
-    /// The turn as seen by one app cell: the icon arriving there and the app it replaces share it.
-    /// Bends `t` without moving its ends and stays monotonic (`|lead| < 0.25`), so a gesture
-    /// stopped or reversed mid-turn never sends an icon backwards.
-    private static func cellProgress(slot: Int, t: CGFloat) -> CGFloat {
-        let appSlots = DrawerCapsulePreviewMetrics.appSlots
-        guard (0..<(2 * appSlots)).contains(slot) else { return t }
-        return t + 4 * cellLead[slot % appSlots] * t * (1 - t)
     }
 
     /// How far the size has moved towards the next page's, for the icon resting in `slot` on the

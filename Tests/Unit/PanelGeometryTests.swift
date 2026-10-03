@@ -434,27 +434,22 @@ final class PanelGeometryTests: XCTestCase {
         XCTAssertEqual(leaving.x, 12, accuracy: 1e-9)
         XCTAssertEqual(leaving.y, -12, accuracy: 1e-9)
         XCTAssertEqual(leaving.size, 13.671875, accuracy: 1e-9)
-        // Each cell runs the turn ahead or behind by its lead, measured along the axis its path does
-        // not bow on; the replaced app in that cell keeps the same clock as its replacement.
-        let lead = DrawerCapsulePaging.cellLead
-        XCTAssertEqual(lead[1], 0, "the top-trailing cell is the reference clock")
+        // The three cells hand over in lockstep, measured along the axis each path does not bow on.
         func travelled(_ index: Int, along axis: KeyPath<DrawerCapsulePaging.IconPose, CGFloat>) -> CGFloat {
             let from = DrawerCapsulePaging.restPose(slot: index)
             let to = DrawerCapsulePaging.restPose(slot: index - DrawerCapsulePreviewMetrics.appSlots)
             return (DrawerCapsulePaging.pose(index: index, position: 0.5)[keyPath: axis] - from[keyPath: axis])
                 / (to[keyPath: axis] - from[keyPath: axis])
         }
-        XCTAssertEqual(travelled(3, along: \.y), 0.5 + lead[0], accuracy: 1e-9)
+        XCTAssertEqual(travelled(3, along: \.y), 0.5, accuracy: 1e-9)
         XCTAssertEqual(travelled(4, along: \.y), 0.5, accuracy: 1e-9)
-        XCTAssertEqual(travelled(5, along: \.x), 0.5 + lead[2], accuracy: 1e-9)
+        XCTAssertEqual(travelled(5, along: \.x), 0.5, accuracy: 1e-9)
         for cell in [0, 2] {
-            XCTAssertEqual(DrawerCapsulePaging.pose(index: cell, position: 0.5).size,
-                           DrawerCapsulePaging.pose(index: 1, position: 0.5 + lead[cell]).size, accuracy: 1e-9)
+            XCTAssertEqual(DrawerCapsulePaging.pose(index: cell, position: 0.5).size, leaving.size, accuracy: 1e-9)
         }
         // The bottom-leading path bows up, towards the capsule's inside.
         let low = DrawerCapsulePaging.pose(index: 5, position: 0.5)
-        let lowStraightY: CGFloat = 17 - 5 * (0.5 + lead[2])
-        XCTAssertLessThan(low.y, lowStraightY)
+        XCTAssertEqual(low.y, 17 - 5 * 0.5 + DrawerCapsulePaging.cellBend[2].y, accuracy: 1e-9)
         for index in 0..<6 {
             XCTAssertEqual(DrawerCapsulePaging.pose(index: index, position: 1),
                            DrawerCapsulePaging.restPose(slot: index - DrawerCapsulePreviewMetrics.appSlots))
