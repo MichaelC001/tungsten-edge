@@ -251,16 +251,18 @@ struct DrawerCapsuleButton: View {
                 if hovering { hoveredCell = index } else if hoveredCell == index { hoveredCell = nil }
             }
             .onTapGesture {
-                if let bundleID { activate(bundleID) } else { action() }
+                guard let bundleID else { return action() }
+                // Mid-turn the cell shows two apps at once; a click then would be a guess.
+                if !pager.isTurning { activate(bundleID) }
             }
-            // A tap during a launch session is a no-op, so it gets no press feedback either.
+            // A tap during a launch session or a turn is a no-op, so it gets no press feedback either.
             .chipPressGesture(
                 isPressed: Binding(
                     get: { pressedCell == index },
                     set: { pressed in
                         if pressed { pressedCell = index } else if pressedCell == index { pressedCell = nil }
                     }),
-                isEnabled: !isLaunching
+                isEnabled: !isLaunching && !(bundleID != nil && pager.isTurning)
             )
             .help(bundleID.map { AppDisplayNameResolver.displayName(for: $0) } ?? "")
     }
@@ -317,6 +319,11 @@ private struct DrawerCapsuleRoll: ViewModifier, Animatable {
 final class DrawerCapsulePager: ObservableObject {
     @Published private(set) var page = 0
     @Published private(set) var drag: CGFloat = 0
+    /// True from the moment a turn is committed until its spring has visibly settled. App cells
+    /// ignore clicks meanwhile: the click page has already moved on while the old icons are
+    /// still the larger ones on screen.
+    @Published private(set) var isTurning = false
+    private var turnTimer: Timer?
     private var returnTimer: Timer?
     /// Whether the pointer is off the capsule. Kept here, not only reacted to, because a turn can
     /// settle after the pointer has already left — the return must be armed at that point too.
@@ -330,17 +337,39 @@ final class DrawerCapsulePager: ObservableObject {
     private static let turn = Animation.spring(response: 0.36, dampingFraction: 0.84)
     private static let returnHome = Animation.spring(response: 0.5, dampingFraction: 0.9)
     private static let returnDelay: TimeInterval = 3
+    /// By now the arriving icons are within a point of rest for both springs.
+    private static let turnSettle: TimeInterval = 0.3
 
-    deinit { returnTimer?.invalidate() }
+    deinit {
+        returnTimer?.invalidate()
+        turnTimer?.invalidate()
+    }
 
-    /// A wheel notch: one page, animated.
-    func step(_ direction: Int, pageCount: Int) {
-        let target = DrawerCapsulePaging.clampedPage(
-            DrawerCapsulePaging.clampedPage(page, pageCount: pageCount) + direction, pageCount: pageCount)
-        withAnimation(Self.turn) {
+    /// Commits a turn to `target`; gates app clicks only when the page really changes.
+    private func turn(to target: Int, from shown: Int, animation: Animation) {
+        if target != shown {
+            isTurning = true
+            turnTimer?.invalidate()
+            let timer = Timer(timeInterval: Self.turnSettle, repeats: false) { [weak self] _ in
+                DispatchQueue.main.async {
+                    self?.turnTimer = nil
+                    self?.isTurning = false
+                }
+            }
+            turnTimer = timer
+            RunLoop.main.add(timer, forMode: .common)
+        }
+        withAnimation(animation) {
             page = target
             drag = 0
         }
+    }
+
+    /// A wheel notch: one page, animated.
+    func step(_ direction: Int, pageCount: Int) {
+        let shown = DrawerCapsulePaging.clampedPage(page, pageCount: pageCount)
+        turn(to: DrawerCapsulePaging.clampedPage(shown + direction, pageCount: pageCount),
+             from: shown, animation: Self.turn)
         if pointerAway { scheduleReturn() }
     }
 
@@ -355,11 +384,11 @@ final class DrawerCapsulePager: ObservableObject {
     }
 
     func endDrag(pageCount: Int) {
-        let target = DrawerCapsulePaging.settledPage(page: page, drag: drag, pageCount: pageCount)
-        withAnimation(Self.turn) {
-            page = target
-            drag = 0
-        }
+        // The click page before release is the one nearest to what is shown; only a release that
+        // lands elsewhere changes what a click would hit.
+        let shown = DrawerCapsulePaging.hitPage(page: page, drag: drag, pageCount: pageCount)
+        turn(to: DrawerCapsulePaging.settledPage(page: page, drag: drag, pageCount: pageCount),
+             from: shown, animation: Self.turn)
         if pointerAway { scheduleReturn() }
     }
 
@@ -370,10 +399,7 @@ final class DrawerCapsulePager: ObservableObject {
             DispatchQueue.main.async {
                 guard let self else { return }
                 self.returnTimer = nil
-                withAnimation(Self.returnHome) {
-                    self.page = 0
-                    self.drag = 0
-                }
+                self.turn(to: 0, from: self.page, animation: Self.returnHome)
             }
         }
         returnTimer = timer
