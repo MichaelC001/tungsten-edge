@@ -188,7 +188,8 @@ extension PanelCoordinator {
                     self?.onRequestTaskbarMenu?(event, view)
                 },
                 usesLiquidGlass: usesLiquidGlass,
-                action: { [weak self] in self?.toggleDrawer() }
+                action: { [weak self] in self?.toggleDrawer() },
+                onPrimaryAction: { [weak self] in self?.closeDrawerAfterAction() }
             )
                 .environmentObject(runtime)
                 .environmentObject(drawerStore)
