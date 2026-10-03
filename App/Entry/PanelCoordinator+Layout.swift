@@ -354,6 +354,7 @@ extension PanelCoordinator {
     /// 量当前内容宽度后布局（内容变化的统一入口）。
     func relayout(animated: Bool, batched: Bool = false) {
         guard let panel = dockPanel, let hosting = dockContentHost else { return }
+        let spanStart = HoverTrace.now(); defer { HoverTrace.span("relayout", since: spanStart) }
         if interactiveHeightResizeActive {
             panel.disableScreenUpdatesUntilFlush()
             dockGlassBackgroundPanel?.disableScreenUpdatesUntilFlush()

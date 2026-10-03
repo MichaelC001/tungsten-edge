@@ -105,7 +105,19 @@ final class DragController: ObservableObject {
             lhs.token == rhs.token && lhs.kind == rhs.kind && lhs.flight == rhs.flight
         }
     }
-    @Published private(set) var landing: Landing?
+    /// Published **only when the flight's identity changes** (a new flight, or none): the views
+    /// read `landing?.payload` to keep the slot empty and exempt the flying card from hover, and
+    /// nothing in SwiftUI reads `flight`. A mid-flight retarget (`retargetLandingIfNeeded`) rewrites
+    /// `flight` on every make-way frame — publishing those would re-evaluate every strip per frame
+    /// for a geometry change that the carrier layer alone consumes. Not `@Published` for that
+    /// reason; the token comparison is the publication boundary.
+    private(set) var landing: Landing? {
+        willSet {
+            guard landing?.token != newValue?.token else { return }
+            HoverTrace.landingPublish()
+            objectWillChange.send()
+        }
+    }
 
     /// **视图判「哪一格要空着」一律用它。** 归位飞行期间原位必须继续空着，
     /// 否则卡先显形、载体还在飞 = 又是两个影子。
@@ -125,7 +137,10 @@ final class DragController: ObservableObject {
 
     /// 载体已经飞到位、条上那张卡也显形了，但那张位图还要多留一轮 run loop 才撤
     /// （见 `finishLanding`）。这一轮里悬停仍然要压着。
-    @Published private(set) var carrierRetiring = false
+    /// Not `@Published`: no view reads it (nor `isCarrying`); it only gates `clearCandidate` and the
+    /// handoff turn inside this controller. As a published flag its true→false flip on the next
+    /// run-loop turn cost every strip one more whole re-evaluation per landing.
+    private(set) var carrierRetiring = false
 
     /// **条上那格从哪一刻起真的空出来**，以及抬起动画从哪一刻开始。两件事绑在一起。
     ///
@@ -375,6 +390,7 @@ final class DragController: ObservableObject {
     /// 反过来先撤载体就必然露出一帧空位（owner 2026-08-18 报的「落位重影」的另一面）。幂等。
     func finishLanding(token: Int) {
         guard let current = landing, current.token == token else { return }
+        let spanStart = HoverTrace.now(); defer { HoverTrace.span("finishLanding", since: spanStart) }
         landingTimer?.invalidate(); landingTimer = nil
         landingLaunchTask?.cancel(); landingLaunchTask = nil
         landingAnimation &+= 1
@@ -588,6 +604,7 @@ final class DragController: ObservableObject {
 
     /// 立刻收掉载体位图与面板。**只在「卡已经显形」或「压根没有卡可显形」时调**。
     private func retireCarrier() {
+        let spanStart = HoverTrace.now(); defer { HoverTrace.span("retireCarrier", since: spanStart) }
         if let layer = carrierLayer {
             Self.instantly {
                 layer.removeAllAnimations()
@@ -1203,6 +1220,7 @@ final class DragController: ObservableObject {
     /// `.messaging`/`.drawer` 的收尾决策走纯逻辑 `DragConversionPlan.endAction`（单测覆盖）。
     func endDrag() {
         guard let p = draggingPayload else { return }
+        let spanStart = HoverTrace.now(); defer { HoverTrace.span("endDrag", since: spanStart) }
         // 飞行途中重抓、松手没挪 = **点了一下这张卡**：图标照常接着飞回卡槽（不收纳、不落定什么），
         // 然后把「被点了」交给拥有它的面板去做唤醒 / 最小化（owner 2026-08-19：落地前点它没反应）。
         if let origin = regrabOrigin,
@@ -1393,6 +1411,7 @@ final class DragController: ObservableObject {
 
     /// 收尾。`landing` 非空时**不收载体**——它还要飞一段；到点由 `finishLanding()` 收。
     private func teardown(landing flight: Landing?) {
+        let spanStart = HoverTrace.now(); defer { HoverTrace.span("teardown", since: spanStart) }
         let released = draggingPayload
         conversion = nil                  // 落定路径：清转换态不回滚（commit）
         convertedRepresentative = nil

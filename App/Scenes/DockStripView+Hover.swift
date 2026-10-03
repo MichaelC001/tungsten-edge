@@ -46,7 +46,16 @@ extension DockStripView {
                carriedStripEntryID(for: exempt) == hit { return nil }
             return hit
         }()
+        HoverTrace.stripInput("hoveredEntry", surface: stripSurfaceID, changed: resolved != hoveredEntryID)
         if resolved != hoveredEntryID { hoveredEntryID = resolved }
+        // The bubble anchor is the one piece of geometry the body renders from; derive it here, at
+        // the write, so geometry churn under no hover never touches `@State` (`StripFrameBox`).
+        let anchor: CGRect? = {
+            guard let resolved, origin != .zero, let frame = frames[resolved] else { return nil }
+            return CGRect(x: origin.minX + frame.minX, y: origin.maxY - frame.maxY,
+                          width: frame.width, height: frame.height)
+        }()
+        if anchor != hoveredAnchor { hoveredAnchor = anchor }
     }
 
     /// 该 entry 的气泡文案。`nil` = 这类 chip 不弹气泡。
@@ -91,13 +100,10 @@ extension DockStripView {
     func bubbleRequest(projection: StripProjection) -> WindowTitleTooltipRequest? {
         guard !isPanelHeightResizing, hoverStyle.isExpressive,
               let id = hoveredEntryID,
-              let frame = stripHoverFrames[id],
-              stripRootScreenRect != .zero,
+              let anchor = hoveredAnchor,
               let entry = projection.entries.first(where: { $0.id == id }),
               let title = bubbleTitle(for: entry) else { return nil }
-        return WindowTitleTooltipRequest(chipID: id,
-                                         title: title,
-                                         anchorVisibleRect: stripFrameToScreen(frame))
+        return WindowTitleTooltipRequest(chipID: id, title: title, anchorVisibleRect: anchor)
     }
 
     /// 右键任务条底板时该不该弹钨极菜单。判定本身在纯 `StripContextMenuZone` 里，

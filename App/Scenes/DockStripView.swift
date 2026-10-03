@@ -85,34 +85,37 @@ struct DockStripView: View {
     /// 读 isOverDropZone 在进投放区时停掉条内重排。载体面板/监视器/收尾都在它里面，本视图不碰。
     @EnvironmentObject var dragController: DragController
 
+    /// All reported geometry — chip / hover / folder / messaging frames, shelf, trash, the content
+    /// area's screen rect — in one **reference box**. Writing it never re-evaluates the body; the
+    /// accessors below keep every read site unchanged. Rationale on `StripFrameBox`.
+    @State var frames = StripFrameBox()
     /// Live chip frames by id in the `"strip"` space (含滚动偏移后的屏上位置), collected via
     /// preference — feeds the grab offset at drag start and the full-frame landing hit-test.
     /// `.background` GeometryReader (not overlay) so it never steals chip clicks.
-    @State var chipFrames: [String: CGRect] = [:]
+    var chipFrames: [String: CGRect] { frames.chipFrames }
     /// 手势预览触发的按 chip 脉冲计数（重击/中键活访达窗口时 +1，给 ~200ms 反查一个即时"点到了"）。
     @State var chipPulseNonces: [String: Int] = [:]
 
     /// 文件夹 chip 帧（弹窗锚点 + 外部拖入的 pin 落点路由）。**独立字典,绝不混入 chipFrames**——
     /// 那是 live 窗口区拖拽重排与抽屉拖回落点的输入,混入会让窗口拖动命中文件夹区、落点 no-op（评审 P1）。
-    @State var folderChipFrames: [String: CGRect] = [:]
+    var folderChipFrames: [String: CGRect] { frames.folderChipFrames }
 
     /// 消息区 chip 帧（bundleID → "strip" 空间 frame）。**独立字典,同文件夹 chip 的理由绝不混入
     /// chipFrames**——喂消息区内重排 hit-test + 抽屉拖出的"消息区范围"释放判定。
-    @State var messagingChipFrames: [String: CGRect] = [:]
+    var messagingChipFrames: [String: CGRect] { frames.messagingChipFrames }
     /// 载体此刻画的是哪张消息区图标（释放回消息区那条路的换图去重）。见 `syncReleasedMessagingCarrier`。
     @State private var carriedMessagingChipID: String?
-    /// 上一轮 body 见到的 `stripSlotCollapsed`（`.onChange` 里晚一轮更新）。body 里两者不等 = 这次
-    /// `layoutKeys` 变化就是空位合拢 / 重开，条内动画要和面板窗口动画**同一条曲线同一时长**——
-    /// 弹簧（0.28s）叠在 AppKit easeInEaseOut（0.22s）上，图标相对底板忽前忽后，就是 owner 2026-09-03
-    /// 录屏里「没有原生丝滑」的那一下。
-    @State private var renderedCollapsed = false
+    // 上一轮 body 见到的 `stripSlotCollapsed` 住在 `frames.renderedCollapsed`（`.onChange` 里晚一轮更新）。
+    // body 里两者不等 = 这次 `layoutKeys` 变化就是空位合拢 / 重开，条内动画要和面板窗口动画**同一条曲线
+    // 同一时长**——弹簧（0.28s）叠在 AppKit easeInEaseOut（0.22s）上，图标相对底板忽前忽后，就是 owner
+    // 2026-09-03 录屏里「没有原生丝滑」的那一下。
     /// 上一轮已渲染的标签表：算这次标签变化让内容总宽变了多少（只算真的画出标题的卡，形态 `.multi`）。
     @State private var renderedLabelTitles: [String: String] = [:]
 
     /// 中转格 frame（"strip" 空间）。**独立上报,不塞进 folderChipFrames**（评审：那个字典专属
     /// 文件夹 chip,后续还喂文件夹重排 hit-test,不能混 sentinel）。喂中转弹窗锚点 + drop 路由。
-    @State var shelfFrame: CGRect = .zero
-    @State var trashFrame: CGRect = .zero
+    var shelfFrame: CGRect { frames.shelfFrame }
+    var trashFrame: CGRect { frames.trashFrame }
 
     /// 外部文件拖入的实时落点目标（悬停高亮用;nil = 没有外部拖拽悬停）。
     @State var externalDropTarget: StripDropRouting.Target?
@@ -148,16 +151,21 @@ struct DockStripView: View {
 
     /// 任务条内容区（"strip" 空间）在屏幕坐标系的 frame（bottom-left）。抽屉拖回任务条·精确落点用它把
     /// 全局鼠标位置映回 "strip" 空间命中卡片，并判进/出任务条区（迟滞）。与 "strip" 命名空间挂同一视图。
-    @State var stripRootScreenRect: CGRect = .zero
+    var stripRootScreenRect: CGRect { frames.stripRootScreenRect }
 
     /// 悬停命中帧（`StripEntry.id` → "strip" 空间帧）。**又一本独立字典**，理由同上面那三本：
     /// 它们各有各的用途（重排 / 弹窗锚点 / 释放判定），谁也不能替谁。这一本是「指针落在谁身上」
     /// 的唯一依据，所以**四个区的卡全收进来**，由 `stripEntryView` 一处统一上报。
-    @State var stripHoverFrames: [String: CGRect] = [:]
+    var stripHoverFrames: [String: CGRect] { frames.stripHoverFrames }
 
     /// 指针当前压在哪张卡上。**全条唯一的悬停真相**——悬停视觉和名字气泡都读它。
     /// 每张卡不再各自挂 `.onHover`，成因与实测见 `StripHoverResolution`。
     @State var hoveredEntryID: String?
+    /// The hovered card's frame in screen coordinates — the bubble's anchor, and the **only**
+    /// rendering input derived from the reported geometry. Written by `refreshHoveredEntry` only
+    /// when the hovered card's screen frame really moved, so a resting pointer on a card that is
+    /// making way re-anchors the bubble, while geometry churn under no hover re-evaluates nothing.
+    @State var hoveredAnchor: CGRect?
 
     /// 最后一次指针位置（屏幕坐标）。**刻意放在引用盒里而不是 `@State` 值**：
     /// 指针每动一次都写 `@State` 就会以指针的频率重算整条 body，而真正需要重算的
@@ -171,10 +179,12 @@ struct DockStripView: View {
     @State private var animatedEntryIDs: Set<String> = []
 
     var body: some View {
+        let projectionStart = HoverTrace.now()
         let projection = makeProjection()
+        let _ = HoverTrace.span("makeProjection", since: projectionStart)
         // 「一次点击让整条重算了几次」——`DockStripView` 订阅整个 `AppRuntime`，
         // 任何一个 `@Published` 变化都会打翻整条。默认关，`DOCK_HOVER_TRACE=1` 才记。
-        let _ = HoverTrace.stripBody(items: projection.entries.count)
+        let _ = HoverTrace.stripBody(items: projection.entries.count, surface: stripSurfaceID)
         return ZStack {
             // macOS 26 的 Liquid Glass 由统一底板接管；默认关闭，旧系统与未开关时仍是原毛玻璃。
             DockPanelBackdrop(theme: theme,
@@ -199,7 +209,7 @@ struct DockStripView: View {
                 }
                 .padding(.horizontal, Style.chipContentInset * dockScale)
                 .frame(height: metrics.panelHeight)
-                .animation(renderedCollapsed != dragController.stripSlotCollapsed
+                .animation(frames.renderedCollapsed != dragController.stripSlotCollapsed
                                ? .easeInOut(duration: DrawerAnimation.duration)          // 合拢 / 重开：跟面板走
                                : .spring(response: 0.28, dampingFraction: 0.82),         // 让位：签收过的弹簧
                            value: projection.layoutKeys)
@@ -288,9 +298,11 @@ struct DockStripView: View {
         .onDrop(of: [UTType.fileURL], delegate: StripFileDropDelegate(
             // 关掉中转格后直接传 nil：ShelfFramePreferenceKey.reduce 刻意忽略 .zero，
             // 旧帧不会被清掉，只看帧的话落在原位置仍会误判成暂存。
-            shelfFrame: settingsStore.showShelf ? shelfFrame : nil,
-            trashFrame: settingsStore.showTrash ? trashFrame : nil,
-            folderFrames: folderChipFrames,
+            // Read at routing time, never copied here: the body no longer re-runs when the frames
+            // move (`StripFrameBox`), so a value captured now would route a later drop by stale geometry.
+            shelfFrame: { [frames, showShelf = settingsStore.showShelf] in showShelf ? frames.shelfFrame : nil },
+            trashFrame: { [frames, showTrash = settingsStore.showTrash] in showTrash ? frames.trashFrame : nil },
+            folderFrames: { [frames] in frames.folderChipFrames },
             orderedPaths: pinnedFolderStore.folderPaths,
             // chip 间距随档位缩放，「插到最前面」那段 slack 也得跟着缩，否则小档时它相对更宽、
             // 会吃掉首个文件夹左半边的移入区。
@@ -317,8 +329,9 @@ struct DockStripView: View {
         // 松手时 `teardown` 清掉 `conversion` → 条宽解冻 → 整条重新居中，消息区（在最左端）
         // 整体左移 0.22s；不接这一条，归位飞行就一直朝面板挪走**之前**那个位置飞。
         .background(ScreenRectReader { rect in
-            guard rect != stripRootScreenRect else { return }
-            stripRootScreenRect = rect
+            HoverTrace.stripInput("stripRect", surface: stripSurfaceID, changed: rect != frames.stripRootScreenRect)
+            guard rect != frames.stripRootScreenRect else { return }
+            frames.stripRootScreenRect = rect
             refreshHoveredEntry(frames: stripHoverFrames, origin: rect)
             updateLandingAnchor()
         })
@@ -382,7 +395,7 @@ struct DockStripView: View {
         // 悬停压制的开关翻转时重判一次：起拖藏卡那一刻清掉旧悬停；落地按住期结束（指针动了）
         // 那一刻按当前指针位置补上悬停。**不再在「手里空了」那一刻重判**——那正是落地一停稳
         // 就往上长一截的来源（见 `refreshHoveredEntry`）。
-        .onChange(of: dragController.stripSlotCollapsed) { renderedCollapsed = $0 }
+        .onChange(of: dragController.stripSlotCollapsed) { frames.renderedCollapsed = $0 }
         .onChange(of: dragController.hoverGate) { _ in
             refreshHoveredEntry(frames: stripHoverFrames, origin: stripRootScreenRect)
         }
@@ -422,26 +435,36 @@ struct DockStripView: View {
         // 卡帧变了就重报落点锚点。**光靠 `globalLocation` 驱动不够**：松手之后指针不再有事件，
         // 而让位弹簧还在跑，卡槽要再过一两百毫秒才停。归位飞行的中途纠偏就靠这条。
         .onPreferenceChange(ChipFramePreferenceKey.self) { frames in
-            chipFrames = frames
+            HoverTrace.stripInput("chipFrames", surface: stripSurfaceID, changed: frames != self.frames.chipFrames)
+            self.frames.chipFrames = frames
             updateLandingAnchor()
         }
         // 条重排 / 换档时指针没动，但它脚下的卡换人了——同一处重判。
         .onPreferenceChange(StripHoverFramePreferenceKey.self) { frames in
-            stripHoverFrames = frames
+            HoverTrace.stripInput("hoverFrames", surface: stripSurfaceID, changed: frames != self.frames.stripHoverFrames)
+            self.frames.stripHoverFrames = frames
             refreshHoveredEntry(frames: frames, origin: stripRootScreenRect)
         }
         // 这两处的帧同样是落点锚点的输入源（`.folder` / `.messaging` 载荷各取一份），
         // 变了就得回报——理由同上面的 `ChipFramePreferenceKey`。
         .onPreferenceChange(FolderChipFramePreferenceKey.self) { frames in
-            folderChipFrames = frames
+            HoverTrace.stripInput("folderFrames", surface: stripSurfaceID, changed: frames != self.frames.folderChipFrames)
+            self.frames.folderChipFrames = frames
             updateLandingAnchor()
         }
         .onPreferenceChange(MessagingChipFramePreferenceKey.self) { frames in
-            messagingChipFrames = frames
+            HoverTrace.stripInput("messagingFrames", surface: stripSurfaceID, changed: frames != self.frames.messagingChipFrames)
+            self.frames.messagingChipFrames = frames
             updateLandingAnchor()
         }
-        .onPreferenceChange(ShelfFramePreferenceKey.self) { shelfFrame = $0 }
-        .onPreferenceChange(TrashFramePreferenceKey.self) { trashFrame = $0 }
+        .onPreferenceChange(ShelfFramePreferenceKey.self) {
+            HoverTrace.stripInput("shelfFrame", surface: stripSurfaceID, changed: $0 != frames.shelfFrame)
+            frames.shelfFrame = $0
+        }
+        .onPreferenceChange(TrashFramePreferenceKey.self) {
+            HoverTrace.stripInput("trashFrame", surface: stripSurfaceID, changed: $0 != frames.trashFrame)
+            frames.trashFrame = $0
+        }
         .onChange(of: pinnedFolderStore.folderPaths) { currentPaths in
             let validIDs = Set(["shelf", "trash"] + currentPaths.map { "folder-\($0)" })
             animatedEntryIDs.formIntersection(validIDs)

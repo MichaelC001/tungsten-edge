@@ -11,10 +11,13 @@ import UniformTypeIdentifiers
 /// `onCommit`（`handleExternalDrop`）从此不可能拿到应用——那是本文件存在的第二个理由，
 /// 也是「拖应用到文件夹格子上会把它从『应用程序』搬走」这个 bug 的两道闸之一。
 struct StripFileDropDelegate: DropDelegate {
-    /// nil = 中转格被用户关掉（不是「帧还没量到」，后者仍传 `.zero`）。
-    let shelfFrame: CGRect?
-    let trashFrame: CGRect?
-    let folderFrames: [String: CGRect]
+    /// Geometry is **read when a drop callback runs, never copied at construction**: the strip's
+    /// frames live in `StripFrameBox` and the body no longer rebuilds this delegate when they move,
+    /// so a value captured here would route a later drop by stale geometry (wrong folder, false
+    /// trash). nil = 中转格被用户关掉（不是「帧还没量到」，后者仍传 `.zero`）。
+    let shelfFrame: () -> CGRect?
+    let trashFrame: () -> CGRect?
+    let folderFrames: () -> [String: CGRect]
     let orderedPaths: [String]
     var headSlack: CGFloat = StripDropRouting.defaultHeadSlack
     /// dropEntered = 悬停会话开始;dropUpdated = 会话进行中移动;performDrop/dropExited = 会话结束。
@@ -54,9 +57,9 @@ struct StripFileDropDelegate: DropDelegate {
         StripDropRouting.route(location: info.location,
                                isApplicationDrag: isApplicationDrag,
                                isTrashItemDrag: DragPasteboardInspector.containsOnlyTrashItems(),
-                               shelfFrame: shelfFrame,
-                               trashFrame: trashFrame,
-                               folderFrames: folderFrames,
+                               shelfFrame: shelfFrame(),
+                               trashFrame: trashFrame(),
+                               folderFrames: folderFrames(),
                                orderedPaths: orderedPaths,
                                headSlack: headSlack)
     }

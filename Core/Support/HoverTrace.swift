@@ -80,9 +80,41 @@ enum HoverTrace {
 
     /// 任务条 body 求值一次。**用来回答「一次点击让整条重算了几次」**——
     /// `DockStripView` 订阅的是整个 `AppRuntime`，任何一个 `@Published` 变化都会打翻整条。
-    static func stripBody(items: Int) {
+    static func stripBody(items: Int, surface: String) {
         guard isEnabled else { return }
-        Writer.shared.append("{\"t\":\(stamp()),\"kind\":\"stripBody\",\"items\":\(items)}")
+        Writer.shared.append(
+            "{\"t\":\(stamp()),\"kind\":\"stripBody\",\"items\":\(items),\"surface\":\(quote(surface))}"
+        )
+    }
+
+    /// One geometry / hover input of the strip arrived (`onPreferenceChange`, `ScreenRectReader`, the
+    /// hovered-entry write). `changed` separates "the callback fired" from "the value really moved".
+    /// Read next to `stripBody`: it is the only way to tell which input a body evaluation followed —
+    /// but several inputs can fold into one refresh, so the pairing is a correlation, not a cause.
+    static func stripInput(_ name: String, surface: String, changed: @autoclosure () -> Bool) {
+        guard isEnabled else { return }   // the comparison behind `changed` runs only when tracing
+        Writer.shared.append(
+            "{\"t\":\(stamp()),\"kind\":\"stripInput\",\"name\":\(quote(name))," +
+            "\"surface\":\(quote(surface)),\"changed\":\(changed())}"
+        )
+    }
+
+    /// How long one named stretch of main-thread work took (`defer`-friendly: pass the start time,
+    /// taken with `HoverTrace.now()` so the clock is not read when tracing is off).
+    /// Only recorded above 1ms so a quiet path never floods the file.
+    static func now() -> CFTimeInterval { isEnabled ? CACurrentMediaTime() : 0 }
+    static func span(_ name: String, since start: CFTimeInterval) {
+        guard isEnabled else { return }
+        let ms = (CACurrentMediaTime() - start) * 1000
+        guard ms >= 1 else { return }
+        Writer.shared.append("{\"t\":\(stamp()),\"kind\":\"span\",\"name\":\(quote(name)),\"ms\":\(round(ms * 10) / 10)}")
+    }
+
+    /// `DragController` actually published `landing` (its token changed: a flight began or ended).
+    /// Mid-flight retargets are `landingRetarget`, not this — they rewrite the flight without publishing.
+    static func landingPublish() {
+        guard isEnabled else { return }
+        Writer.shared.append("{\"t\":\(stamp()),\"kind\":\"landingPublish\"}")
     }
 
     /// 一次 `relayout`：同步量整条宽度花了多久、量出多少、和上次比变没变、是否带动画。

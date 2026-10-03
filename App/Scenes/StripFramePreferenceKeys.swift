@@ -48,6 +48,43 @@ struct TrashFramePreferenceKey: PreferenceKey {
     }
 }
 
+// MARK: - Where the reported geometry lives
+
+/// Every frame the strip reports about itself — the four per-zone chip-frame tables, the shelf and
+/// trash frames and the content area's screen rect — lives here, in one reference box held by
+/// `DockStripView` as `@State var frames`, **never as `@State` values of its own**.
+///
+/// The reason is the write frequency: during a make-way spring, a slot collapse / reopen or the
+/// panel re-centering, every one of these changes on **every animation frame**, and a `@State`
+/// write re-evaluates the whole strip (`makeProjection`, order reconcile, twenty chips). Writing a
+/// property of a class held in `@State` invalidates nothing, so the geometry can update at frame
+/// rate while the body only re-runs for model changes. Everything that reads geometry does so at
+/// event time (reorder hit-tests, landing anchors, hover resolution, drop routing, popup anchors)
+/// and reads the box directly — always the latest value, never a copy captured by an earlier body.
+/// The one rendering input derived from geometry, the hover bubble's anchor, is written separately
+/// as `DockStripView.hoveredAnchor` only when the hovered card's screen frame actually moves.
+@MainActor
+final class StripFrameBox {
+    /// Live chip frames by id in the `"strip"` space — the drag-reorder hit-test and landing input.
+    var chipFrames: [String: CGRect] = [:]
+    /// Hover hit frames for every zone's cards (`StripEntry.id` → frame): "who is under the pointer".
+    var stripHoverFrames: [String: CGRect] = [:]
+    /// Pinned-folder chip frames — popup anchors, external pin routing, in-zone reorder. Never merged
+    /// into `chipFrames` (a folder id there becomes a landing target).
+    var folderChipFrames: [String: CGRect] = [:]
+    /// Messaging chip frames by bundle id — in-zone reorder and the drawer→messaging release range.
+    var messagingChipFrames: [String: CGRect] = [:]
+    var shelfFrame: CGRect = .zero
+    var trashFrame: CGRect = .zero
+    /// The content area's frame in screen coordinates (bottom-left); `.zero` until first reported.
+    var stripRootScreenRect: CGRect = .zero
+    /// The `stripSlotCollapsed` value the last committed body rendered. Written from
+    /// `.onChange(of: stripSlotCollapsed)` — the same moment the old `@State` copy was written, so the
+    /// body that first sees the flip still picks the collapse curve — but as a box field the write
+    /// itself no longer re-evaluates the strip (that echo body rendered nothing new).
+    var renderedCollapsed = false
+}
+
 // MARK: - Drag-reorder preference (任务条拖动重排 路线 A 自绘拖动)
 
 /// Collects live chip frames by id in the `"strip"` space — feeds the floating drag copy's
