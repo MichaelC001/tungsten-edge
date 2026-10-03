@@ -301,10 +301,15 @@ final class DrawerCapsulePager: ObservableObject {
         }
     }
 
-    private static let turn = Animation.spring(response: 0.42, dampingFraction: 0.86)
+    /// Turn springs are critically damped: any overshoot past a page plays the start of the next
+    /// turn, which reads as the capsule moving again just after it landed. A wheel notch plays the
+    /// whole handover on its own; a trackpad release has the fingers' travel behind it.
+    private static let wheelTurn = Animation.spring(response: 0.38, dampingFraction: 1)
+    private static let releaseTurn = Animation.spring(response: 0.32, dampingFraction: 1)
     private static let returnHome = Animation.spring(response: 0.5, dampingFraction: 0.9)
     private static let returnDelay: TimeInterval = 3
-    /// By now the arriving icons are within a point of rest for both springs.
+    /// By now the arriving icons are within about a point of rest for the turn springs, and the
+    /// apps they replace have shrunk to nothing.
     private static let turnSettle: TimeInterval = 0.3
 
     deinit {
@@ -336,7 +341,7 @@ final class DrawerCapsulePager: ObservableObject {
     func step(_ direction: Int, pageCount: Int) {
         let shown = DrawerCapsulePaging.clampedPage(page, pageCount: pageCount)
         turn(to: DrawerCapsulePaging.clampedPage(shown + direction, pageCount: pageCount),
-             from: shown, animation: Self.turn)
+             from: shown, animation: Self.wheelTurn)
         if pointerAway { scheduleReturn() }
     }
 
@@ -355,7 +360,7 @@ final class DrawerCapsulePager: ObservableObject {
         // lands elsewhere changes what a click would hit.
         let shown = DrawerCapsulePaging.hitPage(page: page, drag: drag, pageCount: pageCount)
         turn(to: DrawerCapsulePaging.settledPage(page: page, drag: drag, pageCount: pageCount),
-             from: shown, animation: Self.turn)
+             from: shown, animation: Self.releaseTurn)
         if pointerAway { scheduleReturn() }
     }
 
