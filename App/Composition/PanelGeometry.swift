@@ -167,18 +167,45 @@ enum DrawerCapsulePaging {
         }
     }
 
-    /// The pose of app `index` while the capsule is at `position` pages: a straight blend between
+    /// Share of a turn during which a replaced app keeps its full size before it starts to shrink,
+    /// so mid-turn the cell still holds two near-even icons instead of two small ones.
+    static let leaveHold: CGFloat = 0.2
+
+    /// The pose of app `index` while the capsule is at `position` pages: a straight path between
     /// its resting poses on the two neighbouring pages. Turning forward, the first three mini
     /// icons grow and travel onto the three app cells while the apps there shrink away beneath.
     static func pose(index: Int, position: CGFloat) -> IconPose {
         let lower = position.rounded(.down)
         let t = position - lower
-        let from = restPose(slot: index - Int(lower) * DrawerCapsulePreviewMetrics.appSlots)
+        let slot = index - Int(lower) * DrawerCapsulePreviewMetrics.appSlots
+        let from = restPose(slot: slot)
         guard t > 0 else { return from }
-        let to = restPose(slot: index - (Int(lower) + 1) * DrawerCapsulePreviewMetrics.appSlots)
+        let to = restPose(slot: slot - DrawerCapsulePreviewMetrics.appSlots)
+        let grown = sizeProgress(slot: slot, t: t)
         return IconPose(x: from.x + (to.x - from.x) * t,
                         y: from.y + (to.y - from.y) * t,
-                        size: from.size + (to.size - from.size) * t)
+                        size: from.size + (to.size - from.size) * grown)
+    }
+
+    /// How far the size has moved towards the next page's, for the icon resting in `slot` on the
+    /// lower page. Only a function of the position, so a turn played backwards retraces it.
+    private static func sizeProgress(slot: Int, t: CGFloat) -> CGFloat {
+        let appSlots = DrawerCapsulePreviewMetrics.appSlots
+        switch slot {
+        case 0..<appSlots:
+            // A replaced app holds, then shrinks; it reaches zero (and is hidden) only at the end.
+            return smoothstep((t - leaveHold) / (1 - leaveHold))
+        case appSlots..<(2 * appSlots):
+            // A mini icon growing onto an app cell settles into its full size.
+            return smoothstep(t)
+        default:
+            return t
+        }
+    }
+
+    private static func smoothstep(_ x: CGFloat) -> CGFloat {
+        let c = min(max(x, 0), 1)
+        return c * c * (3 - 2 * c)
     }
 
     static func pageCount(memberCount: Int) -> Int {

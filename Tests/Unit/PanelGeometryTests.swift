@@ -424,9 +424,16 @@ final class PanelGeometryTests: XCTestCase {
         XCTAssertEqual(mid.x, -2.5, accuracy: 1e-9)
         XCTAssertEqual(mid.y, -2.5, accuracy: 1e-9)
         XCTAssertEqual(mid.size, 14, accuracy: 1e-9)
-        // The app it replaces shrinks in place; the last mini icon moves up to the first spot.
+        // The app it replaces holds its size for a moment, then shrinks in place: mid-turn it is
+        // still about as large as the arriving icon. The last mini icon moves up to the first spot.
+        XCTAssertEqual(DrawerCapsulePaging.pose(index: 0, position: DrawerCapsulePaging.leaveHold),
+                       DrawerCapsulePaging.restPose(slot: 0))
         let leaving = DrawerCapsulePaging.pose(index: 0, position: 0.5)
-        XCTAssertEqual(leaving, .init(x: -12, y: -12, size: 10))
+        XCTAssertEqual(leaving.x, -12, accuracy: 1e-9)
+        XCTAssertEqual(leaving.y, -12, accuracy: 1e-9)
+        XCTAssertEqual(leaving.size, 13.671875, accuracy: 1e-9)
+        XCTAssertEqual(DrawerCapsulePaging.pose(index: 0, position: 0.999).size, 0, accuracy: 0.01)
+        XCTAssertEqual(DrawerCapsulePaging.pose(index: 0, position: 1).size, 0)
         XCTAssertEqual(DrawerCapsulePaging.pose(index: 6, position: 1), DrawerCapsulePaging.restPose(slot: 3))
         // Overscroll before the first page pulls the apps a little towards the mini grid.
         let pulled = DrawerCapsulePaging.pose(index: 0, position: -0.1)
