@@ -387,6 +387,21 @@ final class PanelGeometryTests: XCTestCase {
                        2 + DrawerCapsulePaging.rubberBand)
     }
 
+    /// A rolling page must be invisible before it has travelled far enough to reach the next cell:
+    /// that is what keeps a half-cut icon from ever showing.
+    func testCapsuleRollFadesOutBeforeReachingTheNeighbouringCell() {
+        XCTAssertEqual(DrawerCapsulePaging.rollOpacity(distance: 0), 1)
+        XCTAssertEqual(DrawerCapsulePaging.rollScale(distance: 0), 1)
+        XCTAssertEqual(DrawerCapsulePaging.rollOpacity(distance: 1), 0)
+        XCTAssertEqual(DrawerCapsulePaging.rollOpacity(distance: -1), 0)
+        let pitch = DrawerCapsulePreviewMetrics.iconSize + DrawerCapsulePreviewMetrics.gridSpacing
+        let vanishing: CGFloat = 1 / 1.8
+        XCTAssertEqual(DrawerCapsulePaging.rollOpacity(distance: vanishing), 0, accuracy: 1e-9)
+        // Travel at the vanishing point stays within the gap plus a sliver of the neighbour.
+        XCTAssertLessThan(vanishing * pitch * DrawerCapsulePaging.rollTravel,
+                          2 * DrawerCapsulePreviewMetrics.gridSpacing)
+    }
+
     func testEveryHeightLaysOutBottomAnchoredAndCentered() {
         let screen = screen(frame: CGRect(x: -1512, y: -400, width: 1512, height: 982))
         for height in sampleHeights {

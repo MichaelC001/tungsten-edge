@@ -124,7 +124,18 @@ enum DrawerCapsulePaging {
     /// Travel past which a released trackpad gesture turns the page instead of springing back.
     static let turnThreshold: CGFloat = 0.15
     /// How much of the overscroll past the first / last page is shown.
-    static let rubberBand: CGFloat = 0.3
+    static let rubberBand: CGFloat = 0.15
+    /// How far a page rolls per page of distance, as a share of the cell pitch.
+    static let rollTravel: CGFloat = 0.5
+
+    /// A page is gone before it has rolled far enough to reach a neighbouring cell.
+    static func rollOpacity(distance: CGFloat) -> Double {
+        Double(max(0, 1 - 1.8 * abs(distance)))
+    }
+
+    static func rollScale(distance: CGFloat) -> CGFloat {
+        1 - 0.2 * min(abs(distance), 1)
+    }
 
     static func pageCount(memberCount: Int) -> Int {
         let slots = DrawerCapsulePreviewMetrics.appSlots

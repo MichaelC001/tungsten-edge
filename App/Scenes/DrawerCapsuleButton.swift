@@ -129,52 +129,54 @@ struct DrawerCapsuleButton: View {
 
     // MARK: Preview
 
-    /// Two columns of pages slide together: the three apps travel the whole capsule, the mini
-    /// grid turns inside its own cell. The app column is masked out of the bottom-trailing
-    /// quadrant, so an app on its way to the top row never crosses the mini grid.
+    /// Every cell turns in place: the page leaving rolls a short way up (or down) while it fades
+    /// and shrinks, the one arriving does the reverse. Nothing travels across a neighbouring cell
+    /// or the capsule's rim, so no icon is ever seen cut in half.
     private func pagedPreview(ids: [String], pageCount: Int, page: Int) -> some View {
-        let side = capsuleSide
         let position = DrawerCapsulePaging.displayedPosition(page: page, drag: pager.drag, pageCount: pageCount)
-        let pages = Array(0..<pageCount)
-        let expandActive = { (cell: Int?) in cell.map { $0 >= DrawerCapsulePaging.apps(page: page, members: ids).count } == true }
-        return ZStack(alignment: .bottomTrailing) {
-            VStack(spacing: 0) {
-                ForEach(pages, id: \.self) { index in
-                    appGrid(apps: DrawerCapsulePaging.apps(page: index, members: ids), isCurrent: index == page)
-                        .frame(width: side, height: side)
-                }
-            }
-            .offset(y: -position * side)
-            .frame(width: side, height: side, alignment: .top)
-            .mask(DrawerCapsuleAppColumnMask(cornerRadius: DockShape.panelCornerRadius * dockScale))
-
-            VStack(spacing: 0) {
-                ForEach(pages, id: \.self) { index in
-                    expandVisual(more: DrawerCapsulePaging.more(page: index, members: ids))
-                }
-            }
-            .offset(y: -position * iconSize)
-            .frame(width: iconSize, height: iconSize, alignment: .top)
-            .clipped()
-            // An app-less cell also expands the drawer, so its feedback shows here.
-            .cellFeedback(hovered: hoverEnabled && expandActive(hoveredCell), pressed: expandActive(pressedCell))
-            .padding(DrawerCapsulePreviewMetrics.gridPadding * dockScale)
-        }
-        .frame(width: side, height: side)
-    }
-
-    /// The three app cells of one page; the bottom-trailing cell is left to the mini grid.
-    private func appGrid(apps: [String], isCurrent: Bool) -> some View {
         let columns = DrawerCapsulePreviewMetrics.columns
+        let restingApps = DrawerCapsulePaging.apps(page: page, members: ids).count
+        let expandActive = { (cell: Int?) in cell.map { $0 >= restingApps } == true }
         return VStack(spacing: gridSpacing) {
             ForEach(0..<columns, id: \.self) { row in
                 HStack(spacing: gridSpacing) {
                     ForEach(0..<columns, id: \.self) { column in
-                        appCell(row * columns + column, apps: apps, isCurrent: isCurrent)
+                        let cell = row * columns + column
+                        if cell < DrawerCapsulePreviewMetrics.appSlots {
+                            rollingCell(position: position, pageCount: pageCount) { index in
+                                appCell(cell, apps: DrawerCapsulePaging.apps(page: index, members: ids),
+                                        isCurrent: index == page)
+                            }
+                        } else {
+                            rollingCell(position: position, pageCount: pageCount) { index in
+                                expandVisual(more: DrawerCapsulePaging.more(page: index, members: ids))
+                            }
+                            // An app-less cell also expands the drawer, so its feedback shows here.
+                            .cellFeedback(hovered: hoverEnabled && expandActive(hoveredCell),
+                                          pressed: expandActive(pressedCell))
+                        }
                     }
                 }
             }
         }
+    }
+
+    /// One cell's pages stacked on the same spot, each posed by its distance from the resting
+    /// position. The window is the cell plus the gap around it: room for the hover growth and
+    /// the launch bounce, and by the time a rolling icon reaches its edge it is nearly faded out.
+    private func rollingCell<Content: View>(position: CGFloat, pageCount: Int,
+                                            @ViewBuilder content: @escaping (Int) -> Content) -> some View {
+        let window = iconSize + 2 * gridSpacing
+        let travel = (iconSize + gridSpacing) * DrawerCapsulePaging.rollTravel
+        return ZStack {
+            ForEach(Array(0..<pageCount), id: \.self) { index in
+                content(index)
+                    .modifier(DrawerCapsuleRoll(distance: CGFloat(index) - position, travel: travel))
+            }
+        }
+        .frame(width: window, height: window)
+        .clipped()
+        .frame(width: iconSize, height: iconSize)
     }
 
     /// Hover and press belong to the resting page only; the other pages are just passing by.
@@ -290,20 +292,22 @@ private extension View {
     }
 }
 
-/// The capsule's outline minus its bottom-trailing quadrant.
-private struct DrawerCapsuleAppColumnMask: View {
-    let cornerRadius: CGFloat
+/// Poses one page of a cell by its distance (in pages) from the resting position. The distance
+/// is the animatable value, so opacity and scale follow the roll instead of crossfading linearly.
+private struct DrawerCapsuleRoll: ViewModifier, Animatable {
+    var distance: CGFloat
+    let travel: CGFloat
 
-    var body: some View {
-        GeometryReader { proxy in
-            let size = proxy.size
-            Path { path in
-                path.addRect(CGRect(x: 0, y: 0, width: size.width, height: size.height / 2))
-                path.addRect(CGRect(x: 0, y: size.height / 2, width: size.width / 2, height: size.height / 2))
-            }
-            .fill(Color.black)
-        }
-        .clipShape(RoundedRectangle(cornerRadius: cornerRadius, style: .continuous))
+    var animatableData: CGFloat {
+        get { distance }
+        set { distance = newValue }
+    }
+
+    func body(content: Content) -> some View {
+        content
+            .scaleEffect(DrawerCapsulePaging.rollScale(distance: distance))
+            .opacity(DrawerCapsulePaging.rollOpacity(distance: distance))
+            .offset(y: distance * travel)
     }
 }
 
