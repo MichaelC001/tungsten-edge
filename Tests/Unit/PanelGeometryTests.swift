@@ -398,14 +398,40 @@ final class PanelGeometryTests: XCTestCase {
                        2 + DrawerCapsulePaging.rubberBand)
     }
 
-    func testCapsuleReelWindowHoldsHoverAndBounce() {
-        let icon = DrawerCapsulePreviewMetrics.iconSize
-        let margin = (DrawerCapsulePreviewMetrics.cellPitch - icon) / 2
-        XCTAssertLessThanOrEqual(icon * (DrawerCapsulePreviewMetrics.hoverScale - 1) / 2, margin)
-        XCTAssertLessThanOrEqual(DrawerCapsulePreviewMetrics.bounceHeight, margin)
-        // The neighbouring page, one pitch away, lies wholly outside the window at rest.
-        XCTAssertGreaterThanOrEqual(DrawerCapsulePreviewMetrics.cellPitch - icon / 2,
-                                    DrawerCapsulePreviewMetrics.cellPitch / 2)
+    func testCapsuleRestPosesFillTheGridAndStayInsideTheCapsule() {
+        typealias M = DrawerCapsulePreviewMetrics
+        let half = M.contentWidth / 2
+        for slot in 0..<M.limit {
+            let pose = DrawerCapsulePaging.restPose(slot: slot)
+            XCTAssertEqual(pose.size, slot < M.appSlots ? M.iconSize : M.miniIconSize)
+            XCTAssertLessThanOrEqual(abs(pose.x) + pose.size / 2, half - M.gridPadding + 1e-9, "slot \(slot)")
+            XCTAssertLessThanOrEqual(abs(pose.y) + pose.size / 2, half - M.gridPadding + 1e-9, "slot \(slot)")
+        }
+        // Top-leading app cell and the first mini icon, relative to the capsule's centre.
+        XCTAssertEqual(DrawerCapsulePaging.restPose(slot: 0), .init(x: -12, y: -12, size: 20))
+        XCTAssertEqual(DrawerCapsulePaging.restPose(slot: 3), .init(x: 7, y: 7, size: 8))
+        // Neighbouring pages rest at zero size.
+        for slot in [-6, -3, -1, 7, 9, 12] {
+            XCTAssertEqual(DrawerCapsulePaging.restPose(slot: slot).size, 0, "slot \(slot)")
+        }
+    }
+
+    func testCapsuleTurnCarriesTheMiniIconsOntoTheAppCells() {
+        // App 3 is the first mini icon on page 0 and the top-leading app on page 1.
+        XCTAssertEqual(DrawerCapsulePaging.pose(index: 3, position: 0), DrawerCapsulePaging.restPose(slot: 3))
+        XCTAssertEqual(DrawerCapsulePaging.pose(index: 3, position: 1), DrawerCapsulePaging.restPose(slot: 0))
+        let mid = DrawerCapsulePaging.pose(index: 3, position: 0.5)
+        XCTAssertEqual(mid.x, -2.5, accuracy: 1e-9)
+        XCTAssertEqual(mid.y, -2.5, accuracy: 1e-9)
+        XCTAssertEqual(mid.size, 14, accuracy: 1e-9)
+        // The app it replaces shrinks in place; the last mini icon moves up to the first spot.
+        let leaving = DrawerCapsulePaging.pose(index: 0, position: 0.5)
+        XCTAssertEqual(leaving, .init(x: -12, y: -12, size: 10))
+        XCTAssertEqual(DrawerCapsulePaging.pose(index: 6, position: 1), DrawerCapsulePaging.restPose(slot: 3))
+        // Overscroll before the first page pulls the apps a little towards the mini grid.
+        let pulled = DrawerCapsulePaging.pose(index: 0, position: -0.1)
+        XCTAssertLessThan(pulled.size, DrawerCapsulePreviewMetrics.iconSize)
+        XCTAssertGreaterThan(pulled.x, -12)
     }
 
     func testEveryHeightLaysOutBottomAnchoredAndCentered() {

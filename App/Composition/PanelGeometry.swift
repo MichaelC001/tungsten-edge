@@ -107,13 +107,8 @@ enum DrawerCapsulePreviewMetrics {
     static let gridPadding: CGFloat = 4
     static let miniIconSize: CGFloat = 8
     static let miniSpacing: CGFloat = 2
-    /// Each cell is a reel window one pitch tall (the cell plus half the gap on either side);
-    /// pages sit one pitch apart, so at rest only the current one is inside it. Hover growth and
-    /// the launch bounce must stay inside that margin or the window would cut them
-    /// (`PanelGeometryTests.testCapsuleReelWindowHoldsHoverAndBounce`).
-    static var cellPitch: CGFloat { iconSize + gridSpacing }
     static let hoverScale: CGFloat = 1.1
-    static let bounceHeight: CGFloat = 2
+    static let bounceHeight: CGFloat = 3
 
     /// The mini grid sits centred in one app cell and must not outgrow it.
     static var miniGridWidth: CGFloat {
@@ -132,6 +127,60 @@ enum DrawerCapsulePaging {
     static let turnThreshold: CGFloat = 0.15
     /// How much of the overscroll past the first / last page is shown.
     static let rubberBand: CGFloat = 0.15
+    /// Where one app's icon is drawn: its centre relative to the capsule's centre and its side
+    /// length, both at the native height.
+    struct IconPose: Equatable {
+        var x: CGFloat
+        var y: CGFloat
+        var size: CGFloat
+    }
+
+    /// The pose of the icon resting in `slot`, counted from the first app of the shown page:
+    /// 0...2 are the three app cells, 3...6 the mini grid. The page before (-3...-1) has shrunk
+    /// to nothing in its app cell; the three after the mini grid (7...9) wait at zero size on the
+    /// mini spots they are about to take. Everything further away is at zero size.
+    static func restPose(slot: Int) -> IconPose {
+        typealias M = DrawerCapsulePreviewMetrics
+        let pitch = M.iconSize + M.gridSpacing
+        func cell(_ index: Int) -> (x: CGFloat, y: CGFloat) {
+            let wrapped = ((index % M.appSlots) + M.appSlots) % M.appSlots
+            return (x: (CGFloat(wrapped % M.columns) - 0.5) * pitch, y: (CGFloat(wrapped / M.columns) - 0.5) * pitch)
+        }
+        func mini(_ index: Int) -> (x: CGFloat, y: CGFloat) {
+            let miniPitch = M.miniIconSize + M.miniSpacing
+            return (x: pitch / 2 + (CGFloat(index % M.miniColumns) - 0.5) * miniPitch,
+                    y: pitch / 2 + (CGFloat(index / M.miniColumns) - 0.5) * miniPitch)
+        }
+        switch slot {
+        case 0..<M.appSlots:
+            let c = cell(slot)
+            return IconPose(x: c.x, y: c.y, size: M.iconSize)
+        case M.appSlots..<M.limit:
+            let c = mini(slot - M.appSlots)
+            return IconPose(x: c.x, y: c.y, size: M.miniIconSize)
+        case M.limit..<(M.limit + M.appSlots):
+            let c = mini(slot - 2 * M.appSlots)
+            return IconPose(x: c.x, y: c.y, size: 0)
+        default:
+            let c = cell(slot)
+            return IconPose(x: c.x, y: c.y, size: 0)
+        }
+    }
+
+    /// The pose of app `index` while the capsule is at `position` pages: a straight blend between
+    /// its resting poses on the two neighbouring pages. Turning forward, the first three mini
+    /// icons grow and travel onto the three app cells while the apps there shrink away beneath.
+    static func pose(index: Int, position: CGFloat) -> IconPose {
+        let lower = position.rounded(.down)
+        let t = position - lower
+        let from = restPose(slot: index - Int(lower) * DrawerCapsulePreviewMetrics.appSlots)
+        guard t > 0 else { return from }
+        let to = restPose(slot: index - (Int(lower) + 1) * DrawerCapsulePreviewMetrics.appSlots)
+        return IconPose(x: from.x + (to.x - from.x) * t,
+                        y: from.y + (to.y - from.y) * t,
+                        size: from.size + (to.size - from.size) * t)
+    }
+
     static func pageCount(memberCount: Int) -> Int {
         let slots = DrawerCapsulePreviewMetrics.appSlots
         return max(1, (memberCount + slots - 1) / slots)

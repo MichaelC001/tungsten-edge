@@ -39,7 +39,6 @@ struct DrawerCapsuleButton: View {
     @StateObject private var pager = DrawerCapsulePager()
 
     private var iconSize: CGFloat { DrawerCapsulePreviewMetrics.iconSize * dockScale }
-    private var gridSpacing: CGFloat { DrawerCapsulePreviewMetrics.gridSpacing * dockScale }
 
     /// Every visible drawer app in the order the open drawer reads: the running zone first, then
     /// the not-running one, each in drawer order. The zone split must stay the same predicate as
@@ -132,99 +131,43 @@ struct DrawerCapsuleButton: View {
 
     // MARK: Preview
 
-    /// Four reels, one per cell (three apps, one mini grid): each scrolls its own pages vertically
-    /// behind its own window, full size and opaque. Nothing crosses a neighbouring cell or the rim.
+    /// Every app is one icon that lives through the whole scroll and is posed by the position
+    /// (`DrawerCapsulePaging.pose`): turning forward, the mini icons grow and travel onto the three
+    /// app cells, replacing the apps there, and the next ones grow into the mini grid. Nothing is
+    /// clipped and nothing fades.
     private func pagedPreview(ids: [String], pageCount: Int, page: Int, hitPage: Int) -> some View {
+        let side = capsuleSide
         let position = DrawerCapsulePaging.displayedPosition(page: page, drag: pager.drag, pageCount: pageCount)
-        let columns = DrawerCapsulePreviewMetrics.columns
         let hitApps = DrawerCapsulePaging.apps(page: hitPage, members: ids).count
         let expandActive = { (cell: Int?) in cell.map { $0 >= hitApps } == true }
-        return VStack(spacing: gridSpacing) {
-            ForEach(0..<columns, id: \.self) { row in
-                HStack(spacing: gridSpacing) {
-                    ForEach(0..<columns, id: \.self) { column in
-                        let cell = row * columns + column
-                        if cell < DrawerCapsulePreviewMetrics.appSlots {
-                            rollingCell(position: position, pageCount: pageCount) { index in
-                                appCell(cell, apps: DrawerCapsulePaging.apps(page: index, members: ids),
-                                        isCurrent: index == hitPage)
-                            }
-                        } else {
-                            rollingCell(position: position, pageCount: pageCount) { index in
-                                expandVisual(more: DrawerCapsulePaging.more(page: index, members: ids))
-                            }
-                            // An app-less cell also expands the drawer, so its feedback shows here.
-                            .cellFeedback(hovered: hoverEnabled && expandActive(hoveredCell),
-                                          pressed: expandActive(pressedCell))
-                        }
-                    }
-                }
-            }
-        }
-    }
-
-    /// One reel: the cell's pages one pitch apart, slid by the position, behind a window one
-    /// pitch square. The layout size stays the cell, so the window reaches half a gap around it.
-    private func rollingCell<Content: View>(position: CGFloat, pageCount: Int,
-                                            @ViewBuilder content: @escaping (Int) -> Content) -> some View {
-        let pitch = DrawerCapsulePreviewMetrics.cellPitch * dockScale
+        let appSlots = DrawerCapsulePreviewMetrics.appSlots
         return ZStack {
-            ForEach(Array(0..<pageCount), id: \.self) { index in
-                content(index)
-                    .offset(y: (CGFloat(index) - position) * pitch)
+            // Past the last app there is nothing left to preview: the expand cell shows a glyph.
+            if DrawerCapsulePaging.more(page: hitPage, members: ids).isEmpty {
+                let centre = (DrawerCapsulePreviewMetrics.iconSize + DrawerCapsulePreviewMetrics.gridSpacing) / 2
+                Image(systemName: "square.grid.2x2")
+                    .font(.system(size: iconSize * 0.8, weight: .medium))
+                    .foregroundStyle(theme.capsuleGlyph.color)
+                    .cellFeedback(hovered: hoverEnabled && expandActive(hoveredCell), pressed: expandActive(pressedCell))
+                    .position(x: side / 2 + centre * dockScale, y: side / 2 + centre * dockScale)
+            }
+            ForEach(Array(ids.enumerated()), id: \.element) { index, id in
+                // Hover and press go to the icons the click page holds: an app cell lights its own
+                // app, the expand cell (or an app-less cell) lights the whole mini grid.
+                let slot = index - hitPage * appSlots
+                let isApp = (0..<appSlots).contains(slot)
+                let isMini = (appSlots..<DrawerCapsulePreviewMetrics.limit).contains(slot)
+                DrawerCapsuleAppIcon(bundleID: id,
+                                     size: iconSize,
+                                     bounceHeight: DrawerCapsulePreviewMetrics.bounceHeight * dockScale,
+                                     isLaunching: isApp && runtime.launchingBundleIDs.contains(id))
+                    .cellFeedback(
+                        hovered: hoverEnabled && (isApp ? hoveredCell == slot : isMini && expandActive(hoveredCell)),
+                        pressed: isApp ? pressedCell == slot : isMini && expandActive(pressedCell))
+                    .modifier(DrawerCapsuleFlow(index: index, position: position, side: side, unit: dockScale))
             }
         }
-        .frame(width: pitch, height: pitch)
-        .clipped()
-        .frame(width: iconSize, height: iconSize)
-    }
-
-    /// Hover and press belong to the page that takes clicks; the other pages are just passing by.
-    @ViewBuilder
-    private func appCell(_ index: Int, apps: [String], isCurrent: Bool) -> some View {
-        if index < apps.count {
-            DrawerCapsuleAppIcon(bundleID: apps[index],
-                                 size: iconSize,
-                                 bounceHeight: DrawerCapsulePreviewMetrics.bounceHeight * dockScale,
-                                 isLaunching: runtime.launchingBundleIDs.contains(apps[index]))
-                .cellFeedback(hovered: isCurrent && hoverEnabled && hoveredCell == index,
-                              pressed: isCurrent && pressedCell == index)
-        } else {
-            Color.clear.frame(width: iconSize, height: iconSize)
-        }
-    }
-
-    @ViewBuilder
-    private func expandVisual(more: [String]) -> some View {
-        if more.isEmpty {
-            Image(systemName: "square.grid.2x2")
-                .font(.system(size: iconSize * 0.8, weight: .medium))
-                .foregroundStyle(theme.capsuleGlyph.color)
-                .frame(width: iconSize, height: iconSize)
-        } else {
-            let columns = DrawerCapsulePreviewMetrics.miniColumns
-            let size = DrawerCapsulePreviewMetrics.miniIconSize * dockScale
-            let spacing = DrawerCapsulePreviewMetrics.miniSpacing * dockScale
-            VStack(spacing: spacing) {
-                ForEach(0..<columns, id: \.self) { row in
-                    HStack(spacing: spacing) {
-                        ForEach(0..<columns, id: \.self) { column in
-                            let index = row * columns + column
-                            if index < more.count {
-                                Image(nsImage: AppIconResolver.icon(for: more[index]))
-                                    .resizable()
-                                    .aspectRatio(contentMode: .fit)
-                                    .frame(width: size, height: size)
-                                    .clipShape(RoundedRectangle(cornerRadius: size / 4, style: .continuous))
-                            } else {
-                                Color.clear.frame(width: size, height: size)
-                            }
-                        }
-                    }
-                }
-            }
-            .frame(width: iconSize, height: iconSize)
-        }
+        .frame(width: side, height: side)
     }
 
     // MARK: Hit cells
@@ -297,6 +240,30 @@ private extension View {
     }
 }
 
+/// Places one app's icon by the capsule's position. The position is the animatable value, so a
+/// spring between two pages moves the icon along its blend frame by frame.
+private struct DrawerCapsuleFlow: ViewModifier, Animatable {
+    let index: Int
+    var position: CGFloat
+    let side: CGFloat
+    let unit: CGFloat
+
+    var animatableData: CGFloat {
+        get { position }
+        set { position = newValue }
+    }
+
+    func body(content: Content) -> some View {
+        let pose = DrawerCapsulePaging.pose(index: index, position: position)
+        content
+            .scaleEffect(pose.size / DrawerCapsulePreviewMetrics.iconSize)
+            .position(x: side / 2 + pose.x * unit, y: side / 2 + pose.y * unit)
+            // An arriving icon lands on top of the one it replaces, in either direction.
+            .zIndex(Double(index))
+            .opacity(pose.size > 0 ? 1 : 0)
+    }
+}
+
 // MARK: - Capsule Paging
 
 /// Where the capsule rests (`page`) and how far a live trackpad gesture has pulled it (`drag`).
@@ -320,7 +287,7 @@ final class DrawerCapsulePager: ObservableObject {
         }
     }
 
-    private static let turn = Animation.spring(response: 0.36, dampingFraction: 0.84)
+    private static let turn = Animation.spring(response: 0.42, dampingFraction: 0.86)
     private static let returnHome = Animation.spring(response: 0.5, dampingFraction: 0.9)
     private static let returnDelay: TimeInterval = 3
     /// By now the arriving icons are within a point of rest for both springs.
