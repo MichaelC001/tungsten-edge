@@ -11,6 +11,10 @@ struct AppTrackerCGWindowSnapshot: Equatable {
     /// layer-0 窗口的 `kCGWindowBounds`（Quartz 全局坐标）。多屏 ④ 的 5s tick 用它给**所有**座位
     /// 重算「在哪块屏」——包括被跳读门控跳过、没有 AX 读的 pid。只做屏归属，不替代 AX 帧。
     let boundsByWindowID: [CGWindowID: CGRect]
+    /// Windows below the normal layer (`kCGWindowLayer < 0`): desktop widgets, wallpaper surfaces.
+    /// A veto-only set for admission — none of these ids appear in the layer-0 fields above.
+    /// Empty on a failed capture, so that round cannot veto anything.
+    let belowNormalLayerWindowIDs: Set<CGWindowID>
     /// CG 查询本身失败（返回 nil）。与「真的没有 layer-0 窗口」是两回事：任何拿本快照当
     /// 「没变化」判据的门控（周期跳读、补扫门控）见此标志必须放弃跳过、走全量路径。
     /// 既有消费方不读它，失败时的下游行为与从前逐位一致。
@@ -22,6 +26,7 @@ struct AppTrackerCGWindowSnapshot: Equatable {
         windowIDsByPID: [pid_t: Set<CGWindowID>],
         alphaByWindowID: [CGWindowID: Double],
         boundsByWindowID: [CGWindowID: CGRect] = [:],
+        belowNormalLayerWindowIDs: Set<CGWindowID> = [],
         captureFailed: Bool = false
     ) {
         self.allWindowIDs = allWindowIDs
@@ -29,6 +34,7 @@ struct AppTrackerCGWindowSnapshot: Equatable {
         self.windowIDsByPID = windowIDsByPID
         self.alphaByWindowID = alphaByWindowID
         self.boundsByWindowID = boundsByWindowID
+        self.belowNormalLayerWindowIDs = belowNormalLayerWindowIDs
         self.captureFailed = captureFailed
     }
 
@@ -66,8 +72,15 @@ struct AppTrackerCGWindowSnapshot: Equatable {
         var windowIDsByPID: [pid_t: Set<CGWindowID>] = [:]
         var alphaByWindowID: [CGWindowID: Double] = [:]
         var boundsByWindowID: [CGWindowID: CGRect] = [:]
+        var belowNormalLayerWindowIDs: Set<CGWindowID> = []
 
         for info in windowInfo {
+            if let layer = info[kCGWindowLayer as String] as? Int, layer < 0 {
+                if let number = info[kCGWindowNumber as String] as? Int {
+                    belowNormalLayerWindowIDs.insert(CGWindowID(number))
+                }
+                continue
+            }
             guard let windowID = layerZeroWindowID(in: info) else { continue }
             allWindowIDs.insert(windowID)
             if info[kCGWindowIsOnscreen as String] as? Bool == true {
@@ -90,7 +103,8 @@ struct AppTrackerCGWindowSnapshot: Equatable {
             onScreenWindowIDs: onScreenWindowIDs,
             windowIDsByPID: windowIDsByPID,
             alphaByWindowID: alphaByWindowID,
-            boundsByWindowID: boundsByWindowID
+            boundsByWindowID: boundsByWindowID,
+            belowNormalLayerWindowIDs: belowNormalLayerWindowIDs
         )
     }
 

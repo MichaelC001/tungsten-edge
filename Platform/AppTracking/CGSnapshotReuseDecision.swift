@@ -75,4 +75,14 @@ enum CGSnapshotReuseDecision {
     static func probeVerdict(probe: Set<CGWindowID>, cachedProbe: Set<CGWindowID>) -> ProbeVerdict {
         probe == cachedProbe ? .reuse : .captureAndPrime(.probeChanged)
     }
+
+    /// A cached table may only err toward retention. Its below-normal-layer set is a veto, and the
+    /// layer-0 probe cannot see a window leaving that set, so a read that lists such an id must
+    /// capture fresh instead of reusing the cache.
+    static func cachedLayerVetoApplies(
+        axWindowIDs: Set<CGWindowID>,
+        cachedBelowNormalLayerIDs: Set<CGWindowID>
+    ) -> Bool {
+        !axWindowIDs.isDisjoint(with: cachedBelowNormalLayerIDs)
+    }
 }

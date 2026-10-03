@@ -400,6 +400,82 @@ final class AppTrackerPeriodicBatchTests: XCTestCase {
         XCTAssertNil(tracker.cgSnapshotCacheForTesting())
     }
 
+    /// A cached table may not veto: once AX lists an id the cache holds as below-normal-layer, the
+    /// read captures fresh. Every other reuse condition holds here (observer active, fixed uptime,
+    /// no event, unchanged probe), so only that check can cause the extra capture.
+    func testCachedBelowLayerVetoForcesFreshCaptureAndSeatsRaisedWindow() async {
+        let counters = CGCallCounters()
+        let reader = PeriodicBatchReader(resultsByPID: [
+            pidA: .success([
+                makeSnapshot(pid: pidA, cgWindowID: cgWindowA, title: "Window"),
+                makeSnapshot(pid: pidA, cgWindowID: cgWindowB, title: "Raised"),
+            ]),
+        ])
+        let table = SnapshotBox(value: AppTrackerCGWindowSnapshot(
+            allWindowIDs: [cgWindowA], onScreenWindowIDs: [cgWindowA],
+            windowIDsByPID: [pidA: [cgWindowA]], alphaByWindowID: [:],
+            belowNormalLayerWindowIDs: [cgWindowB]
+        ))
+        let onScreen: Set<CGWindowID> = [cgWindowA]
+        let tracker = AppTracker(
+            reader: reader,
+            processProvider: BatchFixedProcessProvider(),
+            cgSnapshotProvider: { counters.noteCapture(); return table.value },
+            onScreenWindowIDsProvider: { counters.noteProbe(); return onScreen },
+            eventAXAsyncEnabled: true,
+            cgSnapshotReuseEnabled: true,
+            uptimeProvider: { 1000 }
+        )
+        tracker.installFixtureForTesting(makeApp(pid: pidA, cgWindowID: cgWindowA))
+        tracker.setObserverActiveForTesting(pid: pidA, active: true)
+
+        await runEventRead(tracker)          // primes the cache; B is on the desktop layer → no seat
+        XCTAssertNil(tracker.fixtureAppForTesting(pid: pidA)?.windowsByID[cgWindowB])
+        let tokenA = tracker.fixtureAppForTesting(pid: pidA)?.windowsByID[cgWindowA]?.token
+        let capturesAfterFirst = counters.captures
+
+        // B rises to layer 0 while off-screen: the layer-0 on-screen probe does not change.
+        table.value = AppTrackerCGWindowSnapshot(
+            allWindowIDs: [cgWindowA, cgWindowB], onScreenWindowIDs: [cgWindowA],
+            windowIDsByPID: [pidA: [cgWindowA, cgWindowB]], alphaByWindowID: [:]
+        )
+        await runEventRead(tracker)
+
+        XCTAssertEqual(counters.captures, capturesAfterFirst + 1)
+        XCTAssertNotNil(tracker.fixtureAppForTesting(pid: pidA)?.windowsByID[cgWindowB])
+        XCTAssertEqual(tracker.fixtureAppForTesting(pid: pidA)?.windowsByID[cgWindowA]?.token, tokenA)
+    }
+
+    /// Accepted cost, pinned: a failed capture cannot veto, so a desktop-layer window is seated for
+    /// that round and released by the next successful one.
+    func testFailedCaptureSeatsDesktopLayerWindowUntilNextSuccessfulRound() async {
+        let reader = PeriodicBatchReader(resultsByPID: [
+            pidA: .success([
+                makeSnapshot(pid: pidA, cgWindowID: cgWindowA, title: "Window"),
+                makeSnapshot(pid: pidA, cgWindowID: cgWindowB, title: ""),
+            ]),
+        ])
+        let tracker = AppTracker(
+            reader: reader,
+            processProvider: BatchFixedProcessProvider(),
+            eventAXAsyncEnabled: true
+        )
+        tracker.installFixtureForTesting(makeApp(pid: pidA, cgWindowID: cgWindowA))
+
+        tracker.runPeriodicBatchForTesting(cgSnapshot: .failed)
+        await waitUntil { !tracker.hasPendingEventReadForTesting(pid: self.pidA) }
+        XCTAssertNotNil(tracker.fixtureAppForTesting(pid: pidA)?.windowsByID[cgWindowB])
+
+        tracker.runPeriodicBatchForTesting(cgSnapshot: AppTrackerCGWindowSnapshot(
+            allWindowIDs: [cgWindowA], onScreenWindowIDs: [cgWindowA],
+            windowIDsByPID: [pidA: [cgWindowA]], alphaByWindowID: [:],
+            belowNormalLayerWindowIDs: [cgWindowB]
+        ))
+        await waitUntil { !tracker.hasPendingEventReadForTesting(pid: self.pidA) }
+        XCTAssertNil(tracker.fixtureAppForTesting(pid: pidA)?.windowsByID[cgWindowB])
+        XCTAssertNotNil(tracker.fixtureAppForTesting(pid: pidA)?.windowsByID[cgWindowA])
+    }
+
     // MARK: - Fixtures
 
     /// 关窗口事件必须走限时后台读，不能在主 actor 上触发不限时读（被关窗口的 App 卡住时主线程会冻 ~12s）。
@@ -595,6 +671,18 @@ private final class ProbeBox: @unchecked Sendable {
     init(value: Set<CGWindowID>) { self.storage = value }
 
     var value: Set<CGWindowID> {
+        get { lock.lock(); defer { lock.unlock() }; return storage }
+        set { lock.lock(); storage = newValue; lock.unlock() }
+    }
+}
+
+private final class SnapshotBox: @unchecked Sendable {
+    private let lock = NSLock()
+    private var storage: AppTrackerCGWindowSnapshot
+
+    init(value: AppTrackerCGWindowSnapshot) { self.storage = value }
+
+    var value: AppTrackerCGWindowSnapshot {
         get { lock.lock(); defer { lock.unlock() }; return storage }
         set { lock.lock(); storage = newValue; lock.unlock() }
     }

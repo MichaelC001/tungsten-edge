@@ -93,6 +93,24 @@ final class CGWindowSnapshotTests: XCTestCase {
         XCTAssertTrue(failed.alphaByWindowID.isEmpty)
     }
 
+    /// Desktop-layer windows (widgets) feed only the veto set; every layer-0 field ignores them.
+    func testParseCollectsBelowNormalLayerWindowIDsSeparately() {
+        let rect = CGRect(x: 16, y: 30, width: 344, height: 359)
+        let snapshot = AppTrackerCGWindowSnapshot.parse([
+            windowInfo(id: 11, layer: 0, isOnScreen: true, pid: 100, alpha: 1, bounds: rect),
+            windowInfo(id: 12, layer: -20, isOnScreen: true, pid: 100, alpha: 1, bounds: rect),
+            windowInfo(id: 13, layer: 3, isOnScreen: true, pid: 100, alpha: 1, bounds: rect),
+        ])
+
+        XCTAssertEqual(snapshot.belowNormalLayerWindowIDs, [12])
+        XCTAssertEqual(snapshot.allWindowIDs, [11])
+        XCTAssertEqual(snapshot.onScreenWindowIDs, [11])
+        XCTAssertEqual(snapshot.windowIDsByPID, [100: [11]])
+        XCTAssertEqual(snapshot.alphaByWindowID, [11: 1])
+        XCTAssertEqual(snapshot.boundsByWindowID, [11: rect])
+        XCTAssertTrue(AppTrackerCGWindowSnapshot.failed.belowNormalLayerWindowIDs.isEmpty)
+    }
+
     func testFailedDiffersFromGenuinelyEmptyCapture() {
         XCTAssertNotEqual(AppTrackerCGWindowSnapshot.failed, AppTrackerCGWindowSnapshot.parse([]))
     }

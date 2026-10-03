@@ -113,4 +113,16 @@ final class CGSnapshotReuseDecisionTests: XCTestCase {
             .captureAndPrime(.probeChanged)
         )
     }
+
+    func testCachedLayerVetoAppliesOnlyWhenAXListsACachedBelowLayerID() {
+        XCTAssertTrue(CGSnapshotReuseDecision.cachedLayerVetoApplies(
+            axWindowIDs: [1, 2], cachedBelowNormalLayerIDs: [2, 9]
+        ))
+        XCTAssertFalse(CGSnapshotReuseDecision.cachedLayerVetoApplies(
+            axWindowIDs: [1, 2], cachedBelowNormalLayerIDs: [9]
+        ))
+        XCTAssertFalse(CGSnapshotReuseDecision.cachedLayerVetoApplies(
+            axWindowIDs: [1, 2], cachedBelowNormalLayerIDs: []
+        ))
+    }
 }

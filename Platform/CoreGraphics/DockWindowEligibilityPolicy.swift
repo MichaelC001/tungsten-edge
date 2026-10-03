@@ -143,8 +143,12 @@ struct AppTrackerWindowEligibility {
         bounds: CGRect?,
         alpha: Double?,
         isMinimized: Bool,
+        isBelowNormalLayer: Bool,
         application: Application
     ) -> Bool {
+        // Desktop-layer windows (widgets, wallpaper surfaces) are not windows the user switches
+        // to. No default on the parameter: an omitted layer check must not compile.
+        guard !isBelowNormalLayer else { return false }
         let candidate = DockWindowEligibilityPolicy.Candidate(
             bundleIdentifier: application.bundleIdentifier,
             appName: application.appName,

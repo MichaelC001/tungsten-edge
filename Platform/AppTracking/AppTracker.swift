@@ -1541,6 +1541,9 @@ final class AppTracker: ObservableObject {
             bounds: snap.bounds,
             alpha: alpha,
             isMinimized: snap.isMinimized,
+            isBelowNormalLayer: snap.cgWindowID.map {
+                cgSnapshot.belowNormalLayerWindowIDs.contains($0)
+            } ?? false,
             application: application
         )
     }
@@ -1758,11 +1761,21 @@ final class AppTracker: ObservableObject {
                     probe: probe, cachedProbe: ticket.cachedProbeIDs ?? []
                 ) {
                 case .reuse:
-                    acquisition = CGSnapshotAcquisition(
-                        // preVerdict 已保证 hasCache；防御性兜底走现拍。
-                        snapshot: ticket.cachedSnapshot ?? cgSnapshotProvider(),
-                        probeIDs: probe, fresh: false, ticket: ticket
-                    )
+                    if let cached = ticket.cachedSnapshot,
+                       !CGSnapshotReuseDecision.cachedLayerVetoApplies(
+                           axWindowIDs: Set(result.windowsOrEmpty.compactMap(\.cgWindowID)),
+                           cachedBelowNormalLayerIDs: cached.belowNormalLayerWindowIDs
+                       ) {
+                        acquisition = CGSnapshotAcquisition(
+                            snapshot: cached, probeIDs: probe, fresh: false, ticket: ticket
+                        )
+                    } else {
+                        // No cache (preVerdict guarantees one; defensive), or the cached table
+                        // would veto a window AX just listed — that verdict needs a fresh layer.
+                        acquisition = CGSnapshotAcquisition(
+                            snapshot: cgSnapshotProvider(), probeIDs: probe, fresh: true, ticket: ticket
+                        )
+                    }
                 case .captureAndPrime:
                     acquisition = CGSnapshotAcquisition(
                         snapshot: cgSnapshotProvider(), probeIDs: probe, fresh: true, ticket: ticket

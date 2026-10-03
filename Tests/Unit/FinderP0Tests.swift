@@ -1050,9 +1050,38 @@ final class FinderP0Tests: XCTestCase {
                 bounds: CGRect(x: 0, y: 0, width: 723, height: 626),
                 alpha: 1,
                 isMinimized: false,
+                isBelowNormalLayer: false,
                 application: application
             )
         )
+    }
+
+    /// Widgetify's desktop widgets: `.regular`, empty title, AXStandardWindow, CG layer -20.
+    func testAppTrackerEligibilityRejectsBelowNormalLayerWindowsForEveryApp() {
+        let eligibility = AppTrackerWindowEligibility()
+        func eligible(bundleID: String, title: String, below: Bool) -> Bool {
+            eligibility.isEligible(
+                title: title,
+                role: kAXWindowRole as String,
+                subrole: kAXStandardWindowSubrole as String,
+                bounds: CGRect(x: 16, y: 30, width: 344, height: 359),
+                alpha: 1,
+                isMinimized: false,
+                isBelowNormalLayer: below,
+                application: AppTrackerWindowEligibility.Application(
+                    bundleIdentifier: bundleID,
+                    appName: "Fixture",
+                    activationPolicy: .regular,
+                    executablePath: "/Applications/Fixture.app/Contents/MacOS/Fixture"
+                )
+            )
+        }
+
+        XCTAssertTrue(eligible(bundleID: "com.jian.Widgetify", title: "", below: false))
+        XCTAssertFalse(eligible(bundleID: "com.jian.Widgetify", title: "", below: true))
+        XCTAssertFalse(eligible(bundleID: "com.jian.Widgetify", title: "Clock", below: true))
+        XCTAssertFalse(eligible(bundleID: "com.feishu.app", title: "飞书", below: true))
+        XCTAssertFalse(eligible(bundleID: "com.apple.finder", title: "Documents", below: true))
     }
 
     func testAppTrackerEligibilityAppliesMetadataDenyFiltersBeforeUntitledAdmission() {
@@ -1085,6 +1114,7 @@ final class FinderP0Tests: XCTestCase {
                 bounds: frame,
                 alpha: 0,
                 isMinimized: false,
+                isBelowNormalLayer: false,
                 application: normal
             )
         )
@@ -1096,6 +1126,7 @@ final class FinderP0Tests: XCTestCase {
                 bounds: frame,
                 alpha: 1,
                 isMinimized: false,
+                isBelowNormalLayer: false,
                 application: extensionProcess
             )
         )
@@ -1107,6 +1138,7 @@ final class FinderP0Tests: XCTestCase {
                 bounds: frame,
                 alpha: 1,
                 isMinimized: false,
+                isBelowNormalLayer: false,
                 application: notificationCenter
             )
         )
@@ -1129,6 +1161,7 @@ final class FinderP0Tests: XCTestCase {
                 bounds: CGRect(x: 0, y: 0, width: 723, height: 626),
                 alpha: 1,
                 isMinimized: false,
+                isBelowNormalLayer: false,
                 application: application
             )
         )
@@ -1151,6 +1184,7 @@ final class FinderP0Tests: XCTestCase {
                 bounds: CGRect(x: 0, y: 0, width: 723, height: 626),
                 alpha: 0,
                 isMinimized: false,
+                isBelowNormalLayer: false,
                 application: application
             )
         )
@@ -1493,6 +1527,7 @@ final class FinderP0Tests: XCTestCase {
                 bounds: bounds,
                 alpha: 1,
                 isMinimized: true,
+                isBelowNormalLayer: false,
                 application: finder
             )
         )
@@ -1504,6 +1539,7 @@ final class FinderP0Tests: XCTestCase {
                 bounds: bounds,
                 alpha: 1,
                 isMinimized: false,
+                isBelowNormalLayer: false,
                 application: finder
             )
         )
@@ -1515,6 +1551,7 @@ final class FinderP0Tests: XCTestCase {
                 bounds: bounds,
                 alpha: 1,
                 isMinimized: true,
+                isBelowNormalLayer: false,
                 application: other
             )
         )
