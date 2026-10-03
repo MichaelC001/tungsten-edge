@@ -305,16 +305,15 @@ enum DrawerCapsulePaging {
     /// The pose of app `index` while the capsule is pulled past its last page, nil otherwise.
     /// Nothing arrives there and the apps hold their size for `leaveHold`, longer than the rubber
     /// band reaches, so the plain pose would not move at all. Instead each of the last page's apps
-    /// mirrors, about its resting cell, the pose the same cell shows when pulled as far before the
-    /// first page: both ends answer alike, each moving with the fingers.
+    /// takes exactly the pose the same cell shows when pulled as far before the first page: at
+    /// both ends the apps gather together towards the mini grid. Not a mirror — mirrored, the apps
+    /// spread apart towards the rim, which reads as a different gesture.
     static func endPullPose(index: Int, position: CGFloat, memberCount: Int) -> IconPose? {
         let last = pageCount(memberCount: memberCount) - 1
         let over = position - CGFloat(last)
         let slot = index - last * DrawerCapsulePreviewMetrics.appSlots
         guard over > 0, (0..<DrawerCapsulePreviewMetrics.appSlots).contains(slot) else { return nil }
-        let rest = restPose(slot: slot)
-        let pulled = pose(index: slot, position: -over)
-        return IconPose(x: 2 * rest.x - pulled.x, y: 2 * rest.y - pulled.y, size: pulled.size)
+        return pose(index: slot, position: -over)
     }
 
     /// Scale of the expand glyph, which the last page shows in place of a mini grid: it gives way
