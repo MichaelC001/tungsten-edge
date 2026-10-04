@@ -133,17 +133,8 @@ struct DrawerCapsuleButton: View {
         let hitApps = DrawerCapsulePaging.apps(page: hitPage, members: ids).count
         let expandActive = { (cell: Int?) in cell.map { $0 >= hitApps } == true }
         let appSlots = DrawerCapsulePreviewMetrics.appSlots
+        // Past the last app the expand cell stays empty (no glyph) and still opens the drawer.
         return ZStack {
-            // Past the last app there is nothing left to preview: the expand cell shows a glyph.
-            if DrawerCapsulePaging.more(page: hitPage, members: ids).isEmpty {
-                let centre = (DrawerCapsulePreviewMetrics.iconSize + DrawerCapsulePreviewMetrics.gridSpacing) / 2
-                Image(systemName: "square.grid.2x2")
-                    .font(.system(size: iconSize * 0.8, weight: .medium))
-                    .foregroundStyle(theme.capsuleGlyph.color)
-                    .cellFeedback(hovered: hoverEnabled && expandActive(hoveredCell), pressed: expandActive(pressedCell))
-                    .scaleEffect(DrawerCapsulePaging.endPullGlyphScale(position: position, memberCount: ids.count))
-                    .position(x: side / 2 + centre * dockScale, y: side / 2 + centre * dockScale)
-            }
             ForEach(Array(ids.enumerated()), id: \.element) { index, id in
                 // Press goes to the icons the click page holds: an app cell dips its own app, the
                 // expand cell (or an app-less cell) the whole mini grid. Hover follows the same

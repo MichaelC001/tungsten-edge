@@ -317,13 +317,6 @@ enum DrawerCapsulePaging {
         guard over > 0, (0..<DrawerCapsulePreviewMetrics.appSlots).contains(slot) else { return nil }
         return pose(index: slot, position: -over)
     }
-
-    /// Scale of the expand glyph, which the last page shows in place of a mini grid: it gives way
-    /// with the apps when pulled past the end, as the mini icons do before the first page.
-    static func endPullGlyphScale(position: CGFloat, memberCount: Int) -> CGFloat {
-        let over = position - CGFloat(pageCount(memberCount: memberCount) - 1)
-        return over > 0 ? 1 - over : 1
-    }
 }
 
 struct PanelScreenGeometry: Equatable {

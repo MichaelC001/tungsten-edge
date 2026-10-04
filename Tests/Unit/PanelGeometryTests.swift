@@ -506,13 +506,11 @@ final class PanelGeometryTests: XCTestCase {
         XCTAssertLessThan(end.size, rest.size)
         XCTAssertGreaterThan(end.x, rest.x)
         XCTAssertGreaterThan(end.y, rest.y)
-        XCTAssertEqual(P.endPullGlyphScale(position: fullPull, memberCount: 7), 1 - P.rubberBand, accuracy: 1e-9)
         // At rest, mid-list and at the first page there is no end pull.
         XCTAssertNil(P.endPullPose(index: 6, position: 2, memberCount: 7))
         XCTAssertNil(P.endPullPose(index: 3, position: 1.1, memberCount: 7))
         XCTAssertNil(P.endPullPose(index: 0, position: -0.1, memberCount: 7))
         XCTAssertNil(P.endPullPose(index: 3, position: fullPull, memberCount: 7))
-        XCTAssertEqual(P.endPullGlyphScale(position: 2, memberCount: 7), 1)
     }
 
     func testCapsuleHoverLiftFoldsAwayMidTurnAndFollowsTheScreen() {
