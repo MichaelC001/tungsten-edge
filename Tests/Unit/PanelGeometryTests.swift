@@ -424,8 +424,8 @@ final class PanelGeometryTests: XCTestCase {
             XCTAssertLessThanOrEqual(abs(pose.y) + pose.size / 2, half - M.gridPadding + 1e-9, "slot \(slot)")
         }
         // Top-leading app cell and the first mini icon, relative to the capsule's centre.
-        XCTAssertEqual(DrawerCapsulePaging.restPose(slot: 0), .init(x: -12, y: -12, size: 20))
-        XCTAssertEqual(DrawerCapsulePaging.restPose(slot: 3), .init(x: 7, y: 7, size: 8))
+        XCTAssertEqual(DrawerCapsulePaging.restPose(slot: 0), .init(x: -10.5, y: -10.5, size: 21))
+        XCTAssertEqual(DrawerCapsulePaging.restPose(slot: 3), .init(x: 6.25, y: 6.25, size: 8.5))
         // Neighbouring pages rest at zero size.
         for slot in [-6, -3, -1, 7, 9, 12] {
             XCTAssertEqual(DrawerCapsulePaging.restPose(slot: slot).size, 0, "slot \(slot)")
@@ -439,17 +439,17 @@ final class PanelGeometryTests: XCTestCase {
         // App 4 heads for the top-trailing cell, which runs on the turn's own clock; mid-turn its
         // path bows towards the capsule's inside by the full bend.
         let mid = DrawerCapsulePaging.pose(index: 4, position: 0.5)
-        XCTAssertEqual(mid.x, 14.5 + DrawerCapsulePaging.cellBend[1].x, accuracy: 1e-9)
-        XCTAssertEqual(mid.y, -2.5, accuracy: 1e-9)
-        XCTAssertEqual(mid.size, 14, accuracy: 1e-9)
+        XCTAssertEqual(mid.x, 12.625 + DrawerCapsulePaging.cellBend[1].x, accuracy: 1e-9)
+        XCTAssertEqual(mid.y, -2.125, accuracy: 1e-9)
+        XCTAssertEqual(mid.size, 14.75, accuracy: 1e-9)
         // The app it replaces holds its size for a moment, then shrinks in place: mid-turn it is
         // still about as large as the arriving icon. The last mini icon moves up to the first spot.
         XCTAssertEqual(DrawerCapsulePaging.pose(index: 1, position: DrawerCapsulePaging.leaveHold),
                        DrawerCapsulePaging.restPose(slot: 1))
         let leaving = DrawerCapsulePaging.pose(index: 1, position: 0.5)
-        XCTAssertEqual(leaving.x, 12, accuracy: 1e-9)
-        XCTAssertEqual(leaving.y, -12, accuracy: 1e-9)
-        XCTAssertEqual(leaving.size, 13.671875, accuracy: 1e-9)
+        XCTAssertEqual(leaving.x, 10.5, accuracy: 1e-9)
+        XCTAssertEqual(leaving.y, -10.5, accuracy: 1e-9)
+        XCTAssertEqual(leaving.size, 14.35546875, accuracy: 1e-9)
         // The three cells hand over in lockstep, measured along the axis each path does not bow on.
         func travelled(_ index: Int, along axis: KeyPath<DrawerCapsulePaging.IconPose, CGFloat>) -> CGFloat {
             let from = DrawerCapsulePaging.restPose(slot: index)
@@ -465,7 +465,7 @@ final class PanelGeometryTests: XCTestCase {
         }
         // The bottom-leading path bows up, towards the capsule's inside.
         let low = DrawerCapsulePaging.pose(index: 5, position: 0.5)
-        XCTAssertEqual(low.y, 17 - 5 * 0.5 + DrawerCapsulePaging.cellBend[2].y, accuracy: 1e-9)
+        XCTAssertEqual(low.y, 14.75 - 4.25 * 0.5 + DrawerCapsulePaging.cellBend[2].y, accuracy: 1e-9)
         for index in 0..<6 {
             XCTAssertEqual(DrawerCapsulePaging.pose(index: index, position: 1),
                            DrawerCapsulePaging.restPose(slot: index - DrawerCapsulePreviewMetrics.appSlots))
@@ -488,7 +488,7 @@ final class PanelGeometryTests: XCTestCase {
         // Overscroll before the first page pulls the apps a little towards the mini grid.
         let pulled = DrawerCapsulePaging.pose(index: 0, position: -0.1)
         XCTAssertLessThan(pulled.size, DrawerCapsulePreviewMetrics.iconSize)
-        XCTAssertGreaterThan(pulled.x, -12)
+        XCTAssertGreaterThan(pulled.x, -10.5)
     }
 
     func testCapsulePulledPastTheLastPageAnswersLikeThePullBeforeTheFirst() {

@@ -100,13 +100,15 @@ enum DrawerCapsulePreviewMetrics {
     static let miniColumns = 2
     static let miniLimit = miniColumns * miniColumns
     static let limit = appSlots + miniLimit
-    // Proportions follow the system's app-library tile: icon 0.39 of the tile, mini icon 0.4
-    // of an icon, the mini grid inset inside its cell.
-    static let iconSize: CGFloat = 20
-    static let gridSpacing: CGFloat = 4
+    // Proportions follow the system's app-library tile, on the visible artwork: a gap of about a
+    // fifth of an icon, mini icons 0.4 of an icon. App icon assets carry ~9% transparent margin
+    // per side, which already is that gap, so the frames touch. The 42pt the two columns span
+    // keeps the icons clear of the capsule rim; growing it puts their corners against it.
+    static let iconSize: CGFloat = 21
+    static let gridSpacing: CGFloat = 0
     static let gridPadding: CGFloat = 4
-    static let miniIconSize: CGFloat = 8
-    static let miniSpacing: CGFloat = 2
+    static let miniIconSize: CGFloat = 8.5
+    static let miniSpacing: CGFloat = 0
     static let hoverScale: CGFloat = 1.1
     static let bounceHeight: CGFloat = 3
 
