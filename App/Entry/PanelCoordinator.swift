@@ -111,7 +111,12 @@ final class PanelCoordinator: NSObject {
     /// 关着那块屏的抽屉一样继续活着，拖拽回调都先问 `isDrawerOpen()`，不是新状态。
     var drawerHosting: NSHostingView<DrawerRootView>?
     /// 宿主里现在这份 rootView 用的可用高度；没变就连 rootView 都不换，打开时 SwiftUI 一次图更新都不做。
-    var drawerHostedMaxContentHeight: CGFloat?
+    var drawerHostedLimits: StackGridLayout.Limits?
+    /// The drawer plate's arrow. One for the coordinator's lifetime: the drawer host is built once
+    /// and holds on to it. Written only by `syncDrawerArrow`.
+    let drawerArrow = StackPopupArrowModel()
+    /// Keeps the arrow on the capsule while the drawer's frame animates (`syncDrawerArrow`).
+    var drawerArrowFollowTimer: Timer?
     /// 跨面板拖动（拖卡进抽屉 路线 C）的唯一权威：载体面板 + 鼠标监视器 + 落点收尾都在它里面。
     /// 必须在 setupDockPanel/setupCapsulePanel 之前建好，因为要注入进这两个面板的 hosting。
     /// 跨面板拖动权威。**整个进程只有一个**，由编排层创建、注入给每个单元
@@ -251,7 +256,8 @@ final class PanelCoordinator: NSObject {
     /// 最近一次**带动画**的 `setFrames` 预计结束时刻：跟随窗的逐帧 setFrame 在此之前不抢（否则会把
     /// 卡增减那条 0.22s 的窗口动画打断成一步到位）。
     var animatedFramesUntil: CFTimeInterval = 0
-    var lastDrawerSize: CGSize = CGSize(width: 210, height: 60)
+    var lastDrawerSize: CGSize = StackPopupMetrics.panelSize(
+        forPlate: StackPopupMetrics.plateSize(columns: StackGridLayout.noteMinColumns, rows: 1, hasNote: false))
     /// 目标 frame 驱动布局：每次 layoutPanels 算齐三个目标并存这里。drop zone 命中、开抽屉定位都读**目标**
     /// 而非 live frame——动画中 live frame 是中途值,会和视觉/逻辑短暂不一致（Codex 二审 P2）。
     /// `setFrames` 上一次真正提交过的目标 frame 序列。用来堵掉「目标没变还重启一遍动画」——
@@ -450,7 +456,8 @@ final class PanelCoordinator: NSObject {
         capsuleContentHost = nil
         drawerContentHost = nil
         drawerHosting = nil
-        drawerHostedMaxContentHeight = nil
+        drawerHostedLimits = nil
+        stopDrawerArrowFollow()
         folderPopupContentHost = nil
         folderPopupArrow = nil
         windowTitleTooltipHosting = nil

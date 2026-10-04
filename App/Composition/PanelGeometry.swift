@@ -505,25 +505,41 @@ enum PanelGeometry {
         )
     }
 
+    /// The drawer is a stack popup anchored on its capsule: this is the capsule's visible rect,
+    /// the anchor every `folderPopup…` function takes.
+    static func drawerAnchorVisibleRect(
+        forCapsule capsuleFrame: CGRect,
+        metrics: PanelLayoutMetrics = .tungstenEdge
+    ) -> CGRect {
+        capsuleFrame.insetBy(dx: metrics.shadowPadding, dy: metrics.shadowPadding)
+    }
+
     static func drawerTargetFrame(
         forCapsule capsuleFrame: CGRect,
         size: CGSize,
         on screen: PanelScreenGeometry,
         metrics: PanelLayoutMetrics = .tungstenEdge
     ) -> CGRect {
-        let bottom = max(capsuleFrame.maxY - metrics.shadowPadding + 8, screen.frame.minY)
-        let height = min(size.height, max(metrics.minimumDrawerExtent, screen.topUsableY - bottom))
-        let rawX = capsuleFrame.maxX - size.width
-        let clampedX = min(max(rawX, screen.frame.minX), screen.frame.maxX - size.width)
-        return CGRect(x: clampedX, y: bottom, width: size.width, height: height)
+        folderPopupTargetFrame(
+            anchorVisibleRect: drawerAnchorVisibleRect(forCapsule: capsuleFrame, metrics: metrics),
+            size: size, on: screen, metrics: metrics)
     }
 
-    static func maxDrawerContentHeight(
+    /// Rows and columns the drawer's grid may take above its capsule on this screen.
+    static func drawerGridLimits(
         forCapsule capsuleFrame: CGRect,
         on screen: PanelScreenGeometry,
         metrics: PanelLayoutMetrics = .tungstenEdge
-    ) -> CGFloat {
-        let drawerBottomY = capsuleFrame.maxY - metrics.shadowPadding + 8
-        return max(metrics.minimumDrawerExtent, (screen.topUsableY - drawerBottomY) - 2 * metrics.shadowPadding)
+    ) -> StackGridLayout.Limits {
+        StackGridLayout.limits(
+            screenSize: screen.frame.size,
+            availablePlateHeight: stackPopupAvailablePlateHeight(
+                anchorVisibleRect: drawerAnchorVisibleRect(forCapsule: capsuleFrame, metrics: metrics), on: screen))
+    }
+
+    /// The pointer's lower bound for "inside the drawer body" while dragging a strip chip: the
+    /// capsule's top, i.e. the bar's top edge. `plate` is `folderPopupPlateFrame` of the drawer.
+    static func drawerBodyFloorY(plate: CGRect) -> CGFloat {
+        plate.minY - StackPopupMetrics.tipGap
     }
 }

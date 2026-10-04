@@ -2,6 +2,67 @@ import XCTest
 
 /// The stack grid's shape rule against the native Dock's own answers (macOS 27, 1352×878 screen).
 final class StackPopupGeometryTests: XCTestCase {
+    // MARK: - Drawer grid (the stack rule, held still during a conversion)
+
+    private let drawerLimits = StackGridLayout.Limits(maxColumns: 7, nominalRows: 4, fitRows: 5, fitRowsWithNote: 4)
+
+    private func drawerShape(settled: Int, actual: Int) -> DrawerGridShape.Result {
+        DrawerGridShape.resolve(settledCount: settled, actualCount: actual, limits: drawerLimits)
+    }
+
+    func testDrawerGridAtRestIsTheStackRule() {
+        for count in 1...40 {
+            XCTAssertEqual(drawerShape(settled: count, actual: count).layout,
+                           StackGridLayout.resolve(cellCount: count, limits: drawerLimits, hasNote: false))
+            XCTAssertFalse(drawerShape(settled: count, actual: count).showsHint)
+        }
+        let empty = drawerShape(settled: 0, actual: 0)
+        XCTAssertTrue(empty.showsHint)
+        XCTAssertEqual(empty.layout, .init(columns: StackGridLayout.noteMinColumns, visibleRows: 0, scrolls: false))
+    }
+
+    func testDrawerGridKeepsItsColumnsWhileAChipIsConvertedInOrOut() {
+        for settled in 1...30 {
+            let columns = drawerShape(settled: settled, actual: settled).layout.columns
+            let rows = drawerShape(settled: settled, actual: settled).layout.visibleRows
+            let convertedIn = drawerShape(settled: settled, actual: settled + 1).layout
+            XCTAssertEqual(convertedIn.columns, columns, "in, settled \(settled)")
+            XCTAssertLessThanOrEqual(convertedIn.visibleRows, rows + 1)
+            XCTAssertGreaterThanOrEqual(convertedIn.visibleRows, rows)
+            let convertedOut = drawerShape(settled: settled, actual: settled - 1)
+            XCTAssertEqual(convertedOut.layout.columns, columns, "out, settled \(settled)")
+            XCTAssertGreaterThanOrEqual(convertedOut.layout.visibleRows, 1)
+            XCTAssertFalse(convertedOut.showsHint)
+        }
+    }
+
+    func testDrawerGridThroughTheEmptyBoundary() {
+        // 0 → 1 → 0: first drag-in keeps the hint plate's three columns until the release.
+        let entering = drawerShape(settled: 0, actual: 1)
+        XCTAssertEqual(entering.layout, .init(columns: 3, visibleRows: 1, scrolls: false))
+        XCTAssertFalse(entering.showsHint)
+        XCTAssertTrue(drawerShape(settled: 0, actual: 0).showsHint)                    // reverted
+        XCTAssertEqual(drawerShape(settled: 1, actual: 1).layout.columns, 1)           // committed
+        // 1 → 0 → 1: dragging the last one out keeps the one-cell plate, no hint.
+        let leaving = drawerShape(settled: 1, actual: 0)
+        XCTAssertEqual(leaving.layout, .init(columns: 1, visibleRows: 1, scrolls: false))
+        XCTAssertFalse(leaving.showsHint)
+        XCTAssertEqual(drawerShape(settled: 1, actual: 1).layout.columns, 1)           // reverted
+        XCTAssertTrue(drawerShape(settled: 0, actual: 0).showsHint)                    // committed
+    }
+
+    func testDrawerSettledCountUndoesTheConversionByID() {
+        let visible = ["a", "b", "c"]
+        XCTAssertEqual(DrawerGridShape.settledCount(visibleIDs: visible, convertedInID: nil, convertedOutID: nil), 3)
+        // Strip chip "c" converted in: not counted yet.
+        XCTAssertEqual(DrawerGridShape.settledCount(visibleIDs: visible, convertedInID: "c", convertedOutID: nil), 2)
+        // "d" converted out (unstash and keepPlacement both remove placement): still counted.
+        XCTAssertEqual(DrawerGridShape.settledCount(visibleIDs: visible, convertedInID: nil, convertedOutID: "d"), 4)
+        // An id already (or still) in the list is never counted twice.
+        XCTAssertEqual(DrawerGridShape.settledCount(visibleIDs: visible, convertedInID: nil, convertedOutID: "a"), 3)
+        XCTAssertEqual(DrawerGridShape.settledCount(visibleIDs: visible, convertedInID: "z", convertedOutID: nil), 3)
+    }
+
     /// Limits of the measured screen: 7 columns, 4 rows once scrolling, 5 rows fit above the Dock.
     private let measured = StackGridLayout.Limits(maxColumns: 7, nominalRows: 4, fitRows: 5, fitRowsWithNote: 5)
 

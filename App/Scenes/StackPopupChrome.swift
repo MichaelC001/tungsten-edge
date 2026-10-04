@@ -8,6 +8,9 @@ import SwiftUI
 final class StackPopupArrowModel: ObservableObject {
     /// Arrow centre minus plate centre, in points.
     @Published var offsetFromCenter: CGFloat = 0
+    /// Bumped by a host that outlives one showing (the drawer) each time the plate goes away:
+    /// a scrolled grid is rebuilt at its top while nobody is looking, never at the next open.
+    @Published var scrollGeneration = 0
 }
 
 /// What the coordinator knows and a popup's content needs: how large the grid may get on this
@@ -34,7 +37,7 @@ struct StackPopupChrome<Grid: View>: View {
     var onBack: (() -> Void)?
     /// Animates cells arriving and leaving; nil while the first population lands.
     var gridAnimation: Animation?
-    var gridAnimationKey: [URL] = []
+    var gridAnimationKey: [String] = []
     /// The cells; they land in a `LazyVGrid` of `layout.columns` fixed columns.
     @ViewBuilder let grid: () -> Grid
 
@@ -137,6 +140,7 @@ struct StackPopupChrome<Grid: View>: View {
             }
             .frame(width: gridWidth + Metrics.scrollerGutter, height: gridHeight)
             .padding(.leading, Metrics.sidePadding)
+            .id(arrow.scrollGeneration)
         } else {
             cells
                 .frame(height: gridHeight, alignment: .top)

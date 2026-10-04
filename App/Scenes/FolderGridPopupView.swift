@@ -229,7 +229,7 @@ struct FolderGridPopupView: View {
                          onPanelSizeChange: onContentResize,
                          onBack: drillStack.isEmpty ? nil : { _ = drillStack.removeLast() },
                          gridAnimation: animatesGridChanges ? .easeInOut(duration: DrawerAnimation.duration) : nil,
-                         gridAnimationKey: model.entries.map(\.url)) {
+                         gridAnimationKey: model.entries.map(\.url.path)) {
             ForEach(model.entries, id: \.url) { entry in
                 FolderGridCell(iconPath: entry.url.path,
                                staticIcon: nil,
@@ -357,13 +357,7 @@ struct FolderGridCell: View {
                 .frame(width: Metrics.iconSize, height: Metrics.iconSize)
                 .opacity(thumbnail == nil && resolvedIcon == nil && staticIcon == nil ? 0 : 1)
                 .task(id: thumbnailID) { await loadIcons() }
-            Text(label)
-                .font(.system(size: Metrics.labelSize))
-                .foregroundStyle(theme.stackPopupText.color)
-                .lineLimit(1)
-                .truncationMode(.middle)
-                .fixedSize(horizontal: labelFits, vertical: false)
-                .frame(width: labelFits ? Metrics.cell : Metrics.labelWidth, height: Metrics.labelHeight)
+            StackCellLabel(text: label)
         }
         .padding(.top, Metrics.iconTop)
         .frame(width: Metrics.cell, height: Metrics.cell, alignment: .top)
@@ -371,13 +365,6 @@ struct FolderGridCell: View {
         .onTapGesture { onTap() }
         .nativeContextMenu { contextMenu?() ?? NSMenu() }
         .help(label)
-    }
-
-    /// The native rule has two widths: a name as wide as the cell is shown whole; a longer one is
-    /// cut in the middle to the narrower `labelWidth`.
-    private var labelFits: Bool {
-        let font = NSFont.systemFont(ofSize: Metrics.labelSize)
-        return (label as NSString).size(withAttributes: [.font: font]).width <= Metrics.cell
     }
 
     /// Fallback for cells the warm-up missed (deep scroll, drill-in), then the thumbnail. Images
@@ -422,6 +409,32 @@ struct FolderGridCell: View {
 
     private static let placeholderIcon = NSImage(size: NSSize(width: StackPopupMetrics.iconSize,
                                                               height: StackPopupMetrics.iconSize))
+}
+
+/// The one-line name under a stack-grid icon; file cells and the drawer's app cells share it.
+struct StackCellLabel: View {
+    let text: String
+
+    @Environment(\.colorScheme) private var colorScheme
+    private var theme: DockThemeTokens { .resolved(for: colorScheme) }
+    private typealias Metrics = StackPopupMetrics
+
+    var body: some View {
+        Text(text)
+            .font(.system(size: Metrics.labelSize))
+            .foregroundStyle(theme.stackPopupText.color)
+            .lineLimit(1)
+            .truncationMode(.middle)
+            .fixedSize(horizontal: fits, vertical: false)
+            .frame(width: fits ? Metrics.cell : Metrics.labelWidth, height: Metrics.labelHeight)
+    }
+
+    /// The native rule has two widths: a name as wide as the cell is shown whole; a longer one is
+    /// cut in the middle to the narrower `labelWidth`.
+    private var fits: Bool {
+        let font = NSFont.systemFont(ofSize: Metrics.labelSize)
+        return (text as NSString).size(withAttributes: [.font: font]).width <= Metrics.cell
+    }
 }
 
 extension FolderGridCell {

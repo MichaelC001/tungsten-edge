@@ -45,7 +45,7 @@ struct TrashGridPopupView: View {
                          arrow: context.arrow,
                          onPanelSizeChange: onContentResize,
                          gridAnimation: .easeInOut(duration: DrawerAnimation.duration),
-                         gridAnimationKey: items.map(\.url)) {
+                         gridAnimationKey: items.map(\.url.path)) {
             ForEach(items, id: \.url) { item in
                 FolderGridCell(iconPath: nil,
                                staticIcon: TrashItemIcon.icon(for: item),

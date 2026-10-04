@@ -370,7 +370,8 @@ extension PanelCoordinator {
         let mouse = NSEvent.mouseLocation
         if let dock = dockPanel, dock.frame.contains(mouse) { return false }
         if let capsule = capsulePanel, capsule.frame.contains(mouse) { return false }
-        if drawerWantsOpen, let drawer = drawerPanel, drawer.frame.contains(mouse) { return false }
+        if drawerWantsOpen, let drawer = drawerPanel,
+           PanelGeometry.folderPopupPlateFrame(panelFrame: drawer.frame).contains(mouse) { return false }
         if folderPopupWantsOpen, let popup = folderPopupPanel,
            PanelGeometry.folderPopupPlateFrame(panelFrame: popup.frame).contains(mouse) { return false }
         // 唤醒热区贯穿整条屏幕底边，比居中的任务条/胶囊窄矩形宽得多；停在热区内但任务条范围外

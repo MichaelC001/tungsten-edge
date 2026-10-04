@@ -101,7 +101,9 @@ extension PanelCoordinator {
     private func isPointInsideTaskbarPanels(_ point: CGPoint) -> Bool {
         if let dock = dockPanel, dock.frame.contains(point) { return true }
         if let capsule = capsulePanel, capsule.frame.contains(point) { return true }
-        if drawerWantsOpen, let drawer = drawerPanel, drawer.frame.contains(point) { return true }
+        // The drawer's window carries 40pt of transparent border: its plate is what counts.
+        if drawerWantsOpen, let drawer = drawerPanel,
+           PanelGeometry.folderPopupPlateFrame(panelFrame: drawer.frame).contains(point) { return true }
         return false
     }
 

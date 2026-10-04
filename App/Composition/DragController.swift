@@ -681,6 +681,17 @@ final class DragController: ObservableObject {
         return false
     }
 
+    /// The drawer member the conversion in flight added (`convertedInID`) or removed
+    /// (`convertedOutID`); the drawer shapes its grid with that undone (`DrawerGridShape`).
+    var drawerConversionDelta: (convertedInID: String?, convertedOutID: String?) {
+        switch conversion {
+        case .stripToDrawer, .messagingToDrawer: return (draggingPayload?.bundleID, nil)
+        case let .drawerToStrip(bundleID): return (nil, bundleID)
+        case let .drawerToMessaging(original): return (nil, original.bundleID)
+        case nil: return (nil, nil)
+        }
+    }
+
     /// 转正后载体改画的**唯一代表卡**。由 DockStripView 在窗口卡实体化后写入（显示序里该 app 第一张
     /// 已实体化的**真窗口卡**），未实体化前为 nil（载体仍画抽屉小图标）。`revert`/`teardown` 清空。
     @Published private(set) var convertedRepresentative: StripItem?

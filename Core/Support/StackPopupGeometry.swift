@@ -131,6 +131,54 @@ enum StackGridLayout {
     }
 }
 
+/// The drawer's grid: the stack rule, held still while a drag is converting a chip in or out.
+/// A conversion adds or removes a member before the release decides anything; reshaping the
+/// grid on that (4 cells are 2 × 2, 5 are 3 × 2) would resize the plate under the pointer and
+/// flip the enter / leave test that caused it.
+enum DrawerGridShape {
+    struct Result: Equatable {
+        var layout: StackGridLayout.Result
+        /// The empty drawer's hint line.
+        var showsHint: Bool
+    }
+
+    /// Visible members with the conversion in flight undone: a chip converted in is not counted
+    /// yet, one converted out still is. By id, never ±1 — both drag-out modes remove placement.
+    static func settledCount(visibleIDs: [String], convertedInID: String?, convertedOutID: String?) -> Int {
+        var ids = Set(visibleIDs)
+        if let convertedInID { ids.remove(convertedInID) }
+        if let convertedOutID { ids.insert(convertedOutID) }
+        return ids.count
+    }
+
+    /// Columns come from `settledCount`; rows follow `actualCount` and never drop below one
+    /// while the two differ. Only a drawer empty on both counts is the hint plate.
+    static func resolve(settledCount: Int, actualCount: Int, limits: StackGridLayout.Limits) -> Result {
+        if settledCount == actualCount {
+            guard actualCount > 0 else {
+                return Result(layout: .init(columns: StackGridLayout.noteMinColumns, visibleRows: 0, scrolls: false),
+                              showsHint: true)
+            }
+            return Result(layout: StackGridLayout.resolve(cellCount: actualCount, limits: limits, hasNote: false),
+                          showsHint: false)
+        }
+        let columns: Int
+        let maxRows: Int
+        if settledCount > 0 {
+            let settled = StackGridLayout.resolve(cellCount: settledCount, limits: limits, hasNote: false)
+            columns = settled.columns
+            maxRows = settled.scrolls ? settled.visibleRows : limits.fitRows
+        } else {
+            columns = StackGridLayout.noteMinColumns
+            maxRows = limits.fitRows
+        }
+        let rows = max(1, Int((Double(actualCount) / Double(columns)).rounded(.up)))
+        let visibleRows = min(rows, max(1, maxRows))
+        return Result(layout: .init(columns: columns, visibleRows: visibleRows, scrolls: rows > visibleRows),
+                      showsHint: false)
+    }
+}
+
 /// The plate's outline: a rounded rectangle with the arrow on its bottom edge. One path feeds both
 /// the glass (`_setPath:`) and the frosted fallback's clip, so the two can never disagree.
 enum StackPopupOutline {
