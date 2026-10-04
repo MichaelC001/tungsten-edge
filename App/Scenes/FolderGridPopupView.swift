@@ -224,6 +224,7 @@ struct FolderGridPopupView: View {
         StackPopupChrome(title: FileManager.default.displayName(atPath: currentURL.path),
                          note: note,
                          layout: layout,
+                         cellSize: StackPopupMetrics.cell,
                          usesLiquidGlass: usesLiquidGlass,
                          arrow: context.arrow,
                          onPanelSizeChange: onContentResize,
@@ -357,7 +358,7 @@ struct FolderGridCell: View {
                 .frame(width: Metrics.iconSize, height: Metrics.iconSize)
                 .opacity(thumbnail == nil && resolvedIcon == nil && staticIcon == nil ? 0 : 1)
                 .task(id: thumbnailID) { await loadIcons() }
-            StackCellLabel(text: label)
+            StackCellLabel(text: label, metrics: .native)
         }
         .padding(.top, Metrics.iconTop)
         .frame(width: Metrics.cell, height: Metrics.cell, alignment: .top)
@@ -414,26 +415,25 @@ struct FolderGridCell: View {
 /// The one-line name under a stack-grid icon; file cells and the drawer's app cells share it.
 struct StackCellLabel: View {
     let text: String
+    let metrics: StackCellMetrics
 
     @Environment(\.colorScheme) private var colorScheme
     private var theme: DockThemeTokens { .resolved(for: colorScheme) }
-    private typealias Metrics = StackPopupMetrics
-
     var body: some View {
         Text(text)
-            .font(.system(size: Metrics.labelSize))
+            .font(.system(size: metrics.labelSize))
             .foregroundStyle(theme.stackPopupText.color)
             .lineLimit(1)
             .truncationMode(.middle)
             .fixedSize(horizontal: fits, vertical: false)
-            .frame(width: fits ? Metrics.cell : Metrics.labelWidth, height: Metrics.labelHeight)
+            .frame(width: fits ? metrics.cell : metrics.labelWidth, height: metrics.labelHeight)
     }
 
     /// The native rule has two widths: a name as wide as the cell is shown whole; a longer one is
     /// cut in the middle to the narrower `labelWidth`.
     private var fits: Bool {
-        let font = NSFont.systemFont(ofSize: Metrics.labelSize)
-        return (text as NSString).size(withAttributes: [.font: font]).width <= Metrics.cell
+        let font = NSFont.systemFont(ofSize: metrics.labelSize)
+        return (text as NSString).size(withAttributes: [.font: font]).width <= metrics.cell
     }
 }
 

@@ -11,7 +11,7 @@ import SwiftUI
 /// `membershipItems` (在程序坞中保留 / 固定为应用图标).
 
 /// How a `LauncherChip` is laid out: a card on the bar, or a cell of the drawer's stack grid
-/// (`StackPopupMetrics`: 128pt cell, 100pt icon, the app's name under it).
+/// (`StackCellMetrics.drawer`: the folder popup's cell at three quarters, the app's name under it).
 enum LauncherChipLayout {
     case bar
     case stackCell
@@ -185,7 +185,7 @@ struct LauncherChip: View {
     private var faceWidth: CGFloat {
         switch layout {
         case .bar: return ChipPillMetrics.cardWidth * scale
-        case .stackCell: return StackPopupMetrics.cell
+        case .stackCell: return StackCellMetrics.drawer.cell
         }
     }
 
@@ -231,13 +231,14 @@ struct LauncherChip: View {
         case .stackCell:
             // The folder popup's cell with an app in it. The dot sits in the icon's own
             // transparent bottom margin, between the artwork and the name.
+            let cell = StackCellMetrics.drawer
             VStack(spacing: 0) {
-                icon(size: StackPopupMetrics.iconSize, bounceLift: 6 * scale)
-                    .overlay(alignment: .bottom) { runningDot(visual: visual, diameter: 5) }
-                StackCellLabel(text: displayName)
+                icon(size: cell.iconSize, bounceLift: 6 * scale)
+                    .overlay(alignment: .bottom) { runningDot(visual: visual, diameter: 4) }
+                StackCellLabel(text: displayName, metrics: cell)
             }
-            .padding(.top, StackPopupMetrics.iconTop)
-            .frame(width: StackPopupMetrics.cell, height: StackPopupMetrics.cell, alignment: .top)
+            .padding(.top, cell.iconTop)
+            .frame(width: cell.cell, height: cell.cell, alignment: .top)
         }
     }
 

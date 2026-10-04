@@ -49,7 +49,8 @@ enum StackPopupMetrics {
     /// The scroller sits in the plate's right padding, not over the last column.
     static let scrollerGutter: CGFloat = 14
 
-    static func plateSize(columns: Int, rows: Int, hasNote: Bool) -> CGSize {
+    /// `cell` is the grid's cell side: the native one, or the drawer's smaller one.
+    static func plateSize(columns: Int, rows: Int, hasNote: Bool, cell: CGFloat = StackPopupMetrics.cell) -> CGSize {
         CGSize(width: CGFloat(columns) * cell + 2 * sidePadding,
                height: headerHeight + (hasNote ? noteHeight : 0) + CGFloat(rows) * cell + bottomPadding)
     }
@@ -58,6 +59,24 @@ enum StackPopupMetrics {
     static func panelSize(forPlate plate: CGSize) -> CGSize {
         CGSize(width: plate.width + 2 * panelMargin, height: plate.height + arrowHeight + 2 * panelMargin)
     }
+}
+
+/// One grid cell's numbers. The folder / shelf / Trash popups use `native`; the drawer draws the
+/// same cell at three quarters (owner 2026-10-04: the native size made the drawer too large). Its
+/// row and column limits stay the native counts, so the whole plate is three quarters too.
+struct StackCellMetrics: Equatable {
+    var cell: CGFloat
+    var iconSize: CGFloat
+    var iconTop: CGFloat
+    var labelSize: CGFloat
+    var labelWidth: CGFloat
+    var labelHeight: CGFloat
+
+    static let native = StackCellMetrics(
+        cell: StackPopupMetrics.cell, iconSize: StackPopupMetrics.iconSize, iconTop: StackPopupMetrics.iconTop,
+        labelSize: StackPopupMetrics.labelSize, labelWidth: StackPopupMetrics.labelWidth,
+        labelHeight: StackPopupMetrics.labelHeight)
+    static let drawer = StackCellMetrics(cell: 96, iconSize: 75, iconTop: 5, labelSize: 12, labelWidth: 90, labelHeight: 15)
 }
 
 /// How many columns and rows the grid takes for a cell count — the native Dock's rule, derived
