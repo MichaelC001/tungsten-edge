@@ -129,7 +129,7 @@ struct DrawerView: View {
         return StackPopupChrome(title: String(localized: "Drawer"),
                                 note: shape.showsHint ? String(localized: "Drag apps here from the taskbar") : nil,
                                 layout: shape.layout,
-                                cellSize: StackCellMetrics.drawer.cellSize,
+                                plate: .drawer,
                                 usesLiquidGlass: usesLiquidGlass,
                                 arrow: arrow,
                                 onPanelSizeChange: onPanelSizeChange,
@@ -251,10 +251,10 @@ struct DrawerView: View {
                      // 名字挪进了图标上方的气泡，而抽屉这个调用处**根本没接气泡回调**——
                      // 于是 `.standard` 在这里等于「什么都不做」，抽屉悬停零反馈。
                      // `.quiet` 恰好就是「没有名字，所以给一个轻微放大」那一档，语义对得上。
-                     // 112pt 宽的格子里图标可见部分约 61pt，放大 1.10 仍在自己那格的透明边里。
+                     // 112.5pt 宽的格子里图标可见部分约 62pt，放大 1.10 仍在自己那格的透明边里。
                      hoverStyle: .quiet,
                      // 抽屉这块面板没有整条那样的跟踪区，图标各自挂 `.onHover`。
-                     // 格子 112pt 宽、指针在里面停留的时间远长于条上横扫，漏格不成问题。
+                     // 格子 112.5pt 宽、指针在里面停留的时间远长于条上横扫，漏格不成问题。
                      hoverInput: .selfTracked,
                      // 抽屉应用的窗口块整体藏在任务条之外，这个列表是找回它们的唯一入口。
                      // 点窗口行不触发 onPrimaryAction——抽屉保持打开（同右键「打开」的规矩）。

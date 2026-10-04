@@ -88,7 +88,8 @@ final class PanelGeometryTests: XCTestCase {
             visibleFrame: CGRect(x: 0, y: 0, width: 1512, height: 982),
             safeAreaTop: 32
         )
-        let size = StackPopupMetrics.panelSize(forPlate: StackPopupMetrics.plateSize(columns: 3, rows: 2, hasNote: false))
+        let size = StackPopupMetrics.panelSize(
+            forPlate: StackPlateMetrics.drawer.plateSize(columns: 3, rows: 2, hasNote: false, scrolls: false))
         let frames = layout(on: screen, drawerSize: size)
         let anchor = PanelGeometry.drawerAnchorVisibleRect(forCapsule: frames.capsule, metrics: metrics)
         let plate = PanelGeometry.folderPopupPlateFrame(panelFrame: frames.drawer)
@@ -105,7 +106,8 @@ final class PanelGeometryTests: XCTestCase {
 
         // The grid's row limit is what fits between the capsule and the top cap.
         let limits = PanelGeometry.drawerGridLimits(forCapsule: frames.capsule, on: screen, metrics: metrics)
-        let tallest = StackPopupMetrics.plateSize(columns: 1, rows: limits.fitRows, hasNote: false).height
+        let tallest = StackPlateMetrics.drawer.plateSize(columns: 1, rows: limits.fitRows, hasNote: false,
+                                                         scrolls: false).height
         XCTAssertLessThanOrEqual(plate.minY + StackPopupMetrics.arrowHeight + tallest, screen.topUsableY)
     }
 

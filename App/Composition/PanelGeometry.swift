@@ -531,7 +531,7 @@ enum PanelGeometry {
         on screen: PanelScreenGeometry,
         metrics: PanelLayoutMetrics = .tungstenEdge
     ) -> StackGridLayout.Limits {
-        StackGridLayout.limits(
+        StackGridLayout.drawerLimits(
             screenSize: screen.frame.size,
             availablePlateHeight: stackPopupAvailablePlateHeight(
                 anchorVisibleRect: drawerAnchorVisibleRect(forCapsule: capsuleFrame, metrics: metrics), on: screen))

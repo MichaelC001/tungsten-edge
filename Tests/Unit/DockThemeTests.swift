@@ -158,7 +158,7 @@ final class DockThemeTests: XCTestCase {
     /// system appearances): black text on it would vanish the way white does on the light bar.
     func testStackPopupForegroundsAreWhite() {
         for tint in [theme.stackPopupText, theme.stackPopupNote, theme.stackPopupGlyph,
-                     theme.stackPopupBackFill, theme.stackPopupHairline] {
+                     theme.stackPopupBackFill, theme.stackPopupHairline, theme.stackPopupSeparator] {
             XCTAssertEqual(tint.base, .white)
         }
         XCTAssertGreaterThan(theme.stackPopupText.opacity, theme.stackPopupNote.opacity)
@@ -328,6 +328,7 @@ final class DockThemeTests: XCTestCase {
         XCTAssertEqual(dark.stackPopupGlyph, theme.stackPopupGlyph)
         XCTAssertEqual(dark.stackPopupBackFill, theme.stackPopupBackFill)
         XCTAssertEqual(dark.stackPopupHairline, theme.stackPopupHairline)
+        XCTAssertEqual(dark.stackPopupSeparator, theme.stackPopupSeparator)
         XCTAssertEqual(dark.stackPopupShadow, theme.stackPopupShadow)
         XCTAssertEqual(dark.shelfTile, theme.shelfTile, "the shelf tile is opaque art, not a tint")
     }
@@ -430,7 +431,7 @@ private extension DockThemeTokens {
          capsuleGlyph, capsuleStashGlow,
          folderDropRing, folderThumbHairline,
          stackPopupText, stackPopupNote, stackPopupGlyph, stackPopupBackFill,
-         stackPopupHairline, stackPopupShadow.tint,
+         stackPopupHairline, stackPopupSeparator, stackPopupShadow.tint,
          tooltipRim, tooltipText, tooltipShadow.tint]
     }
 }

@@ -232,7 +232,7 @@ struct LauncherChip: View {
             // The folder popup's cell with an app in it. The dot sits in the icon's own
             // transparent bottom margin, between the artwork and the name.
             let cell = StackCellMetrics.drawer
-            VStack(spacing: 0) {
+            VStack(spacing: cell.labelGap) {
                 icon(size: cell.iconSize, bounceLift: 6 * scale)
                     .overlay(alignment: .bottom) { runningDot(visual: visual, diameter: 4) }
                 StackCellLabel(text: displayName, metrics: cell)

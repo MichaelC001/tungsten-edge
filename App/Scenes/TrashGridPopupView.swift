@@ -41,7 +41,7 @@ struct TrashGridPopupView: View {
         StackPopupChrome(title: String(localized: "Trash"),
                          note: note,
                          layout: layout,
-                         cellSize: StackCellMetrics.native.cellSize,
+                         plate: .stack,
                          usesLiquidGlass: usesLiquidGlass,
                          arrow: context.arrow,
                          onPanelSizeChange: onContentResize,

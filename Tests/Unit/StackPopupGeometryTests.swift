@@ -131,6 +131,26 @@ final class StackPopupGeometryTests: XCTestCase {
                        .init(columns: 1, visibleRows: 1, scrolls: false))
     }
 
+    /// The drawer at full size is the system Apps panel's frame as measured off the owner's
+    /// screenshot: 844 × 578, seven columns, five rows, whatever the screen offers beyond that.
+    func testFullDrawerIsTheAppsPanel() {
+        let limits = StackGridLayout.drawerLimits(screenSize: CGSize(width: 1512, height: 982), availablePlateHeight: 860)
+        XCTAssertEqual(limits, .init(maxColumns: 7, nominalRows: 5, fitRows: 5, fitRowsWithNote: 5))
+        let full = StackGridLayout.resolve(cellCount: 40, limits: limits, hasNote: false)
+        XCTAssertEqual(full, .init(columns: 7, visibleRows: 5, scrolls: true))
+        let plate = StackPlateMetrics.drawer
+        XCTAssertEqual(plate.plateSize(columns: 7, rows: 5, hasNote: false, scrolls: true), CGSize(width: 844, height: 578))
+        // Not scrolling, the scroller's strip is not kept: the grid sits between equal margins.
+        XCTAssertEqual(plate.plateSize(columns: 7, rows: 5, hasNote: false, scrolls: false).width, 827.5)
+        // A larger screen does not make it larger.
+        XCTAssertEqual(StackGridLayout.drawerLimits(screenSize: CGSize(width: 2560, height: 1440),
+                                                    availablePlateHeight: 1300), limits)
+        // A short space above the capsule takes rows off; the plate never outgrows it.
+        let short = StackGridLayout.drawerLimits(screenSize: CGSize(width: 1352, height: 600), availablePlateHeight: 400)
+        XCTAssertEqual(short.fitRows, 3)
+        XCTAssertLessThanOrEqual(plate.plateSize(columns: 7, rows: short.fitRows, hasNote: false, scrolls: true).height, 400)
+    }
+
     func testSizesAreDerivedFromTheShape() {
         // The native 4×3 plate measured 546 wide (+ hairline) and 428 tall.
         let plate = StackPopupMetrics.plateSize(columns: 4, rows: 3, hasNote: false)

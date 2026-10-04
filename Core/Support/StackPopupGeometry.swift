@@ -49,11 +49,9 @@ enum StackPopupMetrics {
     /// The scroller sits in the plate's right padding, not over the last column.
     static let scrollerGutter: CGFloat = 14
 
-    /// `cell` is one grid cell: the native square, or the drawer's own.
-    static func plateSize(columns: Int, rows: Int, hasNote: Bool,
-                          cell: CGSize = StackCellMetrics.native.cellSize) -> CGSize {
-        CGSize(width: CGFloat(columns) * cell.width + 2 * sidePadding,
-               height: headerHeight + (hasNote ? noteHeight : 0) + CGFloat(rows) * cell.height + bottomPadding)
+    /// The folder / shelf / Trash plate (`StackPlateMetrics.stack`); its width never depends on scrolling.
+    static func plateSize(columns: Int, rows: Int, hasNote: Bool) -> CGSize {
+        StackPlateMetrics.stack.plateSize(columns: columns, rows: rows, hasNote: hasNote, scrolls: false)
     }
 
     /// Size of the popup window for a plate: the transparent border plus the arrow below it.
@@ -63,24 +61,79 @@ enum StackPopupMetrics {
 }
 
 /// One grid cell's numbers. The folder / shelf / Trash popups use `native`. The drawer's are read
-/// off the system's Apps grid (owner 2026-10-04, his screenshot at 2x): icons 112.5pt apart, rows
-/// 102pt apart, a 61pt visible icon body (= a 76pt icon), a 13pt name right under the icon. Its
-/// row and column limits stay the native counts.
+/// off the system Apps panel (owner 2026-10-04, his screenshots at 2x): icons 112.5pt apart, rows
+/// 102pt apart, a 62pt visible icon body (= a 76pt icon), a 13pt name 2pt under the icon, cut at
+/// its tail.
 struct StackCellMetrics: Equatable {
     var cellSize: CGSize
     var iconSize: CGFloat
     var iconTop: CGFloat
+    /// Icon bottom to the name's line box.
+    var labelGap: CGFloat
     var labelSize: CGFloat
     var labelWidth: CGFloat
     var labelHeight: CGFloat
+    /// A name too long for the cell loses its tail (Apps panel) rather than its middle (Dock).
+    var truncatesLabelTail: Bool
 
     static let native = StackCellMetrics(
         cellSize: CGSize(width: StackPopupMetrics.cell, height: StackPopupMetrics.cell),
-        iconSize: StackPopupMetrics.iconSize, iconTop: StackPopupMetrics.iconTop,
+        iconSize: StackPopupMetrics.iconSize, iconTop: StackPopupMetrics.iconTop, labelGap: 0,
         labelSize: StackPopupMetrics.labelSize, labelWidth: StackPopupMetrics.labelWidth,
-        labelHeight: StackPopupMetrics.labelHeight)
-    static let drawer = StackCellMetrics(cellSize: CGSize(width: 112, height: 102), iconSize: 76, iconTop: 5,
-                                         labelSize: 13, labelWidth: 104, labelHeight: 16)
+        labelHeight: StackPopupMetrics.labelHeight, truncatesLabelTail: false)
+    static let drawer = StackCellMetrics(cellSize: CGSize(width: 112.5, height: 102), iconSize: 76, iconTop: 5,
+                                         labelGap: 2, labelSize: 13, labelWidth: 104, labelHeight: 16,
+                                         truncatesLabelTail: true)
+}
+
+/// The plate around a grid: everything but the cells. `stack` is the native Dock's stack grid
+/// (`StackPopupMetrics`). `drawer` is the system Apps panel's frame (owner 2026-10-04: the
+/// drawer's size and margins "exactly like it"), read off his screenshot at 2x and checked against
+/// the drawer's own: at full size the plate is 844 × 578 for 7 × 5 cells — 20pt to the grid on the
+/// left, 36.5pt on the right where the scroller sits (ending 3pt in), a 56.5pt top row ruled off by
+/// a 1pt line inset 20pt, and the grid scrolling under the bottom edge. The panel's search field
+/// and category chips have no counterpart: the title sits in the search row, and the grid starts
+/// below the rule as the panel's own sections start below theirs (rule to icon body 17pt).
+struct StackPlateMetrics: Equatable {
+    var cell: StackCellMetrics
+    /// Plate edge to the grid on the left, and on the right while the grid does not scroll.
+    var sidePadding: CGFloat
+    /// Grid to the plate's right edge while it scrolls; the scroller sits in it.
+    var scrollingTrailingPadding: CGFloat
+    /// Width the scroll view takes past the grid; it sets where the scroller ends.
+    var scrollerGutter: CGFloat
+    var headerHeight: CGFloat
+    /// Vertical centre of the title's line box, from the plate's top edge.
+    var titleCenterY: CGFloat
+    /// A 1pt rule under the title row, inset `sidePadding`.
+    var hasSeparator: Bool
+    /// Plate top to the status line or the grid's first row.
+    var gridTop: CGFloat
+    var bottomPadding: CGFloat
+    /// A scrolling grid runs on under `bottomPadding` to the plate's edge, clipped by it.
+    var scrollsToBottomEdge: Bool
+
+    static let stack = StackPlateMetrics(
+        cell: .native, sidePadding: StackPopupMetrics.sidePadding,
+        scrollingTrailingPadding: StackPopupMetrics.sidePadding, scrollerGutter: StackPopupMetrics.scrollerGutter,
+        headerHeight: StackPopupMetrics.headerHeight, titleCenterY: StackPopupMetrics.titleCenterY,
+        hasSeparator: false, gridTop: StackPopupMetrics.headerHeight,
+        bottomPadding: StackPopupMetrics.bottomPadding, scrollsToBottomEdge: false)
+    static let drawer = StackPlateMetrics(
+        cell: .drawer, sidePadding: 20, scrollingTrailingPadding: 36.5, scrollerGutter: 36,
+        headerHeight: 56.5, titleCenterY: 28, hasSeparator: true, gridTop: 61.5,
+        bottomPadding: 6.5, scrollsToBottomEdge: true)
+
+    /// The drawer's grid never grows past the Apps panel's 7 × 5.
+    static let drawerMaxColumns = 7
+    static let drawerMaxRows = 5
+
+    func plateSize(columns: Int, rows: Int, hasNote: Bool, scrolls: Bool) -> CGSize {
+        let trailing = scrolls ? scrollingTrailingPadding : sidePadding
+        return CGSize(width: sidePadding + CGFloat(columns) * cell.cellSize.width + trailing,
+                      height: gridTop + (hasNote ? StackPopupMetrics.noteHeight : 0)
+                          + CGFloat(rows) * cell.cellSize.height + bottomPadding)
+    }
 }
 
 /// How many columns and rows the grid takes for a cell count — the native Dock's rule, derived
@@ -116,6 +169,23 @@ enum StackGridLayout {
                       nominalRows: max(2, nominalRows),
                       fitRows: rows(in: availablePlateHeight),
                       fitRowsWithNote: rows(in: availablePlateHeight - m.noteHeight))
+    }
+
+    /// The drawer's limits: the Apps panel's 7 × 5 (`StackPlateMetrics.drawer`), giving way only
+    /// to a screen or a space above the capsule too small for it.
+    static func drawerLimits(screenSize: CGSize, availablePlateHeight: CGFloat) -> Limits {
+        let plate = StackPlateMetrics.drawer
+        let cell = plate.cell.cellSize
+        let fitColumns = Int(((screenSize.width - 2 * StackPopupMetrics.screenMargin - plate.sidePadding
+                               - plate.scrollingTrailingPadding) / cell.width).rounded(.down))
+        func rows(in height: CGFloat) -> Int {
+            let fit = Int(((height - plate.gridTop - plate.bottomPadding) / cell.height).rounded(.down))
+            return max(1, min(StackPlateMetrics.drawerMaxRows, fit))
+        }
+        return Limits(maxColumns: max(1, min(StackPlateMetrics.drawerMaxColumns, fitColumns)),
+                      nominalRows: StackPlateMetrics.drawerMaxRows,
+                      fitRows: rows(in: availablePlateHeight),
+                      fitRowsWithNote: rows(in: availablePlateHeight - StackPopupMetrics.noteHeight))
     }
 
     /// A status line needs room to be read; the native grid never shows one.

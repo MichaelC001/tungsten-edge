@@ -224,7 +224,7 @@ struct FolderGridPopupView: View {
         StackPopupChrome(title: FileManager.default.displayName(atPath: currentURL.path),
                          note: note,
                          layout: layout,
-                         cellSize: StackCellMetrics.native.cellSize,
+                         plate: .stack,
                          usesLiquidGlass: usesLiquidGlass,
                          arrow: context.arrow,
                          onPanelSizeChange: onContentResize,
@@ -424,13 +424,13 @@ struct StackCellLabel: View {
             .font(.system(size: metrics.labelSize))
             .foregroundStyle(theme.stackPopupText.color)
             .lineLimit(1)
-            .truncationMode(.middle)
+            .truncationMode(metrics.truncatesLabelTail ? .tail : .middle)
             .fixedSize(horizontal: fits, vertical: false)
             .frame(width: fits ? metrics.cellSize.width : metrics.labelWidth, height: metrics.labelHeight)
     }
 
     /// The native rule has two widths: a name as wide as the cell is shown whole; a longer one is
-    /// cut in the middle to the narrower `labelWidth`.
+    /// cut to the narrower `labelWidth`.
     private var fits: Bool {
         let font = NSFont.systemFont(ofSize: metrics.labelSize)
         return (text as NSString).size(withAttributes: [.font: font]).width <= metrics.cellSize.width
