@@ -129,7 +129,7 @@ struct DrawerView: View {
         return StackPopupChrome(title: String(localized: "Drawer"),
                                 note: shape.showsHint ? String(localized: "Drag apps here from the taskbar") : nil,
                                 layout: shape.layout,
-                                cellSize: StackCellMetrics.drawer.cell,
+                                cellSize: StackCellMetrics.drawer.cellSize,
                                 usesLiquidGlass: usesLiquidGlass,
                                 arrow: arrow,
                                 onPanelSizeChange: onPanelSizeChange,
@@ -241,8 +241,8 @@ struct DrawerView: View {
                      isHidden: running ? isHiddenInSnapshot(id) : false,
                      finderHasRealWindow: finderHasRealWindow(id),
                      isLaunching: runtime.launchingBundleIDs.contains(id),
-                     // 75pt icon = 1.875 × the bar's 40pt slot (`StackCellMetrics.drawer.iconSize`).
-                     scale: 1.875,
+                     // 76pt icon = 1.9 × the bar's 40pt slot (`StackCellMetrics.drawer.iconSize`).
+                     scale: 1.9,
                      layout: .stackCell,
                      // 抽屉有意不受「悬停效果」设置影响（owner 2026-08-02），但**固定成安静档**
                      // （owner 2026-08-17 要「抽屉图标悬停微微放大」）。
@@ -251,10 +251,10 @@ struct DrawerView: View {
                      // 名字挪进了图标上方的气泡，而抽屉这个调用处**根本没接气泡回调**——
                      // 于是 `.standard` 在这里等于「什么都不做」，抽屉悬停零反馈。
                      // `.quiet` 恰好就是「没有名字，所以给一个轻微放大」那一档，语义对得上。
-                     // 96pt 的格子里图标可见部分约 61pt，放大 1.10 仍在自己那格的透明边里。
+                     // 112pt 宽的格子里图标可见部分约 61pt，放大 1.10 仍在自己那格的透明边里。
                      hoverStyle: .quiet,
                      // 抽屉这块面板没有整条那样的跟踪区，图标各自挂 `.onHover`。
-                     // 格子 96pt、指针在里面停留的时间远长于条上横扫，漏格不成问题。
+                     // 格子 112pt 宽、指针在里面停留的时间远长于条上横扫，漏格不成问题。
                      hoverInput: .selfTracked,
                      // 抽屉应用的窗口块整体藏在任务条之外，这个列表是找回它们的唯一入口。
                      // 点窗口行不触发 onPrimaryAction——抽屉保持打开（同右键「打开」的规矩）。
@@ -284,11 +284,11 @@ struct DrawerView: View {
     /// 抽屉格子起拖那一刻的姿态：抽屉恒安静档、指针必在格子上（mouse-down 就发生在它上面），
     /// 所以是 1.10 底锚放大 × 0.93 按压——除非悬停正被按住。倍数用渲染格子的同一个函数算。
     private func pickUpPose(for id: String, slot: CGRect?) -> DragCarrierGeometry.PickUpPose {
-        let height = slot?.height ?? StackCellMetrics.drawer.cell
-        let width = slot?.width ?? StackCellMetrics.drawer.cell
+        let height = slot?.height ?? StackCellMetrics.drawer.cellSize.height
+        let width = slot?.width ?? StackCellMetrics.drawer.cellSize.width
         let hoverScale: CGFloat? = isHoverSuppressed(id)
             ? nil
-            : ChipPillMetrics.quietHoverScale(forCardWidth: width, scale: 1.875)
+            : ChipPillMetrics.quietHoverScale(forCardWidth: width, scale: 1.9)
         return DragCarrierGeometry.pickUpPose(
             chipHeight: height,
             pressedScale: ChipPressSwitches.pressDownEnabled ? ChipPressDecision.pressedScale : nil,

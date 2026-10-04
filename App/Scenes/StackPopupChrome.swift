@@ -28,8 +28,8 @@ struct StackPopupChrome<Grid: View>: View {
     /// A line between title and grid; the native grid has none (empty shelf, Trash state).
     let note: String?
     let layout: StackGridLayout.Result
-    /// Side of one grid cell (`StackCellMetrics.cell`). No default: the plate's size derives from it.
-    let cellSize: CGFloat
+    /// One grid cell (`StackCellMetrics.cellSize`). No default: the plate's size derives from it.
+    let cellSize: CGSize
     let usesLiquidGlass: Bool
     @ObservedObject var arrow: StackPopupArrowModel
     /// The popup window's new size whenever the plate's changes. No default: without it the
@@ -50,8 +50,8 @@ struct StackPopupChrome<Grid: View>: View {
     private var plateSize: CGSize {
         Metrics.plateSize(columns: layout.columns, rows: layout.visibleRows, hasNote: note != nil, cell: cellSize)
     }
-    private var gridWidth: CGFloat { CGFloat(layout.columns) * cellSize }
-    private var gridHeight: CGFloat { CGFloat(layout.visibleRows) * cellSize }
+    private var gridWidth: CGFloat { CGFloat(layout.columns) * cellSize.width }
+    private var gridHeight: CGFloat { CGFloat(layout.visibleRows) * cellSize.height }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
@@ -132,7 +132,7 @@ struct StackPopupChrome<Grid: View>: View {
 
     @ViewBuilder
     private var gridArea: some View {
-        let columns = Array(repeating: GridItem(.fixed(cellSize), spacing: 0), count: layout.columns)
+        let columns = Array(repeating: GridItem(.fixed(cellSize.width), spacing: 0), count: layout.columns)
         let cells = LazyVGrid(columns: columns, alignment: .leading, spacing: 0, content: grid)
             .frame(width: gridWidth, alignment: .leading)
             .animation(gridAnimation, value: gridAnimationKey)

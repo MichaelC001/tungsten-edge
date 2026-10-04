@@ -258,7 +258,7 @@ final class PanelCoordinator: NSObject {
     var animatedFramesUntil: CFTimeInterval = 0
     var lastDrawerSize: CGSize = StackPopupMetrics.panelSize(
         forPlate: StackPopupMetrics.plateSize(columns: StackGridLayout.noteMinColumns, rows: 1, hasNote: false,
-                                              cell: StackCellMetrics.drawer.cell))
+                                              cell: StackCellMetrics.drawer.cellSize))
     /// 目标 frame 驱动布局：每次 layoutPanels 算齐三个目标并存这里。drop zone 命中、开抽屉定位都读**目标**
     /// 而非 live frame——动画中 live frame 是中途值,会和视觉/逻辑短暂不一致（Codex 二审 P2）。
     /// `setFrames` 上一次真正提交过的目标 frame 序列。用来堵掉「目标没变还重启一遍动画」——

@@ -11,7 +11,7 @@ import SwiftUI
 /// `membershipItems` (在程序坞中保留 / 固定为应用图标).
 
 /// How a `LauncherChip` is laid out: a card on the bar, or a cell of the drawer's stack grid
-/// (`StackCellMetrics.drawer`: the folder popup's cell at three quarters, the app's name under it).
+/// (`StackCellMetrics.drawer`: the system Apps grid's proportions, the app's name under the icon).
 enum LauncherChipLayout {
     case bar
     case stackCell
@@ -185,7 +185,7 @@ struct LauncherChip: View {
     private var faceWidth: CGFloat {
         switch layout {
         case .bar: return ChipPillMetrics.cardWidth * scale
-        case .stackCell: return StackCellMetrics.drawer.cell
+        case .stackCell: return StackCellMetrics.drawer.cellSize.width
         }
     }
 
@@ -238,7 +238,7 @@ struct LauncherChip: View {
                 StackCellLabel(text: displayName, metrics: cell)
             }
             .padding(.top, cell.iconTop)
-            .frame(width: cell.cell, height: cell.cell, alignment: .top)
+            .frame(width: cell.cellSize.width, height: cell.cellSize.height, alignment: .top)
         }
     }
 
