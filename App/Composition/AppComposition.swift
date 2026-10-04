@@ -41,11 +41,12 @@ final class AppRuntime: ObservableObject {
     @Published private(set) var noWindowHomeByBundle: [String: String] = [:]
     private static let displayTraceEnabled = DebugSwitch.displayTrace.isEnabled(in: ProcessInfo.processInfo.environment)
     private let displayTraceLogger = Logger(subsystem: "com.caye.macosdockcc.v2", category: "display-trace")
-    /// 「窗口出现门控」（2026-06-18）：用户从抽屉点击启动的 app，在它拿到真窗口
-    /// 之前先记在这里。抽屉据此把它**留在启动区继续弹跳**，不在「进程一出现」就提前
-    /// 停跳 / 提前跳进运行区（GUI app 进程就绪 ≠ UI 就绪）。.regular 应用等真窗口；
-    /// .accessory 菜单栏 app（Tailscale 类）在进程完成启动且 policy 稳定后放行，
-    /// 不被卡住。真窗口出现、确认无窗口能力、启动失败或 20s 超时才清除。
+    /// The window gate: an app launched from the drawer is held here until it has a real window.
+    /// Its drawer cell keeps the not-running look and keeps bouncing instead of stopping the moment
+    /// the process appears (a GUI process being up ≠ its UI being up). `.regular` apps wait for a real
+    /// window; `.accessory` menu-bar apps (Tailscale and the like) pass once the process has finished
+    /// launching and its policy is stable. Cleared on a real window, a confirmed windowless app, a
+    /// failed launch, or a 20s timeout.
     @Published private(set) var launchingBundleIDs: Set<String> = []
 
     private struct LaunchProcessIdentity: Equatable {

@@ -40,25 +40,16 @@ struct DrawerCapsuleButton: View {
 
     private var iconSize: CGFloat { DrawerCapsulePreviewMetrics.iconSize * dockScale }
 
-    /// Every visible drawer app in the order the open drawer reads: the running zone first, then
-    /// the not-running one, each in drawer order. The zone split must stay the same predicate as
-    /// `DrawerView.runningZoneIDs` / `launchZoneIDs`, or the capsule pages disagree with the drawer.
+    /// Every visible drawer app in the order the open drawer reads (`DrawerView.visibleMembers`):
+    /// drawer order alone, never regrouped by running state, or the capsule pages disagree with
+    /// the drawer.
     private var memberIDs: [String] {
         let placements = AppMembershipProjection.drawerMembers(drawerIDs: drawerStore.bundleIDs)
-        let ordered = drawerOrderStore.reconciled(members: placements)
-        let visible = AppMembershipProjection.visibleDrawerIDs(
-            drawerIDs: ordered,
+        return AppMembershipProjection.visibleDrawerIDs(
+            drawerIDs: drawerOrderStore.reconciled(members: placements),
             keptIDs: keptAppStore.bundleIDs,
             runningIDs: runningApplicationStore.runningBundleIDs
         )
-        // The snapshot scan is only paid for while a launch session is open.
-        let launching = runtime.launchingBundleIDs
-        let windowBacked: Set<String> = launching.isEmpty ? [] : Set(
-            StripItem.items(from: runtime.snapshot).filter { !$0.isAppLevelFallback }.compactMap(\.bundleIdentifier))
-        func inRunningZone(_ id: String) -> Bool {
-            runningApplicationStore.isRunning(id) && !(launching.contains(id) && !windowBacked.contains(id))
-        }
-        return visible.filter(inRunningZone) + visible.filter { !inRunningZone($0) }
     }
 
     private var capsuleSide: CGFloat { settingsStore.dockPanelHeight.metrics.capsuleWidth }

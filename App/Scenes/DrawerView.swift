@@ -2,10 +2,11 @@ import AppKit
 import os
 import SwiftUI
 
-/// 抽屉 = **app 视角**：一个 bundleID 一个图标，顺序由 [[DrawerOrderStore]] 统一供给、永久记住
-/// （2026-06-21 重做）。两区仍按"在不在运行"分：
-/// - 运行区：收纳的、且进程在跑的 app（亮图标 + 圆点）。点击 = app 级唤出/收起（`LauncherChip.handleTap`）。
-/// - 启动区：没在跑、但有 kept / messaging 永久身份的 app（暗图标，点击启动）。
+/// The drawer is **app-centric**: one icon per bundleID, in the single order [[DrawerOrderStore]]
+/// keeps. Running state never decides a position — it only picks how a cell looks and acts
+/// (`showsAsRunning`): running = dot, click raises / hides the app (`LauncherChip.handleTap`);
+/// otherwise the click launches it. Starting or quitting a visible app leaves every icon where it
+/// is; an unkept app that quits hides and the cells after it close up, without touching the stored order.
 ///
 /// DrawerStore 只记 placement，KeptAppStore 决定退出后是否继续显示。排序始终按完整
 /// placement 集合记，隐藏成员下次启动仍回原位。
@@ -47,7 +48,7 @@ struct DrawerView: View {
     @EnvironmentObject var runningApplicationStore: RunningApplicationStore
     @EnvironmentObject var appMembershipController: AppMembershipController
 
-    /// 抽屉图标在 `"drawer"` 坐标空间里的位置，喂给起拖抓取偏移 + 同区落点命中。
+    /// Cell frames in the `"drawer"` space: the grab offset at pick-up and the reorder hit test.
     @State private var drawerFrames: [String: CGRect] = [:]
 
     /// 抽屉根视图的屏幕 frame（bottom-left），判"光标在不在抽屉体" + 屏幕坐标→`"drawer"` 空间换算。
@@ -77,7 +78,8 @@ struct DrawerView: View {
         Set(StripItem.items(from: runtime.snapshot).filter { !$0.isAppLevelFallback }.compactMap(\.bundleIdentifier))
     }
 
-    /// 窗口出现门控（2026-06-18）：刚点启动、进程已起但还没真窗口，视作仍在启动 → 留启动区弹跳。
+    /// Window gate: launched from here, process up but no real window yet → still launching, so the
+    /// cell keeps its not-running look and bounces.
     private func isLaunchingWithoutWindow(_ id: String) -> Bool {
         runtime.launchingBundleIDs.contains(id) && !windowBackedIDs.contains(id)
     }
@@ -95,16 +97,11 @@ struct DrawerView: View {
     /// 隐藏判定同口径：同 bundle 所有进程都 hidden 才算 hidden。
     private func isHiddenInSnapshot(_ id: String) -> Bool { runningApplicationStore.isHidden(id) }
 
-    /// 运行区 = 收纳 + 在跑 + 不在启动门控期。
-    /// The drawer capsule pages through the drawer in this same zone order
-    /// (`DrawerCapsuleButton.memberIDs`); change the two zone predicates together.
-    private var runningZoneIDs: [String] {
-        visibleMembers.filter { isRunning($0) && !isLaunchingWithoutWindow($0) }
-    }
-
-    /// 启动区 = 已 kept / messaging 且没在跑（或仍在启动门控期）的可见项。
-    private var launchZoneIDs: [String] {
-        visibleMembers.filter { !isRunning($0) || isLaunchingWithoutWindow($0) }
+    /// A cell shows and acts as running (dot, raise / hide on click, window list in its menu) once
+    /// the process runs and, after a launch from here, its first real window is up. Look and
+    /// behaviour only — never the cell's position.
+    private func showsAsRunning(_ id: String) -> Bool {
+        isRunning(id) && !isLaunchingWithoutWindow(id)
     }
 
     // MARK: - Body
@@ -121,11 +118,9 @@ struct DrawerView: View {
     }
 
     var body: some View {
-        // One grid, running apps first: the folder popup's chrome with apps in its cells. The
-        // two zones still exist for order, click and menu; only the gap between them is gone.
-        let runningIDs = runningZoneIDs
-        let launchIDs = launchZoneIDs
-        let shape = gridShape(cellIDs: runningIDs + launchIDs)
+        // One grid in the drawer's own order: the folder popup's chrome with apps in its cells.
+        let ids = visibleMembers
+        let shape = gridShape(cellIDs: ids)
         return StackPopupChrome(title: String(localized: "Drawer"),
                                 note: shape.showsHint ? String(localized: "Drag apps here from the taskbar") : nil,
                                 layout: shape.layout,
@@ -134,9 +129,8 @@ struct DrawerView: View {
                                 arrow: arrow,
                                 onPanelSizeChange: onPanelSizeChange,
                                 gridAnimation: .easeInOut(duration: DrawerAnimation.duration),
-                                gridAnimationKey: runningIDs + launchIDs) {
-            ForEach(runningIDs, id: \.self) { drawerChip($0, running: true) }
-            ForEach(launchIDs, id: \.self) { drawerChip($0, running: false) }
+                                gridAnimationKey: ids) {
+            ForEach(ids, id: \.self) { drawerChip($0, running: showsAsRunning($0)) }
         }
         // 抽屉根视图的屏幕 frame（AppKit 换算,绕开 .global/y 翻转/shadowPadding 的坑,Codex 二审 P1-3）。
         // 与 `"drawer"` 命名空间挂在同一视图上 → 既能判"光标在不在抽屉里",又能把屏幕坐标映回 drawer 空间命中格子。
@@ -169,8 +163,8 @@ struct DrawerView: View {
                 dragController.cancelDrag()
             }
         }
-        // 任务条卡拖进抽屉时跟光标算运行区落点；抽屉内拖动时跟光标做重排。都由全局鼠标位置驱动,
-        // 不在 body 里发布(用 onChange + 去重,Codex 二审 P2-6)。
+        // A strip card dragged into the drawer converts here; a drawer drag reorders here. Both follow the
+        // global pointer and never publish from body (onChange + dedupe).
         // `onReceive` 而不是 `onChange(of: globalLocation)`，理由同 `DockStripView`：
         // 那个值一旦是 `@Published`，每动一下鼠标就要把整个面板打翻重算。
         .onReceive(dragController.pointerMoves) { _ in
@@ -230,8 +224,8 @@ struct DrawerView: View {
         )
     }
 
-    /// `running` 按**区**传（运行区 true / 启动区 false），保证外观、点击与菜单都服从当前显示区。
-    /// 启动后的进程在真窗口出现前仍留在启动区；runtime 的启动会话直接驱动弹跳。
+    /// `running` is `showsAsRunning`, so look, click and menu agree: a process launched from here
+    /// stays "not running" until its first real window; the runtime's launch session drives the bounce.
     /// 抽屉格子里**画什么**。拆出来的唯一理由：载体位图要从这里出
     /// （`ChipSnapshotter`），渲染格子和渲染载体必须是同一份代码、同一批参数。
     /// 外面那层入场动画 / 拖动时置 0 的透明度 / 手势都不能进快照，所以留在 `drawerChip` 里。
@@ -312,7 +306,8 @@ struct DrawerView: View {
     private func drawerChip(_ id: String, running: Bool) -> some View {
         drawerChipContent(id, running: running)
             .opacity(isDragging(id) ? 0 : 1)
-            // `"drawer"` 空间里的 frame，背景 GeometryReader（不夺点击），喂抓取偏移 + 同区落点。
+            // The frame in the `"drawer"` space via a background GeometryReader (takes no clicks):
+            // grab offset and reorder hit test.
             .background(
                 GeometryReader { geo in
                     Color.clear.preference(key: DrawerChipFramePreferenceKey.self,
@@ -363,22 +358,23 @@ struct DrawerView: View {
             )
     }
 
-    /// 抽屉内重排：按 DragController 全局鼠标位置驱动（替代会被取消的逐图标手势）。把屏幕坐标映回 `"drawer"`
-    /// 空间,命中同区目标后让位。抽屉内重排不改成员数 → 抽屉不缩放 → 用实时 drawerRootScreenRect 映射即可。
+    /// Reorder inside the drawer, driven by DragController's global pointer (the per-icon gesture is
+    /// cancelled after the first move). The screen point maps back into the `"drawer"` space; the
+    /// member count does not change, so the live `drawerRootScreenRect` is the right mapping.
     private func updateDrawerReorder() {
         guard isDrawerOpen(), let p = dragController.draggingPayload, p.source == .drawer,
               !dragController.isOverDropZone,            // 光标已在任务条上 = 移回,不重排
               drawerRootScreenRect != .zero else { return }
         let pt = CGPoint(x: dragController.globalLocation.x - drawerRootScreenRect.minX,
                          y: drawerRootScreenRect.maxY - dragController.globalLocation.y)   // 屏幕(左下) → drawer(左上)
-        let zone = runningZoneIDs.contains(p.id) ? runningZoneIDs : launchZoneIDs
-        reorderTarget(at: pt, dragging: p.id, zone: zone)
+        reorderTarget(at: pt, dragging: p.id, among: visibleMembers)
     }
 
-    /// 抽屉内排序：只在**同一区**内命中落点（Codex 二审 ⑤——跨区改顺序会"偷偷"改、状态变才显现）。
-    private func reorderTarget(at point: CGPoint, dragging id: String, zone: [String]) {
+    /// Any visible cell is a target: the grid is drawn in `DrawerOrderStore` order alone, so a move
+    /// shows at once, whatever the two apps' running states.
+    private func reorderTarget(at point: CGPoint, dragging id: String, among candidates: [String]) {
         // Cells tile the grid edge to edge, so the plain frame is the whole hit area.
-        for tid in zone where tid != id {
+        for tid in candidates where tid != id {
             guard let f = drawerFrames[tid], f.contains(point) else { continue }
             drawerOrderStore.reorder(draggedID: id, relativeTo: tid, after: point.x > f.midX)
             return
@@ -433,10 +429,8 @@ struct DrawerView: View {
         if converted, let p = dc.draggingPayload, p.source == .drawer {
             guard convertedCarrierID != p.id else { return }
             convertedCarrierID = p.id
-            // 刚 add 进成员的那一轮两个区列表可能还没算上它：不在启动区就按进程状态判。
-            let running = runningZoneIDs.contains(p.id) || (!launchZoneIDs.contains(p.id) && isRunning(p.id))
             dc.setCarrierSnapshot(
-                ChipSnapshotter.snapshot(of: drawerChipContent(p.id, running: running),
+                ChipSnapshotter.snapshot(of: drawerChipContent(p.id, running: showsAsRunning(p.id)),
                                          screenPoint: CGPoint(x: drawerRootScreenRect.midX, y: drawerRootScreenRect.midY)),
                 reanchor: true)
         } else if !converted, convertedCarrierID != nil {
