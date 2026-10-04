@@ -15,9 +15,14 @@ import SwiftUI
 /// **拖回任务条**方向仍然一律不动 kept。转换预览与回滚阶段也一律不碰 kept，只有 `endDrag()`
 /// 落定那一刻才写。判据与完整语义见 `DragConversionPlan.enablesKeptOnDrop`。
 struct DrawerView: View {
-    /// 抽屉内容区最大高度（胶囊上方锚点 → 屏幕上沿可用高度，PanelCoordinator 开抽屉时算好传入）。
-    /// 内容超过它就内部滚动,绝不靠下压底边塞下（防与下方胶囊/任务条重叠）。
-    let maxContentHeight: CGFloat
+    /// Rows and columns the grid may take above the capsule on this screen; past them it scrolls
+    /// inside the plate. The coordinator swaps the root view when they change.
+    let limits: StackGridLayout.Limits
+    /// The plate's arrow, kept on the capsule by the coordinator.
+    let arrow: StackPopupArrowModel
+    /// The plate's size changed: the coordinator re-lays out the drawer window. No default —
+    /// without it the window stops following its content.
+    let onPanelSizeChange: (CGSize) -> Void
     /// 底板走不走原生 Liquid Glass。**显式传入、无默认值**（同 `scale` / `hoverStyle`）——
     /// 每个面板都是独立的 hosting 根视图，漏传就会出现「这个面板是玻璃、旁边那个还是
     /// 毛玻璃」这种一眼可见的不一致。
@@ -42,19 +47,11 @@ struct DrawerView: View {
     @EnvironmentObject var runningApplicationStore: RunningApplicationStore
     @EnvironmentObject var appMembershipController: AppMembershipController
 
-    @Environment(\.colorScheme) private var colorScheme
-    private var theme: DockThemeTokens { .resolved(for: colorScheme) }
-
     /// 抽屉图标在 `"drawer"` 坐标空间里的位置，喂给起拖抓取偏移 + 同区落点命中。
     @State private var drawerFrames: [String: CGRect] = [:]
 
     /// 抽屉根视图的屏幕 frame（bottom-left），判"光标在不在抽屉体" + 屏幕坐标→`"drawer"` 空间换算。
     @State private var drawerRootScreenRect: CGRect = .zero
-
-    /// 网格自然高度（量出来）。超过 maxContentHeight 就内部滚动。
-    @State private var contentHeight: CGFloat = 0
-
-    private let columns = Array(repeating: GridItem(.fixed(44 * 0.7), spacing: 8), count: 5)
 
     // MARK: - 成员与分区（全 bundleID 级）
 
@@ -112,33 +109,39 @@ struct DrawerView: View {
 
     // MARK: - Body
 
-    var body: some View {
-        // 底部对齐：抽屉面板向上长时,内容底边钉死在锚点(胶囊上方)、只向上揭开,
-        // 不会像顶部对齐那样底边先垂到锚点下方(向下压胶囊)再升回来（owner 2026-06-21：避让该直接向上扩展）。
-        ZStack(alignment: .bottomLeading) {
-            DockPanelBackdrop(theme: theme,
-                              cornerRadius: DockShape.panelCornerRadius,
-                              usesLiquidGlass: usesLiquidGlass)
+    /// The grid's shape, held still while a conversion is in flight (`DrawerGridShape`).
+    private func gridShape(cellIDs: [String]) -> DrawerGridShape.Result {
+        let delta = dragController.drawerConversionDelta
+        return DrawerGridShape.resolve(
+            settledCount: DrawerGridShape.settledCount(visibleIDs: cellIDs,
+                                                       convertedInID: delta.convertedInID,
+                                                       convertedOutID: delta.convertedOutID),
+            actualCount: cellIDs.count,
+            limits: limits)
+    }
 
-            // 内容超过可用高度就内部滚动（封顶,不下压底边）；否则正常贴合内容。
-            Group {
-                if contentHeight > maxContentHeight + 0.5 {
-                    ScrollView(.vertical, showsIndicators: false) { gridStack }
-                        .frame(height: maxContentHeight)
-                } else {
-                    gridStack
-                }
-            }
-            .clipShape(RoundedRectangle(cornerRadius: DockShape.panelCornerRadius, style: .continuous))
+    var body: some View {
+        // One grid, running apps first: the folder popup's chrome with apps in its cells. The
+        // two zones still exist for order, click and menu; only the gap between them is gone.
+        let runningIDs = runningZoneIDs
+        let launchIDs = launchZoneIDs
+        let shape = gridShape(cellIDs: runningIDs + launchIDs)
+        return StackPopupChrome(title: String(localized: "Drawer"),
+                                note: shape.showsHint ? String(localized: "Drag apps here from the taskbar") : nil,
+                                layout: shape.layout,
+                                plate: .drawer,
+                                usesLiquidGlass: usesLiquidGlass,
+                                arrow: arrow,
+                                onPanelSizeChange: onPanelSizeChange,
+                                gridAnimation: .easeInOut(duration: DrawerAnimation.duration),
+                                gridAnimationKey: runningIDs + launchIDs) {
+            ForEach(runningIDs, id: \.self) { drawerChip($0, running: true) }
+            ForEach(launchIDs, id: \.self) { drawerChip($0, running: false) }
         }
-        .dockPanelRim(cornerRadius: DockShape.panelCornerRadius,
-                      style: theme.panelRimStyle,
-                      lineWidth: theme.panelRimLineWidth,
-                      usesLiquidGlass: usesLiquidGlass)
         // 抽屉根视图的屏幕 frame（AppKit 换算,绕开 .global/y 翻转/shadowPadding 的坑,Codex 二审 P1-3）。
         // 与 `"drawer"` 命名空间挂在同一视图上 → 既能判"光标在不在抽屉里",又能把屏幕坐标映回 drawer 空间命中格子。
         // **抽屉面板自己挪了，也要重报落点锚点。** 松手那一刻 `teardown` 清掉 `conversion`，
-        // 任务条宽度随即解冻、整条重新居中变窄；胶囊右对齐任务条、抽屉又右对齐胶囊，
+        // 任务条宽度随即解冻、整条重新居中变窄；胶囊右对齐任务条、抽屉又锚在胶囊上，
         // 于是**整个抽屉面板在 0.22s 里往左滑一段**，而格子在 `"drawer"` 空间里的帧纹丝不动
         // ——只有这个屏幕 rect 在变。不接这一条的话，归位飞行会一直朝面板挪走**之前**那个
         // 位置飞（在右边），落地才发现格子已经在左边了，就是 owner 报的
@@ -153,16 +156,11 @@ struct DrawerView: View {
         // **抽屉打开没有入场动画**（owner 2026-09-04：优先保任务条的动画，抽屉区可能重做）。
         // 之前的「面板淡入 + 内容 0.96→1 放大 + 卡片阶梯浮现」每次打开都要把整棵抽屉按入场前状态重算一遍，
         // 主线程停顿压在淡入开头（视图树复用后仍 22～40ms），动画本身反而是掉帧的来源。理由见 `Docs/27`。
-        // 阴影延伸(radius+|y|)必须 ≤ shadowPadding(20),否则底部在透明边处被硬切（同弹窗）。
-        // 数值见 DockThemeTokens.popupShadow（浅/深各一套）。
-        .dockShadow(theme.popupShadow)
-        .padding(PanelCoordinator.shadowPadding)
         // 格子帧变了就重报落点锚点（理由同任务条那侧：松手后指针没事件了，网格还在重排）。
         .onPreferenceChange(DrawerChipFramePreferenceKey.self) { frames in
             drawerFrames = frames
             updateLandingAnchor()
         }
-        .onPreferenceChange(DrawerContentHeightKey.self) { contentHeight = $0 }
         // 拖动中被拖图标的 app 从成员里消失（外部移除等）→ 取消拖动，免得空位卡死。
         // 例外：转正进任务条（抽屉拖回任务条·精确落点）会**主动**把它移出抽屉，不算异常消失，不取消。
         .onChange(of: visibleMembers) { members in
@@ -196,61 +194,6 @@ struct DrawerView: View {
                 launch: { if runtime.beginLaunch(payload.id) { onPrimaryAction() } },
                 onOpen: onPrimaryAction)
         }
-    }
-
-    /// 两区网格本体。`.background` 量自然高度喂滚动判定；每区按各自 ID 列表做动画——增删/换行/重排都平滑。
-    /// 任务条卡拖进抽屉是"即时转正成成员"（见 updateStripDropPreview），就是运行区多一个 id,无需占位格。
-    private var gridStack: some View {
-        let runningIDs = runningZoneIDs
-        let launchIDs = launchZoneIDs
-        let hasRunningZone = !runningIDs.isEmpty
-        return VStack(alignment: .leading, spacing: 0) {
-            if runningIDs.isEmpty && launchIDs.isEmpty {
-                emptyHint
-            }
-            if hasRunningZone {
-                LazyVGrid(columns: columns, spacing: 8) {
-                    ForEach(Array(runningIDs.enumerated()), id: \.element) { index, id in 
-                        drawerChip(id, index: index, zone: runningIDs, running: true) 
-                    }
-                }
-                .animation(.easeInOut(duration: DrawerAnimation.duration), value: runningIDs)
-            }
-            if !launchIDs.isEmpty {
-                if hasRunningZone {
-                    Spacer().frame(height: 12)
-                }
-                LazyVGrid(columns: columns, spacing: 8) {
-                    ForEach(Array(launchIDs.enumerated()), id: \.element) { index, id in 
-                        drawerChip(id, index: index, zone: launchIDs, running: false) 
-                    }
-                }
-                .animation(.easeInOut(duration: DrawerAnimation.duration), value: launchIDs)
-            }
-        }
-        .padding(12)
-        .background(GeometryReader { g in
-            Color.clear.preference(key: DrawerContentHeightKey.self, value: g.size.height)
-        })
-    }
-
-    /// 空抽屉提示。没有它时两区都空 → `VStack` 零子视图 → 内容只剩 12pt padding，
-    /// 面板缩成 24×24 的毛玻璃小方块：既看不出这是干嘛的，也几乎没法当拖放目标。
-    ///
-    /// 宽度写死 186pt = **满行 5 列网格的宽度**（`5 × 44×0.7 + 4 × 8`），这样第一次
-    /// 拖进应用、提示换成网格时面板宽度不跳变。颜色必须走 token（浅深各一套），
-    /// 不许写字面量 opacity。
-    ///
-    /// 拖动预览期间无需特判：任务条卡一进抽屉体就被 `convertStripToDrawer` 转成真成员，
-    /// `runningZoneIDs` 立刻非空，提示自然让位给网格。
-    private var emptyHint: some View {
-        Text("Drag apps here from the taskbar")
-            .font(.system(size: 11))
-            .foregroundStyle(theme.effectiveLabelInactive.color)
-            .multilineTextAlignment(.center)
-            .fixedSize(horizontal: false, vertical: true)
-            .frame(width: 5 * 44 * 0.7 + 4 * 8)
-            .padding(.vertical, 10)
     }
 
     // MARK: - 单个图标（含拖动）
@@ -298,7 +241,9 @@ struct DrawerView: View {
                      isHidden: running ? isHiddenInSnapshot(id) : false,
                      finderHasRealWindow: finderHasRealWindow(id),
                      isLaunching: runtime.launchingBundleIDs.contains(id),
-                     scale: 0.7,
+                     // 76pt icon = 1.9 × the bar's 40pt slot (`StackCellMetrics.drawer.iconSize`).
+                     scale: 1.9,
+                     layout: .stackCell,
                      // 抽屉有意不受「悬停效果」设置影响（owner 2026-08-02），但**固定成安静档**
                      // （owner 2026-08-17 要「抽屉图标悬停微微放大」）。
                      //
@@ -306,10 +251,10 @@ struct DrawerView: View {
                      // 名字挪进了图标上方的气泡，而抽屉这个调用处**根本没接气泡回调**——
                      // 于是 `.standard` 在这里等于「什么都不做」，抽屉悬停零反馈。
                      // `.quiet` 恰好就是「没有名字，所以给一个轻微放大」那一档，语义对得上。
-                     // 网格是 30.8pt 的格子配 8pt 间距，放大 1.10 后每侧只涨 1.5pt，撞不到邻居。
+                     // 112.5pt 宽的格子里图标可见部分约 62pt，放大 1.10 仍在自己那格的透明边里。
                      hoverStyle: .quiet,
                      // 抽屉这块面板没有整条那样的跟踪区，图标各自挂 `.onHover`。
-                     // 格子 30.8pt、指针在里面停留的时间远长于条上横扫，漏格不成问题。
+                     // 格子 112.5pt 宽、指针在里面停留的时间远长于条上横扫，漏格不成问题。
                      hoverInput: .selfTracked,
                      // 抽屉应用的窗口块整体藏在任务条之外，这个列表是找回它们的唯一入口。
                      // 点窗口行不触发 onPrimaryAction——抽屉保持打开（同右键「打开」的规矩）。
@@ -339,11 +284,11 @@ struct DrawerView: View {
     /// 抽屉格子起拖那一刻的姿态：抽屉恒安静档、指针必在格子上（mouse-down 就发生在它上面），
     /// 所以是 1.10 底锚放大 × 0.93 按压——除非悬停正被按住。倍数用渲染格子的同一个函数算。
     private func pickUpPose(for id: String, slot: CGRect?) -> DragCarrierGeometry.PickUpPose {
-        let height = slot?.height ?? ChipPillMetrics.chipHeight * 0.7
-        let width = slot?.width ?? ChipPillMetrics.cardWidth * 0.7
+        let height = slot?.height ?? StackCellMetrics.drawer.cellSize.height
+        let width = slot?.width ?? StackCellMetrics.drawer.cellSize.width
         let hoverScale: CGFloat? = isHoverSuppressed(id)
             ? nil
-            : ChipPillMetrics.quietHoverScale(forCardWidth: width, scale: 0.7)
+            : ChipPillMetrics.quietHoverScale(forCardWidth: width, scale: 1.9)
         return DragCarrierGeometry.pickUpPose(
             chipHeight: height,
             pressedScale: ChipPressSwitches.pressDownEnabled ? ChipPressDecision.pressedScale : nil,
@@ -364,7 +309,7 @@ struct DrawerView: View {
     }
 
     @ViewBuilder
-    private func drawerChip(_ id: String, index: Int, zone: [String], running: Bool) -> some View {
+    private func drawerChip(_ id: String, running: Bool) -> some View {
         drawerChipContent(id, running: running)
             .opacity(isDragging(id) ? 0 : 1)
             // `"drawer"` 空间里的 frame，背景 GeometryReader（不夺点击），喂抓取偏移 + 同区落点。
@@ -432,10 +377,9 @@ struct DrawerView: View {
 
     /// 抽屉内排序：只在**同一区**内命中落点（Codex 二审 ⑤——跨区改顺序会"偷偷"改、状态变才显现）。
     private func reorderTarget(at point: CGPoint, dragging id: String, zone: [String]) {
-        // 命中 frame 外扩一圈(覆盖 8pt 格间空隙)→ 判定区更大、好定位(owner 2026-06-21 反馈太小)。
-        // 按 zone 顺序遍历:dict.first(where:) 顺序不定,外扩后相邻格会重叠 → 必须有序取最左。
+        // Cells tile the grid edge to edge, so the plain frame is the whole hit area.
         for tid in zone where tid != id {
-            guard let f = drawerFrames[tid], f.insetBy(dx: -6, dy: -6).contains(point) else { continue }
+            guard let f = drawerFrames[tid], f.contains(point) else { continue }
             drawerOrderStore.reorder(draggedID: id, relativeTo: tid, after: point.x > f.midX)
             return
         }
@@ -452,10 +396,14 @@ struct DrawerView: View {
         // 只有**开着的**抽屉才有资格转正 / 撤销（理由见 `isDrawerOpen`）。
         guard dc.draggingPayload != nil, drawerRootScreenRect != .zero, isDrawerOpen() else { return }
         let g = dc.globalLocation
-        let r = drawerRootScreenRect
+        // The plate, not the window (40pt of transparent border). The floor is the capsule's top
+        // = the bar's top edge: anything lower would convert a chip still being dragged along
+        // the bar.
+        let r = PanelGeometry.folderPopupPlateFrame(panelFrame: drawerRootScreenRect)
+        let floor = PanelGeometry.drawerBodyFloorY(plate: r)
         // 进入阈值松（容差大,好进）；撤销阈值更靠外（迟滞带,防边缘反复转正/撤销 → 抽屉一胀一缩抖）。
-        let enterBody = g.x >= r.minX - 8  && g.x <= r.maxX + 8  && g.y >= r.minY - 28
-        let clearlyOut = g.x < r.minX - 20 || g.x > r.maxX + 20 || g.y < r.minY - 48
+        let enterBody = g.x >= r.minX - 8  && g.x <= r.maxX + 8  && g.y >= floor
+        let clearlyOut = g.x < r.minX - 20 || g.x > r.maxX + 20 || g.y < floor - 20
         if let p = dc.draggingPayload, p.canExternalDrop, enterBody {
             switch p.source {
             case .strip:     dc.convertStripToDrawer()      // 进抽屉体 → 临时转正(挤开别人=预览)
@@ -473,7 +421,7 @@ struct DrawerView: View {
         }
     }
 
-    /// 任务条卡 / 消息 chip 一进抽屉体，载体就换成**抽屉格子的位图**（`drawerChipContent` 同款、0.7 倍、
+    /// 任务条卡 / 消息 chip 一进抽屉体，载体就换成**抽屉格子的位图**（`drawerChipContent` 同款整格、
     /// 无角标），并按尺寸比例把抓取点重新锚到指针上；拖出抽屉体还原成起拖那张。
     /// 反方向（抽屉图标转正进任务条）早就换图（`DockStripView.syncConvertedCarrier`），这个方向之前漏了：
     /// 载体一直是 40pt 图标甚至 168pt 标题卡，压在抽屉边上（owner 2026-08-19 截图）。
@@ -507,21 +455,15 @@ private struct DrawerChipFramePreferenceKey: PreferenceKey {
     }
 }
 
-/// 网格自然高度（量出来,喂"超高内部滚动"判定）。
-private struct DrawerContentHeightKey: PreferenceKey {
-    static var defaultValue: CGFloat = 0
-    static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) {
-        value = max(value, nextValue())
-    }
-}
-
 /// 抽屉宿主的根视图：`DrawerView` + 它的八个环境对象。
 ///
 /// 存在的唯一理由是给 `PanelCoordinator` 一个**可命名**的宿主类型 `NSHostingView<DrawerRootView>`：
 /// 宿主只建一次、之后每次打开只换 `rootView`（2026-09-04，抽屉弹开掉帧的修法），而
 /// `DrawerView(...).environmentObject(...)` 链出来的是写不出名字的 `ModifiedContent<…>`。
 struct DrawerRootView: View {
-    let maxContentHeight: CGFloat
+    let limits: StackGridLayout.Limits
+    let arrow: StackPopupArrowModel
+    let onPanelSizeChange: (CGSize) -> Void
     let usesLiquidGlass: Bool
     let isDrawerOpen: () -> Bool
     let onPrimaryAction: () -> Void
@@ -535,7 +477,9 @@ struct DrawerRootView: View {
     let appMembershipController: AppMembershipController
 
     var body: some View {
-        DrawerView(maxContentHeight: maxContentHeight,
+        DrawerView(limits: limits,
+                   arrow: arrow,
+                   onPanelSizeChange: onPanelSizeChange,
                    usesLiquidGlass: usesLiquidGlass,
                    isDrawerOpen: isDrawerOpen,
                    onPrimaryAction: onPrimaryAction)

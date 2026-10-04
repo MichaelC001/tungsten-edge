@@ -1370,6 +1370,7 @@ struct DockStripView: View {
 
                                  isLaunching: runtime.launchingBundleIDs.contains(bid),
                                  scale: dockScale,
+                                 layout: .bar,
                                  hoverStyle: hoverStyle,
                                  hoverInput: .resolved(hovered),
                                  windowEntriesProvider: {
@@ -1410,6 +1411,7 @@ struct DockStripView: View {
 
                 isLaunching: runtime.launchingBundleIDs.contains(bid),
                 scale: dockScale,
+                layout: .bar,
                 hoverStyle: hoverStyle,
                 hoverInput: .resolved(hovered),
                 windowEntriesProvider: {

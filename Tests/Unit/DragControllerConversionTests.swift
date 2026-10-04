@@ -642,6 +642,46 @@ final class DragControllerConversionTests: XCTestCase {
         XCTAssertNil(controller.convertedDrawerBundleID)
     }
 
+    /// The drawer's grid is shaped from the members with the conversion undone: every drag-out
+    /// (unstash and keepPlacement alike) removes placement on convert, so the count must hold
+    /// through convert → revert and only move on the commit.
+    func testDrawerGridSettledCountHoldsThroughDragOutConversion() {
+        ["a", "b", "app"].forEach(drawer.add)
+        func settled() -> Int {
+            let delta = controller.drawerConversionDelta
+            return DrawerGridShape.settledCount(visibleIDs: drawer.bundleIDs,
+                                                convertedInID: delta.convertedInID,
+                                                convertedOutID: delta.convertedOutID)
+        }
+        begin(.drawer, "app", at: outsideZone)
+        XCTAssertEqual(settled(), 3)
+        controller.convertDrawerToStrip()
+        XCTAssertFalse(drawer.contains("app"))
+        XCTAssertEqual(settled(), 3, "converted out: still shaped as three")
+        controller.revertDrawerToStrip()
+        XCTAssertEqual(settled(), 3)
+        controller.convertDrawerToStrip()
+        controller.endDrag()
+        controller.cancelDrag()
+        XCTAssertEqual(settled(), 2, "committed: the grid may take its new shape")
+    }
+
+    func testDrawerGridSettledCountHoldsThroughDragInConversion() {
+        ["a", "b"].forEach(drawer.add)
+        func settled() -> Int {
+            let delta = controller.drawerConversionDelta
+            return DrawerGridShape.settledCount(visibleIDs: drawer.bundleIDs,
+                                                convertedInID: delta.convertedInID,
+                                                convertedOutID: delta.convertedOutID)
+        }
+        begin(.strip, "app", at: outsideZone)
+        controller.convertStripToDrawer()
+        XCTAssertTrue(drawer.contains("app"))
+        XCTAssertEqual(settled(), 2, "converted in: not counted yet")
+        controller.revertStripFromDrawer()
+        XCTAssertEqual(settled(), 2)
+    }
+
     func testUncheckedPlacementConversionsRemainUnchecked() {
         drawer.add("app")
         begin(.drawer, "app", at: outsideZone)

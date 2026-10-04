@@ -30,11 +30,12 @@ struct ShelfGridPopupView: View {
         StackPopupChrome(title: String(localized: "Shelf"),
                          note: note,
                          layout: layout,
+                         plate: .stack,
                          usesLiquidGlass: usesLiquidGlass,
                          arrow: context.arrow,
                          onPanelSizeChange: onContentResize,
                          gridAnimation: .easeInOut(duration: DrawerAnimation.duration),
-                         gridAnimationKey: entries.map(\.url)) {
+                         gridAnimationKey: entries.map(\.url.path)) {
             ForEach(entries, id: \.url) { entry in
                 FolderGridCell(iconPath: entry.isAccessible ? entry.url.path : nil,
                                staticIcon: entry.isAccessible ? nil : Self.inaccessibleIcon,

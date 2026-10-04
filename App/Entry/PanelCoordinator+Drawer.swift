@@ -17,12 +17,12 @@ extension PanelCoordinator {
         drawerSpringOpened = false   // 默认手动开；弹簧路径在 springOpenDrawer 里再置 true
 
         let screen = panelCurrentScreen(panel: mainPanel)
-        let (capsuleRef, maxContentHeight) = drawerAnchor(on: screen)
+        let (capsuleRef, limits) = drawerAnchor(on: screen)
 
         // 宿主只建一次；之后打开只在可用高度变了才换 rootView。
         // 各阶段打 `HoverTrace.action("drawerOpen")` 标记：打开这一转的主线程停顿由哪段贡献，只有它能分出来。
         HoverTrace.action("drawerOpen", phase: "begin")
-        guard let host = ensureDrawerHost(maxContentHeight: maxContentHeight) else { return }
+        guard let host = ensureDrawerHost(limits: limits) else { return }
         let (panel, hosting) = host
         HoverTrace.action("drawerOpen", phase: "host")
 
@@ -33,13 +33,16 @@ extension PanelCoordinator {
         HoverTrace.action("drawerOpen", phase: "layout")
         let sync = hosting.fittingSize
         HoverTrace.action("drawerOpen", phase: "fitting")
-        if sync.width >= 60, sync.height >= 60 {
+        if Self.isPlausibleDrawerSize(sync) {
             lastDrawerSize = sync
         }
         let initialFrame = drawerTargetFrame(forCapsule: capsuleRef, size: lastDrawerSize, on: screen)
         lastDrawerTargetFrame = initialFrame
 
         panel.setFrame(initialFrame, display: false)
+        syncDrawerArrow(after: .instant)
+        // The arrow's position was only known with the frame: lay it out before the first show.
+        hosting.layoutSubtreeIfNeeded()
         // 打开无动画（owner 2026-09-04，理由见 `DrawerView` 与 `Docs/27`）：直接以 alpha 1 上屏。
         // 淡出中途重开也直接回到 1；`closeDrawer` 的 completion 有 `!drawerWantsOpen` 守卫，不会把它 orderOut。
         panel.alphaValue = 1
@@ -66,17 +69,85 @@ extension PanelCoordinator {
     }
 
     /// 抽屉的定位输入：胶囊**目标** frame（不读 live：用户可能在任务条宽度动画中触发弹簧开抽屉,Codex 二审 P1）
-    /// 和抽屉最大内容高度 = 胶囊上方锚点 → 屏幕上沿的可用高度。超出由 DrawerView 内部滚动,
+    /// 和网格的行列上限 = 胶囊上方到屏幕上沿放得下多少。超出由网格在底板里滚动,
     /// 绝不靠下压底边来塞下（否则压向胶囊/任务条 = 重叠,Codex 二审第 4 点）。
     /// 顶部上限仍避让菜单栏 / 刘海；底部锚点不避让原生 Dock，避免 Command+Option+D 或侧边 Dock 推动抽屉。
-    private func drawerAnchor(on screen: NSScreen) -> (capsuleRef: NSRect, maxContentHeight: CGFloat) {
+    private func drawerAnchor(on screen: NSScreen) -> (capsuleRef: NSRect, limits: StackGridLayout.Limits) {
         let screenGeometry = Self.screenGeometry(screen)
         let capsuleRef = lastCapsuleTargetFrame == .zero ? (capsulePanel?.frame ?? .zero) : lastCapsuleTargetFrame
-        return (capsuleRef, PanelGeometry.maxDrawerContentHeight(forCapsule: capsuleRef, on: screenGeometry))
+        return (capsuleRef, PanelGeometry.drawerGridLimits(forCapsule: capsuleRef, on: screenGeometry, metrics: layoutMetrics))
     }
 
-    private func makeDrawerRootView(maxContentHeight: CGFloat) -> DrawerRootView {
-        DrawerRootView(maxContentHeight: maxContentHeight,
+    /// Smaller than any plate means the host has not laid out yet, never a real size.
+    static func isPlausibleDrawerSize(_ size: CGSize) -> Bool { size.width >= 160 && size.height >= 100 }
+
+    /// The drawer's visible part for a window frame: plate plus arrow strip, without the 40pt
+    /// transparent border.
+    static func drawerPlateFrame(_ panelFrame: NSRect) -> CGRect {
+        PanelGeometry.folderPopupPlateFrame(panelFrame: panelFrame)
+    }
+
+    // MARK: - Arrow
+
+    /// The single writer of the drawer arrow's offset, keyed on what `setFrames` actually did
+    /// with the drawer's frame — never on "layout ran" or the `animated` it was asked for:
+    /// - `.animated`: sync from the two panels' live frames now and keep following every tick
+    ///   until the animation's end (`animatedFramesUntil`), then land on the target. A plate
+    ///   clamped at the screen edge moves against its capsule for the whole animation; writing
+    ///   the end value at once takes the arrow up to ~64pt off the capsule.
+    /// - `.unchanged`: nothing. Same targets does not mean the running animation is over.
+    /// - `.instant`: stop following, write the target.
+    /// Live frames here only draw the arrow; no panel is ever positioned from them.
+    func syncDrawerArrow(after commit: FrameCommit) {
+        switch commit {
+        case .unchanged:
+            return
+        case .instant:
+            stopDrawerArrowFollow()
+            writeDrawerArrow(live: false)
+        case .animated:
+            writeDrawerArrow(live: true)
+            guard drawerArrowFollowTimer == nil else { return }   // one timer; the deadline is read per tick
+            let timer = Timer(timeInterval: 1.0 / 60.0, repeats: true) { [weak self] _ in
+                Task { @MainActor [weak self] in
+                    guard let self, self.drawerArrowFollowTimer != nil else { return }
+                    if CACurrentMediaTime() >= self.animatedFramesUntil {
+                        self.stopDrawerArrowFollow()
+                        self.writeDrawerArrow(live: false)
+                    } else {
+                        self.writeDrawerArrow(live: true)
+                    }
+                }
+            }
+            drawerArrowFollowTimer = timer
+            RunLoop.main.add(timer, forMode: .common)
+        }
+    }
+
+    func stopDrawerArrowFollow() {
+        drawerArrowFollowTimer?.invalidate()
+        drawerArrowFollowTimer = nil
+    }
+
+    private func writeDrawerArrow(live: Bool) {
+        let capsule = live ? capsulePanel?.frame : lastCapsuleTargetFrame
+        let drawer = live ? drawerPanel?.frame : lastDrawerTargetFrame
+        guard let capsule, let drawer, capsule != .zero, drawer != .zero else { return }
+        let offset = capsule.midX - drawer.midX   // the capsule's visible rect is inset symmetrically
+        if drawerArrow.offsetFromCenter != offset { drawerArrow.offsetFromCenter = offset }
+    }
+
+    private func makeDrawerRootView(limits: StackGridLayout.Limits) -> DrawerRootView {
+        DrawerRootView(limits: limits,
+                       arrow: drawerArrow,
+                       // Next main-loop turn: `fittingSize` reads zero inside the SwiftUI update
+                       // that reports the new size; `layoutPanels` measures it outside.
+                       onPanelSizeChange: { [weak self] _ in
+                           DispatchQueue.main.async { [weak self] in
+                               guard let self, self.drawerWantsOpen else { return }
+                               self.relayout(animated: true)
+                           }
+                       },
                        usesLiquidGlass: usesLiquidGlass,
                        isDrawerOpen: { [weak self] in self?.drawerPanel?.isVisible == true },
                        onPrimaryAction: { [weak self] in self?.closeDrawerAfterAction() },
@@ -86,9 +157,9 @@ extension PanelCoordinator {
                        appMembershipController: appMembershipController)
     }
 
-    /// 抽屉面板 + SwiftUI 宿主，**只建一次**；之后只在可用高度变了才换 rootView。
+    /// 抽屉面板 + SwiftUI 宿主，**只建一次**；之后只在行列上限变了才换 rootView。
     /// 2026-09-04 之前每次打开都现建一棵视图树，主线程停顿 55～135ms 压在淡入开头（弹开掉帧主因）。
-    private func ensureDrawerHost(maxContentHeight: CGFloat) -> (NSPanel, NSHostingView<DrawerRootView>)? {
+    private func ensureDrawerHost(limits: StackGridLayout.Limits) -> (NSPanel, NSHostingView<DrawerRootView>)? {
         if drawerPanel == nil {
             let panel = makeFloatingPanel(
                 contentRect: NSRect(origin: .zero, size: lastDrawerSize),
@@ -100,15 +171,15 @@ extension PanelCoordinator {
         guard let panel = drawerPanel else { return nil }
 
         if let hosting = drawerHosting {
-            if drawerHostedMaxContentHeight != maxContentHeight {
-                hosting.rootView = makeDrawerRootView(maxContentHeight: maxContentHeight)
-                drawerHostedMaxContentHeight = maxContentHeight
+            if drawerHostedLimits != limits {
+                hosting.rootView = makeDrawerRootView(limits: limits)
+                drawerHostedLimits = limits
             }
             return (panel, hosting)
         }
 
-        let hosting = NSHostingView(rootView: makeDrawerRootView(maxContentHeight: maxContentHeight))
-        drawerHostedMaxContentHeight = maxContentHeight
+        let hosting = NSHostingView(rootView: makeDrawerRootView(limits: limits))
+        drawerHostedLimits = limits
         hosting.wantsLayer = true
         hosting.layer?.backgroundColor = NSColor(white: 1.0, alpha: 0.0).cgColor
 
@@ -134,7 +205,7 @@ extension PanelCoordinator {
             guard let self, !self.isSuspendedForPermissionLoss, self.drawerHosting == nil,
                   let mainPanel = self.dockPanel, self.capsulePanel != nil else { return }
             let anchor = self.drawerAnchor(on: self.panelCurrentScreen(panel: mainPanel))
-            guard let host = self.ensureDrawerHost(maxContentHeight: anchor.maxContentHeight) else { return }
+            guard let host = self.ensureDrawerHost(limits: anchor.limits) else { return }
             let (panel, hosting) = host
             panel.layoutIfNeeded()
             _ = hosting.fittingSize
@@ -162,6 +233,7 @@ extension PanelCoordinator {
         drawerSpringOpened = false
         if let m = drawerLocalMonitor  { NSEvent.removeMonitor(m); drawerLocalMonitor  = nil }
         if let m = drawerGlobalMonitor { NSEvent.removeMonitor(m); drawerGlobalMonitor = nil }
+        stopDrawerArrowFollow()
         guard let panel = drawerPanel else { return }
         NSAnimationContext.runAnimationGroup({ ctx in
             ctx.duration = PopoverAnimation.closeDuration
@@ -171,6 +243,7 @@ extension PanelCoordinator {
             Task { @MainActor [weak self] in
                 guard let self, !self.drawerWantsOpen else { return }   // 淡出中又开了 → 别 orderOut
                 panel.orderOut(nil)
+                self.drawerArrow.scrollGeneration &+= 1   // next open starts at the grid's top
             }
         })
     }
@@ -189,8 +262,10 @@ extension PanelCoordinator {
             NSEvent.removeMonitor(monitor)
             drawerGlobalMonitor = nil
         }
+        stopDrawerArrowFollow()
         drawerPanel?.alphaValue = 0
         drawerPanel?.orderOut(nil)
+        drawerArrow.scrollGeneration &+= 1
     }
 
     private func dismissDrawerIfOutside() {
@@ -198,7 +273,8 @@ extension PanelCoordinator {
         guard let drawer = drawerPanel, drawer.isVisible,
               let dock   = dockPanel else { return }
         let mouse = NSEvent.mouseLocation
-        guard !drawer.frame.contains(mouse),
+        // The plate, not the window: its 40pt transparent border dismisses like any outside click.
+        guard !Self.drawerPlateFrame(drawer.frame).contains(mouse),
               !dock.frame.contains(mouse),
               !(capsulePanel?.frame.contains(mouse) ?? false) else { return }
         closeDrawer()
@@ -217,7 +293,7 @@ extension PanelCoordinator {
                 // 抽屉只向上长：投放区**上沿拉到屏幕顶**,只认固定的底边+宽度,不随面板增高/缩短而变。
                 // 否则"投放区尺寸→是否插空格→面板增高→投放区尺寸"成反馈环,空格闪烁、面板动画被高频打断
                 // 而过冲向下（owner 2026-06-21"先向下扩展再上移"的真因）。
-                let inset = d.insetBy(dx: Self.shadowPadding, dy: Self.shadowPadding)
+                let inset = Self.drawerPlateFrame(d)   // bottom = arrow tip, 3pt above the bar's top
                 // 投放区向上延伸到与抽屉一致的顶部上限：避让菜单栏/刘海，但不避让原生 Dock。
                 let top = Self.screenGeometry(panelCurrentScreen(panel: drawer)).topUsableY
                 zones.append(CGRect(x: inset.minX, y: inset.minY, width: inset.width, height: max(inset.height, top - inset.minY)))
@@ -264,6 +340,12 @@ extension PanelCoordinator {
         target.insetBy(dx: Self.shadowPadding - 6, dy: Self.shadowPadding - 6)
     }
 
+    /// The drawer's spring zone: its plate (the window has a 40pt transparent border, not the
+    /// 20pt `springZone` assumes) with the same 6pt hysteresis.
+    private func drawerSpringZone() -> CGRect {
+        Self.drawerPlateFrame(lastDrawerTargetFrame).insetBy(dx: -6, dy: -6)
+    }
+
     private func updateSpringLoad(location: CGPoint, payload: DragPayload?) {
         // 整段拖动只要从任务条发起就享受弹簧（转正成 .drawer 后仍认这个标记）。消息区 chip 同享：
         // 悬胶囊自动弹开抽屉才有精确收纳落点。
@@ -285,7 +367,7 @@ extension PanelCoordinator {
         // 非任务条发起（纯抽屉内拖动 / 抽屉→任务条移回）不弹簧。
         guard dragOriginatedFromStrip else { cancelSpringTimers(); return }
 
-        let inDrawer  = drawerWantsOpen && lastDrawerTargetFrame != .zero && springZone(lastDrawerTargetFrame).contains(location)
+        let inDrawer  = drawerWantsOpen && lastDrawerTargetFrame != .zero && drawerSpringZone().contains(location)
         let inCapsule = lastCapsuleTargetFrame != .zero && springZone(lastCapsuleTargetFrame).contains(location)
 
         if inDrawer || inCapsule {
@@ -330,7 +412,7 @@ extension PanelCoordinator {
         springCloseTimer = nil
         guard dragOriginatedFromStrip, drawerWantsOpen else { return }
         let loc = dragController.globalLocation
-        let inDrawer  = lastDrawerTargetFrame != .zero && springZone(lastDrawerTargetFrame).contains(loc)
+        let inDrawer  = lastDrawerTargetFrame != .zero && drawerSpringZone().contains(loc)
         let inCapsule = lastCapsuleTargetFrame != .zero && springZone(lastCapsuleTargetFrame).contains(loc)
         guard !inDrawer, !inCapsule else { return }   // 又回到抽屉/胶囊 → 不关
         closeDrawer()

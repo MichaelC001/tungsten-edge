@@ -8,6 +8,9 @@ import SwiftUI
 final class StackPopupArrowModel: ObservableObject {
     /// Arrow centre minus plate centre, in points.
     @Published var offsetFromCenter: CGFloat = 0
+    /// Bumped by a host that outlives one showing (the drawer) each time the plate goes away:
+    /// a scrolled grid is rebuilt at its top while nobody is looking, never at the next open.
+    @Published var scrollGeneration = 0
 }
 
 /// What the coordinator knows and a popup's content needs: how large the grid may get on this
@@ -25,6 +28,8 @@ struct StackPopupChrome<Grid: View>: View {
     /// A line between title and grid; the native grid has none (empty shelf, Trash state).
     let note: String?
     let layout: StackGridLayout.Result
+    /// The plate's frame and cells (`StackPlateMetrics`). No default: the plate's size derives from it.
+    let plate: StackPlateMetrics
     let usesLiquidGlass: Bool
     @ObservedObject var arrow: StackPopupArrowModel
     /// The popup window's new size whenever the plate's changes. No default: without it the
@@ -34,7 +39,7 @@ struct StackPopupChrome<Grid: View>: View {
     var onBack: (() -> Void)?
     /// Animates cells arriving and leaving; nil while the first population lands.
     var gridAnimation: Animation?
-    var gridAnimationKey: [URL] = []
+    var gridAnimationKey: [String] = []
     /// The cells; they land in a `LazyVGrid` of `layout.columns` fixed columns.
     @ViewBuilder let grid: () -> Grid
 
@@ -43,14 +48,16 @@ struct StackPopupChrome<Grid: View>: View {
     private typealias Metrics = StackPopupMetrics
 
     private var plateSize: CGSize {
-        Metrics.plateSize(columns: layout.columns, rows: layout.visibleRows, hasNote: note != nil)
+        plate.plateSize(columns: layout.columns, rows: layout.visibleRows, hasNote: note != nil, scrolls: layout.scrolls)
     }
-    private var gridWidth: CGFloat { CGFloat(layout.columns) * Metrics.cell }
-    private var gridHeight: CGFloat { CGFloat(layout.visibleRows) * Metrics.cell }
+    private var gridWidth: CGFloat { CGFloat(layout.columns) * plate.cell.cellSize.width }
+    private var gridHeight: CGFloat { CGFloat(layout.visibleRows) * plate.cell.cellSize.height }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             header
+            if plate.hasSeparator { separator }
+            Color.clear.frame(height: plate.gridTop - plate.headerHeight - (plate.hasSeparator ? 1 : 0))
             if let note { noteLine(note) }
             gridArea
         }
@@ -83,9 +90,16 @@ struct StackPopupChrome<Grid: View>: View {
             .lineLimit(1)
             .truncationMode(.middle)
             .padding(.horizontal, 44)
-            .frame(width: plateSize.width, height: Metrics.headerHeight)
-            .offset(y: Metrics.titleCenterY - Metrics.headerHeight / 2)
+            .frame(width: plateSize.width, height: plate.headerHeight)
+            .offset(y: plate.titleCenterY - plate.headerHeight / 2)
             .overlay(alignment: .topLeading) { backButton }
+    }
+
+    private var separator: some View {
+        theme.stackPopupSeparator.color
+            .frame(height: 1)
+            .padding(.horizontal, plate.sidePadding)
+            .frame(width: plateSize.width)
     }
 
     @ViewBuilder
@@ -121,26 +135,30 @@ struct StackPopupChrome<Grid: View>: View {
             .lineLimit(2)
             .multilineTextAlignment(.center)
             .minimumScaleFactor(0.8)
-            .padding(.horizontal, Metrics.sidePadding)
+            .padding(.horizontal, plate.sidePadding)
             .frame(width: plateSize.width, height: Metrics.noteHeight)
     }
 
     @ViewBuilder
     private var gridArea: some View {
-        let columns = Array(repeating: GridItem(.fixed(Metrics.cell), spacing: 0), count: layout.columns)
+        let columns = Array(repeating: GridItem(.fixed(plate.cell.cellSize.width), spacing: 0), count: layout.columns)
         let cells = LazyVGrid(columns: columns, alignment: .leading, spacing: 0, content: grid)
             .frame(width: gridWidth, alignment: .leading)
             .animation(gridAnimation, value: gridAnimationKey)
         if layout.scrolls {
             ScrollView(.vertical, showsIndicators: true) {
-                cells.frame(width: gridWidth + Metrics.scrollerGutter, alignment: .leading)
+                // Flexible, not the scroll view's width: an always-shown scroller takes its width
+                // out of the content area, and wider content would be centred, sliding the grid left.
+                cells.frame(maxWidth: .infinity, alignment: .leading)
             }
-            .frame(width: gridWidth + Metrics.scrollerGutter, height: gridHeight)
-            .padding(.leading, Metrics.sidePadding)
+            .frame(width: gridWidth + plate.scrollerGutter,
+                   height: gridHeight + (plate.scrollsToBottomEdge ? plate.bottomPadding : 0))
+            .padding(.leading, plate.sidePadding)
+            .id(arrow.scrollGeneration)
         } else {
             cells
                 .frame(height: gridHeight, alignment: .top)
-                .padding(.leading, Metrics.sidePadding)
+                .padding(.leading, plate.sidePadding)
         }
     }
 }

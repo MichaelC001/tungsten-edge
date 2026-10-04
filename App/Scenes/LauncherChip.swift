@@ -10,6 +10,13 @@ import SwiftUI
 /// and kept apps, scale 1.0). Call-site differences are injected via
 /// `membershipItems` (在程序坞中保留 / 固定为应用图标).
 
+/// How a `LauncherChip` is laid out: a card on the bar, or a cell of the drawer's stack grid
+/// (`StackCellMetrics.drawer`: the system Apps grid's proportions, the app's name under the icon).
+enum LauncherChipLayout {
+    case bar
+    case stackCell
+}
+
 struct LauncherChip: View {
     let bundleID: String
     let isRunning: Bool   // supplied by the displayed zone's runtime/process projection
@@ -24,6 +31,8 @@ struct LauncherChip: View {
     /// 高度系数（条内传 `DockPanelHeight.scale`，抽屉恒定 0.7）。**故意不给默认值**——漏传必须是编译错误，
     /// 见 AGENTS《Taskbar Size Tiers》。
     let scale: CGFloat
+    /// Bar card or drawer grid cell. No default, same reason as `scale`.
+    let layout: LauncherChipLayout
     /// 悬停效果档位。**同样故意不给默认值**——漏传必须是编译错误，理由同 `scale`。
     /// 抽屉调用处有意写死 `.quiet`（抽屉不受该设置影响，owner 2026-08-02 / 2026-08-17）。
     let hoverStyle: HoverStyle
@@ -108,34 +117,7 @@ struct LauncherChip: View {
             isTapPressed: isTapPressed,
             showsHover: showsHover
         )
-        return VStack(spacing: 0) {
-            Spacer(minLength: 0)
-            Image(nsImage: AppIconResolver.icon(for: bundleID))
-                .resizable()
-                .aspectRatio(contentMode: .fit)
-                .frame(width: hover.bareIconSize, height: hover.bareIconSize)
-                .clipShape(RoundedRectangle(cornerRadius: hover.bareIconSize / 4, style: .continuous))
-                .offset(y: bounceUp ? -6 : 0)
-                .animation(.easeInOut(duration: 0.25), value: bounceUp)
-            // 槽位高度 = **静息**图标尺寸。槽位小于图标就会整块往下溢出（.top 对齐），
-            // 结果就是「打开的应用图标和没打开的高度不一样」——本视图画的正是没打开的那种。
-            // 与 `ChipView` 的 iconOnly 分支必须逐字相同。
-            .frame(width: ChipPillMetrics.cardWidth * scale,
-                   height: ChipPillMetrics.bareIconSlot * scale,
-                   alignment: .top)
-            Spacer(minLength: 0)
-        }
-        .frame(width: ChipPillMetrics.cardWidth * scale,
-               height: ChipPillMetrics.chipHeight * scale)
-        // 同 `ChipView`：拖起来的副本不画圆点（原生 Dock 同款）。
-        .overlay(alignment: .bottom) {
-            if visual.showsRunningDot && !isDragCarrierSnapshot {
-                Circle()
-                    .fill(theme.runningDot.color)
-                    .frame(width: 4, height: 4)
-                    .padding(.bottom, 2)
-            }
-        }
+        return face(visual: visual, hover: hover)
         // 未读角标：**必须挂在两个缩放之前**（owner 2026-08-17）。见 `ChipBadgeView`。
         .overlay(alignment: .topTrailing) {
             if let badgeText {
@@ -145,7 +127,7 @@ struct LauncherChip: View {
         // 运行点原本挂在放大**之后**（点不跟着放大），和 `ChipView.bareIconChip` 不一致；
         // 这次一并对齐：两处都是「图标 + 点 + 角标」整体缩放。
         .chipQuietHoverScale(quietHoverFeedback,
-                             cardWidth: ChipPillMetrics.cardWidth * scale,
+                             cardWidth: faceWidth,
                              scale: scale)
         .chipPressScale(isTapPressed)
         .contentShape(Rectangle())
@@ -197,6 +179,67 @@ struct LauncherChip: View {
             if newValue { startBounce() } else { stopBounce() }
         }
         .onChange(of: bounceUp) { trace("bounceUp=\($0)") }
+    }
+
+    /// Width of what the hover lift scales: the bar card, or the whole grid cell.
+    private var faceWidth: CGFloat {
+        switch layout {
+        case .bar: return ChipPillMetrics.cardWidth * scale
+        case .stackCell: return StackCellMetrics.drawer.cellSize.width
+        }
+    }
+
+    private func icon(size: CGFloat, bounceLift: CGFloat) -> some View {
+        Image(nsImage: AppIconResolver.icon(for: bundleID))
+            .resizable()
+            .aspectRatio(contentMode: .fit)
+            .frame(width: size, height: size)
+            .clipShape(RoundedRectangle(cornerRadius: size / 4, style: .continuous))
+            .offset(y: bounceUp ? -bounceLift : 0)
+            .animation(.easeInOut(duration: 0.25), value: bounceUp)
+    }
+
+    /// 同 `ChipView`：拖起来的副本不画圆点（原生 Dock 同款）。
+    @ViewBuilder
+    private func runningDot(visual: LauncherChipVisualPlan.Visual, diameter: CGFloat) -> some View {
+        if visual.showsRunningDot && !isDragCarrierSnapshot {
+            Circle()
+                .fill(theme.runningDot.color)
+                .frame(width: diameter, height: diameter)
+                .padding(.bottom, 2)
+        }
+    }
+
+    @ViewBuilder
+    private func face(visual: LauncherChipVisualPlan.Visual, hover: ChipHoverVisual) -> some View {
+        switch layout {
+        case .bar:
+            VStack(spacing: 0) {
+                Spacer(minLength: 0)
+                icon(size: hover.bareIconSize, bounceLift: 6)
+                // 槽位高度 = **静息**图标尺寸。槽位小于图标就会整块往下溢出（.top 对齐），
+                // 结果就是「打开的应用图标和没打开的高度不一样」——本视图画的正是没打开的那种。
+                // 与 `ChipView` 的 iconOnly 分支必须逐字相同。
+                .frame(width: ChipPillMetrics.cardWidth * scale,
+                       height: ChipPillMetrics.bareIconSlot * scale,
+                       alignment: .top)
+                Spacer(minLength: 0)
+            }
+            .frame(width: ChipPillMetrics.cardWidth * scale,
+                   height: ChipPillMetrics.chipHeight * scale)
+            .overlay(alignment: .bottom) { runningDot(visual: visual, diameter: 4) }
+        case .stackCell:
+            // The folder popup's cell with an app in it. The dot sits in the icon's own
+            // transparent bottom margin, between the artwork and the name.
+            let cell = StackCellMetrics.drawer
+            VStack(spacing: cell.labelGap) {
+                icon(size: cell.iconSize, bounceLift: 6 * scale)
+                    .overlay(alignment: .bottom) { runningDot(visual: visual, diameter: 4) }
+                StackCellLabel(text: displayName, metrics: cell)
+            }
+            .padding(.top, cell.iconTop)
+            .frame(width: cell.cellSize.width, height: cell.cellSize.height, alignment: .top)
+        }
     }
 
     private func buildLauncherMenu() -> NSMenu {

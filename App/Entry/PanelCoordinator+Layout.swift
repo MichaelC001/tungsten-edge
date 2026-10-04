@@ -341,14 +341,15 @@ extension PanelCoordinator {
         pairs.append((dock, dockT))
         pairs.append((capsule, capsuleT))
         if let drawer = drawerPanel, drawer.isVisible, let hosting = drawerContentHost {
+            // Smaller than any plate = not laid out yet, never a size: keep the last good one.
             let fitting = hosting.fittingSize
-            let drawerSize = CGSize(width: max(fitting.width, 60), height: max(fitting.height, 60))
-            lastDrawerSize = drawerSize
-            let drawerT = drawerTargetFrame(forCapsule: capsuleT, size: drawerSize, on: screen)
+            if Self.isPlausibleDrawerSize(fitting) { lastDrawerSize = fitting }
+            let drawerT = drawerTargetFrame(forCapsule: capsuleT, size: lastDrawerSize, on: screen)
             lastDrawerTargetFrame = drawerT
             pairs.append((drawer, drawerT))
         }
-        setFrames(pairs, animated: anim, batched: batched)
+        let commit = setFrames(pairs, animated: anim, batched: batched)
+        if drawerWantsOpen { syncDrawerArrow(after: commit) }
     }
 
     /// 量当前内容宽度后布局（内容变化的统一入口）。
@@ -397,7 +398,11 @@ extension PanelCoordinator {
     /// `batched`（只有标签跟随的逐帧 tick 传 true）：`display: false`，三个面板的 frame 变化留到这一轮主循环
     /// 末尾和 SwiftUI 内容一起提交——逐个 `display: true` 会各自立刻冲刷，胶囊、底板、内容三者落在不同帧上
     /// （屏幕连拍 2026-09-13：变长途中胶囊贴到了底板边上）。
-    func setFrames(_ pairs: [(NSPanel, NSRect)], animated: Bool, batched: Bool = false) {
+    /// What `setFrames` did with the frames it was handed.
+    enum FrameCommit { case unchanged, instant, animated }
+
+    @discardableResult
+    func setFrames(_ pairs: [(NSPanel, NSRect)], animated: Bool, batched: Bool = false) -> FrameCommit {
         // **和上一次的目标比，不和面板的实时 frame 比。**
         // 实时 frame 在动画途中是插值出来的中间值，永远和目标不等——那样这个短路一次都不会命中
         // （实测 0 次）。AGENTS《Menus, Panels, And Screens》早写过同一条：relayout 是目标
@@ -405,7 +410,7 @@ extension PanelCoordinator {
         let targets = pairs.map(\.1)
         guard targets != lastCommittedFrames else {
             HoverTrace.framesUnchanged()
-            return
+            return .unchanged
         }
         lastCommittedFrames = targets
         guard animated else {
@@ -421,7 +426,7 @@ extension PanelCoordinator {
                 for (p, f) in pairs { p.setFrame(f, display: !batched) }
             }
             if let dock = dockPanel { HoverTrace.width("panel:" + String(stripSurfaceID.suffix(4)), dock.frame.width) }
-            return
+            return .instant
         }
         animatedFramesUntil = CACurrentMediaTime() + Self.layoutAnimationDuration
         NSAnimationContext.runAnimationGroup { ctx in
@@ -429,6 +434,7 @@ extension PanelCoordinator {
             ctx.timingFunction = CAMediaTimingFunction(name: .easeInEaseOut)
             for (p, f) in pairs { p.animator().setFrame(f, display: true) }
         }
+        return .animated
     }
 
     // MARK: - Label width follow

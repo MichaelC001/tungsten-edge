@@ -64,9 +64,9 @@ final class PanelGeometryTests: XCTestCase {
         )
         XCTAssertEqual(screen.topUsableY, 920)
 
-        let drawer = layout(on: screen, drawerSize: CGSize(width: 210, height: 900)).drawer
+        let drawer = layout(on: screen, drawerSize: CGSize(width: 210, height: 1100)).drawer
 
-        XCTAssertEqual(drawer.maxY, 920)
+        XCTAssertEqual(PanelGeometry.folderPopupPlateFrame(panelFrame: drawer).maxY, 920)
     }
 
     func testDrawerTopCapUsesSafeAreaWhenNotchIsLowerThanVisibleFrame() {
@@ -77,22 +77,38 @@ final class PanelGeometryTests: XCTestCase {
         )
         XCTAssertEqual(screen.topUsableY, 950)
 
-        let drawer = layout(on: screen, drawerSize: CGSize(width: 210, height: 900)).drawer
+        let drawer = layout(on: screen, drawerSize: CGSize(width: 210, height: 1100)).drawer
 
-        XCTAssertEqual(drawer.maxY, 950)
+        XCTAssertEqual(PanelGeometry.folderPopupPlateFrame(panelFrame: drawer).maxY, 950)
     }
 
-    func testMaxDrawerContentHeightUsesSameTopCapAsDrawerFrame() {
+    func testDrawerIsAStackPopupAnchoredOnItsCapsule() {
         let screen = PanelScreenGeometry(
             frame: CGRect(x: 0, y: 0, width: 1512, height: 982),
             visibleFrame: CGRect(x: 0, y: 0, width: 1512, height: 982),
             safeAreaTop: 32
         )
-        let frames = layout(on: screen)
+        let size = StackPopupMetrics.panelSize(
+            forPlate: StackPlateMetrics.drawer.plateSize(columns: 3, rows: 2, hasNote: false, scrolls: false))
+        let frames = layout(on: screen, drawerSize: size)
+        let anchor = PanelGeometry.drawerAnchorVisibleRect(forCapsule: frames.capsule, metrics: metrics)
+        let plate = PanelGeometry.folderPopupPlateFrame(panelFrame: frames.drawer)
 
-        let maxHeight = PanelGeometry.maxDrawerContentHeight(forCapsule: frames.capsule, on: screen, metrics: metrics)
+        // Arrow tip `tipGap` above the capsule; the pointer's floor for "inside the drawer body"
+        // is the capsule's top, never inside the bar.
+        XCTAssertEqual(plate.minY, anchor.maxY + StackPopupMetrics.tipGap)
+        XCTAssertEqual(PanelGeometry.drawerBodyFloorY(plate: plate), anchor.maxY)
+        // The capsule sits at the bar's right end: the plate stays on screen and its arrow can
+        // still reach the capsule's centre.
+        XCTAssertLessThanOrEqual(plate.maxX, screen.frame.maxX - StackPopupMetrics.minimumScreenMargin)
+        XCTAssertGreaterThanOrEqual(anchor.midX, plate.minX + StackPopupMetrics.arrowInset)
+        XCTAssertLessThanOrEqual(anchor.midX, plate.maxX - StackPopupMetrics.arrowInset)
 
-        XCTAssertEqual(maxHeight, (screen.topUsableY - frames.drawer.minY) - 2 * metrics.shadowPadding)
+        // The grid's row limit is what fits between the capsule and the top cap.
+        let limits = PanelGeometry.drawerGridLimits(forCapsule: frames.capsule, on: screen, metrics: metrics)
+        let tallest = StackPlateMetrics.drawer.plateSize(columns: 1, rows: limits.fitRows, hasNote: false,
+                                                         scrolls: false).height
+        XCTAssertLessThanOrEqual(plate.minY + StackPopupMetrics.arrowHeight + tallest, screen.topUsableY)
     }
 
     // MARK: - 文件夹弹窗

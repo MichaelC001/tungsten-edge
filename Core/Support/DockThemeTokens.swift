@@ -317,6 +317,8 @@ struct DockThemeTokens: Equatable {
     let stackPopupBackFill: DockTint
     /// Frosted fallback only — the glass draws its own edge and shadow.
     let stackPopupHairline: DockTint
+    /// The drawer's rule under its title row: the system separator's dark value.
+    let stackPopupSeparator: DockTint
     let stackPopupShadow: DockShadow
 
     // MARK: 窗口标题 tooltip
@@ -421,6 +423,7 @@ extension DockThemeTokens {
         stackPopupGlyph: .white(124.0 / 255.0),
         stackPopupBackFill: .white(60.0 / 255.0),
         stackPopupHairline: .white(0.18),
+        stackPopupSeparator: .white(0.1),
         stackPopupShadow: DockShadow(tint: .black(0.3), radius: 18, y: 6),
 
         // 2026-08-17 对着原生截图的边缘剖面定的（黑底、@2x）：
@@ -504,6 +507,7 @@ extension DockThemeTokens {
         stackPopupGlyph: light.stackPopupGlyph,
         stackPopupBackFill: light.stackPopupBackFill,
         stackPopupHairline: light.stackPopupHairline,
+        stackPopupSeparator: light.stackPopupSeparator,
         stackPopupShadow: light.stackPopupShadow,
 
         // The native dark bubble *is* the system's regular glass in its dark appearance: fill
