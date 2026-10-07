@@ -72,6 +72,20 @@ final class KeptAppStore: ObservableObject {
         logger.info("seeded Finder into keptAppBundleIDsV3 (one-shot)")
     }
 
+    /// The native Dock's all-apps entry, newest first: Apps (macOS 26+), then Launchpad.
+    static let systemAppLauncherBundleIDs = ["com.apple.apps.launcher", "com.apple.launchpad.launcher"]
+
+    /// A fresh install keeps the system's all-apps entry right after Finder, as the native Dock
+    /// does. Fresh is decided by `InstallLineage` only (AGENTS.md): upgraders never get it, so
+    /// unlike Finder there is no seed marker — an un-check is simply never undone.
+    func seedSystemAppLauncherForFreshInstall(lineage: InstallLineage, isInstalled: (String) -> Bool) {
+        guard lineage == .pristine,
+              let launcher = Self.systemAppLauncherBundleIDs.first(where: isInstalled)
+        else { return }
+        add(launcher)
+        logger.info("seeded \(launcher, privacy: .public) into keptAppBundleIDsV3 (fresh install)")
+    }
+
     /// Authoritative messaging names for the kept-V3 seed, independent of store
     /// init order: if the messaging V2 key exists (even an explicit empty array)
     /// read only it; otherwise fall back to the legacy messaging key. Never union.

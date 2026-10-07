@@ -48,6 +48,34 @@ final class KeptAppStoreTests: XCTestCase {
         XCTAssertFalse(second.contains(FinderTaskbarPolicy.bundleID))
     }
 
+    // MARK: - System all-apps entry (owner 2026-10-07: fresh installs only)
+
+    func testFreshInstallKeepsAppsRightAfterFinder() {
+        let store = KeptAppStore(defaults: makeDefaults(finderSeeded: false))
+        store.seedSystemAppLauncherForFreshInstall(lineage: .pristine) { _ in true }
+        XCTAssertEqual(store.bundleIDs, [FinderTaskbarPolicy.bundleID, "com.apple.apps.launcher"])
+    }
+
+    func testFreshInstallFallsBackToLaunchpadBeforeMacOS26() {
+        let store = KeptAppStore(defaults: makeDefaults())
+        store.seedSystemAppLauncherForFreshInstall(lineage: .pristine) { $0 == "com.apple.launchpad.launcher" }
+        XCTAssertEqual(store.bundleIDs, ["com.apple.launchpad.launcher"])
+    }
+
+    func testUpgraderNeverGetsSystemAppLauncher() {
+        let defaults = makeDefaults()
+        defaults.set(["com.example.app"], forKey: KeptAppStore.defaultsKey)
+        let store = KeptAppStore(defaults: defaults)
+        store.seedSystemAppLauncherForFreshInstall(lineage: .priorUse) { _ in true }
+        XCTAssertEqual(store.bundleIDs, ["com.example.app"])
+    }
+
+    func testNoInstalledLauncherSeedsNothing() {
+        let store = KeptAppStore(defaults: makeDefaults())
+        store.seedSystemAppLauncherForFreshInstall(lineage: .pristine) { _ in false }
+        XCTAssertTrue(store.bundleIDs.isEmpty)
+    }
+
     func testLoadsFromV3Key() {
         let defaults = makeDefaults()
         defaults.set(["com.example.app"], forKey: KeptAppStore.defaultsKey)
