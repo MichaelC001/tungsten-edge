@@ -56,10 +56,10 @@ final class KeptAppStoreTests: XCTestCase {
         XCTAssertEqual(store.bundleIDs, [FinderTaskbarPolicy.bundleID, "com.apple.apps.launcher"])
     }
 
-    func testFreshInstallFallsBackToLaunchpadBeforeMacOS26() {
+    func testLaunchpadIsNeverSeededBeforeMacOS26() {
         let store = KeptAppStore(defaults: makeDefaults())
         store.seedSystemAppLauncherForFreshInstall(lineage: .pristine) { $0 == "com.apple.launchpad.launcher" }
-        XCTAssertEqual(store.bundleIDs, ["com.apple.launchpad.launcher"])
+        XCTAssertTrue(store.bundleIDs.isEmpty)
     }
 
     func testUpgraderNeverGetsSystemAppLauncher() {
