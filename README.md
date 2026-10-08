@@ -181,6 +181,16 @@ Tungsten Edge recognizes and thanks the [LINUX DO](https://linux.do/) community 
 
 If Tungsten Edge is useful to you, a GitHub star still helps. Thanks to everyone who already starred: your stars got Tungsten Edge into the official Homebrew cask registry, so it now installs with `brew install --cask tungsten-edge`, no repository name to type.
 
+## Star history
+
+<a href="https://www.star-history.com/#moonbai-studio/tungsten-edge&Date">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="https://api.star-history.com/svg?repos=moonbai-studio/tungsten-edge&type=Date&theme=dark" />
+    <source media="(prefers-color-scheme: light)" srcset="https://api.star-history.com/svg?repos=moonbai-studio/tungsten-edge&type=Date" />
+    <img alt="Tungsten Edge GitHub star history chart" src="https://api.star-history.com/svg?repos=moonbai-studio/tungsten-edge&type=Date" />
+  </picture>
+</a>
+
 ## Pricing
 
 Free today. From 1.0, Tungsten Edge is a one-time purchase — no subscription. Everyone who confirms their email on the founding-user list before then keeps it free forever.

@@ -168,6 +168,16 @@ brew install --cask tungsten-edge
 
 如果钨极对你有用，点一颗 GitHub Star 仍然很有帮助。谢谢已经点过的朋友：靠大家的 Star，钨极进了 Homebrew 官方 cask 源，现在 `brew install --cask tungsten-edge` 就能装，不用再写仓库全名。
 
+## 星标历史
+
+<a href="https://www.star-history.com/#moonbai-studio/tungsten-edge&Date">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="https://api.star-history.com/svg?repos=moonbai-studio/tungsten-edge&type=Date&theme=dark" />
+    <source media="(prefers-color-scheme: light)" srcset="https://api.star-history.com/svg?repos=moonbai-studio/tungsten-edge&type=Date" />
+    <img alt="钨极 GitHub 星标历史曲线" src="https://api.star-history.com/svg?repos=moonbai-studio/tungsten-edge&type=Date" />
+  </picture>
+</a>
+
 ## 价格
 
 目前免费。1.0 起一次性买断、不做订阅——在那之前完成邮箱确认的原始用户，永久免费。
