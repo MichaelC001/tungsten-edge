@@ -10,9 +10,11 @@ extension DockStripView {
     /// dropEntered：一次悬停会话开始 → 允许点亮。
     func externalDropHoverBegan(_ target: StripDropRouting.Target) {
         externalDropHoverActive = true
+        frames.externalDropHoverStartedAt = CACurrentMediaTime()
         // **必须在第一次插空档之前捕获**，否则冻住的是已经被空档撑宽的那个值，环照样成立。
         // 这里是整条悬停会话唯一的起点，所以捕获点只能在这儿。
-        if frozenStripWidth == nil, stripRootScreenRect != .zero {
+        // An app the landing surely adds is the exception: its gap grows and re-centres the bar.
+        if !appDropMayWidenOnHover(), frozenStripWidth == nil, stripRootScreenRect != .zero {
             frozenStripWidth = stripRootScreenRect.width
         }
         // A gap still waiting for the previous drop's landing now belongs to this session.
@@ -59,7 +61,7 @@ extension DockStripView {
     /// **变化门控是这个函数存在的理由**：`dropUpdated` 每 ~50ms 调一次，而写一次 `@State`
     /// 就是整条任务条重算一遍（实测过「1.2 秒拖动 46 次整条重算」）。锚点没变就一个字都不写。
     func updateExternalDropGhost(target: StripDropRouting.Target, bundleID: String?,
-                                 pinsFolder: Bool, atX x: CGFloat) {
+                                 pinsFolder: Bool, atX x: CGFloat, isRelease: Bool) {
         // **门控与整条高亮同源，理由也同一条**：成功 drop 之后 ~330ms 系统会补发一次孤立的
         // `dropUpdated`。没有这道闸，那一次会把落定时刚收掉的空档重新开出来，而且顺手作废
         // 兜底 Timer——条上从此留一个永远不走的空位（2026-09-08 owner 实测，拖「查找」进条后
@@ -73,6 +75,13 @@ extension DockStripView {
             setExternalDropGhost(index.map { StripDropGhost(zone: .folder, insertIndex: $0) })
             return
         }
+        // The native Dock lets an app hover ~0.5s before the icons part. `dropUpdated` keeps coming
+        // every ~50ms even under a still pointer, so the next call past the delay opens the gap.
+        guard StripDropRouting.appGapMayOpen(
+            sessionElapsed: CACurrentMediaTime() - frames.externalDropHoverStartedAt,
+            gapIsOpen: appDropGhost != nil,
+            isRelease: isRelease
+        ) else { return }
         // 落点判定与抽屉转正共用一份（`StripBlockLanding`）。空档不上报卡帧，所以 `chipFrames`
         // 里只有真卡——但它们的**位置**已经被空档推开了，所以判定结果必须折成插入序号才稳定
         //（理由见 `StripDropGhost`）。显示序按帧的左缘排，与渲染序同源。
@@ -82,6 +91,54 @@ extension DockStripView {
                                                          targetID: target?.id,
                                                          after: target?.after ?? false)
         setExternalDropGhost(StripDropGhost(zone: .live(bundleID: bundleID), insertIndex: index))
+    }
+
+    /// The open make-way gap if it is an app's (`.live` zone); a folder's gap is `nil` here.
+    var appDropGhost: StripDropGhost? {
+        guard let ghost = externalDropGhost, case .live = ghost.zone else { return nil }
+        return ghost
+    }
+
+    /// Whether this drag is an app the landing will surely add as a new launcher card, so the bar
+    /// may grow and re-centre while it hovers (`StripDropRouting.appDropMayWidenOnHover`).
+    func appDropMayWidenOnHover() -> Bool {
+        guard let bundleID = StripFileDropDelegate.DragPasteboardInspector.applicationBundleID() else {
+            return false
+        }
+        return StripDropRouting.appDropMayWidenOnHover(
+            isRunning: runningApplicationStore.isRunning(bundleID),
+            isInDrawer: drawerStore.contains(bundleID),
+            isMessaging: messagingStore.contains(bundleID),
+            isFinder: FinderTaskbarPolicy.isFinder(bundleID),
+            hasEntryOnStrip: !freshProjection().liveEntryIDs(bundleID: bundleID).isEmpty
+        )
+    }
+
+    /// `.onChange(of: externalDropGhost)`. The box holds what the last body rendered, so it is
+    /// compared before it is overwritten.
+    func appDropGhostDidChange() {
+        let previous = frames.renderedAppGhost
+        let current = appDropGhost
+        frames.renderedAppGhost = current
+        if (previous == nil) != (current == nil) { onAppGapPresenceChange() }
+        // The hand-over just ended. The landed card does not necessarily move any geometry (a card
+        // re-dropped in place, a bar at its width limit) and a resting pointer is never re-polled,
+        // so re-resolve explicitly once SwiftUI has laid out the new card.
+        if previous != nil, current == nil, !externalDropHoverActive {
+            DispatchQueue.main.async {
+                refreshHoveredEntry(frames: stripHoverFrames, origin: stripRootScreenRect)
+            }
+        }
+    }
+
+    static var entryTransition: AnyTransition {
+        .scale(scale: 0.88).combined(with: .opacity)
+    }
+
+    /// A card an app drop just added enters with no transition of its own: it takes the gap's slot
+    /// in the same update, and `DroppedAppLandingGrow` grows its artwork inside the frame readers.
+    static var droppedAppLandingTransition: AnyTransition {
+        .asymmetric(insertion: .identity, removal: entryTransition)
     }
 
     /// The change gate. Closing keeps the frozen width: the hover session is still running, and
@@ -195,6 +252,8 @@ extension DockStripView {
         // 那段宽度算回去，图标落到隔壁。
         defer { clearExternalDropGhost() }
         var previousAnchor: (id: String, after: Bool)?
+        var addedIDs = Set<String>()
+        defer { markLandingEntries(addedIDs) }
         for bundleID in bundleIDs where keptAppStore.canKeep(bundleID) {
             // 落点：拖的是它自己已有的卡时要排除自己，否则整块会以自己为锚、原地不动。
             let ownIDs = Set(freshProjection().liveEntryIDs(bundleID: bundleID))
@@ -210,8 +269,21 @@ extension DockStripView {
             stripOrderStore.commitExternalBlock()
             // 一次拖多个应用：下一个落在这一个右边，保持拖进来的顺序。锚点从落定后的投影里取
             // （运行中的应用没有 `app-<bid>` 占位卡，只有窗口卡，硬拼占位 id 会锚到一个不存在的 chip）。
-            let landed = freshProjection().liveEntryIDs(bundleID: bundleID).last
+            let landedIDs = freshProjection().liveEntryIDs(bundleID: bundleID)
+            // Only cards that were not on this strip get the grow-in; a re-dropped one slides over.
+            addedIDs.formUnion(Set(landedIDs).subtracting(ownIDs))
+            let landed = landedIDs.last
             previousAnchor = (landed ?? "app-\(bundleID)", true)
+        }
+    }
+
+    /// Marks freshly landed cards for `droppedAppLandingTransition`, in the same turn as the gap
+    /// clears, and unmarks only these once the entrance is over (a later drop keeps its own marks).
+    private func markLandingEntries(_ ids: Set<String>) {
+        guard !ids.isEmpty else { return }
+        landingEntryIDs.formUnion(ids)
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.6) {
+            landingEntryIDs.subtract(ids)
         }
     }
 

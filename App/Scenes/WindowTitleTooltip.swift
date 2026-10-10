@@ -106,6 +106,17 @@ enum ChipPillMetrics {
     /// 有一半是大小，不只是颜色。
     static let bareIconVisibleSlot: CGFloat = 32.5
 
+    /// Where an icon card's visible artwork ends, as a fraction of the card's height — the anchor
+    /// an app dropped in from Finder grows from (the native Dock grows it up from the icon's
+    /// bottom). Not the card's bottom: the icon slot is centred in the taller card and the artwork
+    /// carries its own transparent margin, so the card's edge sits ~10pt lower and the icon would
+    /// drift upward as it grows. Every term scales with the tier, so the ratio does not.
+    static var visibleIconBottomFraction: CGFloat {
+        let slotBottom = (chipHeight + bareIconSlot) / 2
+        let artworkMargin = (bareIconSlot - bareIconVisibleSlot) / 2
+        return (slotBottom - artworkMargin) / chipHeight
+    }
+
     /// 安静档悬停时整块放大的**上限**（见 `View.chipQuietHoverScale`）。
     ///
     /// 1.10 不会让相邻图标的可见像素相撞：卡宽 40、图标可见方块只有 32.5，

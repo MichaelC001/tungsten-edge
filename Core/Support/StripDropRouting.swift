@@ -181,10 +181,41 @@ extension StripDropRouting {
                                      proposedIsCopy: Bool, sourceAllowsGeneric: Bool) -> Bool {
         guard proposedIsCopy, sourceAllowsGeneric else { return false }
         switch hoveredTarget {
-        case .trash: return true
+        case .trash, .keepApp: return true
         case .pin: return pinsFolder
         default: return false
         }
+    }
+
+    /// Whether the drop turns off the system's "drag image flies to its destination" animation.
+    /// SwiftUI's destination switches `animatesToDestination` on in `prepareForDragOperation:`, and
+    /// with the item frame left where the pointer is, the drag image just hangs there ~0.4s after
+    /// release while the landed icon grows under it. An app landing has its own entrance, as on the
+    /// native Dock, so it turns it off; every other target keeps SwiftUI's behaviour.
+    static func suppressesSystemDropAnimation(hoveredTarget: Target?) -> Bool {
+        hoveredTarget == .keepApp
+    }
+
+    /// How long an app drag hovers over the bar before the icons make way — the native Dock waits
+    /// about this long (measured on a screen recording) instead of parting the moment it is entered.
+    static let appGapOpenDelay: TimeInterval = 0.5
+
+    /// Whether an app drag may open (or move) its make-way gap now. An open gap follows the pointer
+    /// at once; the release opens it regardless, so a quick drop lands through the same gap hand-over
+    /// as a slow one.
+    static func appGapMayOpen(sessionElapsed: TimeInterval, gapIsOpen: Bool, isRelease: Bool) -> Bool {
+        gapIsOpen || isRelease || sessionElapsed >= appGapOpenDelay
+    }
+
+    /// Whether an app drag may widen the bar while it hovers (the native Dock grows and re-centres).
+    /// Conservative: true only when the landing is sure to add a launcher placeholder, which every
+    /// strip shows. Anything already on the bar, in the messaging zone or the drawer would make the
+    /// bar grow while hovering and shrink back on landing; a running app usually has a card already
+    /// (maybe on another screen). `false` does not mean nothing is added — only that the bar keeps
+    /// its width until the landing.
+    static func appDropMayWidenOnHover(isRunning: Bool, isInDrawer: Bool, isMessaging: Bool,
+                                       isFinder: Bool, hasEntryOnStrip: Bool) -> Bool {
+        !(isRunning || isInDrawer || isMessaging || isFinder || hasEntryOnStrip)
     }
 
     /// The URLs a drop commits. The item providers are the authority; only when **none** of them

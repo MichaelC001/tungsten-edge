@@ -421,4 +421,11 @@ final class ChipIconPitchTests: XCTestCase {
         XCTAssertEqual(ChipPillMetrics.iconPitch,
                        ChipPillMetrics.cardWidth + ChipPillMetrics.chipSpacing)
     }
+
+    /// The dropped-app grow-in anchors on the icon's visible bottom: the 40pt slot is centred in
+    /// the 54pt card (bottom at 47) and the artwork leaves 3.75pt of it transparent (43.25 / 54).
+    func testDroppedAppGrowAnchorIsTheVisibleIconBottom() {
+        XCTAssertEqual(ChipPillMetrics.visibleIconBottomFraction, 43.25 / 54, accuracy: 0.0001)
+        XCTAssertLessThan(ChipPillMetrics.visibleIconBottomFraction, 1)
+    }
 }

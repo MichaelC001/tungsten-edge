@@ -399,11 +399,14 @@ final class StripDropRoutingTests: XCTestCase {
         )
     }
 
-    func testOnlyTheTrashAndAFolderPinSlotDropTheCursorBadge() {
+    func testOnlyTheTrashAFolderPinSlotAndAnAppDropTheCursorBadge() {
         for pinsFolder in [true, false] {
             XCTAssertTrue(StripDropRouting.usesGenericOperation(hoveredTarget: .trash, pinsFolder: pinsFolder,
                                                                 proposedIsCopy: true, sourceAllowsGeneric: true))
-            let others: [StripDropRouting.Target?] = [nil, .none, .stash, .keepApp, .moveInto(path: "/tmp/a")]
+            // An app dragged in: the native Dock shows no badge either.
+            XCTAssertTrue(StripDropRouting.usesGenericOperation(hoveredTarget: .keepApp, pinsFolder: pinsFolder,
+                                                                proposedIsCopy: true, sourceAllowsGeneric: true))
+            let others: [StripDropRouting.Target?] = [nil, .none, .stash, .moveInto(path: "/tmp/a")]
             for target in others {
                 XCTAssertFalse(StripDropRouting.usesGenericOperation(hoveredTarget: target, pinsFolder: pinsFolder,
                                                                      proposedIsCopy: true, sourceAllowsGeneric: true),
@@ -418,7 +421,7 @@ final class StripDropRoutingTests: XCTestCase {
     }
 
     func testBadgeAnswerIsKeptWhenGenericIsNotOffered() {
-        for target: StripDropRouting.Target in [.trash, .pin(insertIndex: 0)] {
+        for target: StripDropRouting.Target in [.trash, .pin(insertIndex: 0), .keepApp] {
             // ⌥ held: the source offers copy only.
             XCTAssertFalse(StripDropRouting.usesGenericOperation(hoveredTarget: target, pinsFolder: true,
                                                                  proposedIsCopy: true, sourceAllowsGeneric: false))
@@ -457,5 +460,43 @@ final class StripDropRoutingTests: XCTestCase {
                        [appA])
         // Loaded but all in the Trash: the selection is not retried against the pasteboard.
         XCTAssertEqual(StripDropRouting.committedURLs(loaded: [homeTrash], pasteboard: [appA], homeDirectory: home), [])
+    }
+
+    func testOnlyAnAppDropSuppressesTheSystemDropAnimation() {
+        XCTAssertTrue(StripDropRouting.suppressesSystemDropAnimation(hoveredTarget: .keepApp))
+        let others: [StripDropRouting.Target?] = [nil, .none, .stash, .trash, .pin(insertIndex: 0),
+                                                  .moveInto(path: "/tmp/a")]
+        for target in others {
+            XCTAssertFalse(StripDropRouting.suppressesSystemDropAnimation(hoveredTarget: target),
+                           "\(String(describing: target))")
+        }
+    }
+
+    func testAppGapWaitsForTheDelayUnlessOpenOrReleased() {
+        let delay = StripDropRouting.appGapOpenDelay
+        XCTAssertEqual(delay, 0.5)
+        XCTAssertFalse(StripDropRouting.appGapMayOpen(sessionElapsed: 0, gapIsOpen: false, isRelease: false))
+        XCTAssertFalse(StripDropRouting.appGapMayOpen(sessionElapsed: delay - 0.01, gapIsOpen: false, isRelease: false))
+        XCTAssertTrue(StripDropRouting.appGapMayOpen(sessionElapsed: delay, gapIsOpen: false, isRelease: false))
+        // Once open, the gap follows the pointer at once.
+        XCTAssertTrue(StripDropRouting.appGapMayOpen(sessionElapsed: 0.1, gapIsOpen: true, isRelease: false))
+        // A quick drop opens it on release, so it hands over like a slow one.
+        XCTAssertTrue(StripDropRouting.appGapMayOpen(sessionElapsed: 0.1, gapIsOpen: false, isRelease: true))
+    }
+
+    func testOnlyAnAppNotYetAnywhereMayWidenTheBarWhileHovering() {
+        XCTAssertTrue(StripDropRouting.appDropMayWidenOnHover(isRunning: false, isInDrawer: false, isMessaging: false,
+                                                              isFinder: false, hasEntryOnStrip: false))
+        let blockers: [(Bool, Bool, Bool, Bool, Bool)] = [
+            (true, false, false, false, false),
+            (false, true, false, false, false),
+            (false, false, true, false, false),
+            (false, false, false, true, false),
+            (false, false, false, false, true),
+        ]
+        for b in blockers {
+            XCTAssertFalse(StripDropRouting.appDropMayWidenOnHover(isRunning: b.0, isInDrawer: b.1, isMessaging: b.2,
+                                                                   isFinder: b.3, hasEntryOnStrip: b.4), "\(b)")
+        }
     }
 }

@@ -81,6 +81,11 @@ struct DockStripView: View {
     var onLabelWidthChange: ([String: CGFloat]) -> Void = { _ in }
     /// 标签盒每帧的实时宽度（`LabelBoxWidthDriver` 经环境值上报），转给面板逐帧设 frame。
     var onLabelBoxWidthTick: (String, CGFloat) -> Void = { _, _ in }
+    /// The app make-way gap appeared or went away: the content width changed while the panel
+    /// still has the old one, so the panel must re-measure (an app drag grows and re-centres the
+    /// bar, like the native Dock). No default — omitted, the gap would widen the content inside
+    /// a panel that never moves.
+    let onAppGapPresenceChange: () -> Void
     /// 跨面板拖动权威（拖卡进抽屉 路线 C）：起拖 → beginDrag；读 draggingItem 隐藏原位卡片、
     /// 读 isOverDropZone 在进投放区时停掉条内重排。载体面板/监视器/收尾都在它里面，本视图不碰。
     @EnvironmentObject var dragController: DragController
@@ -137,6 +142,12 @@ struct DockStripView: View {
     /// 表现就是加号、条的边缘、空档三样一起闪。冻住宽度 → `fittingSize` 不变 → 不 relayout →
     /// 投放区不动 → 环断掉。空档让出的那张卡宽由内容溢出吸收（`ScrollView` 裁掉），
     /// 与「转正期间窗口卡溢出而非改变面板宽度」是同一套老做法。
+    ///
+    /// Not frozen for an app the landing surely adds (`appDropMayWidenOnHover`): the bar grows and
+    /// re-centres like the native Dock. That cannot reopen the loop — the insertion index is "between
+    /// which two adjacent card centres the pointer sits", and the gap pushes everything left of it
+    /// left and everything right of it right, so a still pointer stays between the same pair; the
+    /// bar only grows while hovering, so it never slides out from under it.
     @State var frozenStripWidth: CGFloat?
 
     /// 外部拖入高亮的「拖放结束看门狗」+「点亮门控」。SwiftUI 文件 drop 有两种收尾异常:
@@ -178,6 +189,11 @@ struct DockStripView: View {
     /// 记录已经播放过入场动画的固定区元素 ID（避免重复播，且支持新增元素播动画）。
     @State private var animatedEntryIDs: Set<String> = []
 
+    /// Cards an app drop from Finder just added; they grow in (`DroppedAppLandingGrow`) instead of
+    /// taking the strip's usual transition. Written in the same main-thread turn that clears the gap,
+    /// so the card's first render already carries the mark; `markLandingEntries` removes it.
+    @State var landingEntryIDs: Set<String> = []
+
     var body: some View {
         let projectionStart = HoverTrace.now()
         let projection = makeProjection()
@@ -204,12 +220,17 @@ struct DockStripView: View {
                 HStack(alignment: .center, spacing: Style.chipSpacing * dockScale) {
                     ForEach(projection.entries) { entry in
                         chipWithReorder(entry, projection: projection)
-                            .transition(.scale(scale: 0.88).combined(with: .opacity))
+                            .transition(landingEntryIDs.contains(entry.id)
+                                        ? Self.droppedAppLandingTransition
+                                        : Self.entryTransition)
                     }
                 }
                 .padding(.horizontal, Style.chipContentInset * dockScale)
                 .frame(height: metrics.panelHeight)
+                // An app gap opening / moving / closing takes the panel's curve too: the bar grows and
+                // re-centres with it (`onAppGapPresenceChange`).
                 .animation(frames.renderedCollapsed != dragController.stripSlotCollapsed
+                               || frames.renderedAppGhost != appDropGhost
                                ? .easeInOut(duration: DrawerAnimation.duration)          // 合拢 / 重开：跟面板走
                                : .spring(response: 0.28, dampingFraction: 0.82),         // 让位：签收过的弹簧
                            value: projection.layoutKeys)
@@ -318,15 +339,15 @@ struct DockStripView: View {
             onCommitApplications: { urls, location in
                 handleExternalApplicationDrop(urls, atX: location.x)
             },
-            onGhostMoved: { target, bundleID, pinsFolder, location in
+            onGhostMoved: { target, bundleID, pinsFolder, location, isRelease in
                 updateExternalDropGhost(target: target, bundleID: bundleID,
-                                        pinsFolder: pinsFolder, atX: location.x)
+                                        pinsFolder: pinsFolder, atX: location.x, isRelease: isRelease)
             },
             currentGhostIndex: { externalDropGhost?.insertIndex },
             currentFrozenWidth: { frozenStripWidth },
             currentStripRect: { stripRootScreenRect }
         ))
-        // No cursor badge over the Trash or a folder's pin slot. **Must be an `.overlay` directly after `.onDrop`**: AppKit
+        // No cursor badge over the Trash, a folder's pin slot or an app drag. **Must be an `.overlay` directly after `.onDrop`**: AppKit
         // gives the drag to the topmost registered view, and `.background` here lands below SwiftUI's.
         .overlay(StripDropBadgeOverlay())
         // 与 "strip" 命名空间同一视图 → 屏幕 frame 即 "strip" 空间原点，供抽屉拖回任务条做坐标映射 + 进出判定。
@@ -401,6 +422,7 @@ struct DockStripView: View {
         // 那一刻按当前指针位置补上悬停。**不再在「手里空了」那一刻重判**——那正是落地一停稳
         // 就往上长一截的来源（见 `refreshHoveredEntry`）。
         .onChange(of: dragController.stripSlotCollapsed) { frames.renderedCollapsed = $0 }
+        .onChange(of: externalDropGhost) { _ in appDropGhostDidChange() }
         .onChange(of: dragController.hoverGate) { _ in
             refreshHoveredEntry(frames: stripHoverFrames, origin: stripRootScreenRect)
         }
@@ -1260,6 +1282,7 @@ struct DockStripView: View {
     private func stripEntryView(_ entry: StripEntry, projection: StripProjection) -> some View {
         stripEntryContent(entry, projection: projection,
                           hovered: hoveredEntryID == entry.id, entrance: true)
+            .modifier(DroppedAppLandingGrow(active: landingEntryIDs.contains(entry.id)))
             .background(
                 GeometryReader { geo in
                     Color.clear.preference(key: StripHoverFramePreferenceKey.self,

@@ -32,9 +32,10 @@ struct StripFileDropDelegate: DropDelegate {
     let onCommit: (StripDropRouting.Target, [URL]) -> Void
     /// 拖进来的应用 bundle + 落点 x（"strip" 空间）。见 `handleExternalApplicationDrop`。
     let onCommitApplications: ([URL], CGPoint) -> Void
-    /// 悬停期的让位空档：(悬停目标, 拖的应用的 bundleID 或 nil, 这次拖放是不是只有文件夹, 落点)。
-    /// 视图侧负责把它折成锚点并做变化门控——**这里每 ~50ms 就会调一次**。
-    let onGhostMoved: (StripDropRouting.Target, String?, Bool, CGPoint) -> Void
+    /// 悬停期的让位空档：(悬停目标, 拖的应用的 bundleID 或 nil, 这次拖放是不是只有文件夹, 落点,
+    /// 是不是松手那一次)。视图侧负责把它折成锚点并做变化门控——**这里每 ~50ms 就会调一次**。
+    /// The release call lets an app gap open before `appGapOpenDelay` has passed.
+    let onGhostMoved: (StripDropRouting.Target, String?, Bool, CGPoint, Bool) -> Void
     /// 临时诊断用：此刻空档插在第几位（nil = 没有空档）、冻住的条宽、条的实际屏幕矩形。
     /// 后两个是用来验证「冻宽到底有没有生效」的——查清「加号闪烁」后删。
     let currentGhostIndex: () -> Int?
@@ -70,9 +71,9 @@ struct StripFileDropDelegate: DropDelegate {
                                openGap: openFolderGap)
     }
 
-    private func reportGhost(_ target: StripDropRouting.Target, _ info: DropInfo) {
+    private func reportGhost(_ target: StripDropRouting.Target, _ info: DropInfo, isRelease: Bool = false) {
         onGhostMoved(target, DragPasteboardInspector.applicationBundleID(),
-                     DragPasteboardInspector.pinsFolders(), info.location)
+                     DragPasteboardInspector.pinsFolders(), info.location, isRelease)
     }
 
     func validateDrop(info: DropInfo) -> Bool {
@@ -128,7 +129,11 @@ struct StripFileDropDelegate: DropDelegate {
         // `.pin` 收（外加兜底 Timer）。A folder dropped *into* a chip fills no gap: close it now.
         let fillsGap: Bool
         switch target {
-        case .keepApp: fillsGap = true
+        case .keepApp:
+            fillsGap = true
+            // A drop inside `appGapOpenDelay` has no gap yet: open it now, while the session is still
+            // live, so a quick drop hands over through the same gap (and hover hold) as a slow one.
+            reportGhost(target, info, isRelease: true)
         case .pin: fillsGap = DragPasteboardInspector.pinsFolders()
         default: fillsGap = false
         }
@@ -274,8 +279,8 @@ struct StripFileDropDelegate: DropDelegate {
     }
 }
 
-/// Removes the cursor badge over the Trash chip and a folder's pin slot; everything else about the
-/// drop stays SwiftUI's.
+/// Removes the cursor badge over the Trash chip, a folder's pin slot and an app drag, and the
+/// system drop animation of an app drag; everything else about the drop stays SwiftUI's.
 ///
 /// SwiftUI's `.onDrop` only offers `.copy` (badge) / `.move` / `.forbidden`, and its real AppKit
 /// destination is a private subview spanning the strip — `NSWindow`'s dragging methods are never
@@ -369,8 +374,14 @@ struct StripDropBadgeOverlay: NSViewRepresentable {
             destination?.draggingExited(sender)
         }
 
+        /// SwiftUI turns `animatesToDestination` on inside this call; switching it off afterwards is
+        /// what lets the drag image vanish on release. Setting it after `performDragOperation:` is too late.
         override func prepareForDragOperation(_ sender: NSDraggingInfo) -> Bool {
-            destination?.prepareForDragOperation(sender) ?? false
+            let accepted = destination?.prepareForDragOperation(sender) ?? false
+            if StripDropRouting.suppressesSystemDropAnimation(hoveredTarget: StripFileDropDelegate.hoveredTarget) {
+                sender.animatesToDestination = false
+            }
+            return accepted
         }
 
         override func performDragOperation(_ sender: NSDraggingInfo) -> Bool {

@@ -83,6 +83,13 @@ final class StripFrameBox {
     /// body that first sees the flip still picks the collapse curve — but as a box field the write
     /// itself no longer re-evaluates the strip (that echo body rendered nothing new).
     var renderedCollapsed = false
+    /// The app make-way gap (`.live` zone only) the last committed body rendered, written in
+    /// `.onChange(of: externalDropGhost)` after it is compared — the old value that picks the
+    /// panel-matched curve and tells the panel to re-measure. Folder gaps are never stored here.
+    var renderedAppGhost: StripDropGhost?
+    /// When the current external-drop hover session began (`CACurrentMediaTime`); the app gap waits
+    /// `StripDropRouting.appGapOpenDelay` from here. A box field: `dropUpdated` reads it every ~50ms.
+    var externalDropHoverStartedAt: CFTimeInterval = 0
 }
 
 // MARK: - Drag-reorder preference (任务条拖动重排 路线 A 自绘拖动)

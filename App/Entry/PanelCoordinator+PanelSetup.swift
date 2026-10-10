@@ -63,7 +63,11 @@ extension PanelCoordinator {
             resizeGripController: resizeGripController,
             // 标签变长变短：开一段面板逐帧跟随内容宽度的窗口（见 `beginLabelWidthFollow`）。
             onLabelWidthChange: { [weak self] starting in self?.beginLabelWidthFollow(starting: starting) },
-            onLabelBoxWidthTick: { [weak self] id, width in self?.labelBoxWidthDidTick(chipID: id, width: width) }
+            onLabelBoxWidthTick: { [weak self] id, width in self?.labelBoxWidthDidTick(chipID: id, width: width) },
+            // Next main-loop turn: mid-update `fittingSize` reads 0 (`Docs/05`), as in `subscribeStripSlotCollapse`.
+            onAppGapPresenceChange: { [weak self] in
+                DispatchQueue.main.async { self?.relayout(animated: true) }
+            }
         ).environmentObject(runtime).environmentObject(drawerStore).environmentObject(messagingStore).environmentObject(badgeStore).environmentObject(stripOrderStore).environmentObject(pinnedFolderStore).environmentObject(folderCoverStore).environmentObject(shelfStore).environmentObject(dragController).environmentObject(keptAppStore).environmentObject(runningApplicationStore).environmentObject(appMembershipController).environmentObject(settingsStore).environmentObject(displayTopologyStore)
             .modifier(PanelHeightResizeModifier(presentation: heightResizePresentation)))
         hosting.autoresizingMask = [.width, .height]

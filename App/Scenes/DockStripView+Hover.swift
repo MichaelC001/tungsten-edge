@@ -32,6 +32,10 @@ extension DockStripView {
             // ——手里拎着东西扫过谁就给谁点亮、还弹名字气泡，本来就不对；而且气泡是一扇
             // 浮动面板，拖动途中反复 order front / out 会不会扰动系统的拖放目标，正是要测的。
             guard !externalDropHoverActive else { return nil }
+            // An app drop's hand-over (session over, gap still waiting for the real card): the gap
+            // reports no hover frame, so the pointer in it would hand the bubble to a neighbour for
+            // a few frames. `appDropGhostDidChange` re-resolves once the gap clears.
+            guard appDropGhost == nil else { return nil }
             guard let pointer = pointerBox.value, origin != .zero else { return nil }
             let point = CGPoint(x: pointer.x - origin.minX, y: origin.maxY - pointer.y)
             let hit = StripHoverResolution.chip(
@@ -121,6 +125,9 @@ extension DockStripView {
 
     /// Drag-to-resize grip (and its ▲▼ glyph): the right-click zones kept clear of the chips.
     func resizeGripZoneClaims(atScreen global: CGPoint) -> Bool {
+        // A make-way gap reports no card frame, so it reads as an empty gap here — and right after a
+        // drop the pointer rests in it until the landed card arrives, flashing the ▲▼ cursor.
+        guard externalDropGhost == nil else { return false }
         guard let point = stripPoint(from: global) else { return false }
         return StripContextMenuZone.gripClaims(
             point: point,
