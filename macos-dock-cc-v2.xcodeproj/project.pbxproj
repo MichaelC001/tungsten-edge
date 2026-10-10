@@ -8,6 +8,7 @@
 
 /* Begin PBXBuildFile section */
 		A7A500000000000000000065 /* FinderTrash.swift in Sources */ = {isa = PBXBuildFile; fileRef = A7A500000000000000000001 /* FinderTrash.swift */; };
+		A7A50000000000000000007A /* TrashDirectoryWatcher.swift in Sources */ = {isa = PBXBuildFile; fileRef = A7A500000000000000000011 /* TrashDirectoryWatcher.swift */; };
 		F1D0A0000000000000000011 /* FinderNewWindowTarget.swift in Sources */ = {isa = PBXBuildFile; fileRef = F1D0A0000000000000000001 /* FinderNewWindowTarget.swift */; };
 		F1D0A0000000000000000012 /* FinderNewWindowTarget.swift in Sources */ = {isa = PBXBuildFile; fileRef = F1D0A0000000000000000001 /* FinderNewWindowTarget.swift */; };
 		F1D0A0000000000000000013 /* FinderNewWindowOpener.swift in Sources */ = {isa = PBXBuildFile; fileRef = F1D0A0000000000000000002 /* FinderNewWindowOpener.swift */; };
@@ -16,6 +17,7 @@
 		F1D0A0000000000000000016 /* FinderNewWindowOpener.swift in Sources */ = {isa = PBXBuildFile; fileRef = F1D0A0000000000000000002 /* FinderNewWindowOpener.swift */; };
 		F1D0A0000000000000000017 /* FinderNewWindowTarget.swift in Sources */ = {isa = PBXBuildFile; fileRef = F1D0A0000000000000000001 /* FinderNewWindowTarget.swift */; };
 		A7A5000000000000000000C9 /* FinderTrash.swift in Sources */ = {isa = PBXBuildFile; fileRef = A7A500000000000000000001 /* FinderTrash.swift */; };
+		A7A5000000000000000000DA /* TrashDirectoryWatcher.swift in Sources */ = {isa = PBXBuildFile; fileRef = A7A500000000000000000011 /* TrashDirectoryWatcher.swift */; };
 		A7A500000000000000000066 /* TrashStateStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = A7A500000000000000000002 /* TrashStateStore.swift */; };
 		A7A5000000000000000000CA /* TrashStateStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = A7A500000000000000000002 /* TrashStateStore.swift */; };
 		A7A500000000000000000067 /* TrashStateStore+Live.swift in Sources */ = {isa = PBXBuildFile; fileRef = A7A500000000000000000003 /* TrashStateStore+Live.swift */; };
@@ -526,6 +528,7 @@
 
 /* Begin PBXFileReference section */
 		A7A500000000000000000001 /* FinderTrash.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "FinderTrash.swift"; sourceTree = "<group>"; };
+		A7A500000000000000000011 /* TrashDirectoryWatcher.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "TrashDirectoryWatcher.swift"; sourceTree = "<group>"; };
 		F1D0A0000000000000000001 /* FinderNewWindowTarget.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "FinderNewWindowTarget.swift"; sourceTree = "<group>"; };
 		F1D0A0000000000000000002 /* FinderNewWindowOpener.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "FinderNewWindowOpener.swift"; sourceTree = "<group>"; };
 		F1D0A0000000000000000003 /* FinderNewWindowTargetTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "FinderNewWindowTargetTests.swift"; sourceTree = "<group>"; };
@@ -1078,6 +1081,7 @@
 			isa = PBXGroup;
 			children = (
 				A7A500000000000000000001 /* FinderTrash.swift */,
+				A7A500000000000000000011 /* TrashDirectoryWatcher.swift */,
 				F1D0A0000000000000000001 /* FinderNewWindowTarget.swift */,
 				E90000000000000000000007 /* DebugSwitch.swift */,
 				E90000000000000000000005 /* FilePathNormalization.swift */,
@@ -1628,6 +1632,7 @@
 			buildActionMask = 2147483647;
 			files = (
 				A7A500000000000000000065 /* FinderTrash.swift in Sources */,
+				A7A50000000000000000007A /* TrashDirectoryWatcher.swift in Sources */,
 				F1D0A0000000000000000011 /* FinderNewWindowTarget.swift in Sources */,
 				F1D0A0000000000000000013 /* FinderNewWindowOpener.swift in Sources */,
 				A7A500000000000000000066 /* TrashStateStore.swift in Sources */,
@@ -1896,6 +1901,7 @@
 			buildActionMask = 2147483647;
 			files = (
 				A7A5000000000000000000C9 /* FinderTrash.swift in Sources */,
+				A7A5000000000000000000DA /* TrashDirectoryWatcher.swift in Sources */,
 				F1D0A0000000000000000012 /* FinderNewWindowTarget.swift in Sources */,
 				F1D0A0000000000000000014 /* FinderNewWindowTargetTests.swift in Sources */,
 				A7A5000000000000000000CA /* TrashStateStore.swift in Sources */,

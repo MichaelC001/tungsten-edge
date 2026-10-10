@@ -6,6 +6,9 @@ extension TrashStateStore {
         fileTrasher: { try FileManager.default.trashItem(at: $0, resultingItemURL: nil) },
         workQueue: AppRuntime.actionQueue,
         changeStamp: { TrashChangeStamp.live() },
+        directoryObserver: TrashDirectoryWatcher(directories: { TrashChangeStamp.liveDirectories() },
+                                                 notificationCenter: NSWorkspace.shared.notificationCenter,
+                                                 workQueue: AppRuntime.actionQueue),
         confirmEmpty: { completion in
             // Run the modal loop from a run-loop block, never inside a main-queue block: CFRunLoop
             // does not service the main dispatch queue in a modal loop nested in one, so every
@@ -53,8 +56,9 @@ extension TrashStateStore {
 
 extension TrashChangeStamp {
     /// The home Trash plus the current user's trash on every mounted local volume. Network volumes
-    /// are never touched: a `stat` on a dead NFS mount hangs for over 10s (2026-09-16).
-    static func live() -> TrashChangeStamp {
+    /// are never touched: a `stat` on a dead NFS mount hangs for over 10s (2026-09-16). The
+    /// directory watcher follows the same list.
+    static func liveDirectories() -> [URL] {
         let fileManager = FileManager.default
         var directories = [fileManager.homeDirectoryForCurrentUser.appendingPathComponent(".Trash")]
         let keys: [URLResourceKey] = [.volumeIsLocalKey, .volumeIsRootFileSystemKey]
@@ -65,7 +69,12 @@ extension TrashChangeStamp {
             guard values?.volumeIsLocal == true, values?.volumeIsRootFileSystem != true else { continue }
             directories.append(volume.appendingPathComponent(".Trashes/\(getuid())"))
         }
-        return build(directories: directories) { directory in
+        return directories
+    }
+
+    static func live() -> TrashChangeStamp {
+        let fileManager = FileManager.default
+        return build(directories: liveDirectories()) { directory in
             (try? fileManager.attributesOfItem(atPath: directory.path))?[.modificationDate] as? Date
         }
     }

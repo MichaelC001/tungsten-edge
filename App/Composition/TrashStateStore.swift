@@ -30,6 +30,7 @@ final class TrashStateStore: ObservableObject {
     private let fileTrasher: @Sendable (URL) throws -> Void
     private let workQueue: DispatchQueue
     private let changeStamp: @Sendable () -> TrashChangeStamp
+    private let directoryObserver: TrashDirectoryObserving
     /// The stamp the latest activation check saw, and the one in effect when the last count that
     /// Finder actually answered was sent. Equal → Finder is not asked again.
     private var latestStamp: TrashChangeStamp?
@@ -43,6 +44,7 @@ final class TrashStateStore: ObservableObject {
     private var reducer = TrashStateReducer()
     private var started = false
     private var enabled = false
+    private var observingDirectories = false
     private var lifetime: UInt64 = 0
     private var permissionSequence: UInt64 = 0
     private var readSequence: UInt64 = 0
@@ -52,12 +54,14 @@ final class TrashStateStore: ObservableObject {
 
     init(client: FinderTrashClienting, fileTrasher: @escaping @Sendable (URL) throws -> Void,
          workQueue: DispatchQueue, changeStamp: @escaping @Sendable () -> TrashChangeStamp,
+         directoryObserver: TrashDirectoryObserving,
          confirmEmpty: @escaping @MainActor (@escaping @MainActor (Bool) -> Void) -> Void,
          beep: @escaping () -> Void, notificationCenter: NotificationCenter) {
         self.client = client
         self.fileTrasher = fileTrasher
         self.workQueue = workQueue
         self.changeStamp = changeStamp
+        self.directoryObserver = directoryObserver
         self.confirmEmpty = confirmEmpty
         self.beep = beep
         self.notificationCenter = notificationCenter
@@ -75,6 +79,7 @@ final class TrashStateStore: ObservableObject {
                                                    object: nil, queue: .main) { [weak self] _ in
             DispatchQueue.main.async { [weak self] in self?.noteApplicationActivated() }
         }
+        updateDirectoryObserver()
         refresh()
     }
 
@@ -82,13 +87,25 @@ final class TrashStateStore: ObservableObject {
         if let observer { notificationCenter.removeObserver(observer) }
         observer = nil
         started = false
+        updateDirectoryObserver()
         invalidate()
     }
 
     func setEnabled(_ value: Bool) {
         guard enabled != value else { return }
         enabled = value
+        updateDirectoryObserver()
         if value { refresh() } else { invalidate() }
+    }
+
+    private func updateDirectoryObserver() {
+        guard observingDirectories != active else { return }
+        observingDirectories = active
+        if active {
+            directoryObserver.start { [weak self] in self?.noteTrashDirectoryChanged() }
+        } else {
+            directoryObserver.stop()
+        }
     }
 
     private func invalidate() {
@@ -113,7 +130,14 @@ final class TrashStateStore: ObservableObject {
     /// with a dead network mount), so every AX call then in flight to Finder times out (-25204):
     /// the Finder minimize/restore lag of 2026-09-16. Finder is therefore asked only when a Trash
     /// directory's date moved since the last count it answered; a failed count leaves the gate open.
-    func noteApplicationActivated() {
+    func noteApplicationActivated() { refreshIfTrashChanged() }
+
+    /// A Trash directory changed under the user's hands (Finder ⌘⌫, a put-back, an empty) while
+    /// no activation happens — the user stays in Finder. Same gate as activation: the report may
+    /// trail an own operation whose post-mutation read already answered.
+    func noteTrashDirectoryChanged() { refreshIfTrashChanged() }
+
+    private func refreshIfTrashChanged() {
         guard active else { return }
         let life = lifetime
         let stamp = changeStamp

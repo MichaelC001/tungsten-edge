@@ -32,12 +32,21 @@ final class TrashStateStoreTests: XCTestCase {
         var value = TrashChangeStamp(marks: ["/trash": Date(timeIntervalSince1970: 1)])
     }
 
+    /// Stands in for the FSEvents watcher: tests fire `onChange` to simulate a Trash change.
+    private final class FakeObserver: TrashDirectoryObserving {
+        var onChange: (@MainActor () -> Void)?
+        var starts = 0
+        var stops = 0
+        func start(onChange: @escaping @MainActor () -> Void) { starts += 1; self.onChange = onChange }
+        func stop() { stops += 1; onChange = nil }
+    }
+
     private func make(_ client: FakeClient, confirm: @escaping () -> Bool = { true },
                       trasher: @escaping @Sendable (URL) throws -> Void = { _ in },
-                      stamps: StampBox = StampBox(),
+                      stamps: StampBox = StampBox(), observer: FakeObserver = FakeObserver(),
                       workQueue: DispatchQueue = DispatchQueue(label: "trash-tests", attributes: .concurrent)) -> TrashStateStore {
         let store = TrashStateStore(client: client, fileTrasher: trasher,
-            workQueue: workQueue, changeStamp: { stamps.value },
+            workQueue: workQueue, changeStamp: { stamps.value }, directoryObserver: observer,
             confirmEmpty: { completion in completion(confirm()) },
             beep: {}, notificationCenter: NotificationCenter())
         store.setEnabled(true)
@@ -72,6 +81,7 @@ final class TrashStateStoreTests: XCTestCase {
         var answer: (@MainActor (Bool) -> Void)?
         let store = TrashStateStore(client: client, fileTrasher: { _ in },
             workQueue: DispatchQueue(label: "trash-tests"), changeStamp: { StampBox().value },
+            directoryObserver: FakeObserver(),
             confirmEmpty: { answer = $0 },
             beep: {}, notificationCenter: NotificationCenter())
         store.setEnabled(true)
@@ -182,6 +192,43 @@ final class TrashStateStoreTests: XCTestCase {
         initialize(client)
         await activate()
         XCTAssertTrue(client.permissions.isEmpty)
+    }
+
+    /// The user stays in Finder and deletes with ⌘⌫: no activation ever fires, so the directory
+    /// watcher is the only trigger. It passes the same stamp gate — a report that merely trails an
+    /// own operation whose answered count already carries the new stamp sends nothing.
+    func testTrashDirectoryChangeAsksFinderThroughTheStampGate() async {
+        let client = FakeClient()
+        let stamps = StampBox()
+        let observer = FakeObserver()
+        let queue = DispatchQueue(label: "trash-tests-serial")
+        let store = make(client, stamps: stamps, observer: observer, workQueue: queue)
+        XCTAssertEqual(observer.starts, 1)
+        initialize(client)
+        func changed() async {
+            observer.onChange?()
+            let settled = expectation(description: "Stamp compared on main")
+            queue.async { DispatchQueue.main.async { settled.fulfill() } }
+            await fulfillment(of: [settled], timeout: 3)
+        }
+        await changed()
+        XCTAssertEqual(client.permissions.count, 1, "no answered count carries a stamp yet")
+        initialize(client, count: 0)
+        XCTAssertFalse(store.isFull)
+        stamps.value = TrashChangeStamp(marks: ["/trash": Date(timeIntervalSince1970: 2)])
+        await changed()
+        XCTAssertEqual(client.permissions.count, 1, "Finder ⌘⌫ moved the Trash: ask Finder")
+        initialize(client, count: 1)
+        XCTAssertTrue(store.isFull, "the icon fills without any app switch")
+        await changed()
+        XCTAssertTrue(client.permissions.isEmpty, "same stamp as the answered count: nothing sent")
+        store.setEnabled(false)
+        XCTAssertEqual(observer.stops, 1)
+        XCTAssertNil(observer.onChange, "a disabled chip stops watching")
+        store.setEnabled(true)
+        XCTAssertEqual(observer.starts, 2)
+        store.stop()
+        XCTAssertEqual(observer.stops, 2)
     }
 
     func testDisabledCallbacksCannotChangePermissionOrSendFollowup() {
