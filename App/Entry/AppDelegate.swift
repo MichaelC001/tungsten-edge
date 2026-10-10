@@ -151,7 +151,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         if isFreshInstall {
             settingsStore.seedWindowLiftEnabledForFreshInstall(lineage: installLineage)
             settingsStore.armTaskbarPerDisplaySeedForFreshInstall(lineage: installLineage)
-            pinnedFolderStore.seedDownloadsForFreshInstall(lineage: installLineage)
             keptAppStore.seedSystemAppLauncherForFreshInstall(lineage: installLineage) {
                 NSWorkspace.shared.urlForApplication(withBundleIdentifier: $0) != nil
             }

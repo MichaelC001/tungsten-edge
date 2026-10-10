@@ -10,6 +10,8 @@ final class PinnedFolderStore: ObservableObject {
     /// Pinned by us, not by the user, and not opened yet: nothing may read such a folder (no cover
     /// enumeration, no watcher), or a privacy-protected one — Downloads — raises the system's
     /// access prompt at first launch with no user action behind it. Cleared by the first open.
+    /// Fresh installs no longer get a seed, but earlier ones still carry theirs: dropping this
+    /// state would read their Downloads at launch and raise that prompt.
     private(set) var unopenedSeedPaths: Set<String> = []
     private let key = "pinnedFolderPaths"
     private let sortKey = "pinnedFolderSortOrders"
@@ -19,18 +21,6 @@ final class PinnedFolderStore: ObservableObject {
         folderPaths = UserDefaults.standard.stringArray(forKey: key) ?? []
         sortOrders = UserDefaults.standard.dictionary(forKey: sortKey) as? [String: String] ?? [:]
         unopenedSeedPaths = Set(UserDefaults.standard.stringArray(forKey: unopenedSeedKey) ?? [])
-    }
-
-    /// A fresh install starts with Downloads pinned, as the native Dock does. Fresh is decided by
-    /// `InstallLineage` only (AGENTS.md): an upgrader who never pinned a folder has no key either.
-    func seedDownloadsForFreshInstall(lineage: InstallLineage) {
-        guard lineage == .pristine,
-              UserDefaults.standard.object(forKey: key) == nil,
-              let downloads = FileManager.default.urls(for: .downloadsDirectory, in: .userDomainMask).first
-        else { return }
-        // Before `add`: its publication is what makes the cover store look at the folder.
-        setUnopenedSeeds([Self.normalized(downloads.path)])
-        add(downloads.path)
     }
 
     func isUnopenedSeed(_ path: String) -> Bool { unopenedSeedPaths.contains(Self.normalized(path)) }
