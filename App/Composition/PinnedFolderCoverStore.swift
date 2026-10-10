@@ -12,7 +12,8 @@ struct FolderCover: Equatable {
         /// icon, which carries its own transparent margin.
         var isThumbnail: Bool
     }
-    /// Front first; never empty (an empty folder shows its own icon).
+    /// Front first. Empty = the folder's own icon, drawn at full icon size like the native Dock's
+    /// empty stack — not as a one-layer pile, whose front-layer geometry shrinks and lowers it.
     var layers: [Layer]
 }
 
@@ -66,7 +67,7 @@ final class PinnedFolderCoverStore: ObservableObject {
         }
         for path in paths {
             if isUnopenedSeed(path) {
-                covers[path] = FolderCover(layers: [.init(image: Self.icon(forPath: path), isThumbnail: false)])
+                covers[path] = FolderCover(layers: [])
                 continue
             }
             if watchers[path] == nil {
@@ -100,7 +101,7 @@ final class PinnedFolderCoverStore: ObservableObject {
 
     private func publishCover(path: String, stack: [FolderContentsLoader.Entry], generation: Int) {
         guard !stack.isEmpty else {
-            covers[path] = FolderCover(layers: [.init(image: Self.icon(forPath: path), isThumbnail: false)])
+            covers[path] = FolderCover(layers: [])
             return
         }
         var pending: [(index: Int, url: URL, cacheKey: String)] = []

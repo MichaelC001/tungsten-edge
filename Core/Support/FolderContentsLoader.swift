@@ -21,6 +21,23 @@ enum FolderSortOrder: String, CaseIterable {
     }
 }
 
+/// How a pinned folder looks on the bar (the native Dock's 「显示为」): its own icon, or a stack of
+/// its first items. rawValue is persisted (`PinnedFolderStore.displayModes`); declaration order is
+/// the menu order, folder first as on the Dock.
+enum FolderDisplayMode: String, CaseIterable {
+    case folder
+    case stack
+
+    static let `default`: FolderDisplayMode = .stack
+
+    var menuTitle: String {
+        switch self {
+        case .folder: return String(localized: "Folder")
+        case .stack: return String(localized: "Stack")
+        }
+    }
+}
+
 /// Whether a stored path is still there, told apart from "there but not readable": only `ENOENT` /
 /// `ENOTDIR` mean gone. Anything else (`EPERM` from a privacy-protected folder such as the Desktop,
 /// `EACCES`, I/O errors) must never delete a shelf reference.

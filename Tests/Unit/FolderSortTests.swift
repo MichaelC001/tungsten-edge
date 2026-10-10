@@ -93,3 +93,21 @@ final class FolderSortTests: XCTestCase {
         XCTAssertEqual(cover(.name), ["aaa.png", "mmm.png", "newest-dir"])
     }
 }
+
+/// FolderDisplayMode: the default and the persisted / menu shape.
+final class FolderDisplayModeTests: XCTestCase {
+    func testDefaultIsStackAsOnTheNativeDock() {
+        XCTAssertEqual(FolderDisplayMode.default, .stack)
+    }
+
+    func testMenuOrderIsFolderThenStack() {
+        XCTAssertEqual(FolderDisplayMode.allCases, [.folder, .stack])
+    }
+
+    func testRawValuesRoundTrip() {
+        for mode in FolderDisplayMode.allCases {
+            XCTAssertEqual(FolderDisplayMode(rawValue: mode.rawValue), mode)
+        }
+        XCTAssertNil(FolderDisplayMode(rawValue: ""))
+    }
+}

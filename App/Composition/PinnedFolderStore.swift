@@ -7,6 +7,8 @@ final class PinnedFolderStore: ObservableObject {
     @Published private(set) var folderPaths: [String] = []
     /// 逐文件夹排序方式（normalized path → FolderSortOrder.rawValue）。缺省 = 默认排序，不落盘。
     @Published private(set) var sortOrders: [String: String] = [:]
+    /// Per-folder "Display as" (normalized path → FolderDisplayMode.rawValue). Absent = stack.
+    @Published private(set) var displayModes: [String: String] = [:]
     /// Pinned by us, not by the user, and not opened yet: nothing may read such a folder (no cover
     /// enumeration, no watcher), or a privacy-protected one — Downloads — raises the system's
     /// access prompt at first launch with no user action behind it. Cleared by the first open.
@@ -15,11 +17,13 @@ final class PinnedFolderStore: ObservableObject {
     private(set) var unopenedSeedPaths: Set<String> = []
     private let key = "pinnedFolderPaths"
     private let sortKey = "pinnedFolderSortOrders"
+    private let displayModeKey = "pinnedFolderDisplayModes"
     private let unopenedSeedKey = "pinnedFolderUnopenedSeeds"
 
     init() {
         folderPaths = UserDefaults.standard.stringArray(forKey: key) ?? []
         sortOrders = UserDefaults.standard.dictionary(forKey: sortKey) as? [String: String] ?? [:]
+        displayModes = UserDefaults.standard.dictionary(forKey: displayModeKey) as? [String: String] ?? [:]
         unopenedSeedPaths = Set(UserDefaults.standard.stringArray(forKey: unopenedSeedKey) ?? [])
     }
 
@@ -82,6 +86,9 @@ final class PinnedFolderStore: ObservableObject {
         if sortOrders.removeValue(forKey: normalized) != nil {
             UserDefaults.standard.set(sortOrders, forKey: sortKey)
         }
+        if displayModes.removeValue(forKey: normalized) != nil {
+            UserDefaults.standard.set(displayModes, forKey: displayModeKey)
+        }
         persist()
     }
 
@@ -94,6 +101,17 @@ final class PinnedFolderStore: ObservableObject {
         guard sortOrders[normalized] != order.rawValue else { return }
         sortOrders[normalized] = order.rawValue
         UserDefaults.standard.set(sortOrders, forKey: sortKey)
+    }
+
+    func displayMode(for path: String) -> FolderDisplayMode {
+        FolderDisplayMode(rawValue: displayModes[Self.normalized(path)] ?? "") ?? .default
+    }
+
+    func setDisplayMode(_ mode: FolderDisplayMode, for path: String) {
+        let normalized = Self.normalized(path)
+        guard displayModes[normalized] != mode.rawValue else { return }
+        displayModes[normalized] = mode.rawValue
+        UserDefaults.standard.set(displayModes, forKey: displayModeKey)
     }
 
     private func persist() {

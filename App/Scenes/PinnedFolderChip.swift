@@ -12,6 +12,8 @@ struct PinnedFolderChip: View {
     let cover: FolderCover?
     /// 当前排序方式（菜单打勾用;menu builder 每次右键现建,读到的总是最新值）。
     let sortOrder: FolderSortOrder
+    /// "Display as": folder = the folder's own icon only; stack = a pile of its first items.
+    let displayMode: FolderDisplayMode
     let onTap: () -> Void
     /// 内容预览（右键「预览内容」；左键在 preview 模式下也走这个）。
     let onPreview: () -> Void
@@ -20,6 +22,7 @@ struct PinnedFolderChip: View {
     let onAddFolder: () -> Void
     let onRemove: () -> Void
     let onSetSortOrder: (FolderSortOrder) -> Void
+    let onSetDisplayMode: (FolderDisplayMode) -> Void
     var isDropTarget = false
     /// 任务条尺寸档位的缩放系数。中档 = 1.0，此时所有尺寸与历史字面值逐像素相同。
     /// **故意不给默认值**——漏传必须是编译错误，见 AGENTS《Taskbar Size Tiers》。
@@ -62,17 +65,28 @@ struct PinnedFolderChip: View {
         .animation(.easeOut(duration: 0.12), value: isDropTarget)
     }
 
-    /// The icon-card slot (40pt) with the cover stack and the drop-target ring, lifted as one piece.
+    /// The icon-card slot (40pt) with the cover and the drop-target ring, lifted as one piece.
     private var coverSlot: some View {
         let slot = ChipPillMetrics.bareIconSlot * scale
         let visible = ChipPillMetrics.bareIconVisibleSlot * scale
-        let layers = cover?.layers
-            ?? [.init(image: PinnedFolderCoverStore.icon(forPath: path), isThumbnail: false)]
+        // Folder mode, an empty folder and a cover not loaded yet all show the folder's own icon.
+        let layers = displayMode == .folder ? [] : (cover?.layers ?? [])
         return ZStack {
-            // Back to front: the first item of the sort is drawn last, on top.
-            ForEach(Array(layers.prefix(StackLayout.depths.count).enumerated()).reversed(), id: \.offset) { index, layer in
-                layerImage(layer, canvas: slot * StackLayout.depths[index].canvas)
-                    .offset(y: slot * StackLayout.depths[index].centerY)
+            if layers.isEmpty {
+                // The folder's own icon fills the slot like an app icon, as on the native Dock;
+                // the stack's front-layer geometry would draw it a size smaller and lower than
+                // its neighbours.
+                Image(nsImage: PinnedFolderCoverStore.icon(forPath: path))
+                    .resizable()
+                    .interpolation(.high)
+                    .aspectRatio(contentMode: .fit)
+                    .frame(width: slot, height: slot)
+            } else {
+                // Back to front: the first item of the sort is drawn last, on top.
+                ForEach(Array(layers.prefix(StackLayout.depths.count).enumerated()).reversed(), id: \.offset) { index, layer in
+                    layerImage(layer, canvas: slot * StackLayout.depths[index].canvas)
+                        .offset(y: slot * StackLayout.depths[index].centerY)
+                }
             }
         }
         .frame(width: slot, height: slot)
@@ -130,19 +144,35 @@ struct PinnedFolderChip: View {
         menu.addItem(ClosureMenuItem(String(localized: "Preview Contents")) { onPreview() })
         menu.addItem(ClosureMenuItem(String(localized: "Open in Finder")) { onOpenInFinder() })
         menu.addItem(.separator())
-        // 排序方式 ▸（原生 Stacks 同款）：弹窗网格与 chip 封面都跟随,逐文件夹记忆。
-        let sortItem = NSMenuItem(title: String(localized: "Sort by"), action: nil, keyEquivalent: "")
-        let sortMenu = NSMenu()
+        // Flat titled groups, as on the native stack menu. Sort drives both the popup grid and
+        // the cover; both settings are remembered per folder.
+        menu.addItem(Self.sectionHeader(String(localized: "Sort by")))
         for order in FolderSortOrder.allCases {
             let item = ClosureMenuItem(order.menuTitle) { onSetSortOrder(order) }
             item.state = order == sortOrder ? .on : .off
-            sortMenu.addItem(item)
+            menu.addItem(item)
         }
-        sortItem.submenu = sortMenu
-        menu.addItem(sortItem)
+        menu.addItem(.separator())
+        menu.addItem(Self.sectionHeader(String(localized: "Display as")))
+        for mode in FolderDisplayMode.allCases {
+            let item = ClosureMenuItem(mode.menuTitle) { onSetDisplayMode(mode) }
+            item.state = mode == displayMode ? .on : .off
+            menu.addItem(item)
+        }
         menu.addItem(.separator())
         menu.addItem(ClosureMenuItem(String(localized: "Add Folder…")) { onAddFolder() })
         menu.addItem(ClosureMenuItem(String(localized: "Remove from Taskbar")) { onRemove() })
         return menu
+    }
+
+    /// The system's own group title (small, bold, grey — the native Dock menu's look) on macOS 14+;
+    /// below that, the greyed non-clickable item `AppMenuFragments` already uses.
+    private static func sectionHeader(_ title: String) -> NSMenuItem {
+        if #available(macOS 14.0, *) {
+            return NSMenuItem.sectionHeader(title: title)
+        }
+        let header = NSMenuItem(title: title, action: nil, keyEquivalent: "")
+        header.isEnabled = false
+        return header
     }
 }
