@@ -25,7 +25,7 @@ enum FinderTaskbarPolicy {
         isKept
     }
 
-    /// 能否固定为应用图标。访达永远不行。
+    /// 能否固定在 Dock 栏左侧。访达永远不行。
     static func canMarkMessaging(_ bundleID: String) -> Bool {
         !bundleID.isEmpty && !isFinder(bundleID)
     }

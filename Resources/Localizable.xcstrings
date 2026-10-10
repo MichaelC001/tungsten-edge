@@ -12238,78 +12238,78 @@
         }
       }
     },
-    "Pin as App Icon": {
+    "Pin to Left Side of Taskbar": {
       "localizations": {
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "固定为应用图标"
+            "value": "固定在 Dock 栏左侧"
           }
         },
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Pin as App Icon"
+            "value": "Pin to Left Side of Taskbar"
           }
         },
         "zh-Hant": {
           "stringUnit": {
             "state": "translated",
-            "value": "釘選為應用程式圖像"
+            "value": "釘選在工作列左側"
           }
         },
         "ja": {
           "stringUnit": {
             "state": "translated",
-            "value": "アプリアイコンとして固定"
+            "value": "タスクバーの左側に固定"
           }
         },
         "de": {
           "stringUnit": {
             "state": "translated",
-            "value": "Als App-Symbol anpinnen"
+            "value": "Links in Taskleiste anpinnen"
           }
         },
         "fr": {
           "stringUnit": {
             "state": "translated",
-            "value": "Épingler comme icône d’app"
+            "value": "Épingler à gauche dans la barre des tâches"
           }
         },
         "es": {
           "stringUnit": {
             "state": "translated",
-            "value": "Fijar como icono de app"
+            "value": "Fijar en el lado izquierdo de la barra de tareas"
           }
         },
         "es-419": {
           "stringUnit": {
             "state": "translated",
-            "value": "Anclar como ícono de app"
+            "value": "Anclar al lado izquierdo de la barra de tareas"
           }
         },
         "pt-BR": {
           "stringUnit": {
             "state": "translated",
-            "value": "Fixar como Ícone de App"
+            "value": "Fixar no Lado Esquerdo da Barra de Tarefas"
           }
         },
         "pt-PT": {
           "stringUnit": {
             "state": "translated",
-            "value": "Afixar como ícone de aplicação"
+            "value": "Afixar no lado esquerdo da barra de tarefas"
           }
         },
         "it": {
           "stringUnit": {
             "state": "translated",
-            "value": "Fissa come icona app"
+            "value": "Fissa a sinistra nella barra delle applicazioni"
           }
         },
         "ko": {
           "stringUnit": {
             "state": "translated",
-            "value": "앱 아이콘으로 고정"
+            "value": "작업 표시줄 왼쪽에 고정"
           }
         }
       }
@@ -12319,7 +12319,7 @@
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "固定到固定区"
+            "value": "固定到 Dock 栏"
           }
         },
         "en": {
@@ -13464,7 +13464,7 @@
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "从固定区移除"
+            "value": "从 Dock 栏移除"
           }
         },
         "en": {

@@ -31,7 +31,7 @@ extension LauncherMembershipItem {
                     controller.setKept(bundleID, enabled: !isChecked)
                 }
             case let .messaging(isChecked):
-                return LauncherMembershipItem(label: String(localized: "Pin as App Icon"), isChecked: isChecked) {
+                return LauncherMembershipItem(label: String(localized: "Pin to Left Side of Taskbar"), isChecked: isChecked) {
                     if isChecked {
                         controller.unmarkMessaging(bundleID)
                     } else {

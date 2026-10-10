@@ -5,7 +5,7 @@ import UniformTypeIdentifiers
 ///
 /// 关闭语义（评审拍板，勿改回「全部关」或「全部不关」）：
 /// - 打开 / 打开方式 / 在访达中显示 → 动作后**关弹窗**（与点击格子打开文件的既有行为一致）；
-/// - 拷贝 / 复制路径 / 固定到固定区 / 移出中转 → **不关**；
+/// - 拷贝 / 复制路径 / 固定到 Dock 栏 / 移出中转 → **不关**；
 /// - 移到废纸篓 → **不关**（DirectoryWatcher 自动刷新网格，用户常连删多个）。
 ///
 /// 明确不做：快速查看（nonactivating 面板做不了 key window）、显示简介、重命名。
@@ -16,7 +16,7 @@ enum FileItemMenuBuilder {
         var isDirectory: Bool
         /// 打开类动作后关弹窗（协调器的 close 回调）。
         var closePopup: () -> Void
-        /// 目录条目「固定到固定区」；nil = 不显示（非目录或已固定）。
+        /// 目录条目「固定到 Dock 栏」；nil = 不显示（非目录或已固定）。
         var pinFolder: (() -> Void)?
         /// 中转弹窗「移出中转」；nil = 非中转弹窗。
         var removeFromShelf: (() -> Void)?

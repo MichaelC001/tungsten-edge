@@ -8,7 +8,7 @@ import SwiftUI
 ///
 /// Shared by the drawer (collected apps, scale 0.7) and the main strip (messaging
 /// and kept apps, scale 1.0). Call-site differences are injected via
-/// `membershipItems` (在程序坞中保留 / 固定为应用图标).
+/// `membershipItems` (在程序坞中保留 / 固定在 Dock 栏左侧).
 
 /// How a `LauncherChip` is laid out: a card on the bar, or a cell of the drawer's stack grid
 /// (`StackCellMetrics.drawer`: the system Apps grid's proportions, the app's name under the icon).
@@ -44,7 +44,7 @@ struct LauncherChip: View {
     let windowEntriesProvider: () -> [WindowMenuEntry]
     /// 点击窗口行 → activate（最小化的行为还原）。**故意不给默认值**，理由同上。
     let onActivateWindow: (String) -> Void
-    /// 成员 / 管理菜单项（右键菜单末尾），如「在程序坞中保留」「固定为应用图标」。
+    /// 成员 / 管理菜单项（右键菜单末尾），如「在程序坞中保留」「固定在 Dock 栏左侧」。
     /// 空数组 = 无成员项。
     var membershipItems: [LauncherMembershipItem] = []
     /// 未读角标文本（消息应用的卡：消息区那枚图标，或常规区的保留占位），`nil` = 不画。画在 chip 内部而不是由调用方叠 ZStack，
