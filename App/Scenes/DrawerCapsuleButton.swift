@@ -30,11 +30,16 @@ struct DrawerCapsuleButton: View {
     /// An app cell dispatched an "open" (launch / unhide): an open drawer closes, exactly as
     /// after a tap inside it. No default — an omission would leave the drawer open.
     let onPrimaryAction: () -> Void
+    /// App bundles dropped from outside onto the capsule (`DrawerCapsuleAppDropReceiver`).
+    /// No default — an omission would compile into a capsule that silently refuses them.
+    let onDropApplications: ([URL]) -> Void
 
     /// Cells are numbered row-major, 0...3; the last one is the expand cell.
     @State private var hoveredCell: Int?
     /// Press feedback per cell: a pure view-level signal, never fed to planner / frontmost.
     @State private var pressedCell: Int?
+    /// An app dragged from outside hovers over the capsule: same feedback as a stash drag.
+    @State private var isAppDropTargeted = false
     /// Which page of the drawer the capsule shows; per capsule, so per screen.
     @StateObject private var pager = DrawerCapsulePager()
 
@@ -57,6 +62,8 @@ struct DrawerCapsuleButton: View {
     /// 胶囊是**另一棵**长期存活的 NSHostingView 根视图，必须自己观察同一个 store，
     /// 否则换档时任务条变了、胶囊里的四宫格还停在旧尺寸。
     private var dockScale: CGFloat { settingsStore.dockPanelHeight.scale }
+
+    private var showsDropFeedback: Bool { dragController.isOverStashZone || isAppDropTargeted }
 
     /// While a card is dragged, hover gives way to the drop feedback (the drag wins).
     private var hoverEnabled: Bool { !isPanelHeightResizing && dragController.draggingPayload == nil }
@@ -91,13 +98,24 @@ struct DrawerCapsuleButton: View {
                       lineWidth: theme.panelRimLineWidth,
                       usesLiquidGlass: usesLiquidGlass)
         // 拖卡悬到胶囊上：**微微发光 + 极轻微放大**（去掉原来生硬的白圈描边,owner 2026-06-21）。
-        .scaleEffect(dragController.isOverStashZone ? 1.04 : 1.0)
-        .dockGlow(theme.capsuleStashGlow, radius: 5, active: dragController.isOverStashZone)
-        .animation(.easeInOut(duration: DrawerAnimation.duration), value: dragController.isOverStashZone)
+        .scaleEffect(showsDropFeedback ? 1.04 : 1.0)
+        .dockGlow(theme.capsuleStashGlow, radius: 5, active: showsDropFeedback)
+        .animation(.easeInOut(duration: DrawerAnimation.duration), value: showsDropFeedback)
         .dockShadow(theme.stripShadow,
                     visible: DockLiquidGlassConfiguration.stripShadowVisible(
                         usesLiquidGlass: usesLiquidGlass,
                         usesSystemVariant: DockGlassPresentation.usesSystemVariant))
+        // After the scale, so the hover zoom never moves the zone; inside the shadow padding, so
+        // the zone is the visible capsule + tolerance — the strip→capsule stash zone.
+        .overlay(DrawerCapsuleAppDropReceiver(
+            onHoverChange: { isAppDropTargeted = $0 },
+            onDropApplications: { urls in
+                // The landed app takes the first cell; a capsule left on a later page would hide it
+                // for the 3s its return waits.
+                pager.showFirstPage(pageCount: pageCount)
+                onDropApplications(urls)
+            }
+        ).padding(-DrawerAppDrop.capsuleTolerance))
         .padding(PanelCoordinator.shadowPadding)
         // The hit cells split the whole padded frame into quadrants, so each target is as large
         // as the capsule allows and reaches the screen edge.
@@ -348,6 +366,13 @@ final class DrawerCapsulePager: ObservableObject {
         turn(to: DrawerCapsulePaging.settledPage(page: page, drag: drag, pageCount: pageCount),
              from: shown, animation: Self.releaseTurn)
         if pointerAway { scheduleReturn() }
+    }
+
+    /// Back to the first page at once (an app was just dropped into its first cell).
+    func showFirstPage(pageCount: Int) {
+        cancelReturn()
+        turn(to: 0, from: DrawerCapsulePaging.hitPage(page: page, drag: drag, pageCount: pageCount),
+             animation: Self.returnHome)
     }
 
     private func scheduleReturn() {

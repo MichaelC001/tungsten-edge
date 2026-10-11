@@ -287,7 +287,8 @@ extension PanelCoordinator {
         case .strip, .messaging:
             var zones: [CGRect] = []
             if let c = target(lastCapsuleTargetFrame, capsulePanel?.frame) {
-                zones.append(c.insetBy(dx: Self.shadowPadding - 8, dy: Self.shadowPadding - 8))
+                let inset = Self.shadowPadding - DrawerAppDrop.capsuleTolerance
+                zones.append(c.insetBy(dx: inset, dy: inset))
             }
             if let drawer = drawerPanel, drawer.isVisible, let d = target(lastDrawerTargetFrame, drawer.frame) {
                 // 抽屉只向上长：投放区**上沿拉到屏幕顶**,只认固定的底边+宽度,不随面板增高/缩短而变。

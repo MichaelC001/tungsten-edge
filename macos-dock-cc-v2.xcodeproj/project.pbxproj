@@ -7,6 +7,10 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		D7A0000000000000000000A2 /* DrawerAppDrop.swift in Sources */ = {isa = PBXBuildFile; fileRef = D7A0000000000000000000A0 /* DrawerAppDrop.swift */; };
+		D7A0000000000000000000B1 /* DrawerAppDropTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = D7A0000000000000000000B0 /* DrawerAppDropTests.swift */; };
+		D7A0000000000000000000C1 /* DrawerCapsuleAppDropReceiver.swift in Sources */ = {isa = PBXBuildFile; fileRef = D7A0000000000000000000C0 /* DrawerCapsuleAppDropReceiver.swift */; };
+		D7A0000000000000000000A1 /* DrawerAppDrop.swift in Sources */ = {isa = PBXBuildFile; fileRef = D7A0000000000000000000A0 /* DrawerAppDrop.swift */; };
 		A7A500000000000000000065 /* FinderTrash.swift in Sources */ = {isa = PBXBuildFile; fileRef = A7A500000000000000000001 /* FinderTrash.swift */; };
 		A7A50000000000000000007A /* TrashDirectoryWatcher.swift in Sources */ = {isa = PBXBuildFile; fileRef = A7A500000000000000000011 /* TrashDirectoryWatcher.swift */; };
 		F1D0A0000000000000000011 /* FinderNewWindowTarget.swift in Sources */ = {isa = PBXBuildFile; fileRef = F1D0A0000000000000000001 /* FinderNewWindowTarget.swift */; };
@@ -529,6 +533,9 @@
 /* End PBXContainerItemProxy section */
 
 /* Begin PBXFileReference section */
+		D7A0000000000000000000B0 /* DrawerAppDropTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DrawerAppDropTests.swift; sourceTree = "<group>"; };
+		D7A0000000000000000000C0 /* DrawerCapsuleAppDropReceiver.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DrawerCapsuleAppDropReceiver.swift; sourceTree = "<group>"; };
+		D7A0000000000000000000A0 /* DrawerAppDrop.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DrawerAppDrop.swift; sourceTree = "<group>"; };
 		A7A500000000000000000001 /* FinderTrash.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "FinderTrash.swift"; sourceTree = "<group>"; };
 		A7A500000000000000000011 /* TrashDirectoryWatcher.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "TrashDirectoryWatcher.swift"; sourceTree = "<group>"; };
 		F1D0A0000000000000000001 /* FinderNewWindowTarget.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "FinderNewWindowTarget.swift"; sourceTree = "<group>"; };
@@ -1027,6 +1034,7 @@
 				E90000000000000000000010 /* StripProjection.swift */,
 				E90000000000000000000011 /* ChipView.swift */,
 				E90000000000000000000012 /* DrawerCapsuleButton.swift */,
+				D7A0000000000000000000C0 /* DrawerCapsuleAppDropReceiver.swift */,
 				E90000000000000000000013 /* ChipBadgeView.swift */,
 				E90000000000000000000014 /* StripFramePreferenceKeys.swift */,
 				E90000000000000000000015 /* StripFileDropDelegate.swift */,
@@ -1098,6 +1106,7 @@
 				A00000000000000000000F02 /* FolderInteraction.swift */,
 				A00000000000000000000F03 /* FinderAppleEventMatcher.swift */,
 				A00000000000000000009300 /* StripDropRouting.swift */,
+				D7A0000000000000000000A0 /* DrawerAppDrop.swift */,
 				A0000000000000000000BD00 /* StackPopupGeometry.swift */,
 				A00000000000000000009900 /* FolderDropPlan.swift */,
 				A000000000000000000DE500 /* FileDragItemProvider.swift */,
@@ -1428,6 +1437,7 @@
 				A00000000000000000009F20 /* PinnedFolderStoreTests.swift */,
 				A00000000000000000009560 /* KeptAppPositionTests.swift */,
 				A00000000000000000009570 /* DrawerOrderStoreTests.swift */,
+				D7A0000000000000000000B0 /* DrawerAppDropTests.swift */,
 				A00000000000000000009770 /* MessagingWindowOrderingTests.swift */,
 				A00000000000000000009540 /* AppMembershipProjectionTests.swift */,
 				A00000000000000000009550 /* AppMembershipControllerTests.swift */,
@@ -1660,6 +1670,7 @@
 				E90000000000000000001010 /* StripProjection.swift in Sources */,
 				E90000000000000000001011 /* ChipView.swift in Sources */,
 				E90000000000000000001012 /* DrawerCapsuleButton.swift in Sources */,
+				D7A0000000000000000000C1 /* DrawerCapsuleAppDropReceiver.swift in Sources */,
 				E90000000000000000001013 /* ChipBadgeView.swift in Sources */,
 				E90000000000000000001014 /* StripFramePreferenceKeys.swift in Sources */,
 				E90000000000000000001015 /* StripFileDropDelegate.swift in Sources */,
@@ -1758,6 +1769,7 @@
 					A00000000000000000009231 /* PinnedFolderCoverStore.swift in Sources */,
 					A00000000000000000009261 /* FileItemMenuBuilder.swift in Sources */,
 					A00000000000000000009301 /* StripDropRouting.swift in Sources */,
+					D7A0000000000000000000A1 /* DrawerAppDrop.swift in Sources */,
 					A0000000000000000000BD01 /* StackPopupGeometry.swift in Sources */,
 					A00000000000000000009901 /* FolderDropPlan.swift in Sources */,
 					A000000000000000000DE501 /* FileDragItemProvider.swift in Sources */,
@@ -1990,6 +2002,7 @@
 				A00000000000000000009281 /* FolderContentsLoaderTests.swift in Sources */,
 				A00000000000000000009291 /* FolderSortTests.swift in Sources */,
 				A00000000000000000009302 /* StripDropRouting.swift in Sources */,
+				D7A0000000000000000000A2 /* DrawerAppDrop.swift in Sources */,
 				A0000000000000000000BD02 /* StackPopupGeometry.swift in Sources */,
 				A00000000000000000009902 /* FolderDropPlan.swift in Sources */,
 				A000000000000000000DE502 /* FileDragItemProvider.swift in Sources */,
@@ -2049,6 +2062,7 @@
 				A00000000000000000009551 /* AppMembershipControllerTests.swift in Sources */,
 				A00000000000000000009561 /* KeptAppPositionTests.swift in Sources */,
 				A00000000000000000009571 /* DrawerOrderStoreTests.swift in Sources */,
+				D7A0000000000000000000B1 /* DrawerAppDropTests.swift in Sources */,
 				A00000000000000000007012 /* DrawerOrderStore.swift in Sources */,
 				A00000000000000000009771 /* MessagingWindowOrderingTests.swift in Sources */,
 				A00000000000000000009502 /* KeptAppStore.swift in Sources */,

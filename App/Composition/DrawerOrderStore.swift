@@ -47,6 +47,13 @@ final class DrawerOrderStore: ObservableObject {
         if next != order { order = next; persist() }
     }
 
+    /// Puts `ids` first, in that order (`DrawerAppDrop.frontOrder`). Ids not yet members are
+    /// placed too, so call it before adding them to `DrawerStore`.
+    func moveToFront(_ ids: [String]) {
+        let next = DrawerAppDrop.frontOrder(existing: order, dropped: ids)
+        if next != order { order = next; persist() }
+    }
+
     private func persist() {
         defaults.set(order, forKey: key)
     }

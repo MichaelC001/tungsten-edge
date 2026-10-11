@@ -36,9 +36,9 @@ final class AppMembershipController: ObservableObject {
     /// Placement-only move: this API never touches kept.
     ///
     /// Auto-enabling kept on stash is a **drag-landing** policy, not a placement-API one —
-    /// `DragController.endDrag()` calls `applyDragLanding` below for it. So do not restate
-    /// it here, and note this method has no production caller today (menus offer no drawer
-    /// placement action; drag is the only way in).
+    /// `DragController.endDrag()` calls `applyDragLanding` below for it, and an app dropped from
+    /// Finder onto the capsule (`PanelCoordinator.stashDroppedApplications`) sets kept itself.
+    /// Menus offer no drawer placement action; drag is the only way in.
     func moveToDrawer(_ bundleID: String) {
         guard !bundleID.isEmpty else { return }
         drawerStore.add(bundleID)

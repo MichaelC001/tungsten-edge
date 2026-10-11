@@ -178,6 +178,31 @@ extension PanelCoordinator {
         }
     }
 
+    /// App bundles dropped from Finder onto the capsule: into the drawer at the front, in drag
+    /// order, with kept turned on — as a drag into the drawer does (`Docs/27`). An app already on
+    /// the bar leaves it through the projections, as when its card is stashed.
+    func stashDroppedApplications(_ urls: [URL]) {
+        let paths = urls.map(\.path)
+        let orderStore = drawerOrderStore
+        let membership = appMembershipController
+        // Reading Info.plist is disk I/O: user actions run on `actionQueue`, never the cooperative pool.
+        AppRuntime.actionQueue.async {
+            let bundleIDs = paths.compactMap { Bundle(url: URL(fileURLWithPath: $0))?.bundleIdentifier }
+            DispatchQueue.main.async {
+                var seen = Set<String>()
+                let ids = bundleIDs.filter { KeptAppStore.canKeep($0) && seen.insert($0).inserted }
+                guard !ids.isEmpty else { return }
+                // Order first: `reconciled(members:)` appends a member it has no place for, so a
+                // new member added before its place exists shows up last for a frame.
+                orderStore.moveToFront(ids)
+                for id in ids {
+                    membership.moveToDrawer(id)
+                    membership.setKept(id, enabled: true)
+                }
+            }
+        }
+    }
+
     func setupCapsulePanel() {
         let panel = makeFloatingPanel(
             contentRect: NSRect(origin: .zero,
@@ -193,7 +218,8 @@ extension PanelCoordinator {
                 },
                 usesLiquidGlass: usesLiquidGlass,
                 action: { [weak self] in self?.toggleDrawer() },
-                onPrimaryAction: { [weak self] in self?.closeDrawerAfterAction() }
+                onPrimaryAction: { [weak self] in self?.closeDrawerAfterAction() },
+                onDropApplications: { [weak self] urls in self?.stashDroppedApplications(urls) }
             )
                 .environmentObject(runtime)
                 .environmentObject(drawerStore)
