@@ -74,6 +74,10 @@ final class DragController: ObservableObject {
     ///（`DockStripView` / `DrawerView` 的 `.onReceive`）——控制器不知道每种卡点下去该干什么。
     let carrierClicks: AnyPublisher<DragPayload, Never>
     private let carrierClickSubject = PassthroughSubject<DragPayload, Never>()
+    /// A bar card / messaging chip released on the capsule. Each capsule turns to its first page,
+    /// where the stashed app now sits (it goes to the front of the drawer order).
+    let capsuleStashes: AnyPublisher<String, Never>
+    private let capsuleStashSubject = PassthroughSubject<String, Never>()
     /// **存成 `let`，不要每次调用现 erase**：SwiftUI 的 `onReceive` 换了 publisher 实例就会重订阅，
     /// 而 `CurrentValueSubject` 一订阅就补发当前值，等于每次 body 都白跑一遍副作用。
     let pointerMoves: AnyPublisher<CGPoint, Never>
@@ -786,6 +790,9 @@ final class DragController: ObservableObject {
     /// 抽屉图标松手落进任务条时回调（精确落点路径 + 降级路径都会触发）。
     /// PanelCoordinator 用它关闭抽屉；与 onDrawerToStripCommitted 独立，互不替代。
     var onDrawerToStripCompleted: ((String) -> Void)?
+    /// Called right before a capsule release adds the app to `drawerStore`: the order is written
+    /// first, or `reconciled(members:)` shows the new member last for a frame.
+    var onCapsuleStashWillAdd: ((String) -> Void)?
     /// 文件夹 chip 拖动的实时落点分类——**DockStripView 算好写入**（它才有 folderChipFrames/
     /// shelfFrame/stripRootScreenRect），载体视图（DragCarrierView）只读它决定要不要淡出。
     /// 最终 mouseUp 仍由 `endDrag()` 触发，并用 `folderDropGeometry` 重新分类一次。
@@ -897,6 +904,7 @@ final class DragController: ObservableObject {
          stashTargetProvider: @escaping () -> CGRect? = { nil }) {
         self.pointerMoves = pointerSubject.eraseToAnyPublisher()
         self.carrierClicks = carrierClickSubject.eraseToAnyPublisher()
+        self.capsuleStashes = capsuleStashSubject.eraseToAnyPublisher()
         self.drawerStore = drawerStore
         self.messagingStore = messagingStore
         self.membershipController = membershipController
@@ -1273,13 +1281,13 @@ final class DragController: ObservableObject {
             // 走到这支 = 没进抽屉体的卡：在投放区(胶囊)松手 → 改 drawer placement。
             // kept 不在这里动——四条入口共用 switch 之后那段统一判据。
             if external {
-                drawerStore.add(p.bundleID)
+                stashOntoCapsule(p.bundleID)
             }
         case .messaging:
             // 消息区起拖未转换（转换后来源已是 .drawer），或抽屉起拖已释放回消息区（drawer.remove
             // 已发生，松手即落定）。投放区（胶囊）→ 收纳；其余任意位置 → 原地不动（区内重排已实时提交）。
             if action == .stashMessagingChip {
-                drawerStore.add(p.bundleID)
+                stashOntoCapsule(p.bundleID)
             }
         case .drawer:
             switch action {
@@ -1305,6 +1313,13 @@ final class DragController: ObservableObject {
         // 语义（只进不出、每次拖入都重新打开）见 DragConversionPlan.enablesKeptOnDrop；
         // 执行点在 AppMembershipController.applyDragLanding（kept 的单一变更边界）。
         membershipController.applyDragLanding(bundleID: p.bundleID, originSource: origin)
+    }
+
+    /// Capsule release lands at the front of the drawer, as a Finder drop does (`Docs/27`).
+    private func stashOntoCapsule(_ bundleID: String) {
+        onCapsuleStashWillAdd?(bundleID)
+        drawerStore.add(bundleID)
+        capsuleStashSubject.send(bundleID)
     }
 
     /// 取消：拖动中目标消失、切屏等异常路径。先按当前转换态回滚已发生的 store 变更

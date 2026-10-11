@@ -133,6 +133,9 @@ struct DrawerCapsuleButton: View {
         .onChange(of: hoveredCell == nil) { away in
             pager.pointerAway = away
         }
+        .onReceive(dragController.capsuleStashes) { _ in
+            pager.showFirstPage(pageCount: pageCount)
+        }
         // MenuHostNSView takes only right / Control-clicks and lets left clicks through to the
         // cells above, so a right click anywhere on the capsule is the Tungsten menu — the
         // settings fallback entry keeps the whole capsule.

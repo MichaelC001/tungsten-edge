@@ -849,6 +849,10 @@ struct DockStripView: View {
            DisplayIdentity.uuidString(for: screen) == displayUUID {
             dc.claimStripSurface(stripSurfaceID, displayUUID: displayUUID)
         }
+        // Over the capsule the slot keeps whatever state it has: the box reaches over the capsule,
+        // so a card lifted off the bar would reopen its slot there, and the regrown bar shifts the
+        // capsule out from under the pointer.
+        guard !dc.isOverStashZone else { return }
         let box = StripPointerBox.classify(pointer: dc.globalLocation, stripRect: stripRootScreenRect,
                                            rightReach: metrics.capsuleGap + metrics.capsuleWidth,
                                            profile: .stripPresence)
