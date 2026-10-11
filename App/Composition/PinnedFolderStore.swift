@@ -12,19 +12,33 @@ final class PinnedFolderStore: ObservableObject {
     /// Pinned by us, not by the user, and not opened yet: nothing may read such a folder (no cover
     /// enumeration, no watcher), or a privacy-protected one — Downloads — raises the system's
     /// access prompt at first launch with no user action behind it. Cleared by the first open.
-    /// Fresh installs no longer get a seed, but earlier ones still carry theirs: dropping this
-    /// state would read their Downloads at launch and raise that prompt.
     private(set) var unopenedSeedPaths: Set<String> = []
+    private let defaults: UserDefaults
     private let key = "pinnedFolderPaths"
     private let sortKey = "pinnedFolderSortOrders"
     private let displayModeKey = "pinnedFolderDisplayModes"
     private let unopenedSeedKey = "pinnedFolderUnopenedSeeds"
 
-    init() {
-        folderPaths = UserDefaults.standard.stringArray(forKey: key) ?? []
-        sortOrders = UserDefaults.standard.dictionary(forKey: sortKey) as? [String: String] ?? [:]
-        displayModes = UserDefaults.standard.dictionary(forKey: displayModeKey) as? [String: String] ?? [:]
-        unopenedSeedPaths = Set(UserDefaults.standard.stringArray(forKey: unopenedSeedKey) ?? [])
+    init(defaults: UserDefaults = .standard) {
+        self.defaults = defaults
+        folderPaths = defaults.stringArray(forKey: key) ?? []
+        sortOrders = defaults.dictionary(forKey: sortKey) as? [String: String] ?? [:]
+        displayModes = defaults.dictionary(forKey: displayModeKey) as? [String: String] ?? [:]
+        unopenedSeedPaths = Set(defaults.stringArray(forKey: unopenedSeedKey) ?? [])
+    }
+
+    /// A fresh install starts with Downloads pinned, as the native Dock does. Fresh is decided by
+    /// `InstallLineage` only (AGENTS.md): an upgrader who never pinned a folder has no key either.
+    func seedDownloadsForFreshInstall(lineage: InstallLineage,
+                                      downloadsURL: URL? = FileManager.default.urls(for: .downloadsDirectory,
+                                                                                    in: .userDomainMask).first) {
+        guard lineage == .pristine,
+              defaults.object(forKey: key) == nil,
+              let downloads = downloadsURL
+        else { return }
+        // Before `add`: its publication is what makes the cover store look at the folder.
+        setUnopenedSeeds([Self.normalized(downloads.path)])
+        add(downloads.path)
     }
 
     func isUnopenedSeed(_ path: String) -> Bool { unopenedSeedPaths.contains(Self.normalized(path)) }
@@ -40,7 +54,7 @@ final class PinnedFolderStore: ObservableObject {
 
     private func setUnopenedSeeds(_ paths: Set<String>) {
         unopenedSeedPaths = paths
-        UserDefaults.standard.set(paths.sorted(), forKey: unopenedSeedKey)
+        defaults.set(paths.sorted(), forKey: unopenedSeedKey)
     }
 
     func contains(_ path: String) -> Bool { folderPaths.contains(Self.normalized(path)) }
@@ -84,10 +98,10 @@ final class PinnedFolderStore: ObservableObject {
         folderPaths.removeAll { $0 == normalized }
         if unopenedSeedPaths.contains(normalized) { setUnopenedSeeds(unopenedSeedPaths.subtracting([normalized])) }
         if sortOrders.removeValue(forKey: normalized) != nil {
-            UserDefaults.standard.set(sortOrders, forKey: sortKey)
+            defaults.set(sortOrders, forKey: sortKey)
         }
         if displayModes.removeValue(forKey: normalized) != nil {
-            UserDefaults.standard.set(displayModes, forKey: displayModeKey)
+            defaults.set(displayModes, forKey: displayModeKey)
         }
         persist()
     }
@@ -100,7 +114,7 @@ final class PinnedFolderStore: ObservableObject {
         let normalized = Self.normalized(path)
         guard sortOrders[normalized] != order.rawValue else { return }
         sortOrders[normalized] = order.rawValue
-        UserDefaults.standard.set(sortOrders, forKey: sortKey)
+        defaults.set(sortOrders, forKey: sortKey)
     }
 
     func displayMode(for path: String) -> FolderDisplayMode {
@@ -111,11 +125,11 @@ final class PinnedFolderStore: ObservableObject {
         let normalized = Self.normalized(path)
         guard displayModes[normalized] != mode.rawValue else { return }
         displayModes[normalized] = mode.rawValue
-        UserDefaults.standard.set(displayModes, forKey: displayModeKey)
+        defaults.set(displayModes, forKey: displayModeKey)
     }
 
     private func persist() {
-        UserDefaults.standard.set(folderPaths, forKey: key)
+        defaults.set(folderPaths, forKey: key)
     }
 
     /// 标准化：展开 ~ / 折叠 .. 并去尾斜杠，保证同一文件夹只固定一次。
