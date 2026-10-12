@@ -36,6 +36,24 @@ enum DrawerAppDrop {
         return .end
     }
 
+    /// Where the make-way slot sits while apps dragged from outside hover over the open plate.
+    /// A cell other than the slot decides by its midline, as `placement(at:)` and the drawer's own
+    /// reorder do; on the slot itself or off every cell the slot stays put (`current`), and a hover
+    /// that has none yet starts at `.end` — or, entering over a dragged app's own cell, where that
+    /// cell is. Staying put on the slot is what keeps it from oscillating: the slot opens where
+    /// the pointer pushed the neighbour away from.
+    static func hoverPlacement(current: Placement?, point: CGPoint, frames: [String: CGRect],
+                               displayOrder: [String], ghostIDs: [String]) -> Placement {
+        let slot = Set(ghostIDs)
+        for (index, id) in displayOrder.enumerated() {
+            guard let frame = frames[id], frame.contains(point) else { continue }
+            guard slot.contains(id) else { return point.x > frame.midX ? .after(id) : .before(id) }
+            if let current { return current }
+            return displayOrder[(index + 1)...].first { !slot.contains($0) }.map(Placement.before) ?? .end
+        }
+        return current ?? .end
+    }
+
     /// The drawer order after a drop: the dropped ids first in drag order (deduped), everything
     /// else in its existing order. Ids not yet in `existing` are new members and go first too.
     static func frontOrder(existing: [String], dropped: [String]) -> [String] {
@@ -62,5 +80,21 @@ enum DrawerAppDrop {
             guard let index = rest.firstIndex(of: target) else { return rest + block }
             return Array(rest[...index]) + block + Array(rest[(index + 1)...])
         }
+    }
+}
+
+/// The make-way slot of apps dragged from outside over the open drawer: view state only. The
+/// dragged cells are drawn hidden at `placement`; nothing is written to `DrawerStore` or
+/// `DrawerOrderStore` until the drop — a running app with cards on the bar would lose them for the
+/// length of a hover.
+struct ExternalDrawerGhost: Equatable {
+    /// The dragged apps' bundle ids, in drag order.
+    var ids: [String]
+    var placement: DrawerAppDrop.Placement
+
+    /// The grid order while the slot is open: the dragged ids leave their cells (an app already in
+    /// the drawer moves) and sit together at `placement`.
+    func displayOrder(visibleMembers: [String]) -> [String] {
+        DrawerAppDrop.order(existing: visibleMembers, dropped: ids, placement: placement)
     }
 }

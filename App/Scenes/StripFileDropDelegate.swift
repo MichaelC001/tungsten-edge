@@ -32,10 +32,9 @@ struct StripFileDropDelegate: DropDelegate {
     let onCommit: (StripDropRouting.Target, [URL]) -> Void
     /// 拖进来的应用 bundle + 落点 x（"strip" 空间）。见 `handleExternalApplicationDrop`。
     let onCommitApplications: ([URL], CGPoint) -> Void
-    /// 悬停期的让位空档：(悬停目标, 拖的应用的 bundleID 或 nil, 这次拖放是不是只有文件夹, 落点,
-    /// 是不是松手那一次)。视图侧负责把它折成锚点并做变化门控——**这里每 ~50ms 就会调一次**。
-    /// The release call lets an app gap open before `appGapOpenDelay` has passed.
-    let onGhostMoved: (StripDropRouting.Target, String?, Bool, CGPoint, Bool) -> Void
+    /// 悬停期的让位空档：(悬停目标, 拖的应用的 bundleID 或 nil, 这次拖放是不是只有文件夹, 落点)。
+    /// 视图侧负责把它折成锚点并做变化门控——**这里每 ~50ms 就会调一次**。
+    let onGhostMoved: (StripDropRouting.Target, String?, Bool, CGPoint) -> Void
     /// 临时诊断用：此刻空档插在第几位（nil = 没有空档）、冻住的条宽、条的实际屏幕矩形。
     /// 后两个是用来验证「冻宽到底有没有生效」的——查清「加号闪烁」后删。
     let currentGhostIndex: () -> Int?
@@ -71,9 +70,9 @@ struct StripFileDropDelegate: DropDelegate {
                                openGap: openFolderGap)
     }
 
-    private func reportGhost(_ target: StripDropRouting.Target, _ info: DropInfo, isRelease: Bool = false) {
+    private func reportGhost(_ target: StripDropRouting.Target, _ info: DropInfo) {
         onGhostMoved(target, DragPasteboardInspector.applicationBundleID(),
-                     DragPasteboardInspector.pinsFolders(), info.location, isRelease)
+                     DragPasteboardInspector.pinsFolders(), info.location)
     }
 
     func validateDrop(info: DropInfo) -> Bool {
@@ -131,9 +130,9 @@ struct StripFileDropDelegate: DropDelegate {
         switch target {
         case .keepApp:
             fillsGap = true
-            // A drop inside `appGapOpenDelay` has no gap yet: open it now, while the session is still
-            // live, so a quick drop hands over through the same gap (and hover hold) as a slow one.
-            reportGhost(target, info, isRelease: true)
+            // The gap follows the release point, while the session is still live, so the landing
+            // takes over exactly the slot the app was let go in.
+            reportGhost(target, info)
         case .pin: fillsGap = DragPasteboardInspector.pinsFolders()
         default: fillsGap = false
         }
@@ -195,6 +194,9 @@ struct StripFileDropDelegate: DropDelegate {
             /// 第一个应用 bundle 的 id。**解析 Info.plist 是读盘**，所以一次拖放会话只做一次
             /// ——`dropUpdated` 每 ~50ms 一次，逐次读盘会把主线程拖垮。
             let applicationBundleID: String?
+            /// Every app bundle's id, deduped, in drag order — the drawer's make-way slot. Read in
+            /// the same pass as the first.
+            let applicationBundleIDs: [String]
             /// File URLs only, Trash items included (the caller filters them).
             let draggedURLs: [URL]
             /// `StripDropRouting.dragPinsFolders` over the non-app items. Read from disk once per session.
@@ -212,6 +214,11 @@ struct StripFileDropDelegate: DropDelegate {
         /// 让位空档要显示给谁。`nil` = 不是应用拖放，或 bundle 坏了读不出 id → 不让位。
         static func applicationBundleID() -> String? {
             currentSession().applicationBundleID
+        }
+
+        /// The ids the drawer's make-way slot shows and its drop lands (`DrawerView`).
+        static func applicationBundleIDs() -> [String] {
+            currentSession().applicationBundleIDs
         }
 
         static func containsOnlyTrashItems() -> Bool {
@@ -242,11 +249,14 @@ struct StripFileDropDelegate: DropDelegate {
             // Trash items are filtered before the app check: a mixed drag keeps only the rest.
             let urls = dragged.filter { !isInsideTrash($0) }
             let apps = urls.filter(isApplication)
+            let appIDs = apps.map { Bundle(url: $0)?.bundleIdentifier }
+            var seen = Set<String>()
             let next = Session(
                 changeCount: changeCount,
                 containsOnlyTrashItems: !dragged.isEmpty && urls.isEmpty,
                 containsApplication: !apps.isEmpty,
-                applicationBundleID: apps.first.flatMap { Bundle(url: $0)?.bundleIdentifier },
+                applicationBundleID: appIDs.first.flatMap { $0 },
+                applicationBundleIDs: appIDs.compactMap { $0 }.filter { seen.insert($0).inserted },
                 draggedURLs: dragged.filter(\.isFileURL),
                 pinsFolders: StripDropRouting.dragPinsFolders(
                     nonApplicationItemsAreDirectories: urls.filter { !isApplication($0) }.map { url in

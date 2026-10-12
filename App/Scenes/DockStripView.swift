@@ -339,9 +339,9 @@ struct DockStripView: View {
             onCommitApplications: { urls, location in
                 handleExternalApplicationDrop(urls, atX: location.x)
             },
-            onGhostMoved: { target, bundleID, pinsFolder, location, isRelease in
+            onGhostMoved: { target, bundleID, pinsFolder, location in
                 updateExternalDropGhost(target: target, bundleID: bundleID,
-                                        pinsFolder: pinsFolder, atX: location.x, isRelease: isRelease)
+                                        pinsFolder: pinsFolder, atX: location.x)
             },
             currentGhostIndex: { externalDropGhost?.insertIndex },
             currentFrozenWidth: { frozenStripWidth },

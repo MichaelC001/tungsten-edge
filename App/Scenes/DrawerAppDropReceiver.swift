@@ -12,6 +12,10 @@ struct DrawerAppDropReceiver: NSViewRepresentable {
     /// The zone that lights and lands, in screen coordinates; nil = the view's own bounds.
     let screenZone: (() -> CGRect)?
     let onHoverChange: (Bool) -> Void
+    /// The pointer in screen coordinates while the zone takes the drag; `nil` once it does not
+    /// (left, refused, session over). The drawer opens its make-way slot from it; the capsule
+    /// passes `{ _ in }`. Not sent `nil` on an accepted drop: the slot is handed to the landing.
+    let onHoverLocation: (CGPoint?) -> Void
     /// The accepted bundles and the release point in screen coordinates.
     let onDropApplications: ([URL], CGPoint) -> Void
 
@@ -20,6 +24,7 @@ struct DrawerAppDropReceiver: NSViewRepresentable {
     func updateNSView(_ view: DrawerAppDropView, context: Context) {
         view.screenZone = screenZone
         view.onHoverChange = onHoverChange
+        view.onHoverLocation = onHoverLocation
         view.onDropApplications = onDropApplications
     }
 
@@ -29,6 +34,7 @@ struct DrawerAppDropReceiver: NSViewRepresentable {
 final class DrawerAppDropView: NSView {
     var screenZone: (() -> CGRect)?
     var onHoverChange: (Bool) -> Void = { _ in }
+    var onHoverLocation: (CGPoint?) -> Void = { _ in }
     var onDropApplications: ([URL], CGPoint) -> Void = { _, _ in }
 
     /// Only `draggingEntered` opens a session. The system can send a stray `draggingUpdated`
@@ -78,14 +84,14 @@ final class DrawerAppDropView: NSView {
         let point = screenPoint(sender)
         // The exit report goes out before the landing: the spring-load's `.dropped` must be the
         // last word, so the drawer stays open on the app it just took.
-        endSession()
-        guard accepted else { return false }
+        endSession(isLanding: true)
+        guard accepted else { onHoverLocation(nil); return false }
         let dragged = sender.draggingPasteboard.readObjects(forClasses: [NSURL.self]) as? [URL] ?? []
         // Trash items are dropped before the app check, as on the strip; plain files are not ours.
         let applications = dragged
             .filter { $0.isFileURL && !StripFileDropDelegate.DragPasteboardInspector.isInsideTrash($0) }
             .filter(StripFileDropDelegate.DragPasteboardInspector.isApplication)
-        guard !applications.isEmpty else { return false }
+        guard !applications.isEmpty else { onHoverLocation(nil); return false }
         onDropApplications(applications, point)
         return true
     }
@@ -98,11 +104,13 @@ final class DrawerAppDropView: NSView {
         endSession()
     }
 
-    func endSession() {
+    /// `isLanding`: only an accepted drop — the hover point is not cleared, so the drawer's slot
+    /// is still there for the landing to take over in the same turn.
+    func endSession(isLanding: Bool = false) {
         isSessionLive = false
         watchdog?.invalidate()
         watchdog = nil
-        setTargeted(false)
+        setTargeted(false, reportsLocation: !isLanding)
     }
 
     private func screenPoint(_ sender: NSDraggingInfo) -> CGPoint {
@@ -119,16 +127,18 @@ final class DrawerAppDropView: NSView {
             accepts = DrawerAppDrop.accepts(containsApplication: containsApplication,
                                             point: convert(sender.draggingLocation, from: nil), zone: bounds)
         }
-        setTargeted(accepts)
+        setTargeted(accepts, reportsLocation: true)
+        if accepts { onHoverLocation(screenPoint(sender)) }
         armWatchdog()
         guard accepts else { return [] }
         return sender.draggingSourceOperationMask.contains(.generic) ? .generic : .copy
     }
 
-    private func setTargeted(_ targeted: Bool) {
+    private func setTargeted(_ targeted: Bool, reportsLocation: Bool) {
         guard targeted != isTargeted else { return }
         isTargeted = targeted
         onHoverChange(targeted)
+        if !targeted, reportsLocation { onHoverLocation(nil) }
     }
 
     private func armWatchdog() {

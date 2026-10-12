@@ -87,9 +87,6 @@ final class StripFrameBox {
     /// `.onChange(of: externalDropGhost)` after it is compared — the old value that picks the
     /// panel-matched curve and tells the panel to re-measure. Folder gaps are never stored here.
     var renderedAppGhost: StripDropGhost?
-    /// When the current external-drop hover session began (`CACurrentMediaTime`); the app gap waits
-    /// `StripDropRouting.appGapOpenDelay` from here. A box field: `dropUpdated` reads it every ~50ms.
-    var externalDropHoverStartedAt: CFTimeInterval = 0
 }
 
 // MARK: - Drag-reorder preference (任务条拖动重排 路线 A 自绘拖动)

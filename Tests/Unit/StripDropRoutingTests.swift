@@ -472,18 +472,6 @@ final class StripDropRoutingTests: XCTestCase {
         }
     }
 
-    func testAppGapWaitsForTheDelayUnlessOpenOrReleased() {
-        let delay = StripDropRouting.appGapOpenDelay
-        XCTAssertEqual(delay, 0.5)
-        XCTAssertFalse(StripDropRouting.appGapMayOpen(sessionElapsed: 0, gapIsOpen: false, isRelease: false))
-        XCTAssertFalse(StripDropRouting.appGapMayOpen(sessionElapsed: delay - 0.01, gapIsOpen: false, isRelease: false))
-        XCTAssertTrue(StripDropRouting.appGapMayOpen(sessionElapsed: delay, gapIsOpen: false, isRelease: false))
-        // Once open, the gap follows the pointer at once.
-        XCTAssertTrue(StripDropRouting.appGapMayOpen(sessionElapsed: 0.1, gapIsOpen: true, isRelease: false))
-        // A quick drop opens it on release, so it hands over like a slow one.
-        XCTAssertTrue(StripDropRouting.appGapMayOpen(sessionElapsed: 0.1, gapIsOpen: false, isRelease: true))
-    }
-
     func testOnlyAnAppNotYetAnywhereMayWidenTheBarWhileHovering() {
         XCTAssertTrue(StripDropRouting.appDropMayWidenOnHover(isRunning: false, isInDrawer: false, isMessaging: false,
                                                               isFinder: false, hasEntryOnStrip: false))

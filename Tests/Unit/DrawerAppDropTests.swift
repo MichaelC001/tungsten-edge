@@ -75,3 +75,77 @@ extension DrawerAppDropTests {
         XCTAssertFalse(DrawerAppDrop.accepts(containsApplication: false, point: CGPoint(x: 150, y: 100), zone: zone))
     }
 }
+
+// MARK: - The make-way slot of an outside drag over the open drawer
+
+extension DrawerAppDropTests {
+    /// a | x(slot) | b, one row of 100pt cells.
+    private var slotFrames: [String: CGRect] {
+        ["a": CGRect(x: 0, y: 0, width: 100, height: 100),
+         "x": CGRect(x: 100, y: 0, width: 100, height: 100),
+         "b": CGRect(x: 200, y: 0, width: 100, height: 100)]
+    }
+
+    func testSlotFollowsTheMidlineOfAnotherCell() {
+        let order = ["a", "x", "b"]
+        XCTAssertEqual(DrawerAppDrop.hoverPlacement(current: .after("a"), point: CGPoint(x: 20, y: 50),
+                                                    frames: slotFrames, displayOrder: order, ghostIDs: ["x"]),
+                       .before("a"))
+        XCTAssertEqual(DrawerAppDrop.hoverPlacement(current: .after("a"), point: CGPoint(x: 280, y: 50),
+                                                    frames: slotFrames, displayOrder: order, ghostIDs: ["x"]),
+                       .after("b"))
+    }
+
+    func testSlotStaysPutUnderThePointerAndOffEveryCell() {
+        let order = ["a", "x", "b"]
+        XCTAssertEqual(DrawerAppDrop.hoverPlacement(current: .after("a"), point: CGPoint(x: 150, y: 50),
+                                                    frames: slotFrames, displayOrder: order, ghostIDs: ["x"]),
+                       .after("a"))
+        XCTAssertEqual(DrawerAppDrop.hoverPlacement(current: .after("a"), point: CGPoint(x: 150, y: 300),
+                                                    frames: slotFrames, displayOrder: order, ghostIDs: ["x"]),
+                       .after("a"))
+    }
+
+    func testFirstHoverOffEveryCellOpensTheSlotAtTheEnd() {
+        let frames = ["a": CGRect(x: 0, y: 0, width: 100, height: 100)]
+        XCTAssertEqual(DrawerAppDrop.hoverPlacement(current: nil, point: CGPoint(x: 150, y: 50),
+                                                    frames: frames, displayOrder: ["a"], ghostIDs: ["new"]),
+                       .end)
+        XCTAssertEqual(DrawerAppDrop.hoverPlacement(current: nil, point: CGPoint(x: 20, y: 50),
+                                                    frames: frames, displayOrder: ["a"], ghostIDs: ["new"]),
+                       .before("a"))
+    }
+
+    /// An app already in the drawer, entering over its own cell: the slot is where the cell was.
+    func testFirstHoverOverTheDraggedAppsOwnCellKeepsItWhereItIs() {
+        let order = ["a", "x", "b"]
+        let placement = DrawerAppDrop.hoverPlacement(current: nil, point: CGPoint(x: 150, y: 50),
+                                                     frames: slotFrames, displayOrder: order, ghostIDs: ["x"])
+        XCTAssertEqual(placement, .before("b"))
+        XCTAssertEqual(ExternalDrawerGhost(ids: ["x"], placement: placement).displayOrder(visibleMembers: order), order)
+        // The last cell has nothing after it.
+        XCTAssertEqual(DrawerAppDrop.hoverPlacement(current: nil, point: CGPoint(x: 250, y: 50),
+                                                    frames: slotFrames, displayOrder: order, ghostIDs: ["b"]),
+                       .end)
+    }
+
+    func testGhostOrderMovesAMemberAndInsertsANewcomer() {
+        let members = ["a", "b", "c"]
+        // Already a member: its cell empties and the slot opens where the pointer is.
+        XCTAssertEqual(ExternalDrawerGhost(ids: ["a"], placement: .after("c")).displayOrder(visibleMembers: members),
+                       ["b", "c", "a"])
+        // New: one more cell; the order the drop commits is the one shown.
+        let ghost = ExternalDrawerGhost(ids: ["x", "y"], placement: .before("b"))
+        XCTAssertEqual(ghost.displayOrder(visibleMembers: members), ["a", "x", "y", "b", "c"])
+        XCTAssertEqual(ghost.displayOrder(visibleMembers: members),
+                       DrawerAppDrop.order(existing: members, dropped: ghost.ids, placement: ghost.placement))
+    }
+
+    /// `.after(a)` and `.before(b)` are one slot: the view compares orders, not placements.
+    func testTwoPlacementsCanShowTheSameSlot() {
+        let members = ["a", "b"]
+        XCTAssertNotEqual(DrawerAppDrop.Placement.after("a"), .before("b"))
+        XCTAssertEqual(ExternalDrawerGhost(ids: ["x"], placement: .after("a")).displayOrder(visibleMembers: members),
+                       ExternalDrawerGhost(ids: ["x"], placement: .before("b")).displayOrder(visibleMembers: members))
+    }
+}

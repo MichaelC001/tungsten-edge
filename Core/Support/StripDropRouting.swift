@@ -196,17 +196,6 @@ extension StripDropRouting {
         hoveredTarget == .keepApp
     }
 
-    /// How long an app drag hovers over the bar before the icons make way — the native Dock waits
-    /// about this long (measured on a screen recording) instead of parting the moment it is entered.
-    static let appGapOpenDelay: TimeInterval = 0.5
-
-    /// Whether an app drag may open (or move) its make-way gap now. An open gap follows the pointer
-    /// at once; the release opens it regardless, so a quick drop lands through the same gap hand-over
-    /// as a slow one.
-    static func appGapMayOpen(sessionElapsed: TimeInterval, gapIsOpen: Bool, isRelease: Bool) -> Bool {
-        gapIsOpen || isRelease || sessionElapsed >= appGapOpenDelay
-    }
-
     /// Whether an app drag may widen the bar while it hovers (the native Dock grows and re-centres).
     /// Conservative: true only when the landing is sure to add a launcher placeholder, which every
     /// strip shows. Anything already on the bar, in the messaging zone or the drawer would make the

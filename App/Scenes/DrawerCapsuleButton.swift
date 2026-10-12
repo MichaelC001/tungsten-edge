@@ -117,6 +117,8 @@ struct DrawerCapsuleButton: View {
                 isAppDropTargeted = over
                 onExternalDragHover(over)
             },
+            // The capsule only takes and lands first; nothing makes way on it.
+            onHoverLocation: { _ in },
             onDropApplications: { urls, _ in
                 // The landed app takes the first cell; a capsule left on a later page would hide it
                 // for the 3s its return waits.

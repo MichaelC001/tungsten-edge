@@ -155,6 +155,9 @@ extension PanelCoordinator {
                        onDropApplications: { [weak self] urls, placement in
                            self?.stashDroppedApplications(urls, placement: placement)
                        },
+                       onDropApplicationIDs: { [weak self] ids, placement in
+                           self?.stashDroppedApplicationIDs(ids, placement: placement)
+                       },
                        runtime: runtime, drawerStore: drawerStore, messagingStore: messagingStore,
                        drawerOrderStore: drawerOrderStore, dragController: dragController,
                        keptAppStore: keptAppStore, runningApplicationStore: runningApplicationStore,

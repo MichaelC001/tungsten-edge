@@ -51,6 +51,18 @@ final class StackPopupGeometryTests: XCTestCase {
         XCTAssertTrue(drawerShape(settled: 0, actual: 0).showsHint)                    // committed
     }
 
+    /// An outside drag's make-way slot holds every dragged app at once: the columns stay the
+    /// members', only rows may grow.
+    func testDrawerGridKeepsItsColumnsUnderSeveralSlotCells() {
+        for settled in 1...30 {
+            let columns = drawerShape(settled: settled, actual: settled).layout.columns
+            for extra in 1...3 {
+                XCTAssertEqual(drawerShape(settled: settled, actual: settled + extra).layout.columns, columns,
+                               "settled \(settled) + \(extra)")
+            }
+        }
+    }
+
     func testDrawerSettledCountUndoesTheConversionByID() {
         let visible = ["a", "b", "c"]
         XCTAssertEqual(DrawerGridShape.settledCount(visibleIDs: visible, convertedInID: nil, convertedOutID: nil), 3)

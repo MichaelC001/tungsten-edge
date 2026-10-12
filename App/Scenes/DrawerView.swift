@@ -45,6 +45,10 @@ struct DrawerView: View {
     /// App bundles released over the open plate, with where they go in the order (the cell under
     /// the pointer). No default — an omission would compile into a drawer that refuses them.
     let onDropApplications: ([URL], DrawerAppDrop.Placement) -> Void
+    /// The same drop when the make-way slot was open: the ids it showed, landed where it was, in
+    /// the turn that closes it. No default — an omission would compile into a slot that closes and
+    /// an app that appears a beat later somewhere else.
+    let onDropApplicationIDs: ([String], DrawerAppDrop.Placement) -> Void
 
     @EnvironmentObject var runtime: AppRuntime
     @EnvironmentObject var drawerStore: DrawerStore
@@ -61,6 +65,11 @@ struct DrawerView: View {
     /// 抽屉根视图的屏幕 frame（bottom-left），判"光标在不在抽屉体" + 屏幕坐标→`"drawer"` 空间换算。
     @State private var drawerRootScreenRect: CGRect = .zero
 
+    /// Apps dragged from outside over the open plate: their hidden cells make way where the drop
+    /// would land (`ExternalDrawerGhost`). View state only — the stores change at the drop.
+    @State private var externalGhost: ExternalDrawerGhost?
+    @State private var externalGhostExpiry = ExternalGhostExpiry()
+
     // MARK: - 成员与分区（全 bundleID 级）
 
     /// Placement 全集喂给顺序层，绝不按当前可见项裁。
@@ -69,6 +78,11 @@ struct DrawerView: View {
     }
 
     private var displayOrder: [String] { drawerOrderStore.reconciled(members: allMembers) }
+
+    /// The grid's cells: the visible members, with the make-way slot of an outside drag in place.
+    private var gridIDs: [String] {
+        externalGhost?.displayOrder(visibleMembers: visibleMembers) ?? visibleMembers
+    }
 
     /// 唯一可见漏斗：运行中，或有 kept / messaging 永久身份。输入用显示顺序，
     /// 因此隐藏 placement 再出现时仍回到原来的相对位置。
@@ -113,11 +127,13 @@ struct DrawerView: View {
 
     // MARK: - Body
 
-    /// The grid's shape, held still while a conversion is in flight (`DrawerGridShape`).
+    /// The grid's shape, held still while a conversion is in flight (`DrawerGridShape`). The
+    /// columns count `visibleMembers` alone, so an outside drag's slot never changes them; its
+    /// cells may add a row.
     private func gridShape(cellIDs: [String]) -> DrawerGridShape.Result {
         let delta = dragController.drawerConversionDelta
         return DrawerGridShape.resolve(
-            settledCount: DrawerGridShape.settledCount(visibleIDs: cellIDs,
+            settledCount: DrawerGridShape.settledCount(visibleIDs: visibleMembers,
                                                        convertedInID: delta.convertedInID,
                                                        convertedOutID: delta.convertedOutID),
             actualCount: cellIDs.count,
@@ -126,7 +142,7 @@ struct DrawerView: View {
 
     var body: some View {
         // One grid in the drawer's own order: the folder popup's chrome with apps in its cells.
-        let ids = visibleMembers
+        let ids = gridIDs
         let shape = gridShape(cellIDs: ids)
         return StackPopupChrome(title: String(localized: "Drawer"),
                                 note: shape.showsHint ? String(localized: "Drag apps here") : nil,
@@ -160,7 +176,17 @@ struct DrawerView: View {
         .overlay(DrawerAppDropReceiver(
             screenZone: { PanelGeometry.folderPopupPlateFrame(panelFrame: drawerRootScreenRect) },
             onHoverChange: onExternalDragHover,
+            onHoverLocation: { updateExternalGhost(at: $0) },
             onDropApplications: { urls, screenPoint in
+                externalGhostExpiry.cancel()
+                if let ghost = externalGhost, !ghost.ids.isEmpty {
+                    // Same turn: the hidden cells become the members, where they already are.
+                    HoverTrace.action("extghost", phase: "land")
+                    externalGhost = nil
+                    onDropApplicationIDs(ghost.ids, ghost.placement)
+                    return
+                }
+                externalGhost = nil
                 let point = CGPoint(x: screenPoint.x - drawerRootScreenRect.minX,
                                     y: drawerRootScreenRect.maxY - screenPoint.y)   // 屏幕(左下) → drawer(左上)
                 onDropApplications(urls, DrawerAppDrop.placement(at: point, frames: drawerFrames, order: visibleMembers))
@@ -213,9 +239,36 @@ struct DrawerView: View {
 
     /// `carriedPayload` 而不是 `draggingPayload`：松手后还有一段归位飞行，
     /// 那段时间格子必须继续空着，否则图标先在格子里显形、载体还在往这儿飞。
-    private func isDragging(_ id: String) -> Bool {
+    /// An outside drag's make-way cells are empty slots too.
+    private func isSlotHidden(_ id: String) -> Bool {
+        if externalGhost?.ids.contains(id) == true { return true }
         guard let p = dragController.hiddenSlotPayload else { return false }
         return p.source == .drawer && p.id == id
+    }
+
+    /// Opens, moves or closes the make-way slot of apps dragged from outside, from the drop
+    /// receiver's pointer (`nil` = it no longer takes the drag). The receiver calls this every
+    /// ~50ms, so the slot is written only when the grid order it shows would change.
+    private func updateExternalGhost(at screenPoint: CGPoint?) {
+        let ids = StripFileDropDelegate.DragPasteboardInspector.applicationBundleIDs().filter(KeptAppStore.canKeep)
+        guard let screenPoint, !ids.isEmpty, isDrawerOpen(),
+              dragController.draggingPayload == nil,
+              drawerRootScreenRect != .zero else {
+            externalGhostExpiry.cancel()
+            if externalGhost != nil { HoverTrace.action("extghost", phase: "clear"); externalGhost = nil }
+            return
+        }
+        externalGhostExpiry.arm { externalGhost = nil }
+        let point = CGPoint(x: screenPoint.x - drawerRootScreenRect.minX,
+                            y: drawerRootScreenRect.maxY - screenPoint.y)   // 屏幕(左下) → drawer(左上)
+        let shown = gridIDs
+        let placement = DrawerAppDrop.hoverPlacement(current: externalGhost?.placement, point: point,
+                                                     frames: drawerFrames, displayOrder: shown, ghostIDs: ids)
+        let next = ExternalDrawerGhost(ids: ids, placement: placement)
+        // `.after(A)` and `.before(B)` can be the same slot: compare what the grid would show.
+        guard externalGhost?.ids != ids || next.displayOrder(visibleMembers: visibleMembers) != shown else { return }
+        HoverTrace.action("extghost", phase: "\(placement)")
+        externalGhost = next
     }
 
     /// 松手时浮动副本该飞回抽屉哪一格（屏幕坐标）。任务条侧同样在写它那一份，靠 owner 标签分开。
@@ -280,7 +333,7 @@ struct DrawerView: View {
                      },
                      onActivateWindow: { runtime.activate(windowID: $0) },
                      membershipItems: membershipItems(for: id),
-                     slotHidden: isDragging(id),
+                     slotHidden: isSlotHidden(id),
                      hoverSuppressed: isHoverSuppressed(id),
                      onLaunch: { runtime.beginLaunch(id) },
                      onPrimaryAction: onPrimaryAction)
@@ -291,7 +344,7 @@ struct DrawerView: View {
     /// 抽屉的 `LauncherChip` 各自挂 `.onHover`，只能在这里按格子压。
     private func isHoverSuppressed(_ id: String) -> Bool {
         if let p = dragController.hoverHoldPayload, p.source == .drawer, p.id == id { return true }
-        return isDragging(id)
+        return isSlotHidden(id)
     }
 
     /// 抽屉格子起拖那一刻的姿态：抽屉恒安静档、指针必在格子上（mouse-down 就发生在它上面），
@@ -324,7 +377,7 @@ struct DrawerView: View {
     @ViewBuilder
     private func drawerChip(_ id: String, running: Bool) -> some View {
         drawerChipContent(id, running: running)
-            .opacity(isDragging(id) ? 0 : 1)
+            .opacity(isSlotHidden(id) ? 0 : 1)
             // The frame in the `"drawer"` space via a background GeometryReader (takes no clicks):
             // grab offset and reorder hit test.
             .background(
@@ -461,6 +514,26 @@ struct DrawerView: View {
 
 // MARK: - Drawer drag-reorder preference
 
+/// The second guard on an outside drag's make-way slot: closes it if neither a new pointer report
+/// nor the drop arrives for a second (the receiver's own watchdog reports the end first). A
+/// reference, so re-arming every ~50ms never re-renders the drawer.
+private final class ExternalGhostExpiry {
+    private var timer: Timer?
+
+    func arm(_ expire: @escaping () -> Void) {
+        timer?.invalidate()
+        let timer = Timer(timeInterval: 1.0, repeats: false) { _ in DispatchQueue.main.async(execute: expire) }
+        // `.common`: a drag session keeps the main run loop in event tracking.
+        RunLoop.main.add(timer, forMode: .common)
+        self.timer = timer
+    }
+
+    func cancel() {
+        timer?.invalidate()
+        timer = nil
+    }
+}
+
 private struct DrawerChipFramePreferenceKey: PreferenceKey {
     static var defaultValue: [String: CGRect] = [:]
     static func reduce(value: inout [String: CGRect], nextValue: () -> [String: CGRect]) {
@@ -482,6 +555,7 @@ struct DrawerRootView: View {
     let onPrimaryAction: () -> Void
     let onExternalDragHover: (Bool) -> Void
     let onDropApplications: ([URL], DrawerAppDrop.Placement) -> Void
+    let onDropApplicationIDs: ([String], DrawerAppDrop.Placement) -> Void
     let runtime: AppRuntime
     let drawerStore: DrawerStore
     let messagingStore: MessagingAppStore
@@ -499,7 +573,8 @@ struct DrawerRootView: View {
                    isDrawerOpen: isDrawerOpen,
                    onPrimaryAction: onPrimaryAction,
                    onExternalDragHover: onExternalDragHover,
-                   onDropApplications: onDropApplications)
+                   onDropApplications: onDropApplications,
+                   onDropApplicationIDs: onDropApplicationIDs)
             .environmentObject(runtime).environmentObject(drawerStore).environmentObject(messagingStore)
             .environmentObject(drawerOrderStore).environmentObject(dragController)
             .environmentObject(keptAppStore).environmentObject(runningApplicationStore)

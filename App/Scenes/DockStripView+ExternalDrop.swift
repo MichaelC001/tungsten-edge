@@ -10,7 +10,6 @@ extension DockStripView {
     /// dropEntered：一次悬停会话开始 → 允许点亮。
     func externalDropHoverBegan(_ target: StripDropRouting.Target) {
         externalDropHoverActive = true
-        frames.externalDropHoverStartedAt = CACurrentMediaTime()
         // **必须在第一次插空档之前捕获**，否则冻住的是已经被空档撑宽的那个值，环照样成立。
         // 这里是整条悬停会话唯一的起点，所以捕获点只能在这儿。
         // An app the landing surely adds is the exception: its gap grows and re-centres the bar.
@@ -61,7 +60,7 @@ extension DockStripView {
     /// **变化门控是这个函数存在的理由**：`dropUpdated` 每 ~50ms 调一次，而写一次 `@State`
     /// 就是整条任务条重算一遍（实测过「1.2 秒拖动 46 次整条重算」）。锚点没变就一个字都不写。
     func updateExternalDropGhost(target: StripDropRouting.Target, bundleID: String?,
-                                 pinsFolder: Bool, atX x: CGFloat, isRelease: Bool) {
+                                 pinsFolder: Bool, atX x: CGFloat) {
         // **门控与整条高亮同源，理由也同一条**：成功 drop 之后 ~330ms 系统会补发一次孤立的
         // `dropUpdated`。没有这道闸，那一次会把落定时刚收掉的空档重新开出来，而且顺手作废
         // 兜底 Timer——条上从此留一个永远不走的空位（2026-09-08 owner 实测，拖「查找」进条后
@@ -75,13 +74,6 @@ extension DockStripView {
             setExternalDropGhost(index.map { StripDropGhost(zone: .folder, insertIndex: $0) })
             return
         }
-        // The native Dock lets an app hover ~0.5s before the icons part. `dropUpdated` keeps coming
-        // every ~50ms even under a still pointer, so the next call past the delay opens the gap.
-        guard StripDropRouting.appGapMayOpen(
-            sessionElapsed: CACurrentMediaTime() - frames.externalDropHoverStartedAt,
-            gapIsOpen: appDropGhost != nil,
-            isRelease: isRelease
-        ) else { return }
         // 落点判定与抽屉转正共用一份（`StripBlockLanding`）。空档不上报卡帧，所以 `chipFrames`
         // 里只有真卡——但它们的**位置**已经被空档推开了，所以判定结果必须折成插入序号才稳定
         //（理由见 `StripDropGhost`）。显示序按帧的左缘排，与渲染序同源。

@@ -185,23 +185,34 @@ extension PanelCoordinator {
     func stashDroppedApplications(_ urls: [URL], placement: DrawerAppDrop.Placement) {
         externalDragDropped()
         let paths = urls.map(\.path)
-        let orderStore = drawerOrderStore
-        let membership = appMembershipController
         // Reading Info.plist is disk I/O: user actions run on `actionQueue`, never the cooperative pool.
         AppRuntime.actionQueue.async {
             let bundleIDs = paths.compactMap { Bundle(url: URL(fileURLWithPath: $0))?.bundleIdentifier }
-            DispatchQueue.main.async {
-                var seen = Set<String>()
-                let ids = bundleIDs.filter { KeptAppStore.canKeep($0) && seen.insert($0).inserted }
-                guard !ids.isEmpty else { return }
-                // Order first: `reconciled(members:)` appends a member it has no place for, so a
-                // new member added before its place exists shows up last for a frame.
-                orderStore.place(ids, at: placement)
-                for id in ids {
-                    membership.moveToDrawer(id)
-                    membership.setKept(id, enabled: true)
-                }
+            DispatchQueue.main.async { [weak self] in
+                self?.landDroppedApplications(bundleIDs, placement: placement)
             }
+        }
+    }
+
+    /// The open drawer's drop when its make-way slot was showing: the ids were read from the drag
+    /// pasteboard while hovering, so nothing is read here and the slot's cells become the members
+    /// in the drawer's same turn.
+    func stashDroppedApplicationIDs(_ ids: [String], placement: DrawerAppDrop.Placement) {
+        externalDragDropped()
+        landDroppedApplications(ids, placement: placement)
+    }
+
+    /// The store half of both drops. Never sends `.dropped`: that belongs to the moment of release.
+    private func landDroppedApplications(_ bundleIDs: [String], placement: DrawerAppDrop.Placement) {
+        var seen = Set<String>()
+        let ids = bundleIDs.filter { KeptAppStore.canKeep($0) && seen.insert($0).inserted }
+        guard !ids.isEmpty else { return }
+        // Order first: `reconciled(members:)` appends a member it has no place for, so a
+        // new member added before its place exists shows up last for a frame.
+        drawerOrderStore.place(ids, at: placement)
+        for id in ids {
+            appMembershipController.moveToDrawer(id)
+            appMembershipController.setKept(id, enabled: true)
         }
     }
 
