@@ -130,11 +130,8 @@ struct DrawerCapsuleButton: View {
             // The drag image stays the source's over the capsule.
             dragImage: nil,
             onDropApplications: { urls, _, landing in
-                // The landed app takes the first cell; a capsule left on a later page would hide it
-                // for the 3s its return waits.
-                pager.showFirstPage(pageCount: pageCount)
-                onDropApplications(urls)
-                // Sucked into the capsule like a bar card released on it, from the icon let go.
+                // Sucked into the capsule like a bar card released on it, from the icon let go — up
+                // before anything re-renders, as in the drawer.
                 if let landing {
                     let square = min(landing.screenFrame.width, landing.screenFrame.height)
                     let frame = CGRect(x: landing.screenFrame.midX - square / 2, y: landing.screenFrame.midY - square / 2,
@@ -146,6 +143,13 @@ struct DrawerCapsuleButton: View {
                             application: urls.first { Bundle(url: $0)?.bundleIdentifier == landing.bundleID },
                             side: square, at: frame),
                         fromScreenRect: frame, kind: .stash)
+                }
+                // On the next turn, as in the drawer: the carrier shows only once this turn ends.
+                // The landed app takes the first cell; a capsule left on a later page would hide it
+                // for the 3s its return waits.
+                DispatchQueue.main.async {
+                    pager.showFirstPage(pageCount: pageCount)
+                    onDropApplications(urls)
                 }
             }
         ).padding(-DrawerAppDrop.capsuleTolerance))

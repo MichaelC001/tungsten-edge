@@ -34,14 +34,63 @@ struct DrawerAppDropReceiver: NSViewRepresentable {
         view.onDropApplications = onDropApplications
     }
 
-    static func dismantleNSView(_ view: DrawerAppDropView, coordinator: ()) { view.endSession() }
+    static func dismantleNSView(_ view: DrawerAppDropView, coordinator: ()) {
+        view.forgetSwappedImages()
+        view.endSession()
+    }
 }
 
-/// A drawer cell bitmap for the system drag image: the image (bleed included) and the icon's rect
-/// inside it, y up (`DrawerDragImageGeometry.iconRect`).
+/// A drawer cell bitmap for the system drag image, cut into the two components the system reads:
+/// `.icon` exactly over the cell's icon, `.label` the rest. About 0.3s after a swap the system moves
+/// the image so the pointer sits at the same fraction of its `.icon` component as it did on the
+/// source's icon (`Docs/05`); a single whole-bitmap component makes it re-place the cell there,
+/// away from the frame asked for.
 struct DrawerDragImage {
-    let image: NSImage
+    /// The whole bitmap's size, bleed included.
+    let size: CGSize
+    /// The icon's rect inside the bitmap, y up, on whole pixels.
     let iconRect: CGRect
+    let icon: NSImage
+    /// The bitmap with the icon's rect cleared.
+    let rest: NSImage
+
+    /// `iconRect` (y up, points) is widened to whole pixels so the two pieces tile the bitmap.
+    init?(snapshot: CarrierSnapshot, iconRect: CGRect) {
+        let scale = snapshot.scale
+        let pixelWidth = snapshot.image.width, pixelHeight = snapshot.image.height
+        let minX = max(0, Int((iconRect.minX * scale).rounded(.down)))
+        let maxX = min(pixelWidth, Int((iconRect.maxX * scale).rounded(.up)))
+        let minY = max(0, Int((iconRect.minY * scale).rounded(.down)))
+        let maxY = min(pixelHeight, Int((iconRect.maxY * scale).rounded(.up)))
+        guard maxX > minX, maxY > minY else { return nil }
+        let pixels = CGRect(x: minX, y: minY, width: maxX - minX, height: maxY - minY)   // y up
+        // `cropping(to:)` counts rows from the top.
+        let cropRect = CGRect(x: pixels.minX, y: CGFloat(pixelHeight) - pixels.maxY,
+                              width: pixels.width, height: pixels.height)
+        guard let iconImage = snapshot.image.cropping(to: cropRect),
+              let context = CGContext(data: nil, width: pixelWidth, height: pixelHeight, bitsPerComponent: 8,
+                                      bytesPerRow: 0, space: CGColorSpace(name: CGColorSpace.sRGB)!,
+                                      bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue) else { return nil }
+        context.draw(snapshot.image, in: CGRect(x: 0, y: 0, width: pixelWidth, height: pixelHeight))
+        context.clear(pixels)
+        guard let restImage = context.makeImage() else { return nil }
+        let rect = CGRect(x: pixels.minX / scale, y: pixels.minY / scale,
+                          width: pixels.width / scale, height: pixels.height / scale)
+        size = snapshot.size
+        self.iconRect = rect
+        icon = NSImage(cgImage: iconImage, size: rect.size)
+        rest = NSImage(cgImage: restImage, size: snapshot.size)
+    }
+
+    var components: [NSDraggingImageComponent] {
+        let label = NSDraggingImageComponent(key: .label)
+        label.contents = rest
+        label.frame = CGRect(origin: .zero, size: size)
+        let iconComponent = NSDraggingImageComponent(key: .icon)
+        iconComponent.contents = icon
+        iconComponent.frame = iconRect
+        return [label, iconComponent]
+    }
 }
 
 /// Where the first dropped app's drag image was let go, in screen coordinates: the drawer cell
@@ -62,6 +111,7 @@ final class DrawerAppDropView: NSView {
     /// An item whose image this session swapped for a cell: what it showed before, and where both
     /// frames sit relative to the pointer (the item moves with it).
     private struct SwappedItem {
+        let bundleID: String
         let components: [NSDraggingImageComponent]
         let size: CGSize
         let offset: CGVector
@@ -69,6 +119,9 @@ final class DrawerAppDropView: NSView {
         var cellSize: CGSize
     }
     private var swappedItems: [Int: SwappedItem] = [:]
+    /// The drag the record belongs to (`draggingSequenceNumber`): it outlives a watchdog-ended
+    /// session, so a later drag must not take it for its own.
+    private var swappedDrag: Int?
     private var showsCells = false
 
     /// Only `draggingEntered` opens a session. The system can send a stray `draggingUpdated`
@@ -104,7 +157,10 @@ final class DrawerAppDropView: NSView {
     override func draggingExited(_ sender: NSDraggingInfo?) {
         // The system never puts the source image back, and a restore asked for just before the
         // pointer left is not shown (`Docs/05`): always restore once more here.
-        if let sender, !swappedItems.isEmpty { restoreSourceImages(sender) }
+        if let sender, !swappedItems.isEmpty, swappedDrag == sender.draggingSequenceNumber {
+            restoreSourceImages(sender)
+        }
+        forgetSwappedImages()
         endSession()
     }
 
@@ -120,6 +176,7 @@ final class DrawerAppDropView: NSView {
         let accepted = isSessionLive && isTargeted
         let point = screenPoint(sender)
         let landing = accepted ? dropLanding(sender) : nil
+        forgetSwappedImages()
         // The exit report goes out before the landing: the spring-load's `.dropped` must be the
         // last word, so the drawer stays open on the app it just took.
         endSession(isLanding: true)
@@ -135,22 +192,32 @@ final class DrawerAppDropView: NSView {
     }
 
     override func concludeDragOperation(_ sender: NSDraggingInfo?) {
+        forgetSwappedImages()
         endSession()
     }
 
     override func draggingEnded(_ sender: NSDraggingInfo) {
+        forgetSwappedImages()
         endSession()
     }
 
     /// `isLanding`: only an accepted drop — the hover point is not cleared, so the drawer's slot
     /// is still there for the landing to take over in the same turn.
+    ///
+    /// The swapped images' record outlives it: the watchdog ends a session while the system drag
+    /// may still be over this view showing a cell, and only that record lets `draggingExited` put
+    /// the source's image back (`forgetSwappedImages` runs where the system drag itself is over).
     func endSession(isLanding: Bool = false) {
         isSessionLive = false
-        swappedItems = [:]
-        showsCells = false
         watchdog?.invalidate()
         watchdog = nil
         setTargeted(false, reportsLocation: !isLanding)
+    }
+
+    func forgetSwappedImages() {
+        swappedItems = [:]
+        swappedDrag = nil
+        showsCells = false
     }
 
     private func screenPoint(_ sender: NSDraggingInfo) -> CGPoint {
@@ -199,6 +266,8 @@ final class DrawerAppDropView: NSView {
     /// later apps sit 4pt down-right, a small pile. Plain files keep the source's image.
     private func swapInCellImages(_ sender: NSDraggingInfo) {
         guard let dragImage else { return }
+        if swappedDrag != sender.draggingSequenceNumber { forgetSwappedImages() }
+        swappedDrag = sender.draggingSequenceNumber
         let point = pointer(sender)
         let scale = window?.backingScaleFactor ?? 2
         var pile: CGFloat = 0
@@ -207,18 +276,22 @@ final class DrawerAppDropView: NSView {
             // The source geometry is kept from the first swap: after a restore the item shows it again.
             let frame = item.draggingFrame
             var saved = self.swappedItems[index] ?? SwappedItem(
-                components: item.imageComponents ?? [], size: frame.size,
+                bundleID: id, components: item.imageComponents ?? [], size: frame.size,
                 offset: CGVector(dx: frame.minX - point.x, dy: frame.minY - point.y),
                 cellOffset: .zero, cellSize: .zero)
             let source = CGRect(x: point.x + saved.offset.dx, y: point.y + saved.offset.dy,
                                 width: saved.size.width, height: saved.size.height)
             let icon = saved.components.first { $0.key == .icon }?.frame
             let target = DrawerDragImageGeometry.frame(itemFrame: source, iconComponent: icon, pointer: point,
-                                                       bitmapSize: cell.image.size, cellIconRect: cell.iconRect,
+                                                       bitmapSize: cell.size, cellIconRect: cell.iconRect,
                                                        backingScale: scale)
                 .offsetBy(dx: 4 * pile, dy: -4 * pile)
+            HoverTrace.dragImageSwap(source: source, icon: icon, pointer: point, target: target,
+                                     validItems: sender.numberOfValidItemsForDrop)
             pile += 1
-            item.setDraggingFrame(target, contents: cell.image)
+            let components = cell.components
+            item.draggingFrame = target
+            item.imageComponentsProvider = { components }
             saved.cellOffset = CGVector(dx: target.minX - point.x, dy: target.minY - point.y)
             saved.cellSize = target.size
             self.swappedItems[index] = saved
@@ -244,13 +317,15 @@ final class DrawerAppDropView: NSView {
     private func dropLanding(_ sender: NSDraggingInfo) -> DrawerDropLanding? {
         let point = pointer(sender)
         var result: (String, CGRect)?
-        sender.enumerateDraggingItems(options: [], for: self, classes: [NSURL.self], searchOptions: [:]) { item, index, stop in
-            guard let id = self.applicationID(item) else { return }
-            stop.pointee = true
-            if self.showsCells, let saved = self.swappedItems[index] {
-                result = (id, CGRect(x: point.x + saved.cellOffset.dx, y: point.y + saved.cellOffset.dy,
-                                     width: saved.cellSize.width, height: saved.cellSize.height))
-            } else if self.dragImage == nil {
+        // Swapped: the first app item is the lowest swapped index, and the record has its frame —
+        // no round trip to the drag source while the release waits for the carrier.
+        if showsCells, let (_, saved) = swappedItems.min(by: { $0.key < $1.key }) {
+            result = (saved.bundleID, CGRect(x: point.x + saved.cellOffset.dx, y: point.y + saved.cellOffset.dy,
+                                             width: saved.cellSize.width, height: saved.cellSize.height))
+        } else {
+            sender.enumerateDraggingItems(options: [], for: self, classes: [NSURL.self], searchOptions: [:]) { item, _, stop in
+                guard self.dragImage == nil, let id = self.applicationID(item) else { return }
+                stop.pointee = true
                 let frame = item.draggingFrame
                 let icon = (item.imageComponents ?? []).first { $0.key == .icon }?.frame
                 result = (id, icon.map { $0.offsetBy(dx: frame.minX, dy: frame.minY) } ?? frame)

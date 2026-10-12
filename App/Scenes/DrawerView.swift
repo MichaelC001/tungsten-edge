@@ -186,24 +186,31 @@ struct DrawerView: View {
                 if let ghost = externalGhost, let first = ghost.ids.first {
                     let carrier = externalCellImages.cells[first]?.snapshot
                     externalCellImages.cells.removeAll()
-                    // Same turn: the hidden cells become the members, where they already are, and
-                    // the first one's slot passes from the ghost to the landing without a frame shown.
-                    HoverTrace.action("extghost", phase: "land")
-                    externalGhost = nil
-                    onDropApplicationIDs(ghost.ids, ghost.placement)
+                    // The carrier goes up first and the stores change on the next turn: committing
+                    // them re-renders both bars and the drawer (tens of ms, more with a bar per
+                    // screen), and the carrier reaches the screen only when the turn that presents
+                    // it ends — sharing a turn, nothing shows where the drag image was let go. The
+                    // ghost keeps the grid as it is until then; the first app's slot passes from
+                    // the ghost to the landing without a frame shown.
                     if let landing, landing.bundleID == first {
                         dragController.beginExternalLanding(
                             payload: DragPayload(source: .drawer, id: first, bundleID: first, item: nil,
                                                  visualKind: .drawerIcon, canExternalDrop: true),
                             snapshot: carrier, fromScreenRect: landing.screenFrame, kind: .returnToSlot)
-                        // An unchanged layout reports no frame change: tell the flight where to go now.
+                        // The slot's frame is known now; an unchanged layout would never report it.
                         updateLandingAnchor()
                     } else {
                         dragController.clearCandidate(payloadID: first)
                     }
+                    DispatchQueue.main.async {
+                        // The hidden cells become the members, where they already are.
+                        HoverTrace.action("extghost", phase: "land")
+                        if externalGhost == ghost { externalGhost = nil }
+                        onDropApplicationIDs(ghost.ids, ghost.placement)
+                    }
                     return
                 }
-                externalGhost = nil
+                clearExternalGhost()
                 let point = CGPoint(x: screenPoint.x - drawerRootScreenRect.minX,
                                     y: drawerRootScreenRect.maxY - screenPoint.y)   // 屏幕(左下) → drawer(左上)
                 onDropApplications(urls, DrawerAppDrop.placement(at: point, frames: drawerFrames, order: visibleMembers))
@@ -265,10 +272,10 @@ struct DrawerView: View {
         guard let snapshot = ChipSnapshotter.snapshot(of: drawerChipContent(id, running: showsAsRunning(id)),
                                                       screenPoint: center) else { return nil }
         let metrics = StackCellMetrics.drawer
-        let image = DrawerDragImage(
-            image: NSImage(cgImage: snapshot.image, size: snapshot.size),
+        guard let image = DrawerDragImage(
+            snapshot: snapshot,
             iconRect: DrawerDragImageGeometry.iconRect(bitmapSize: snapshot.size, cellSize: snapshot.contentSize,
-                                                       iconSize: metrics.iconSize, iconTop: metrics.iconTop))
+                                                       iconSize: metrics.iconSize, iconTop: metrics.iconTop)) else { return nil }
         externalCellImages.cells[id] = (snapshot, image)
         if id == externalGhost?.ids.first {
             dragController.prepareCandidate(
@@ -298,12 +305,10 @@ struct DrawerView: View {
               dragController.draggingPayload == nil,
               drawerRootScreenRect != .zero else {
             externalGhostExpiry.cancel()
-            if let first = externalGhost?.ids.first { dragController.clearCandidate(payloadID: first) }
-            externalCellImages.cells.removeAll()
-            if externalGhost != nil { HoverTrace.action("extghost", phase: "clear"); externalGhost = nil }
+            clearExternalGhost()
             return
         }
-        externalGhostExpiry.arm { externalGhost = nil }
+        externalGhostExpiry.arm { clearExternalGhost() }
         let point = CGPoint(x: screenPoint.x - drawerRootScreenRect.minX,
                             y: drawerRootScreenRect.maxY - screenPoint.y)   // 屏幕(左下) → drawer(左上)
         let shown = gridIDs
@@ -314,6 +319,15 @@ struct DrawerView: View {
         guard externalGhost?.ids != ids || next.displayOrder(visibleMembers: visibleMembers) != shown else { return }
         HoverTrace.action("extghost", phase: "\(placement)")
         externalGhost = next
+    }
+
+    /// Closes the make-way slot and drops what it prepared. The prepared carrier is released by the
+    /// cached ids, not the slot's: an expired slot is already gone, and a candidate left behind
+    /// would be claimed by a later capsule drop of the same app.
+    private func clearExternalGhost() {
+        for id in externalCellImages.cells.keys { dragController.clearCandidate(payloadID: id) }
+        externalCellImages.cells.removeAll()
+        if externalGhost != nil { HoverTrace.action("extghost", phase: "clear"); externalGhost = nil }
     }
 
     /// 松手时浮动副本该飞回抽屉哪一格（屏幕坐标）。任务条侧同样在写它那一份，靠 owner 标签分开。
@@ -567,7 +581,14 @@ private final class ExternalGhostExpiry {
 
     func arm(_ expire: @escaping () -> Void) {
         timer?.invalidate()
-        let timer = Timer(timeInterval: 1.0, repeats: false) { _ in DispatchQueue.main.async(execute: expire) }
+        let timer = Timer(timeInterval: 1.0, repeats: false) { [weak self] fired in
+            DispatchQueue.main.async {
+                // A newer report may have re-armed it between the fire and this turn.
+                guard let self, self.timer === fired else { return }
+                self.timer = nil
+                expire()
+            }
+        }
         // `.common`: a drag session keeps the main run loop in event tracking.
         RunLoop.main.add(timer, forMode: .common)
         self.timer = timer

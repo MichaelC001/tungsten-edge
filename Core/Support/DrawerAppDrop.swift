@@ -116,13 +116,15 @@ enum DrawerDragImageGeometry {
     /// The new dragging frame. `iconComponent` is the source image's `.icon` component in the
     /// item's own coordinates (Finder's image is icon + name, so the whole frame is not the icon);
     /// `nil` uses the whole frame. The pointer's place in that icon maps to the same place in the
-    /// cell's icon; the origin snaps to device pixels.
+    /// cell's icon, unclamped — a pointer on the source's name stays off the cell's icon, as the
+    /// system itself re-places the image by that fraction (`DrawerDragImage`); the origin snaps to
+    /// device pixels.
     static func frame(itemFrame: CGRect, iconComponent: CGRect?, pointer: CGPoint,
                       bitmapSize: CGSize, cellIconRect: CGRect, backingScale: CGFloat) -> CGRect {
         let icon = iconComponent.map { $0.offsetBy(dx: itemFrame.minX, dy: itemFrame.minY) } ?? itemFrame
         func fraction(_ value: CGFloat, _ start: CGFloat, _ length: CGFloat) -> CGFloat {
             guard length > 0 else { return 0.5 }
-            return min(max((value - start) / length, 0), 1)
+            return (value - start) / length
         }
         let fx = fraction(pointer.x, icon.minX, icon.width)
         let fy = fraction(pointer.y, icon.minY, icon.height)

@@ -336,6 +336,17 @@ enum HoverTrace {
         )
     }
 
+    /// An outside drag's image swapped over the drawer: the source frame and its icon (receiver
+    /// coordinates), the pointer, and the cell frame asked for.
+    static func dragImageSwap(source: CGRect, icon: CGRect?, pointer: CGPoint, target: CGRect, validItems: Int) {
+        guard isEnabled else { return }
+        func rect(_ r: CGRect) -> String { "[\(r1(r.minX)),\(r1(r.minY)),\(r1(r.width)),\(r1(r.height))]" }
+        Writer.shared.append(
+            "{\"t\":\(stamp()),\"kind\":\"extswap\",\"source\":\(rect(source)),\"icon\":\(icon.map(rect) ?? "null")," +
+            "\"pointer\":[\(r1(pointer.x)),\(r1(pointer.y))],\"target\":\(rect(target)),\"valid\":\(validItems)}"
+        )
+    }
+
     private static func r1(_ value: CGFloat) -> Double { (Double(value) * 10).rounded() / 10 }
 
     private static func stamp() -> Double { round(CACurrentMediaTime() * 10000) / 10 }
