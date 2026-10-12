@@ -149,3 +149,46 @@ extension DrawerAppDropTests {
                        ExternalDrawerGhost(ids: ["x"], placement: .before("b")).displayOrder(visibleMembers: members))
     }
 }
+
+// MARK: - The drag image turning into the drawer cell
+
+extension DrawerAppDropTests {
+    private var cellBitmap: CGSize { CGSize(width: 124.5, height: 114) }   // 112.5 × 102 + 6pt bleed
+    private var cellIcon: CGRect {
+        DrawerDragImageGeometry.iconRect(bitmapSize: cellBitmap, cellSize: CGSize(width: 112.5, height: 102),
+                                         iconSize: 76, iconTop: 5)
+    }
+
+    func testCellIconSitsCentredUnderTheTopInset() {
+        XCTAssertEqual(cellIcon, CGRect(x: 24.25, y: 114 - 6 - 5 - 76, width: 76, height: 76))
+    }
+
+    func testPointerKeepsItsPlaceOnTheIcon() {
+        // Finder: icon component at (10, 20) inside an item framed at (100, 200); the pointer a
+        // quarter across and three quarters up the 64pt icon.
+        let itemFrame = CGRect(x: 100, y: 200, width: 84, height: 100)
+        let component = CGRect(x: 10, y: 20, width: 64, height: 64)
+        let pointer = CGPoint(x: 110 + 16, y: 220 + 48)
+        let frame = DrawerDragImageGeometry.frame(itemFrame: itemFrame, iconComponent: component, pointer: pointer,
+                                                  bitmapSize: cellBitmap, cellIconRect: cellIcon, backingScale: 2)
+        XCTAssertEqual(frame.size, cellBitmap)
+        let icon = cellIcon.offsetBy(dx: frame.minX, dy: frame.minY)
+        XCTAssertEqual((pointer.x - icon.minX) / icon.width, 0.25, accuracy: 0.01)
+        XCTAssertEqual((pointer.y - icon.minY) / icon.height, 0.75, accuracy: 0.01)
+        // Moving the whole drag moves the result by the same amount.
+        let moved = DrawerDragImageGeometry.frame(itemFrame: itemFrame.offsetBy(dx: 30, dy: -7), iconComponent: component,
+                                                  pointer: CGPoint(x: pointer.x + 30, y: pointer.y - 7),
+                                                  bitmapSize: cellBitmap, cellIconRect: cellIcon, backingScale: 2)
+        XCTAssertEqual(moved.minX - frame.minX, 30, accuracy: 0.5)
+        XCTAssertEqual(moved.minY - frame.minY, -7, accuracy: 0.5)
+    }
+
+    func testNoIconComponentUsesTheWholeFrameAndSnapsToPixels() {
+        let frame = DrawerDragImageGeometry.frame(itemFrame: CGRect(x: 0.3, y: 0.3, width: 64, height: 64), iconComponent: nil,
+                                                  pointer: CGPoint(x: 32.3, y: 32.3),
+                                                  bitmapSize: cellBitmap, cellIconRect: cellIcon, backingScale: 2)
+        XCTAssertEqual(frame.minX * 2, (frame.minX * 2).rounded())
+        XCTAssertEqual(frame.minY * 2, (frame.minY * 2).rounded())
+        XCTAssertEqual(frame.minX + cellIcon.midX, 32.3, accuracy: 0.5)
+    }
+}

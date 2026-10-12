@@ -98,3 +98,38 @@ struct ExternalDrawerGhost: Equatable {
         DrawerAppDrop.order(existing: visibleMembers, dropped: ids, placement: placement)
     }
 }
+
+/// Where the drag image of an app from outside goes when it turns into the drawer's cell bitmap
+/// over the open plate, so the pointer keeps the same spot on the icon. All rects share the drop
+/// receiver's coordinates (AppKit, y up).
+enum DrawerDragImageGeometry {
+    /// The icon's rect inside the cell bitmap (y up): `bitmapSize` includes the snapshot's bleed
+    /// around `cellSize`; the icon is centred across and `iconTop` below the cell's top.
+    static func iconRect(bitmapSize: CGSize, cellSize: CGSize, iconSize: CGFloat, iconTop: CGFloat) -> CGRect {
+        let bleedX = (bitmapSize.width - cellSize.width) / 2
+        let bleedY = (bitmapSize.height - cellSize.height) / 2
+        return CGRect(x: bleedX + (cellSize.width - iconSize) / 2,
+                      y: bitmapSize.height - bleedY - iconTop - iconSize,
+                      width: iconSize, height: iconSize)
+    }
+
+    /// The new dragging frame. `iconComponent` is the source image's `.icon` component in the
+    /// item's own coordinates (Finder's image is icon + name, so the whole frame is not the icon);
+    /// `nil` uses the whole frame. The pointer's place in that icon maps to the same place in the
+    /// cell's icon; the origin snaps to device pixels.
+    static func frame(itemFrame: CGRect, iconComponent: CGRect?, pointer: CGPoint,
+                      bitmapSize: CGSize, cellIconRect: CGRect, backingScale: CGFloat) -> CGRect {
+        let icon = iconComponent.map { $0.offsetBy(dx: itemFrame.minX, dy: itemFrame.minY) } ?? itemFrame
+        func fraction(_ value: CGFloat, _ start: CGFloat, _ length: CGFloat) -> CGFloat {
+            guard length > 0 else { return 0.5 }
+            return min(max((value - start) / length, 0), 1)
+        }
+        let fx = fraction(pointer.x, icon.minX, icon.width)
+        let fy = fraction(pointer.y, icon.minY, icon.height)
+        let scale = max(backingScale, 1)
+        func snap(_ value: CGFloat) -> CGFloat { (value * scale).rounded() / scale }
+        return CGRect(x: snap(pointer.x - fx * cellIconRect.width - cellIconRect.minX),
+                      y: snap(pointer.y - fy * cellIconRect.height - cellIconRect.minY),
+                      width: bitmapSize.width, height: bitmapSize.height)
+    }
+}

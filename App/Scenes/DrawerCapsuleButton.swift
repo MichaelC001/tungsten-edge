@@ -49,6 +49,14 @@ struct DrawerCapsuleButton: View {
 
     private var iconSize: CGFloat { DrawerCapsulePreviewMetrics.iconSize * dockScale }
 
+    /// The carrier bitmap for an app dropped on the capsule: its icon, as the drag image showed it.
+    private func externalCarrierSnapshot(application url: URL?, side: CGFloat, at frame: CGRect) -> CarrierSnapshot? {
+        guard let url else { return nil }
+        let scale = NSScreen.screens.first { $0.frame.contains(CGPoint(x: frame.midX, y: frame.midY)) }?
+            .backingScaleFactor ?? 2
+        return ChipSnapshotter.iconSnapshot(of: NSWorkspace.shared.icon(forFile: url.path), side: side, scale: scale)
+    }
+
     /// Every visible drawer app in the order the open drawer reads (`DrawerView.visibleMembers`):
     /// drawer order alone, never regrouped by running state, or the capsule pages disagree with
     /// the drawer.
@@ -119,11 +127,26 @@ struct DrawerCapsuleButton: View {
             },
             // The capsule only takes and lands first; nothing makes way on it.
             onHoverLocation: { _ in },
-            onDropApplications: { urls, _ in
+            // The drag image stays the source's over the capsule.
+            dragImage: nil,
+            onDropApplications: { urls, _, landing in
                 // The landed app takes the first cell; a capsule left on a later page would hide it
                 // for the 3s its return waits.
                 pager.showFirstPage(pageCount: pageCount)
                 onDropApplications(urls)
+                // Sucked into the capsule like a bar card released on it, from the icon let go.
+                if let landing {
+                    let square = min(landing.screenFrame.width, landing.screenFrame.height)
+                    let frame = CGRect(x: landing.screenFrame.midX - square / 2, y: landing.screenFrame.midY - square / 2,
+                                       width: square, height: square)
+                    dragController.beginExternalLanding(
+                        payload: DragPayload(source: .drawer, id: landing.bundleID, bundleID: landing.bundleID,
+                                             item: nil, visualKind: .drawerIcon, canExternalDrop: true),
+                        snapshot: externalCarrierSnapshot(
+                            application: urls.first { Bundle(url: $0)?.bundleIdentifier == landing.bundleID },
+                            side: square, at: frame),
+                        fromScreenRect: frame, kind: .stash)
+                }
             }
         ).padding(-DrawerAppDrop.capsuleTolerance))
         .padding(PanelCoordinator.shadowPadding)

@@ -69,6 +69,9 @@ struct DrawerView: View {
     /// would land (`ExternalDrawerGhost`). View state only — the stores change at the drop.
     @State private var externalGhost: ExternalDrawerGhost?
     @State private var externalGhostExpiry = ExternalGhostExpiry()
+    /// The cell bitmaps of the apps in the slot, made once per hover: the drag image turns into
+    /// them and the first one is the carrier that lands it.
+    @State private var externalCellImages = ExternalCellImages()
 
     // MARK: - 成员与分区（全 bundleID 级）
 
@@ -177,13 +180,27 @@ struct DrawerView: View {
             screenZone: { PanelGeometry.folderPopupPlateFrame(panelFrame: drawerRootScreenRect) },
             onHoverChange: onExternalDragHover,
             onHoverLocation: { updateExternalGhost(at: $0) },
-            onDropApplications: { urls, screenPoint in
+            dragImage: { externalCellImage(for: $0) },
+            onDropApplications: { urls, screenPoint, landing in
                 externalGhostExpiry.cancel()
-                if let ghost = externalGhost, !ghost.ids.isEmpty {
-                    // Same turn: the hidden cells become the members, where they already are.
+                if let ghost = externalGhost, let first = ghost.ids.first {
+                    let carrier = externalCellImages.cells[first]?.snapshot
+                    externalCellImages.cells.removeAll()
+                    // Same turn: the hidden cells become the members, where they already are, and
+                    // the first one's slot passes from the ghost to the landing without a frame shown.
                     HoverTrace.action("extghost", phase: "land")
                     externalGhost = nil
                     onDropApplicationIDs(ghost.ids, ghost.placement)
+                    if let landing, landing.bundleID == first {
+                        dragController.beginExternalLanding(
+                            payload: DragPayload(source: .drawer, id: first, bundleID: first, item: nil,
+                                                 visualKind: .drawerIcon, canExternalDrop: true),
+                            snapshot: carrier, fromScreenRect: landing.screenFrame, kind: .returnToSlot)
+                        // An unchanged layout reports no frame change: tell the flight where to go now.
+                        updateLandingAnchor()
+                    } else {
+                        dragController.clearCandidate(payloadID: first)
+                    }
                     return
                 }
                 externalGhost = nil
@@ -237,6 +254,32 @@ struct DrawerView: View {
 
     // MARK: - 单个图标（含拖动）
 
+    /// The cell bitmap an app's drag image turns into over the plate (`drawerChipContent`, the
+    /// code that draws the cell, as for a bar card dragged in). The slot's first app is also
+    /// prepared as the carrier (`prepareCandidate`): a new bitmap reaches the screen a frame late,
+    /// and the release has no frame to spare.
+    private func externalCellImage(for id: String) -> DrawerDragImage? {
+        if let cached = externalCellImages.cells[id] { return cached.image }
+        guard drawerRootScreenRect != .zero else { return nil }
+        let center = CGPoint(x: drawerRootScreenRect.midX, y: drawerRootScreenRect.midY)
+        guard let snapshot = ChipSnapshotter.snapshot(of: drawerChipContent(id, running: showsAsRunning(id)),
+                                                      screenPoint: center) else { return nil }
+        let metrics = StackCellMetrics.drawer
+        let image = DrawerDragImage(
+            image: NSImage(cgImage: snapshot.image, size: snapshot.size),
+            iconRect: DrawerDragImageGeometry.iconRect(bitmapSize: snapshot.size, cellSize: snapshot.contentSize,
+                                                       iconSize: metrics.iconSize, iconTop: metrics.iconTop))
+        externalCellImages.cells[id] = (snapshot, image)
+        if id == externalGhost?.ids.first {
+            dragController.prepareCandidate(
+                payloadID: id,
+                sourceScreenRect: CGRect(x: center.x - snapshot.size.width / 2, y: center.y - snapshot.size.height / 2,
+                                         width: snapshot.size.width, height: snapshot.size.height),
+                snapshot: snapshot)
+        }
+        return image
+    }
+
     /// `carriedPayload` 而不是 `draggingPayload`：松手后还有一段归位飞行，
     /// 那段时间格子必须继续空着，否则图标先在格子里显形、载体还在往这儿飞。
     /// An outside drag's make-way cells are empty slots too.
@@ -255,6 +298,8 @@ struct DrawerView: View {
               dragController.draggingPayload == nil,
               drawerRootScreenRect != .zero else {
             externalGhostExpiry.cancel()
+            if let first = externalGhost?.ids.first { dragController.clearCandidate(payloadID: first) }
+            externalCellImages.cells.removeAll()
             if externalGhost != nil { HoverTrace.action("extghost", phase: "clear"); externalGhost = nil }
             return
         }
@@ -532,6 +577,11 @@ private final class ExternalGhostExpiry {
         timer?.invalidate()
         timer = nil
     }
+}
+
+/// A reference, so filling it while hovering never re-renders the drawer.
+private final class ExternalCellImages {
+    var cells: [String: (snapshot: CarrierSnapshot, image: DrawerDragImage)] = [:]
 }
 
 private struct DrawerChipFramePreferenceKey: PreferenceKey {

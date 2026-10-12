@@ -809,3 +809,45 @@ final class DragControllerConversionTests: XCTestCase {
         XCTAssertTrue(kept.contains(FinderTaskbarPolicy.bundleID))
     }
 }
+
+// MARK: - An app dropped from outside: the carrier takes over from the system's drag image
+
+extension DragControllerConversionTests {
+    func testExternalDropHoldsUntilTheSlotIsReportedThenFliesThere() {
+        let from = CGRect(x: 300, y: 300, width: 40, height: 40)
+        controller.beginExternalLanding(payload: payload(.drawer, "app"), snapshot: stubSnapshot(side: 4),
+                                        fromScreenRect: from, kind: .returnToSlot)
+        guard let held = controller.landing else { return XCTFail("要有落位飞行") }
+        XCTAssertEqual(held.kind, .returnToSlot)
+        XCTAssertTrue(held.flight.isStationary, "格子还没报上来：原地按住")
+        XCTAssertEqual(controller.hiddenSlotPayload?.id, "app", "飞行期间那一格空着")
+        controller.setLandingAnchor(CGRect(x: 420, y: 360, width: 40, height: 40), owner: .drawer)
+        XCTAssertEqual(controller.landing?.token, held.token)
+        XCTAssertEqual(controller.landing?.flight.isStationary, false, "报了格子就换成朝它飞")
+    }
+
+    func testExternalDropOnTheCapsuleFliesIntoTheCapsule() {
+        let stashing = makeStashingController()
+        defer { stashing.cancelDrag() }
+        stashing.beginExternalLanding(payload: payload(.drawer, "app"), snapshot: stubSnapshot(side: 4),
+                                      fromScreenRect: CGRect(x: 300, y: 300, width: 64, height: 64), kind: .stash)
+        guard let landing = stashing.landing else { return XCTFail("要有吸进胶囊的飞行") }
+        XCTAssertEqual(landing.kind, .stash)
+        XCTAssertEqual(landing.flight.toOpacity, 0)
+        XCTAssertEqual(landing.flight.toScale, DragLandingPlan.stashScale)
+    }
+
+    func testExternalDropNeverInterruptsADragOfOurOwn() {
+        begin(.strip, "card", at: outsideZone)
+        controller.beginExternalLanding(payload: payload(.drawer, "app"), snapshot: stubSnapshot(side: 4),
+                                        fromScreenRect: CGRect(x: 300, y: 300, width: 40, height: 40), kind: .returnToSlot)
+        XCTAssertNil(controller.landing)
+        XCTAssertEqual(controller.draggingPayload?.id, "card")
+    }
+
+    func testExternalDropWithoutABitmapDoesNotFly() {
+        controller.beginExternalLanding(payload: payload(.drawer, "app"), snapshot: nil,
+                                        fromScreenRect: CGRect(x: 300, y: 300, width: 40, height: 40), kind: .returnToSlot)
+        XCTAssertNil(controller.landing)
+    }
+}

@@ -1475,6 +1475,12 @@ final class DragController: ObservableObject {
             retireCarrierAfterHandoff()
             return
         }
+        startLanding(flight)
+    }
+
+    /// The landing's common tail after `landing` is set: a drag's release (`teardown`) and an
+    /// outside drop's hand-over (`beginExternalLanding`) fly the same way.
+    private func startLanding(_ flight: Landing) {
         landingDeadline = CACurrentMediaTime() + DragLandingPlan.maximumDuration
         guard flight.kind == .returnToSlot else {
             // 吸进胶囊：终点是胶囊，不随布局变，没什么好等的。
@@ -1491,6 +1497,62 @@ final class DragController: ObservableObject {
         landingLaunchTask = task
         DispatchQueue.main.asyncAfter(deadline: .now() + DragLandingPlan.landingSettle, execute: task)
         beginLandingGrabWatch()
+    }
+
+    /// An app dropped from outside (Finder) takes over from the system's drag image: the carrier
+    /// appears at `fromScreenRect` — where that image was let go — and lands like a released drag,
+    /// into the slot the owning view reports (`.returnToSlot`) or into the capsule (`.stash`).
+    /// The system image vanishes on release and cannot be animated (`Docs/05`), so this is the
+    /// only way the drop flies. A candidate prepared under `payload.id` while hovering
+    /// (`prepareCandidate`) is claimed, so the carrier is on screen in the release frame; without
+    /// one the new bitmap may show a frame late. The caller commits the stores in the same turn and,
+    /// for `.returnToSlot`, reports the slot right after (`setLandingAnchor`) — an unchanged layout
+    /// reports nothing on its own, and the flight would land in place.
+    func beginExternalLanding(payload: DragPayload, snapshot: @autoclosure () -> CarrierSnapshot?,
+                              fromScreenRect: CGRect, kind: Landing.Kind) {
+        let prepared = candidate.flatMap { $0.payloadID == payload.id ? $0 : nil }
+        guard draggingPayload == nil, DragLandingSwitches.enabled,
+              fromScreenRect.width > 0, fromScreenRect.height > 0,
+              let image = prepared?.snapshot ?? snapshot() else {
+            if prepared != nil { clearCandidate(payloadID: payload.id) }
+            return
+        }
+        candidate = nil
+        abortLanding()
+        endHoverHold()
+        landingAnchor = nil
+        let center = CGPoint(x: fromScreenRect.midX, y: fromScreenRect.midY)
+        globalLocation = center
+        grabOffset = .zero
+        presentCarrier(snapshot: image, at: fromScreenRect, pose: .resting)
+        // Inside the drop callback an outer implicit transaction would hold this until the turn
+        // ends, behind the stores' re-render: two blank frames after the system image goes, not one.
+        CATransaction.flush()
+        let from = DragCarrierGeometry.topLeftCarriedCenter(pointer: center, grabOffset: .zero,
+                                                            panelFrame: carrierScreenFrame)
+        let scale = DragLandingPlan.carriedScale
+        let flight: DragLandingFlight?
+        switch kind {
+        case .stash:
+            flight = DragLandingPlan.stashFlight(from: from, fromScale: scale,
+                                                 targetScreenRect: stashTargetProvider(),
+                                                 carrierScreenFrame: carrierScreenFrame)
+        case .returnToSlot:
+            // No slot reported yet: hold in place; the anchor the caller reports next replaces it.
+            flight = DragLandingPlan.flight(from: from, fromScale: scale,
+                                            anchorScreenRect: landingAnchor?.rect,
+                                            carrierScreenFrame: carrierScreenFrame)
+                ?? DragLandingPlan.holdingFlight(at: from, scale: scale)
+        }
+        HoverTrace.landing(from: from, to: flight?.to, source: "external:\(kind)")
+        guard let flight else {
+            retireCarrier()
+            return
+        }
+        landingToken &+= 1
+        let landing = Landing(token: landingToken, payload: payload, kind: kind, flight: flight)
+        self.landing = landing
+        startLanding(landing)
     }
 
     /// 按住期结束：拿此刻最新的终点起飞。幂等（令牌对不上或已起飞就不做）。

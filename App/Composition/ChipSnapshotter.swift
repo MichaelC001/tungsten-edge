@@ -96,6 +96,25 @@ enum ChipSnapshotter {
     /// 画布初始尺寸：装得下最大档位的标题卡（约 200×70）还有富余，一般一次都不用扩。
     private static let defaultHostSize = CGSize(width: 400, height: 160)
 
+    /// An app icon as a carrier bitmap, `side` points square at `scale` — the image an app dragged
+    /// from outside shows, for the carrier that takes over from it on the capsule. No view renders
+    /// it in the bar, so it is drawn directly rather than through a hosting view.
+    static func iconSnapshot(of icon: NSImage, side: CGFloat, scale: CGFloat) -> CarrierSnapshot? {
+        let pixels = Int((side * scale).rounded())
+        guard pixels > 0,
+              let context = CGContext(data: nil, width: pixels, height: pixels, bitsPerComponent: 8, bytesPerRow: 0,
+                                      space: CGColorSpace(name: CGColorSpace.sRGB)!,
+                                      bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue) else { return nil }
+        let rect = CGRect(x: 0, y: 0, width: pixels, height: pixels)
+        NSGraphicsContext.saveGraphicsState()
+        NSGraphicsContext.current = NSGraphicsContext(cgContext: context, flipped: false)
+        icon.draw(in: rect)
+        NSGraphicsContext.restoreGraphicsState()
+        guard let image = context.makeImage() else { return nil }
+        let size = CGSize(width: side, height: side)
+        return CarrierSnapshot(image: image, size: size, contentSize: size, scale: scale)
+    }
+
     /// - Parameter screenPoint: 卡槽在屏幕上的位置（取哪块屏的 backing scale 就看它）。
     @MainActor
     static func snapshot<Content: View>(of content: Content, screenPoint: CGPoint) -> CarrierSnapshot? {
