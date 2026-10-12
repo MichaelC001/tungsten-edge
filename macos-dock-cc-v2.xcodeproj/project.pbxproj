@@ -8,8 +8,12 @@
 
 /* Begin PBXBuildFile section */
 		D7A0000000000000000000A2 /* DrawerAppDrop.swift in Sources */ = {isa = PBXBuildFile; fileRef = D7A0000000000000000000A0 /* DrawerAppDrop.swift */; };
+		D7A0000000000000000000D1 /* ExternalDragSpringLoad.swift in Sources */ = {isa = PBXBuildFile; fileRef = D7A0000000000000000000D0 /* ExternalDragSpringLoad.swift */; };
+		D7A0000000000000000000D2 /* ExternalDragSpringLoad.swift in Sources */ = {isa = PBXBuildFile; fileRef = D7A0000000000000000000D0 /* ExternalDragSpringLoad.swift */; };
+		D7A0000000000000000000E1 /* PanelCoordinator+ExternalDragSpring.swift in Sources */ = {isa = PBXBuildFile; fileRef = D7A0000000000000000000E0 /* PanelCoordinator+ExternalDragSpring.swift */; };
+		D7A0000000000000000000B3 /* ExternalDragSpringLoadTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = D7A0000000000000000000B2 /* ExternalDragSpringLoadTests.swift */; };
 		D7A0000000000000000000B1 /* DrawerAppDropTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = D7A0000000000000000000B0 /* DrawerAppDropTests.swift */; };
-		D7A0000000000000000000C1 /* DrawerCapsuleAppDropReceiver.swift in Sources */ = {isa = PBXBuildFile; fileRef = D7A0000000000000000000C0 /* DrawerCapsuleAppDropReceiver.swift */; };
+		D7A0000000000000000000C1 /* DrawerAppDropReceiver.swift in Sources */ = {isa = PBXBuildFile; fileRef = D7A0000000000000000000C0 /* DrawerAppDropReceiver.swift */; };
 		D7A0000000000000000000A1 /* DrawerAppDrop.swift in Sources */ = {isa = PBXBuildFile; fileRef = D7A0000000000000000000A0 /* DrawerAppDrop.swift */; };
 		A7A500000000000000000065 /* FinderTrash.swift in Sources */ = {isa = PBXBuildFile; fileRef = A7A500000000000000000001 /* FinderTrash.swift */; };
 		A7A50000000000000000007A /* TrashDirectoryWatcher.swift in Sources */ = {isa = PBXBuildFile; fileRef = A7A500000000000000000011 /* TrashDirectoryWatcher.swift */; };
@@ -534,8 +538,11 @@
 
 /* Begin PBXFileReference section */
 		D7A0000000000000000000B0 /* DrawerAppDropTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DrawerAppDropTests.swift; sourceTree = "<group>"; };
-		D7A0000000000000000000C0 /* DrawerCapsuleAppDropReceiver.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DrawerCapsuleAppDropReceiver.swift; sourceTree = "<group>"; };
+		D7A0000000000000000000C0 /* DrawerAppDropReceiver.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DrawerAppDropReceiver.swift; sourceTree = "<group>"; };
 		D7A0000000000000000000A0 /* DrawerAppDrop.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DrawerAppDrop.swift; sourceTree = "<group>"; };
+		D7A0000000000000000000D0 /* ExternalDragSpringLoad.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ExternalDragSpringLoad.swift; sourceTree = "<group>"; };
+		D7A0000000000000000000E0 /* PanelCoordinator+ExternalDragSpring.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "PanelCoordinator+ExternalDragSpring.swift"; sourceTree = "<group>"; };
+		D7A0000000000000000000B2 /* ExternalDragSpringLoadTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ExternalDragSpringLoadTests.swift; sourceTree = "<group>"; };
 		A7A500000000000000000001 /* FinderTrash.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "FinderTrash.swift"; sourceTree = "<group>"; };
 		A7A500000000000000000011 /* TrashDirectoryWatcher.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "TrashDirectoryWatcher.swift"; sourceTree = "<group>"; };
 		F1D0A0000000000000000001 /* FinderNewWindowTarget.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "FinderNewWindowTarget.swift"; sourceTree = "<group>"; };
@@ -944,6 +951,7 @@
 			isa = PBXGroup;
 			children = (
 				E9000000000000000000002A /* PanelCoordinator+Drawer.swift */,
+				D7A0000000000000000000E0 /* PanelCoordinator+ExternalDragSpring.swift */,
 				E9000000000000000000002B /* PanelCoordinator+Visibility.swift */,
 				E9000000000000000000002C /* PanelCoordinator+Layout.swift */,
 				E9000000000000000000002D /* PanelCoordinator+PanelSetup.swift */,
@@ -1034,7 +1042,7 @@
 				E90000000000000000000010 /* StripProjection.swift */,
 				E90000000000000000000011 /* ChipView.swift */,
 				E90000000000000000000012 /* DrawerCapsuleButton.swift */,
-				D7A0000000000000000000C0 /* DrawerCapsuleAppDropReceiver.swift */,
+				D7A0000000000000000000C0 /* DrawerAppDropReceiver.swift */,
 				E90000000000000000000013 /* ChipBadgeView.swift */,
 				E90000000000000000000014 /* StripFramePreferenceKeys.swift */,
 				E90000000000000000000015 /* StripFileDropDelegate.swift */,
@@ -1107,6 +1115,7 @@
 				A00000000000000000000F03 /* FinderAppleEventMatcher.swift */,
 				A00000000000000000009300 /* StripDropRouting.swift */,
 				D7A0000000000000000000A0 /* DrawerAppDrop.swift */,
+				D7A0000000000000000000D0 /* ExternalDragSpringLoad.swift */,
 				A0000000000000000000BD00 /* StackPopupGeometry.swift */,
 				A00000000000000000009900 /* FolderDropPlan.swift */,
 				A000000000000000000DE500 /* FileDragItemProvider.swift */,
@@ -1438,6 +1447,7 @@
 				A00000000000000000009560 /* KeptAppPositionTests.swift */,
 				A00000000000000000009570 /* DrawerOrderStoreTests.swift */,
 				D7A0000000000000000000B0 /* DrawerAppDropTests.swift */,
+				D7A0000000000000000000B2 /* ExternalDragSpringLoadTests.swift */,
 				A00000000000000000009770 /* MessagingWindowOrderingTests.swift */,
 				A00000000000000000009540 /* AppMembershipProjectionTests.swift */,
 				A00000000000000000009550 /* AppMembershipControllerTests.swift */,
@@ -1660,6 +1670,7 @@
 				E90000000000000000001032 /* DockStripView+Hover.swift in Sources */,
 				E90000000000000000001033 /* DockStripView+Actions.swift in Sources */,
 				E9000000000000000000102A /* PanelCoordinator+Drawer.swift in Sources */,
+				D7A0000000000000000000E1 /* PanelCoordinator+ExternalDragSpring.swift in Sources */,
 				E9000000000000000000102B /* PanelCoordinator+Visibility.swift in Sources */,
 				E9000000000000000000102C /* PanelCoordinator+Layout.swift in Sources */,
 				E9000000000000000000102D /* PanelCoordinator+PanelSetup.swift in Sources */,
@@ -1670,7 +1681,7 @@
 				E90000000000000000001010 /* StripProjection.swift in Sources */,
 				E90000000000000000001011 /* ChipView.swift in Sources */,
 				E90000000000000000001012 /* DrawerCapsuleButton.swift in Sources */,
-				D7A0000000000000000000C1 /* DrawerCapsuleAppDropReceiver.swift in Sources */,
+				D7A0000000000000000000C1 /* DrawerAppDropReceiver.swift in Sources */,
 				E90000000000000000001013 /* ChipBadgeView.swift in Sources */,
 				E90000000000000000001014 /* StripFramePreferenceKeys.swift in Sources */,
 				E90000000000000000001015 /* StripFileDropDelegate.swift in Sources */,
@@ -1770,6 +1781,7 @@
 					A00000000000000000009261 /* FileItemMenuBuilder.swift in Sources */,
 					A00000000000000000009301 /* StripDropRouting.swift in Sources */,
 					D7A0000000000000000000A1 /* DrawerAppDrop.swift in Sources */,
+					D7A0000000000000000000D1 /* ExternalDragSpringLoad.swift in Sources */,
 					A0000000000000000000BD01 /* StackPopupGeometry.swift in Sources */,
 					A00000000000000000009901 /* FolderDropPlan.swift in Sources */,
 					A000000000000000000DE501 /* FileDragItemProvider.swift in Sources */,
@@ -2003,6 +2015,7 @@
 				A00000000000000000009291 /* FolderSortTests.swift in Sources */,
 				A00000000000000000009302 /* StripDropRouting.swift in Sources */,
 				D7A0000000000000000000A2 /* DrawerAppDrop.swift in Sources */,
+				D7A0000000000000000000D2 /* ExternalDragSpringLoad.swift in Sources */,
 				A0000000000000000000BD02 /* StackPopupGeometry.swift in Sources */,
 				A00000000000000000009902 /* FolderDropPlan.swift in Sources */,
 				A000000000000000000DE502 /* FileDragItemProvider.swift in Sources */,
@@ -2063,6 +2076,7 @@
 				A00000000000000000009561 /* KeptAppPositionTests.swift in Sources */,
 				A00000000000000000009571 /* DrawerOrderStoreTests.swift in Sources */,
 				D7A0000000000000000000B1 /* DrawerAppDropTests.swift in Sources */,
+				D7A0000000000000000000B3 /* ExternalDragSpringLoadTests.swift in Sources */,
 				A00000000000000000007012 /* DrawerOrderStore.swift in Sources */,
 				A00000000000000000009771 /* MessagingWindowOrderingTests.swift in Sources */,
 				A00000000000000000009502 /* KeptAppStore.swift in Sources */,

@@ -50,7 +50,13 @@ final class DrawerOrderStore: ObservableObject {
     /// Puts `ids` first, in that order (`DrawerAppDrop.frontOrder`). Ids not yet members are
     /// placed too, so call it before adding them to `DrawerStore`.
     func moveToFront(_ ids: [String]) {
-        let next = DrawerAppDrop.frontOrder(existing: order, dropped: ids)
+        place(ids, at: .front)
+    }
+
+    /// Puts `ids` at `placement` as one block (`DrawerAppDrop.order`); same contract as
+    /// `moveToFront`: call it before the ids join `DrawerStore`.
+    func place(_ ids: [String], at placement: DrawerAppDrop.Placement) {
+        let next = DrawerAppDrop.order(existing: order, dropped: ids, placement: placement)
         if next != order { order = next; persist() }
     }
 

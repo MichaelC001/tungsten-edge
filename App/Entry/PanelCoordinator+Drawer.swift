@@ -151,6 +151,10 @@ extension PanelCoordinator {
                        usesLiquidGlass: usesLiquidGlass,
                        isDrawerOpen: { [weak self] in self?.drawerPanel?.isVisible == true },
                        onPrimaryAction: { [weak self] in self?.closeDrawerAfterAction() },
+                       onExternalDragHover: { [weak self] over in self?.externalDragHover(.drawer, over) },
+                       onDropApplications: { [weak self] urls, placement in
+                           self?.stashDroppedApplications(urls, placement: placement)
+                       },
                        runtime: runtime, drawerStore: drawerStore, messagingStore: messagingStore,
                        drawerOrderStore: drawerOrderStore, dragController: dragController,
                        keptAppStore: keptAppStore, runningApplicationStore: runningApplicationStore,
@@ -386,14 +390,14 @@ extension PanelCoordinator {
         }
     }
 
-    private func cancelSpringTimers() {
+    func cancelSpringTimers() {
         springOpenTimer?.invalidate(); springOpenTimer = nil
         springCloseTimer?.invalidate(); springCloseTimer = nil
     }
 
     private func armSpringOpenTimer() {
         // .common 模式：拖动时主 run loop 在事件跟踪模式,scheduledTimer(默认 default) 拖动期间不触发。
-        let timer = Timer(timeInterval: 0.4, repeats: false) { [weak self] _ in
+        let timer = Timer(timeInterval: ExternalDragSpringLoad.openDelay, repeats: false) { [weak self] _ in
             Task { @MainActor in self?.springOpenDrawer() }
         }
         RunLoop.main.add(timer, forMode: .common)
@@ -402,7 +406,7 @@ extension PanelCoordinator {
 
     /// 离开抽屉+胶囊 ~0.35s 后才收回（短暂蹭过任务条/空隙不收）。到点仍在拖、仍开、仍在外才真关。
     private func armSpringCloseTimer() {
-        let timer = Timer(timeInterval: 0.35, repeats: false) { [weak self] _ in
+        let timer = Timer(timeInterval: ExternalDragSpringLoad.closeDelay, repeats: false) { [weak self] _ in
             Task { @MainActor in self?.springCloseDrawerIfStillOutside() }
         }
         RunLoop.main.add(timer, forMode: .common)

@@ -5815,79 +5815,79 @@
         }
       }
     },
-    "Drag apps here from the taskbar": {
+    "Drag apps here": {
       "comment": "抽屉为空时的提示文字",
       "localizations": {
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "从钨极 Dock 栏把应用拖到这里"
+            "value": "把应用拖到这里"
           }
         },
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Drag apps here from the taskbar"
+            "value": "Drag apps here"
           }
         },
         "zh-Hant": {
           "stringUnit": {
             "state": "translated",
-            "value": "從工作列把App拖移到這裡"
+            "value": "把App拖移到這裡"
           }
         },
         "ja": {
           "stringUnit": {
             "state": "translated",
-            "value": "タスクバーからアプリをドラッグ"
+            "value": "アプリをここにドラッグ"
           }
         },
         "de": {
           "stringUnit": {
             "state": "translated",
-            "value": "Apps aus der Taskleiste ziehen"
+            "value": "Apps hierher ziehen"
           }
         },
         "fr": {
           "stringUnit": {
             "state": "translated",
-            "value": "Faites glisser des apps ici\ndepuis la barre des tâches"
+            "value": "Faites glisser des apps ici"
           }
         },
         "es": {
           "stringUnit": {
             "state": "translated",
-            "value": "Arrastra aquí las apps desde la barra de tareas"
+            "value": "Arrastra aquí las apps"
           }
         },
         "es-419": {
           "stringUnit": {
             "state": "translated",
-            "value": "Arrastra aquí las apps desde la barra de tareas"
+            "value": "Arrastra aquí las apps"
           }
         },
         "pt-BR": {
           "stringUnit": {
             "state": "translated",
-            "value": "Arraste apps da barra de tarefas para cá"
+            "value": "Arraste apps para cá"
           }
         },
         "pt-PT": {
           "stringUnit": {
             "state": "translated",
-            "value": "Arraste para aqui as aplicações da barra de tarefas"
+            "value": "Arraste as aplicações para aqui"
           }
         },
         "it": {
           "stringUnit": {
             "state": "translated",
-            "value": "Trascina qui le app\ndalla barra delle applicazioni"
+            "value": "Trascina qui le app"
           }
         },
         "ko": {
           "stringUnit": {
             "state": "translated",
-            "value": "작업 표시줄에서 앱을 여기로 드래그"
+            "value": "앱을 여기로 드래그"
           }
         }
       }

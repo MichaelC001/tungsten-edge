@@ -38,6 +38,13 @@ struct DrawerView: View {
     /// 点击 app 图标执行「唤出」或「启动」后回调。由 PanelCoordinator 注入，用于关闭抽屉。
     /// 「最小化（前台 → 收起）」不触发——抽屉保持打开。右键菜单、拖动操作同样不触发。
     var onPrimaryAction: () -> Void = {}
+    /// An app dragged from outside entered / left the open plate: the coordinator's spring-load
+    /// (`ExternalDragSpringLoad`). No default — an omission would compile into a drawer that
+    /// closes under the pointer while the app is being carried in.
+    let onExternalDragHover: (Bool) -> Void
+    /// App bundles released over the open plate, with where they go in the order (the cell under
+    /// the pointer). No default — an omission would compile into a drawer that refuses them.
+    let onDropApplications: ([URL], DrawerAppDrop.Placement) -> Void
 
     @EnvironmentObject var runtime: AppRuntime
     @EnvironmentObject var drawerStore: DrawerStore
@@ -122,7 +129,7 @@ struct DrawerView: View {
         let ids = visibleMembers
         let shape = gridShape(cellIDs: ids)
         return StackPopupChrome(title: String(localized: "Drawer"),
-                                note: shape.showsHint ? String(localized: "Drag apps here from the taskbar") : nil,
+                                note: shape.showsHint ? String(localized: "Drag apps here") : nil,
                                 layout: shape.layout,
                                 plate: .drawer,
                                 usesLiquidGlass: usesLiquidGlass,
@@ -146,6 +153,18 @@ struct DrawerView: View {
             drawerRootScreenRect = rect
             updateLandingAnchor()
         })
+        // An app dragged from outside (Finder) lands in the open plate. Over the whole window so
+        // the zone is one rect in screen space (the plate, not the 40pt transparent border);
+        // `hitTest` nil, so cells, menus and scrolling beneath are untouched. The closed drawer
+        // view of another screen is ordered out and never receives a drag.
+        .overlay(DrawerAppDropReceiver(
+            screenZone: { PanelGeometry.folderPopupPlateFrame(panelFrame: drawerRootScreenRect) },
+            onHoverChange: onExternalDragHover,
+            onDropApplications: { urls, screenPoint in
+                let point = CGPoint(x: screenPoint.x - drawerRootScreenRect.minX,
+                                    y: drawerRootScreenRect.maxY - screenPoint.y)   // 屏幕(左下) → drawer(左上)
+                onDropApplications(urls, DrawerAppDrop.placement(at: point, frames: drawerFrames, order: visibleMembers))
+            }))
         .coordinateSpace(name: "drawer")
         // **抽屉打开没有入场动画**（owner 2026-09-04：优先保任务条的动画，抽屉区可能重做）。
         // 之前的「面板淡入 + 内容 0.96→1 放大 + 卡片阶梯浮现」每次打开都要把整棵抽屉按入场前状态重算一遍，
@@ -461,6 +480,8 @@ struct DrawerRootView: View {
     let usesLiquidGlass: Bool
     let isDrawerOpen: () -> Bool
     let onPrimaryAction: () -> Void
+    let onExternalDragHover: (Bool) -> Void
+    let onDropApplications: ([URL], DrawerAppDrop.Placement) -> Void
     let runtime: AppRuntime
     let drawerStore: DrawerStore
     let messagingStore: MessagingAppStore
@@ -476,7 +497,9 @@ struct DrawerRootView: View {
                    onPanelSizeChange: onPanelSizeChange,
                    usesLiquidGlass: usesLiquidGlass,
                    isDrawerOpen: isDrawerOpen,
-                   onPrimaryAction: onPrimaryAction)
+                   onPrimaryAction: onPrimaryAction,
+                   onExternalDragHover: onExternalDragHover,
+                   onDropApplications: onDropApplications)
             .environmentObject(runtime).environmentObject(drawerStore).environmentObject(messagingStore)
             .environmentObject(drawerOrderStore).environmentObject(dragController)
             .environmentObject(keptAppStore).environmentObject(runningApplicationStore)

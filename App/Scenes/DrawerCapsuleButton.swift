@@ -30,9 +30,13 @@ struct DrawerCapsuleButton: View {
     /// An app cell dispatched an "open" (launch / unhide): an open drawer closes, exactly as
     /// after a tap inside it. No default — an omission would leave the drawer open.
     let onPrimaryAction: () -> Void
-    /// App bundles dropped from outside onto the capsule (`DrawerCapsuleAppDropReceiver`).
+    /// App bundles dropped from outside onto the capsule (`DrawerAppDropReceiver`).
     /// No default — an omission would compile into a capsule that silently refuses them.
     let onDropApplications: ([URL]) -> Void
+    /// An app dragged from outside entered / left the capsule: the coordinator's spring-load
+    /// (`ExternalDragSpringLoad`). No default — an omission would compile into a capsule that
+    /// lights up but never opens the drawer.
+    let onExternalDragHover: (Bool) -> Void
 
     /// Cells are numbered row-major, 0...3; the last one is the expand cell.
     @State private var hoveredCell: Int?
@@ -107,9 +111,13 @@ struct DrawerCapsuleButton: View {
                         usesSystemVariant: DockGlassPresentation.usesSystemVariant))
         // After the scale, so the hover zoom never moves the zone; inside the shadow padding, so
         // the zone is the visible capsule + tolerance — the strip→capsule stash zone.
-        .overlay(DrawerCapsuleAppDropReceiver(
-            onHoverChange: { isAppDropTargeted = $0 },
-            onDropApplications: { urls in
+        .overlay(DrawerAppDropReceiver(
+            screenZone: nil,
+            onHoverChange: { over in
+                isAppDropTargeted = over
+                onExternalDragHover(over)
+            },
+            onDropApplications: { urls, _ in
                 // The landed app takes the first cell; a capsule left on a later page would hide it
                 // for the 3s its return waits.
                 pager.showFirstPage(pageCount: pageCount)

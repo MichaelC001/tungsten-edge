@@ -178,10 +178,12 @@ extension PanelCoordinator {
         }
     }
 
-    /// App bundles dropped from Finder onto the capsule: into the drawer at the front, in drag
-    /// order, with kept turned on — as a drag into the drawer does (`Docs/27`). An app already on
-    /// the bar leaves it through the projections, as when its card is stashed.
-    func stashDroppedApplications(_ urls: [URL]) {
+    /// App bundles dropped from Finder onto the capsule (`.front`) or into the open drawer (where
+    /// the pointer was): into the drawer in drag order, with kept turned on — as a drag into the
+    /// drawer does (`Docs/27`). An app already on the bar leaves it through the projections, as
+    /// when its card is stashed.
+    func stashDroppedApplications(_ urls: [URL], placement: DrawerAppDrop.Placement) {
+        externalDragDropped()
         let paths = urls.map(\.path)
         let orderStore = drawerOrderStore
         let membership = appMembershipController
@@ -194,7 +196,7 @@ extension PanelCoordinator {
                 guard !ids.isEmpty else { return }
                 // Order first: `reconciled(members:)` appends a member it has no place for, so a
                 // new member added before its place exists shows up last for a frame.
-                orderStore.moveToFront(ids)
+                orderStore.place(ids, at: placement)
                 for id in ids {
                     membership.moveToDrawer(id)
                     membership.setKept(id, enabled: true)
@@ -219,7 +221,8 @@ extension PanelCoordinator {
                 usesLiquidGlass: usesLiquidGlass,
                 action: { [weak self] in self?.toggleDrawer() },
                 onPrimaryAction: { [weak self] in self?.closeDrawerAfterAction() },
-                onDropApplications: { [weak self] urls in self?.stashDroppedApplications(urls) }
+                onDropApplications: { [weak self] urls in self?.stashDroppedApplications(urls, placement: .front) },
+                onExternalDragHover: { [weak self] over in self?.externalDragHover(.capsule, over) }
             )
                 .environmentObject(runtime)
                 .environmentObject(drawerStore)

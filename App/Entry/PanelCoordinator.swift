@@ -224,9 +224,15 @@ final class PanelCoordinator: NSObject {
     var resizeCursorReassertTimer: Timer?
     /// 抽屉拖回任务条·"松手才变长"：转正进行中冻结任务条宽度，转正态结束（松手落定 / 拖出还原）再 relayout。
     var stripSlotCollapseSubscription: AnyCancellable?
+    /// The drawer's two spring-load timer slots, shared by the bar's card drags (`updateSpringLoad`)
+    /// and drags from outside the app (`PanelCoordinator+ExternalDragSpring`): the two never run at
+    /// once (one needs the button down on a chip, the other on another app), and one pair of slots
+    /// keeps one drawer under one clock.
     var springOpenTimer: Timer?
     /// 离开抽屉+胶囊后**延迟收回**的定时器（owner 2026-06-22：要延迟,不要一蹭到任务条就关）。
     var springCloseTimer: Timer?
+    /// Where the drag from outside is, and which timer it armed (`ExternalDragSpringLoad`).
+    var externalDragSpring = ExternalDragSpringLoad.State()
     /// 本次拖动是否**从任务条发起**。任务条卡进抽屉体会被"转正"成 `.drawer` 来源（见 DragController），
     /// 但弹簧（开/延迟收/重开）整段拖动都该生效,所以认这个、不认实时 source（owner 2026-06-22）。
     var dragOriginatedFromStrip = false
