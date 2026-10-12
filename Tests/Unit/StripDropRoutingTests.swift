@@ -473,18 +473,17 @@ final class StripDropRoutingTests: XCTestCase {
     }
 
     func testOnlyAnAppNotYetAnywhereMayWidenTheBarWhileHovering() {
-        XCTAssertTrue(StripDropRouting.appDropMayWidenOnHover(isRunning: false, isInDrawer: false, isMessaging: false,
+        XCTAssertTrue(StripDropRouting.appDropMayWidenOnHover(isRunning: false, isMessaging: false,
                                                               isFinder: false, hasEntryOnStrip: false))
-        let blockers: [(Bool, Bool, Bool, Bool, Bool)] = [
-            (true, false, false, false, false),
-            (false, true, false, false, false),
-            (false, false, true, false, false),
-            (false, false, false, true, false),
-            (false, false, false, false, true),
+        let blockers: [(Bool, Bool, Bool, Bool)] = [
+            (true, false, false, false),
+            (false, true, false, false),
+            (false, false, true, false),
+            (false, false, false, true),
         ]
         for b in blockers {
-            XCTAssertFalse(StripDropRouting.appDropMayWidenOnHover(isRunning: b.0, isInDrawer: b.1, isMessaging: b.2,
-                                                                   isFinder: b.3, hasEntryOnStrip: b.4), "\(b)")
+            XCTAssertFalse(StripDropRouting.appDropMayWidenOnHover(isRunning: b.0, isMessaging: b.1,
+                                                                   isFinder: b.2, hasEntryOnStrip: b.3), "\(b)")
         }
     }
 }

@@ -44,6 +44,14 @@ final class AppMembershipController: ObservableObject {
         drawerStore.add(bundleID)
     }
 
+    /// Placement-only move out of the drawer, for an app dropped from outside onto the bar: a kept
+    /// app still placed in the drawer shows only there, so the drop would otherwise land nothing on
+    /// the bar. Same transaction as dragging its drawer cell out (`DragController.convertDrawerToStrip`).
+    func moveOutOfDrawer(_ bundleID: String) {
+        guard drawerStore.contains(bundleID) else { return }
+        drawerStore.remove(bundleID)
+    }
+
     /// 拖动落定后的 kept 补勾（owner 2026-08-06）。规则本体仍是纯决策
     /// `DragConversionPlan.enablesKeptOnDrop`；这里只是把「唯一一处从控制器外面写 kept」收进
     /// 单一变更边界（2026-09-05）。**每次拖入都重新打开**，不是一次性播种——与 `markMessaging`

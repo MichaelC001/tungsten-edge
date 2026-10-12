@@ -99,7 +99,6 @@ extension DockStripView {
         }
         return StripDropRouting.appDropMayWidenOnHover(
             isRunning: runningApplicationStore.isRunning(bundleID),
-            isInDrawer: drawerStore.contains(bundleID),
             isMessaging: messagingStore.contains(bundleID),
             isFinder: FinderTaskbarPolicy.isFinder(bundleID),
             hasEntryOnStrip: !freshProjection().liveEntryIDs(bundleID: bundleID).isEmpty
@@ -220,6 +219,8 @@ extension DockStripView {
     /// 从访达把应用拖进任务条：勾「在程序坞中保留」+ 落到光标那个位置（owner 2026-09-07）。
     /// 语义与「拖进抽屉会顺手勾上保留」并列（`Docs/27`）：只管进、不管出，每次拖入都重新勾上，
     /// 所以已经保留的应用再拖一次 = 换个位置，不是错误。
+    /// An app placed in the drawer (hidden ones included) is moved out first, as when its drawer cell
+    /// is dragged onto the bar: a kept app shows only in the drawer, so the drop would add nothing here.
     ///
     /// - Parameter x: 落点 x（"strip" 空间），落位判定与抽屉转正共用 `StripBlockLanding`。
     func handleExternalApplicationDrop(_ urls: [URL], atX x: CGFloat) {
@@ -253,6 +254,7 @@ extension DockStripView {
             stripOrderStore.stageExternalBlock(bundleID: bundleID,
                                                relativeTo: target?.id,
                                                after: target?.after ?? false)
+            appMembershipController.moveOutOfDrawer(bundleID)
             appMembershipController.setKept(bundleID, enabled: true)
             // **同步**跑一次 sync 把刚暂存的落点块消费掉。不能等 `onChange(of: keptAppStore.bundleIDs)`：
             // 那一趟什么时候跑不确定，先 commit 会把暂存丢掉（图标落到末尾），不 commit 则以后每次
