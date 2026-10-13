@@ -2,7 +2,7 @@ import AppKit
 import SwiftUI
 
 /// How a pinned folder's chip looks while its popup is open, as on the native Dock: fan and grid
-/// swap the cover for the Dock's 「square + arrow」 and dim it; the list only dims.
+/// swap the cover for the Dock's 「square + arrow」; the list keeps the cover and dims it.
 enum FolderChipOpenStyle: Equatable {
     case pileArrow
     case dimmedOnly
@@ -138,8 +138,9 @@ struct PinnedFolderChip: View {
             }
         }
         .frame(width: slot, height: slot)
-        // Selected while open, as the native tile: multiplied by grey 0.4, no transition.
-        .colorMultiply(openStyle == nil ? .white : Color(white: Self.openDimming))
+        // The list leaves the cover and dims it; fan and grid show the square + arrow undimmed
+        // (native reads it at the art's own brightness).
+        .colorMultiply(openStyle == .dimmedOnly ? Color(white: Self.openDimming) : .white)
         .overlay {
             RoundedRectangle(cornerRadius: visible * Self.visibleCornerFraction, style: .continuous)
                 .strokeBorder(theme.folderDropRing.color(active: isDropTarget), lineWidth: 1.5)
@@ -148,8 +149,9 @@ struct PinnedFolderChip: View {
         .scaleEffect(isDropTarget ? 1.08 : 1)
     }
 
-    /// The native tile's selection filter (`multiplyColor`, grey 0.4).
-    private static let openDimming: CGFloat = 0.4
+    /// The native list's dimmed tile, read off the screen: ×0.476 on every channel (the Dock's code
+    /// multiplies by 0.4, but that is not what reaches the screen).
+    private static let openDimming: CGFloat = 0.476
 
     /// Same squircle fraction as the self-drawn shelf tile (drop-target ring only).
     private static let visibleCornerFraction: CGFloat = 0.215
