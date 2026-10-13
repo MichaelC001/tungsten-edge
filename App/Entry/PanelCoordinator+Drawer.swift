@@ -15,6 +15,7 @@ extension PanelCoordinator {
         drawerWantsOpen = true
         setAutoHideInhibitor(.drawerOpen, active: true)
         drawerSpringOpened = false   // 默认手动开；弹簧路径在 springOpenDrawer 里再置 true
+        setDrawerRaised(false)       // a reopen mid-fade may still hold the outside drag's level
 
         let screen = panelCurrentScreen(panel: mainPanel)
         let (capsuleRef, limits) = drawerAnchor(on: screen)
@@ -253,6 +254,7 @@ extension PanelCoordinator {
             Task { @MainActor [weak self] in
                 guard let self, !self.drawerWantsOpen else { return }   // 淡出中又开了 → 别 orderOut
                 panel.orderOut(nil)
+                self.setDrawerRaised(false)
                 self.drawerArrow.scrollGeneration &+= 1   // next open starts at the grid's top
                 self.drawerShowing.end()
             }
@@ -276,6 +278,7 @@ extension PanelCoordinator {
         stopDrawerArrowFollow()
         drawerPanel?.alphaValue = 0
         drawerPanel?.orderOut(nil)
+        setDrawerRaised(false)
         drawerArrow.scrollGeneration &+= 1
         drawerShowing.end()
     }

@@ -173,6 +173,9 @@ extension PanelCoordinator {
         // owner 说的「没有原生那么干脆」是这 0.1s 淡入带来的**软**，不是慢
         // （原生 Dock 的应用名是直接出现的）。同理离开也是直接收，见 `.exit` 分支。
         panel.alphaValue = 1
+        // A bar card's bubble can overlap the open drawer's bottom row: never under a raised one.
+        let level = drawerWantsOpen ? max(drawerPanel?.level ?? .floating, .floating) : .floating
+        if panel.level != level { panel.level = level }
         if !panel.isVisible { panel.orderFrontRegardless() }
         pinOverlappingPanelIfNeeded(panel)
         startWindowTitleTooltipWatchdog()

@@ -47,6 +47,19 @@ extension PanelCoordinator {
                 closeDrawer()
             }
         }
+        // Spring-opened or already open: the drag may come out of a system panel above
+        // `.floating`. Held until the drawer closes, so the landing stays in sight after the drop.
+        if externalDragSpring.isOver, drawerWantsOpen { setDrawerRaised(true) }
+    }
+
+    /// The drawer's only level writer: `PanelLevel.raisedDrawer` for a drag from outside,
+    /// `.floating` otherwise (every open starts there, every close returns there).
+    func setDrawerRaised(_ raised: Bool) {
+        guard let panel = drawerPanel else { return }
+        let level: NSWindow.Level = raised ? PanelLevel.raisedDrawer : .floating
+        guard panel.level != level else { return }
+        panel.level = level
+        if panel.isVisible { pinOverlappingPanelIfNeeded(panel) }
     }
 
     /// `.common` mode: while a drag session runs, the main run loop is in event tracking and a

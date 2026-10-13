@@ -77,6 +77,16 @@ final class ManualPanelHost {
     }
 }
 
+/// Window levels above `.floating`, the level every panel is created at.
+enum PanelLevel {
+    /// The drawer while a drag from outside has it open. The system Apps panel (Spotlight's app
+    /// list, a window of `Siri`) sits at 23 on macOS 27; at `.floating` the drawer opened under it.
+    static let raisedDrawer = NSWindow.Level.statusBar
+    /// The drag carrier: above every panel of ours, the raised drawer included — an app dropped
+    /// from outside lands on the carrier, into that drawer.
+    static let carrier = NSWindow.Level(rawValue: raisedDrawer.rawValue + 1)
+}
+
 /// 七扇悬浮面板共用的窗口行为集合。**必须只有这一处字面量**：
 /// issue #19 的修复要把这套值原样重新赋一遍来补回「常驻所有桌面」的成员资格，
 /// 复原的值和创建时的值一旦分叉，修复就会静默地把面板改成另一种行为。

@@ -851,7 +851,7 @@ final class DragController: ObservableObject {
     /// **Idle carrier panels are parked off every display; they are never ordered out.**
     ///
     /// The panels are resident (see `retireCarrier`), transparent and mouse-transparent, yet as
-    /// full-screen windows at `.floating + 1` they head the on-screen window list. Third-party
+    /// full-screen windows at `PanelLevel.carrier` they head the on-screen window list. Third-party
     /// window managers that resolve "which window is under the pointer" from
     /// `CGWindowListCopyWindowInfo` (Rectangle 1.100 takes the first window with level < 21 whose
     /// bounds contain the pointer, alpha not consulted) picked our carrier for every mouse-down and
@@ -1975,15 +1975,11 @@ final class DragController: ObservableObject {
                             backing: .buffered, defer: false)
         panel.collectionBehavior = PanelCollectionBehavior.standard
         panel.isFloatingPanel = true
-        // **层级必须在 `isFloatingPanel` 之后设，而且要比任务条/抽屉/胶囊（都是 `.floating`）高一级。**
-        // 原来写在前面的 `.popUpMenu` 被 `isFloatingPanel = true` 静默改回了 `.floating`（AppKit 语义：
-        // 浮动面板就是 floating 层）——载体和任务条同层，谁后 order front 谁在上。任务条在几处会
-        // 重新 order front（显隐周期、换屏、初始布局），实测 2026-08-19：松手后约 0.5s 任务条跳到
-        // 载体之上，正在飞回卡槽的副本一进任务条面板的矩形（含 20pt 投影边距）就被整个遮住，
-        // 卡显形前有 250ms 什么都看不见——owner 报的「落位消失/重影」；拖动中指针离开又回到条上
-        // 也会同样被遮，就是「拖快了图标消失」。高一级之后与 ordering 无关，永远压在我们自己
-        // 的面板之上，又不越过系统菜单。
-        panel.level = NSWindow.Level(rawValue: NSWindow.Level.floating.rawValue + 1)
+        // **Set after `isFloatingPanel = true`, which silently resets it to `.floating`, and keep it
+        // above every panel of ours, the raised drawer included.** At the bar's level the bar's own
+        // re-order-fronts (show cycles, screen switches, layout) covered the flying copy whenever it
+        // crossed the bar's frame — the card vanished mid-landing. Still below system menus.
+        panel.level = PanelLevel.carrier
         panel.isMovable = false
         panel.isOpaque = false
         panel.backgroundColor = NSColor(white: 1.0, alpha: 0.0)
