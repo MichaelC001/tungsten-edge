@@ -88,3 +88,127 @@ struct StackReopenCooldown {
         return time - lastClosed.at >= Self.interval
     }
 }
+
+/// The cover pile on a folder chip, as fractions of the icon slot: each item is fitted into a
+/// square canvas centred on the slot's vertical axis; items behind shrink and climb, so the whole
+/// pile spans the slot's height. Measured off the system Dock at tile size 40. The chip draws
+/// these and the fan flies its items out of and back into them, so both read one table.
+enum FolderCoverPile {
+    static let depths: [(canvas: CGFloat, centerY: CGFloat)] = [
+        (0.925, 0.05), (0.85, -0.04), (0.74, -0.13),
+    ]
+
+    /// Layer `k`'s square in screen coordinates (y up) for a slot centred at `slotCenter`. Items
+    /// past the pile share its last layer, as the native fan does.
+    static func layerRect(_ k: Int, slotCenter: CGPoint, slot: CGFloat) -> CGRect {
+        let depth = depths[min(max(k, 0), depths.count - 1)]
+        let side = slot * depth.canvas
+        // `centerY` is measured downward (SwiftUI); the screen is y-up.
+        let center = CGPoint(x: slotCenter.x, y: slotCenter.y - slot * depth.centerY)
+        return CGRect(x: center.x - side / 2, y: center.y - side / 2, width: side, height: side)
+    }
+}
+
+/// The native fan's geometry (`FanLayer layout`): 64pt items stacked 64pt apart up a circle of
+/// radius 3000 whose centre sits 3000 to the right of the stack's tile, each turned clockwise by
+/// its angle on that circle. Screen coordinates, y up.
+struct StackFanLayout: Equatable {
+    static let itemSide: CGFloat = 64
+    static let radius: CGFloat = 3000
+    /// The name capsule: 13pt text, 13pt padding each side, at least 26 high, its right edge 5pt
+    /// left of the item.
+    static let labelFontSize: CGFloat = 13
+    static let labelPadding: CGFloat = 13
+    static let labelMinHeight: CGFloat = 26
+    static let labelGap: CGFloat = 5
+    static let labelMaxTextWidth: CGFloat = 500
+    /// `stackitemshadow` drawn 96 × 96, centred 15pt below the item, at opacity 0.4.
+    static let shadowSide: CGFloat = 96
+    static let shadowDrop: CGFloat = 15
+    static let shadowOpacity: Float = 0.4
+
+    struct Item: Equatable {
+        var center: CGPoint
+        /// Radians; negative turns clockwise.
+        var rotation: CGFloat
+        var labelSize: CGSize
+    }
+
+    var items: [Item]
+
+    /// How far the first item's centre sits above the open tile's centre, from two native
+    /// readings (square 25.5 → 67, 33 → 73.5); used as is outside them too.
+    static func firstItemRise(squareSide: CGFloat) -> CGFloat {
+        67 + (squareSide - 25.5) * 0.867
+    }
+
+    /// A capsule for a name of `textSize` (one line, already cut to `labelMaxTextWidth`).
+    static func labelSize(textSize: CGSize) -> CGSize {
+        CGSize(width: min(textSize.width, labelMaxTextWidth) + 2 * labelPadding,
+               height: max(textSize.height, labelMinHeight))
+    }
+
+    init(items: [Item]) { self.items = items }
+
+    init(tileCenter: CGPoint, squareSide: CGFloat, labelSizes: [CGSize]) {
+        let rise = Self.firstItemRise(squareSide: squareSide)
+        items = labelSizes.enumerated().map { index, labelSize in
+            let t = rise + Self.itemSide * CGFloat(index)
+            let dx = Self.radius - (Self.radius * Self.radius - t * t).squareRoot()
+            return Item(center: CGPoint(x: tileCenter.x + dx, y: tileCenter.y + t),
+                        rotation: -asin(t / Self.radius),
+                        labelSize: labelSize)
+        }
+    }
+
+    /// The item's 64pt square, turned, as an axis-aligned box.
+    func iconBox(_ index: Int) -> CGRect {
+        let item = items[index]
+        let half = Self.itemSide / 2
+        return Self.turnedBox(CGRect(x: -half, y: -half, width: Self.itemSide, height: Self.itemSide), item: item)
+    }
+
+    /// The name capsule in the item's own frame (origin at the item's centre, unturned).
+    static func labelRect(for item: Item) -> CGRect {
+        CGRect(x: -itemSide / 2 - labelGap - item.labelSize.width,
+               y: -item.labelSize.height / 2,
+               width: item.labelSize.width, height: item.labelSize.height)
+    }
+
+    static func shadowRect() -> CGRect {
+        CGRect(x: -shadowSide / 2, y: -shadowDrop - shadowSide / 2, width: shadowSide, height: shadowSide)
+    }
+
+    /// Everything the fan draws — icons, capsules, shadows — as one box.
+    var boundingBox: CGRect {
+        items.reduce(CGRect.null) { box, item in
+            box.union(Self.turnedBox(Self.labelRect(for: item), item: item))
+                .union(Self.turnedBox(Self.shadowRect(), item: item))
+                .union(Self.turnedBox(CGRect(x: -Self.itemSide / 2, y: -Self.itemSide / 2,
+                                             width: Self.itemSide, height: Self.itemSide), item: item))
+        }
+    }
+
+    /// `rect` (in the item's frame) turned with the item, as an axis-aligned box on screen.
+    static func turnedBox(_ rect: CGRect, item: Item) -> CGRect {
+        let turn = CGAffineTransform(rotationAngle: item.rotation)
+        let corners = [CGPoint(x: rect.minX, y: rect.minY), CGPoint(x: rect.maxX, y: rect.minY),
+                       CGPoint(x: rect.minX, y: rect.maxY), CGPoint(x: rect.maxX, y: rect.maxY)]
+            .map { $0.applying(turn) }
+        let xs = corners.map(\.x), ys = corners.map(\.y)
+        return CGRect(x: item.center.x + xs.min()!, y: item.center.y + ys.min()!,
+                      width: xs.max()! - xs.min()!, height: ys.max()! - ys.min()!)
+    }
+
+    /// Whether a screen point lands on item `index`'s icon square (not its capsule).
+    func iconContains(_ point: CGPoint, index: Int) -> Bool {
+        let item = items[index]
+        let local = CGPoint(x: point.x - item.center.x, y: point.y - item.center.y)
+            .applying(CGAffineTransform(rotationAngle: -item.rotation))
+        return abs(local.x) <= Self.itemSide / 2 && abs(local.y) <= Self.itemSide / 2
+    }
+
+    func itemIndex(at point: CGPoint) -> Int? {
+        items.indices.last { iconContains(point, index: $0) }
+    }
+}

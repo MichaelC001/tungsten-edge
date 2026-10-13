@@ -125,7 +125,10 @@ extension PanelCoordinator {
         switch folderPresentation(path: path, origin: origin, entries: preloadedEntries) {
         case .list:
             presentListPopup(path: path, entries: preloadedEntries, anchorVisibleRect: anchorVisibleRect)
-        case .grid, .fan:
+        case let .fan(fileItems, hiddenCount):
+            presentFanPopup(path: path, entries: Array((preloadedEntries ?? []).prefix(fileItems)),
+                            hiddenCount: hiddenCount, anchorVisibleRect: anchorVisibleRect)
+        case .grid:
             // 首帧完整**包含图标**：预热首批可见格的图标缓存,否则格子先出、图标按解析顺序从左上角逐个浮现。
             if let entries = preloadedEntries {
                 FolderIconResolver.warm(paths: entries.prefix(Self.popupWarmCount).map(\.url.path), timeout: 0.1)
@@ -229,11 +232,32 @@ extension PanelCoordinator {
     /// clicks) it can't go back, and its 40pt border would swallow clicks meant for the chips
     /// under it. Windows are cheap; the session's ends with it.
     private func makePopupPanel() -> NSPanel {
+        let panel = sparePopupPanel ?? newPopupPanel()
+        sparePopupPanel = nil
+        folderPopupPanels.append(panel)
+        DispatchQueue.main.async { [weak self] in self?.prepareSparePopupPanel() }
+        return panel
+    }
+
+    /// A window already on screen (1 × 1, empty, clicks pass through its clear pixels): a popup
+    /// in a window ordered in at the click showed ~75ms later than one handed a window already
+    /// on screen.
+    func prepareSparePopupPanel() {
+        guard sparePopupPanel == nil, let dock = dockPanel else { return }
+        let panel = newPopupPanel()
+        let screen = panelCurrentScreen(panel: dock).frame
+        panel.contentView = NSView()
+        panel.setFrame(CGRect(x: screen.minX, y: screen.maxY - 1, width: 1, height: 1), display: false)
+        panel.orderFrontRegardless()
+        pinOverlappingPanelIfNeeded(panel)
+        sparePopupPanel = panel
+    }
+
+    private func newPopupPanel() -> NSPanel {
         let panel = makeFloatingPanel(contentRect: NSRect(origin: .zero, size: lastPopupSize),
                                       usesLiquidGlass: usesLiquidGlass)
         configurePanel(panel, backgroundColor: NSColor(white: 1.0, alpha: 0.0), appliesLevelOverride: false)
         panel.isReleasedWhenClosed = false
-        folderPopupPanels.append(panel)
         return panel
     }
 
@@ -361,7 +385,11 @@ extension PanelCoordinator {
             exitingPopupSession = session
             // A popup on its way out takes no clicks: they land on whatever the user aimed at.
             panel.ignoresMouseEvents = true
-            playGridClose(session)
+            if session.presentation == .fan {
+                playFanClose(session)
+            } else {
+                playGridClose(session)
+            }
         }
     }
 
@@ -484,7 +512,7 @@ extension PanelCoordinator {
         case .grid:
             return PanelGeometry.folderPopupPlateFrame(panelFrame: panel.frame).contains(point)
         case .fan:
-            return false
+            return session.fanView?.layout.itemIndex(at: point) != nil
         case .list:
             return false
         }
@@ -625,6 +653,157 @@ extension PanelCoordinator {
         folderPopupFrameTimer = timer
         folderPopupTweenTarget = target
         RunLoop.main.add(timer, forMode: .common)
+    }
+
+    // MARK: - Fan
+
+    private func presentFanPopup(path: String, entries: [FolderContentsLoader.Entry], hiddenCount: Int,
+                                 anchorVisibleRect anchor: CGRect) {
+        guard let dock = dockPanel else { return }
+        let session = beginPopupSession(content: .folder(path: path), origin: .pinnedFolder,
+                                        presentation: .fan, anchor: anchor)
+        let id = session.id
+        let folderURL = URL(fileURLWithPath: path)
+        // The first frame is whole: a fan holds at most a screenful of items, warm them all.
+        FolderIconResolver.warm(paths: entries.map(\.url.path), timeout: 0.1)
+
+        var items = entries.map { StackFanItem(kind: .entry($0), title: $0.name) }
+        items.append(StackFanItem(kind: .openInFinder,
+                                  title: hiddenCount > 0
+                                      ? FolderViewResolution.moreInFinderTitle(hiddenCount: hiddenCount)
+                                      : String(localized: "Open in Finder")))
+        let font = NSFont.systemFont(ofSize: StackFanLayout.labelFontSize)
+        let labelSizes = items.map { item in
+            StackFanLayout.labelSize(textSize: (item.title as NSString).size(withAttributes: [.font: font]))
+        }
+        let scale = settingsStore.dockPanelHeight.scale
+        let tileCenter = CGPoint(x: anchor.midX, y: anchor.midY)
+        let layout = StackFanLayout(tileCenter: tileCenter,
+                                    squareSide: ChipPillMetrics.bareIconVisibleSlot * scale,
+                                    labelSizes: labelSizes)
+        // Items fly out of the cover the chip showed: its pile's layers, or the whole slot when
+        // it showed the folder's own icon.
+        let slot = ChipPillMetrics.bareIconSlot * scale
+        let showsPile = pinnedFolderStore.displayMode(for: path) == .stack
+            && !(folderCoverStore.covers[path]?.layers.isEmpty ?? true)
+        let slotRect = CGRect(x: tileCenter.x - slot / 2, y: tileCenter.y - slot / 2, width: slot, height: slot)
+        let pileRects = items.indices.map { index in
+            showsPile ? FolderCoverPile.layerRect(index, slotCenter: tileCenter, slot: slot) : slotRect
+        }
+        let flightFrame = pileRects.reduce(layout.boundingBox.union(slotRect)) { $0.union($1) }
+            .insetBy(dx: -2, dy: -2).integral
+        var restFrame = flightFrame
+        restFrame.origin.y = max(flightFrame.minY, anchor.maxY)
+        restFrame.size.height = flightFrame.maxY - restFrame.minY
+        session.fanFlightFrame = flightFrame
+        session.fanRestFrame = restFrame
+
+        let panel = makePopupPanel()
+        session.panel = panel
+        let reducedMotion = NSWorkspace.shared.accessibilityDisplayShouldReduceMotion
+        let fan = StackPopupFanView(
+            items: items, layout: layout, pileRects: pileRects, windowFrame: flightFrame,
+            actions: .init(
+                activate: { [weak self] index in
+                    guard let self, self.activePopupSession?.id == id else { return }
+                    if index < entries.count {
+                        NSWorkspace.shared.open(entries[index].url)
+                    } else {
+                        NSWorkspace.shared.open(folderURL)
+                    }
+                    self.closeFolderPopup(sessionID: id)
+                },
+                dismiss: { [weak self] in self?.closeFolderPopup(sessionID: id) },
+                menu: { [weak self] index in
+                    guard index < entries.count else { return nil }
+                    let entry = entries[index]
+                    let canPin = entry.isDirectory && !(self?.pinnedFolderStore.contains(entry.url.path) ?? true)
+                    return FileItemMenuBuilder.menu(for: .init(
+                        url: entry.url,
+                        isDirectory: entry.isDirectory,
+                        closePopup: { [weak self] in self?.closeFolderPopup(sessionID: id) },
+                        pinFolder: canPin ? { [weak self] in self?.pinnedFolderStore.add(entry.url.path) } : nil))
+                }))
+        session.fanView = fan
+        session.contentHost = fan
+        panel.contentView = fan
+        panel.setFrame(reducedMotion ? restFrame : flightFrame, display: false)
+        fan.windowWillTake(panel.frame)
+        if reducedMotion {
+            panel.ignoresMouseEvents = false
+            fan.isInteractive = true
+        } else {
+            // While items fly the fan reaches down over the bar: it lets the bar have its clicks,
+            // and a transparent panel above the bar's top takes the rest as clicks outside.
+            panel.ignoresMouseEvents = true
+            let barTop = dock.frame.maxY - Self.shadowPadding
+            let catcherFrame = CGRect(x: flightFrame.minX, y: max(flightFrame.minY, barTop),
+                                      width: flightFrame.width, height: flightFrame.maxY - max(flightFrame.minY, barTop))
+            if catcherFrame.height > 0 {
+                let catcher = makePopupPanel()
+                catcher.contentView = StackPopupClickCatcher { [weak self] in self?.closeFolderPopup(sessionID: id) }
+                catcher.setFrame(catcherFrame, display: false)
+                catcher.ignoresMouseEvents = false
+                session.clickCatcher = catcher
+            }
+        }
+        panel.orderFrontRegardless()
+        pinOverlappingPanelIfNeeded(panel)
+        if let catcher = session.clickCatcher {
+            catcher.orderFrontRegardless()
+            pinOverlappingPanelIfNeeded(catcher)
+        }
+        fan.loadThumbnails(scale: dock.backingScaleFactor)
+        session.openedAt = Date()
+        installPopupMonitors()
+        fan.playOpen(reducedMotion: reducedMotion) { [weak self] in
+            Task { @MainActor [weak self] in self?.fanDidLand(sessionID: id) }
+        }
+    }
+
+    /// The flight is over: the catcher goes, the window stops at the chip's top and takes every
+    /// click in it (a capsule or a gap is a click outside).
+    private func fanDidLand(sessionID: Int) {
+        guard let session = activePopupSession, session.id == sessionID,
+              let panel = session.panel, let fan = session.fanView else { return }
+        session.clickCatcher?.orderOut(nil)
+        if let catcher = session.clickCatcher {
+            catcher.close()
+            folderPopupPanels.removeAll { $0 === catcher }
+        }
+        session.clickCatcher = nil
+        panel.disableScreenUpdatesUntilFlush()
+        CATransaction.begin()
+        CATransaction.setDisableActions(true)
+        panel.setFrame(session.fanRestFrame, display: true)
+        fan.windowWillTake(session.fanRestFrame)
+        CATransaction.commit()
+        panel.ignoresMouseEvents = false
+        fan.isInteractive = true
+    }
+
+    private func playFanClose(_ session: FolderPopupSession) {
+        guard let panel = session.panel, let fan = session.fanView, case let .folder(path) = session.content else {
+            endPopupWindow(of: session)
+            return
+        }
+        session.clickCatcher?.orderOut(nil)
+        // Back down over the chip: the items fly into it.
+        panel.disableScreenUpdatesUntilFlush()
+        CATransaction.begin()
+        CATransaction.setDisableActions(true)
+        panel.setFrame(session.fanFlightFrame, display: true)
+        fan.windowWillTake(session.fanFlightFrame)
+        CATransaction.commit()
+        let stackShown = pinnedFolderStore.displayMode(for: path) == .stack
+            && !(folderCoverStore.covers[path]?.layers.isEmpty ?? true)
+        let id = session.id
+        fan.playClose(stackShown: stackShown) { [weak self] in
+            Task { @MainActor [weak self] in
+                guard let self, self.exitingPopupSession?.id == id else { return }
+                self.finishExitingPopupSession()
+            }
+        }
     }
 
     // MARK: - List (a real system menu with the Dock's tipped bubble)

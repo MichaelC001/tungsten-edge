@@ -171,7 +171,12 @@ final class PanelCoordinator: NSObject {
         var contentHost: NSView?
         var arrow: StackPopupArrowModel?
         var listMenu: StackPopupListMenu?
-        var fanView: NSView?
+        var fanView: StackPopupFanView?
+        /// The fan's window while items fly: down over the chip they fly out of.
+        var fanFlightFrame: CGRect = .zero
+        /// The fan's window once landed: its bottom on the chip's top, so the chip and its
+        /// neighbours take their own clicks.
+        var fanRestFrame: CGRect = .zero
         /// The transparent panel above the bar that catches clicks while the fan flies open.
         var clickCatcher: NSPanel?
         var openedAt = Date()
@@ -191,6 +196,7 @@ final class PanelCoordinator: NSObject {
     /// The windows on screen: the live session's and the exiting one's, so the old popup shrinks
     /// back while the new one grows, as on the native Dock. Each session gets its own window.
     var folderPopupPanels: [NSPanel] = []
+    var sparePopupPanel: NSPanel?
     var popupSessionCounter = 0
     var popupReopenCooldown = StackReopenCooldown()
     /// The open folder's chip look (pile arrow / dimmed), read by this unit's strip.
@@ -436,6 +442,7 @@ final class PanelCoordinator: NSObject {
         presentInitialPanels()
         pinResidentPanelsIfNeeded()
         prewarmDrawerHost()
+        prepareSparePopupPanel()
         subscribeSnapshotWidth()
         subscribeDrawerStoreWidth()
         subscribeMessagingStoreWidth()
@@ -532,6 +539,8 @@ final class PanelCoordinator: NSObject {
         capsulePanel = nil
         drawerPanel = nil
         folderPopupPanels = []
+        sparePopupPanel?.close()
+        sparePopupPanel = nil
         windowTitleTooltipPanel = nil
         // 面板全拆了，「上次提交过的目标」随之作废——留着会让重建后的第一次布局被误判成
         // 「目标没变」而跳过，条就停在旧几何上。

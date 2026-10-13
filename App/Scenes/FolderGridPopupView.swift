@@ -124,9 +124,11 @@ enum FolderIconResolver {
         var path: String
         var stamp: Date?
         var scale: CGFloat
+        /// Points: the grid's 100pt cells and the fan's 64pt items never share a bitmap.
+        var side: CGFloat = StackPopupMetrics.iconSize
 
         fileprivate var cacheKey: NSString {
-            "\(path)|\(stamp?.timeIntervalSinceReferenceDate ?? 0)|\(scale)" as NSString
+            "\(path)|\(stamp?.timeIntervalSinceReferenceDate ?? 0)|\(scale)|\(side)" as NSString
         }
     }
 
@@ -140,7 +142,7 @@ enum FolderIconResolver {
     static func loadThumbnail(_ id: ThumbnailID) async {
         let key = id.cacheKey
         guard thumbnails.object(forKey: key) == nil else { return }
-        let side = StackPopupMetrics.iconSize
+        let side = id.side
         let request = QLThumbnailGenerator.Request(fileAt: URL(fileURLWithPath: id.path),
                                                    size: CGSize(width: side, height: side),
                                                    scale: max(1, id.scale),

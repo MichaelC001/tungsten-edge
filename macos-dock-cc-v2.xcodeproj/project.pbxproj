@@ -175,6 +175,7 @@
 		FAAD3526C1A7314832499420 /* FolderListMenuPlan.swift in Sources */ = {isa = PBXBuildFile; fileRef = F6657305C6DF6ABDBFF2EA9C /* FolderListMenuPlan.swift */; };
 		A0000000000000000000BD11 /* StackPopupBackdrop.swift in Sources */ = {isa = PBXBuildFile; fileRef = A0000000000000000000BD10 /* StackPopupBackdrop.swift */; };
 		A0000000000000000000BD21 /* StackPopupChrome.swift in Sources */ = {isa = PBXBuildFile; fileRef = A0000000000000000000BD20 /* StackPopupChrome.swift */; };
+		F5EFCCD7DAE3FD4442484305 /* StackPopupFanView.swift in Sources */ = {isa = PBXBuildFile; fileRef = F838FFD821C90E1884C4A68B /* StackPopupFanView.swift */; };
 		F2E038E43668C3EF0854777B /* StackPopupListMenu.swift in Sources */ = {isa = PBXBuildFile; fileRef = FD1F76093CCB700AE8C970E5 /* StackPopupListMenu.swift */; };
 		A0000000000000000000BD41 /* StackPopupSnapshotProbe.swift in Sources */ = {isa = PBXBuildFile; fileRef = A0000000000000000000BD40 /* StackPopupSnapshotProbe.swift */; };
 		A0000000000000000000BD31 /* StackPopupGeometryTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A0000000000000000000BD30 /* StackPopupGeometryTests.swift */; };
@@ -832,6 +833,7 @@
 		F6657305C6DF6ABDBFF2EA9C /* FolderListMenuPlan.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FolderListMenuPlan.swift; sourceTree = "<group>"; };
 		A0000000000000000000BD10 /* StackPopupBackdrop.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StackPopupBackdrop.swift; sourceTree = "<group>"; };
 		A0000000000000000000BD20 /* StackPopupChrome.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StackPopupChrome.swift; sourceTree = "<group>"; };
+		F838FFD821C90E1884C4A68B /* StackPopupFanView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StackPopupFanView.swift; sourceTree = "<group>"; };
 		FD1F76093CCB700AE8C970E5 /* StackPopupListMenu.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StackPopupListMenu.swift; sourceTree = "<group>"; };
 		A0000000000000000000BD40 /* StackPopupSnapshotProbe.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StackPopupSnapshotProbe.swift; sourceTree = "<group>"; };
 		A0000000000000000000BD30 /* StackPopupGeometryTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StackPopupGeometryTests.swift; sourceTree = "<group>"; };
@@ -1095,6 +1097,7 @@
 				A0000000000000000000FF50 /* TrashGridPopupView.swift */,
 				A0000000000000000000BD10 /* StackPopupBackdrop.swift */,
 				A0000000000000000000BD20 /* StackPopupChrome.swift */,
+				F838FFD821C90E1884C4A68B /* StackPopupFanView.swift */,
 				FD1F76093CCB700AE8C970E5 /* StackPopupListMenu.swift */,
 				A0000000000000000000FC00 /* DockTheme.swift */,
 				A0000000000000000000FE00 /* DockGlassBackdrop.swift */,
@@ -1870,6 +1873,7 @@
 					A0000000000000000000FF51 /* TrashGridPopupView.swift in Sources */,
 					A0000000000000000000BD11 /* StackPopupBackdrop.swift in Sources */,
 					A0000000000000000000BD21 /* StackPopupChrome.swift in Sources */,
+					F5EFCCD7DAE3FD4442484305 /* StackPopupFanView.swift in Sources */,
 					F2E038E43668C3EF0854777B /* StackPopupListMenu.swift in Sources */,
 					A0000000000000000000BD41 /* StackPopupSnapshotProbe.swift in Sources */,
 					A00000000000000000009241 /* FolderGridPopupView.swift in Sources */,

@@ -131,9 +131,9 @@ struct PinnedFolderChip: View {
                     .frame(width: slot, height: slot)
             } else {
                 // Back to front: the first item of the sort is drawn last, on top.
-                ForEach(Array(layers.prefix(StackLayout.depths.count).enumerated()).reversed(), id: \.offset) { index, layer in
-                    layerImage(layer, canvas: slot * StackLayout.depths[index].canvas)
-                        .offset(y: slot * StackLayout.depths[index].centerY)
+                ForEach(Array(layers.prefix(FolderCoverPile.depths.count).enumerated()).reversed(), id: \.offset) { index, layer in
+                    layerImage(layer, canvas: slot * FolderCoverPile.depths[index].canvas)
+                        .offset(y: slot * FolderCoverPile.depths[index].centerY)
                 }
             }
         }
@@ -154,13 +154,8 @@ struct PinnedFolderChip: View {
     /// Same squircle fraction as the self-drawn shelf tile (drop-target ring only).
     private static let visibleCornerFraction: CGFloat = 0.215
 
-    /// The native Dock stack, as fractions of the icon slot: each item is fitted into a square
-    /// canvas centred on the slot's vertical axis; items behind shrink and climb, so the whole
-    /// pile spans the slot's height. Measured off the system Dock at tile size 40.
+    /// The pile's layer geometry is `FolderCoverPile` (shared with the fan's flight).
     private enum StackLayout {
-        static let depths: [(canvas: CGFloat, centerY: CGFloat)] = [
-            (0.925, 0.05), (0.85, -0.04), (0.74, -0.13),
-        ]
         /// A thumbnail has no transparent margin of its own, so it fits a smaller box than an icon.
         static let thumbnailFraction: CGFloat = 0.87
         static let thumbnailCornerFraction: CGFloat = 0.05
