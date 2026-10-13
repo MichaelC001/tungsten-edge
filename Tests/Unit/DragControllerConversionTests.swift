@@ -332,7 +332,9 @@ final class DragControllerConversionTests: XCTestCase {
 
     /// **整条压制只在「手里真拎着东西」时**；松手之后的归位飞行期，别的卡照常悬停
     ///（owner 2026-08-19：「图标飞行时鼠标划到其他图标上没有悬停效果，要完全落地才有」）。
-    func testOnlyTheFlyingCardIsExemptDuringTheReturnFlight() {
+    func testOnlyTheFlyingCardIsExemptDuringTheReturnFlight() throws {
+        // Arming the carrier waits on display frames, like the re-anchor test below; skipped on CI the same way.
+        try XCTSkipIf(ProcessInfo.processInfo.environment["CI"] != nil, "needs a refreshing display; skipped on CI")
         begin(.strip, "app", at: outsideZone)
         waitUntil { controller.hiddenSlotPayload != nil }
         XCTAssertTrue(controller.hoverSuppressed, "拎着的时候整条不判悬停")
