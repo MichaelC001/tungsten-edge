@@ -479,6 +479,7 @@
 		E50000000000000000000002 /* WindowSubscriptionLedger.swift in Sources */ = {isa = PBXBuildFile; fileRef = E5000000000000000000000A /* WindowSubscriptionLedger.swift */; };
 		E50000000000000000000003 /* WindowSubscriptionLedgerTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = E5000000000000000000000B /* WindowSubscriptionLedgerTests.swift */; };
 		B10000000000000000000003 /* PeriodicReconcileSkipDecision.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10000000000000000000103 /* PeriodicReconcileSkipDecision.swift */; };
+		177B3B780D52CD1070BD77B8 /* AbsentSeatReleaseDecision.swift in Sources */ = {isa = PBXBuildFile; fileRef = 01E180445AF4D389149F830B /* AbsentSeatReleaseDecision.swift */; };
 		D40000000000000000000003 /* NonRegularEvictionDecision.swift in Sources */ = {isa = PBXBuildFile; fileRef = D40000000000000000000103 /* NonRegularEvictionDecision.swift */; };
 		B10000000000000000000011 /* CGSnapshotReuseDecision.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1000000000000000000010B /* CGSnapshotReuseDecision.swift */; };
 		B10000000000000000000005 /* ScanProbeGateDecision.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10000000000000000000104 /* ScanProbeGateDecision.swift */; };
@@ -490,6 +491,7 @@
 		A00000000000000000009E24 /* LaunchAtLoginServiceTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A00000000000000000009E23 /* LaunchAtLoginServiceTests.swift */; };
 		A00000000000000000009E1A /* ScanAdmissionDecision.swift in Sources */ = {isa = PBXBuildFile; fileRef = A00000000000000000009E05 /* ScanAdmissionDecision.swift */; };
 		B10000000000000000000004 /* PeriodicReconcileSkipDecision.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10000000000000000000103 /* PeriodicReconcileSkipDecision.swift */; };
+		7EF3280B1BEC375218FB3AD9 /* AbsentSeatReleaseDecision.swift in Sources */ = {isa = PBXBuildFile; fileRef = 01E180445AF4D389149F830B /* AbsentSeatReleaseDecision.swift */; };
 		D40000000000000000000004 /* NonRegularEvictionDecision.swift in Sources */ = {isa = PBXBuildFile; fileRef = D40000000000000000000103 /* NonRegularEvictionDecision.swift */; };
 		B10000000000000000000012 /* CGSnapshotReuseDecision.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1000000000000000000010B /* CGSnapshotReuseDecision.swift */; };
 		B10000000000000000000006 /* ScanProbeGateDecision.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10000000000000000000104 /* ScanProbeGateDecision.swift */; };
@@ -503,6 +505,8 @@
 		A00000000000000000009811 /* CGWindowSnapshot.swift in Sources */ = {isa = PBXBuildFile; fileRef = A00000000000000000009800 /* CGWindowSnapshot.swift */; };
 		A00000000000000000009812 /* CGWindowSnapshotTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A00000000000000000009801 /* CGWindowSnapshotTests.swift */; };
 		B10000000000000000000001 /* AppTrackerPeriodicBatchTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10000000000000000000101 /* AppTrackerPeriodicBatchTests.swift */; };
+		44F1B3C1201A90FAAA69A625 /* AppTrackerAbsentSeatTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 78C3901C48CEF3700B388672 /* AppTrackerAbsentSeatTests.swift */; };
+		93F44440401084E11A68813A /* AbsentSeatReleaseDecisionTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9C168534DCFC0A7342CE72FA /* AbsentSeatReleaseDecisionTests.swift */; };
 		B10000000000000000000002 /* PeriodicReconcileSkipDecisionTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10000000000000000000102 /* PeriodicReconcileSkipDecisionTests.swift */; };
 		D40000000000000000000002 /* NonRegularEvictionDecisionTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = D40000000000000000000102 /* NonRegularEvictionDecisionTests.swift */; };
 		B10000000000000000000013 /* CGSnapshotReuseDecisionTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1000000000000000000010C /* CGSnapshotReuseDecisionTests.swift */; };
@@ -641,6 +645,7 @@
 		E5000000000000000000000A /* WindowSubscriptionLedger.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WindowSubscriptionLedger.swift; sourceTree = "<group>"; };
 		E5000000000000000000000B /* WindowSubscriptionLedgerTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WindowSubscriptionLedgerTests.swift; sourceTree = "<group>"; };
 		B10000000000000000000103 /* PeriodicReconcileSkipDecision.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PeriodicReconcileSkipDecision.swift; sourceTree = "<group>"; };
+		01E180445AF4D389149F830B /* AbsentSeatReleaseDecision.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AbsentSeatReleaseDecision.swift; sourceTree = "<group>"; };
 		D40000000000000000000103 /* NonRegularEvictionDecision.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NonRegularEvictionDecision.swift; sourceTree = "<group>"; };
 		B1000000000000000000010B /* CGSnapshotReuseDecision.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CGSnapshotReuseDecision.swift; sourceTree = "<group>"; };
 		B10000000000000000000104 /* ScanProbeGateDecision.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ScanProbeGateDecision.swift; sourceTree = "<group>"; };
@@ -681,6 +686,8 @@
 		A00000000000000000009800 /* CGWindowSnapshot.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CGWindowSnapshot.swift; sourceTree = "<group>"; };
 		A00000000000000000009801 /* CGWindowSnapshotTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CGWindowSnapshotTests.swift; sourceTree = "<group>"; };
 		B10000000000000000000101 /* AppTrackerPeriodicBatchTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppTrackerPeriodicBatchTests.swift; sourceTree = "<group>"; };
+		78C3901C48CEF3700B388672 /* AppTrackerAbsentSeatTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppTrackerAbsentSeatTests.swift; sourceTree = "<group>"; };
+		9C168534DCFC0A7342CE72FA /* AbsentSeatReleaseDecisionTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AbsentSeatReleaseDecisionTests.swift; sourceTree = "<group>"; };
 		B10000000000000000000102 /* PeriodicReconcileSkipDecisionTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PeriodicReconcileSkipDecisionTests.swift; sourceTree = "<group>"; };
 		D40000000000000000000102 /* NonRegularEvictionDecisionTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NonRegularEvictionDecisionTests.swift; sourceTree = "<group>"; };
 		B1000000000000000000010C /* CGSnapshotReuseDecisionTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CGSnapshotReuseDecisionTests.swift; sourceTree = "<group>"; };
@@ -1262,6 +1269,7 @@
 				A00000000000000000009E03 /* ProcessLiveness.swift */,
 				A00000000000000000009E05 /* ScanAdmissionDecision.swift */,
 				B10000000000000000000103 /* PeriodicReconcileSkipDecision.swift */,
+				01E180445AF4D389149F830B /* AbsentSeatReleaseDecision.swift */,
 				E5000000000000000000000A /* WindowSubscriptionLedger.swift */,
 				D40000000000000000000103 /* NonRegularEvictionDecision.swift */,
 				B1000000000000000000010B /* CGSnapshotReuseDecision.swift */,
@@ -1464,6 +1472,8 @@
 				A00000000000000000009A20 /* WindowLiftAvoidanceTests.swift */,
 				A00000000000000000009801 /* CGWindowSnapshotTests.swift */,
 				B10000000000000000000101 /* AppTrackerPeriodicBatchTests.swift */,
+				78C3901C48CEF3700B388672 /* AppTrackerAbsentSeatTests.swift */,
+				9C168534DCFC0A7342CE72FA /* AbsentSeatReleaseDecisionTests.swift */,
 				B10000000000000000000102 /* PeriodicReconcileSkipDecisionTests.swift */,
 				E5000000000000000000000B /* WindowSubscriptionLedgerTests.swift */,
 				D40000000000000000000102 /* NonRegularEvictionDecisionTests.swift */,
@@ -1880,6 +1890,7 @@
 				A00000000000000000009E16 /* ProcessLiveness.swift in Sources */,
 				A00000000000000000009E19 /* ScanAdmissionDecision.swift in Sources */,
 				B10000000000000000000003 /* PeriodicReconcileSkipDecision.swift in Sources */,
+				177B3B780D52CD1070BD77B8 /* AbsentSeatReleaseDecision.swift in Sources */,
 				E50000000000000000000001 /* WindowSubscriptionLedger.swift in Sources */,
 				D40000000000000000000003 /* NonRegularEvictionDecision.swift in Sources */,
 				B10000000000000000000011 /* CGSnapshotReuseDecision.swift in Sources */,
@@ -2117,6 +2128,7 @@
 					A00000000000000000000B91 /* FeedbackTickPolicyTests.swift in Sources */,
 					A00000000000000000009E1A /* ScanAdmissionDecision.swift in Sources */,
 					B10000000000000000000004 /* PeriodicReconcileSkipDecision.swift in Sources */,
+					7EF3280B1BEC375218FB3AD9 /* AbsentSeatReleaseDecision.swift in Sources */,
 					E50000000000000000000002 /* WindowSubscriptionLedger.swift in Sources */,
 					D40000000000000000000004 /* NonRegularEvictionDecision.swift in Sources */,
 					B10000000000000000000012 /* CGSnapshotReuseDecision.swift in Sources */,
@@ -2132,6 +2144,8 @@
 					A00000000000000000009811 /* CGWindowSnapshot.swift in Sources */,
 					A00000000000000000009812 /* CGWindowSnapshotTests.swift in Sources */,
 					B10000000000000000000001 /* AppTrackerPeriodicBatchTests.swift in Sources */,
+					44F1B3C1201A90FAAA69A625 /* AppTrackerAbsentSeatTests.swift in Sources */,
+					93F44440401084E11A68813A /* AbsentSeatReleaseDecisionTests.swift in Sources */,
 					B10000000000000000000002 /* PeriodicReconcileSkipDecisionTests.swift in Sources */,
 					E50000000000000000000003 /* WindowSubscriptionLedgerTests.swift in Sources */,
 					D40000000000000000000002 /* NonRegularEvictionDecisionTests.swift in Sources */,

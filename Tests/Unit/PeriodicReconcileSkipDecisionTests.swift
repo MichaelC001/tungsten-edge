@@ -24,6 +24,14 @@ final class PeriodicReconcileSkipDecisionTests: XCTestCase {
         XCTAssertEqual(PeriodicReconcileSkipDecision.verdict(quietInput()), .skip)
     }
 
+    /// A seated window hidden without any AX notification keeps the CG id set and the dirty flag;
+    /// only its on-screen change can reopen the gate.
+    func testSeatOnScreenChangeForcesFullRead() {
+        var input = quietInput()
+        input.seatOnScreenChanged = true
+        XCTAssertEqual(PeriodicReconcileSkipDecision.verdict(input), .fullRead(.seatOnScreenChanged))
+    }
+
     func testCaptureFailureForcesFullRead() {
         var input = quietInput()
         input.captureFailed = true

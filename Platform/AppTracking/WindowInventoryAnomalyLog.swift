@@ -12,6 +12,8 @@ enum InventoryReconcileSource: String, Codable {
     case titleChanged
     case frontmostPoll
     case periodicReconcile
+    /// A read dispatched to carry absence probes (`AbsentSeatReleaseDecision`).
+    case absenceProbe
 }
 
 struct InventoryAXReadOutcome: Codable, Equatable {
@@ -195,6 +197,30 @@ enum InventorySeatReleasedReason: String, Codable {
     case phantomHealed
     /// Seat merged into another window as a native tab (TabMergeDecision).
     case mergedIntoTabbedWindow
+    /// Window hidden without a destroy notification, confirmed twice (AbsentSeatReleaseDecision).
+    case hiddenWithoutDestroy
+}
+
+/// One landed absence probe. Written for every probe so a user log shows what the old AX element
+/// of a still-held window answered when the fallback did not release it.
+struct InventoryAbsenceProbePayload: Codable, Equatable {
+    let context: InventoryReconcileContext?
+    let pid: Int32
+    let bundleID: String?
+    let seatToken: String
+    let cgWindowID: CGWindowID
+    let instanceID: UInt64
+    /// `dead` / `alive` / `unknown`.
+    let element: String
+    let elementMinimized: Bool?
+    let elementErrorCode: Int32?
+    let windowSpaceIDs: [Int]?
+    let currentSpaceIDs: [Int]?
+    let spaceClass: String
+    /// `release` / `markFirst` / `holdMark` / `notHidden:<reason>`.
+    let verdict: String
+    let probeCount: Int
+    let firstHiddenAgeMs: Int?
 }
 
 /// 座位释放日志载荷。批量 `processGone` 路径发生在 `reconcileSeats` 之外，没有本轮 AX/CG 采样，
@@ -460,6 +486,7 @@ enum WindowInventoryLogEvent: Encodable {
     case titleHeld(InventoryTitleHeldPayload)
     case windowSubscription(InventoryWindowSubscriptionPayload)
     case subscriptionRetryFlush(InventorySubscriptionRetryFlushPayload)
+    case absenceProbe(InventoryAbsenceProbePayload)
 
     var name: String {
         switch self {
@@ -477,6 +504,7 @@ enum WindowInventoryLogEvent: Encodable {
         case .titleHeld: return "titleHeld"
         case .windowSubscription: return "windowSubscription"
         case .subscriptionRetryFlush: return "subscriptionRetryFlush"
+        case .absenceProbe: return "absenceProbe"
         }
     }
 
@@ -496,6 +524,7 @@ enum WindowInventoryLogEvent: Encodable {
         case .titleHeld(let payload): try payload.encode(to: encoder)
         case .windowSubscription(let payload): try payload.encode(to: encoder)
         case .subscriptionRetryFlush(let payload): try payload.encode(to: encoder)
+        case .absenceProbe(let payload): try payload.encode(to: encoder)
         }
     }
 }

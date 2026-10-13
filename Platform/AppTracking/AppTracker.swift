@@ -61,6 +61,8 @@ struct WindowEntry {
     /// `.distantFuture` = 钉死到它下次在 AX 里可见为止（AX 拿不到句柄、搬不动的离屏 / 幽灵窗口：
     /// 拖到别的条上就当「改住址」，CG 里那份旧坐标不作数）。
     var displayUUIDHoldUntil: Date? = nil
+    /// Absence fallback for a window hidden without a destroy notification (`AbsentSeatReleaseDecision`).
+    var absentProbe: AbsentSeatProbeState? = nil
 }
 
 protocol AppTrackerProcessProviding: Sendable {
@@ -151,6 +153,7 @@ final class AppTracker: ObservableObject {
         let mutationGeneration: UInt64
         let identity: ScanAdmissionDecision.ProcessIdentity
         let source: InventoryReconcileSource
+        var absenceProbes: [AbsentSeatProbeRequest] = []
     }
 
     private var nextEventReadToken: UInt64 = 0
@@ -182,6 +185,9 @@ final class AppTracker: ObservableObject {
         var dirty: Bool
         var lastReadWasUnread: Bool
         var lastRoundChanged: Bool
+        /// Seated cgIDs that were on-screen at the last full read: a seat going off-screen with no
+        /// AX event (a window hidden without notifications) must still get a prompt read.
+        var lastSeatOnScreenIDs: Set<CGWindowID>
     }
 
     private var gateStates: [pid_t: ReconcileGateState] = [:]
@@ -223,6 +229,14 @@ final class AppTracker: ObservableObject {
     /// 测试专用：fixture pid 建不出真 AXObserver，跳读门控的 observerActive 判据用它覆盖。
     private var observerActiveOverridesForTesting: [pid_t: Bool] = [:]
     #endif
+    /// `DOCK_ABSENT_SEAT_RELEASE`; only effective on the timed background read path.
+    private let absentSeatReleaseEnabled: Bool
+    private let absentSeatProber: any AbsentSeatProbing
+    /// One coalesced timer per pid for an absence probe due within the next 5s tick.
+    private var absenceProbeTimers: [pid_t: DispatchWorkItem] = [:]
+    #if DEBUG
+    private var subscribedElementOverridesForTesting: [pid_t: [CGWindowID: (element: AXUIElement, instanceID: UInt64)]] = [:]
+    #endif
     private let windowEligibility = AppTrackerWindowEligibility()
     private let logger = Logger(subsystem: "com.caye.macosdockcc.v2", category: "app-tracker")
     private let inventoryLog: WindowInventoryAnomalyLog
@@ -243,6 +257,8 @@ final class AppTracker: ObservableObject {
         scanGateEnabled: Bool = DebugSwitch.scanGate.isEnabled(in: ProcessInfo.processInfo.environment),
         frontmostCacheEnabled: Bool = DebugSwitch.frontmostCache.isEnabled(in: ProcessInfo.processInfo.environment),
         cgSnapshotReuseEnabled: Bool = DebugSwitch.cgSnapshotReuse.isEnabled(in: ProcessInfo.processInfo.environment),
+        absentSeatReleaseEnabled: Bool = DebugSwitch.absentSeatRelease.isEnabled(in: ProcessInfo.processInfo.environment),
+        absentSeatProber: any AbsentSeatProbing = LiveAbsentSeatProber(),
         uptimeProvider: @escaping () -> TimeInterval = { ProcessInfo.processInfo.systemUptime },
         displayTableProvider: @escaping @MainActor () -> WindowDisplayAttribution.Table = { .empty }
     ) {
@@ -259,6 +275,8 @@ final class AppTracker: ObservableObject {
         self.scanGateEnabled = scanGateEnabled
         self.frontmostCacheEnabled = frontmostCacheEnabled
         self.cgSnapshotReuseEnabled = cgSnapshotReuseEnabled
+        self.absentSeatReleaseEnabled = absentSeatReleaseEnabled && eventAXAsyncEnabled
+        self.absentSeatProber = absentSeatProber
         self.uptimeProvider = uptimeProvider
     }
 
@@ -382,7 +400,9 @@ final class AppTracker: ObservableObject {
         source: InventoryReconcileSource,
         preloadedEligible: [AXWindowSnapshot]? = nil,
         preloadedReadOutcome: InventoryAXReadOutcome? = nil,
-        preloadedReadMode: InventoryReconcileReadMode? = nil
+        preloadedReadMode: InventoryReconcileReadMode? = nil,
+        rawAXCgIDs: Set<CGWindowID>? = nil,
+        absenceEvidence: [CGWindowID: AbsentSeatProbeEvidence] = [:]
     ) -> Bool {
         guard var app = apps[pid] else { return false }
         let cgIDs = cgSnapshot.allWindowIDs
@@ -645,6 +665,7 @@ final class AppTracker: ObservableObject {
                                 )))
                             }
                             seat.isFocused = false
+                            seat.absentProbe = nil
                             place(seat)                   // 真最小化(Safari 离开 AX)/ 应用隐藏 → 保座位
                         }
                     } else {
@@ -665,7 +686,16 @@ final class AppTracker: ObservableObject {
                             seat.isFocused = false
                             // AX 成功不代表窗口清单完整。只要 CG 仍确认当前 activeCgID 存在且没有
                             // destroy tombstone，就保留原座位；AX 缺席永远不能自行证明窗口已关闭。
-                            place(seat)
+                            // The one exception is a confirmed dead element (`AbsentSeatReleaseDecision`).
+                            if applyAbsentSeatProbe(
+                                seat: &seat, pid: pid, bundleID: app.bundleIdentifier,
+                                isOnScreen: onScreenCGIDs.contains(X), rawAXCgIDs: rawAXCgIDs,
+                                evidence: absenceEvidence[X], context: reconcileContext
+                            ) {
+                                releasedSeats.append((seat, .hiddenWithoutDestroy))
+                            } else {
+                                place(seat)
+                            }
                         }
                     }
                 } else {
@@ -933,9 +963,202 @@ final class AppTracker: ObservableObject {
             lastFullReadUptime: uptimeProvider(),
             dirty: false,
             lastReadWasUnread: false,
-            lastRoundChanged: changed || app.shadowTabCgIDs != shadowPool
+            lastRoundChanged: changed || app.shadowTabCgIDs != shadowPool,
+            lastSeatOnScreenIDs: Set(newOrder).intersection(onScreenCGIDs)
         )
         return changed
+    }
+
+    /// The absence fallback for a seat held in the "left AX, not minimized, not hidden, still in CG"
+    /// branch. Returns true when the seat is to be released (`AbsentSeatReleaseDecision.release`).
+    /// Candidates are only created from reads that carry the raw (pre-filter) AX id set; a window
+    /// still in raw `AXWindows`, on-screen, or never subscribed is not a candidate.
+    private func applyAbsentSeatProbe(
+        seat: inout WindowEntry,
+        pid: pid_t,
+        bundleID: String?,
+        isOnScreen: Bool,
+        rawAXCgIDs: Set<CGWindowID>?,
+        evidence: AbsentSeatProbeEvidence?,
+        context: InventoryReconcileContext?
+    ) -> Bool {
+        guard absentSeatReleaseEnabled, let rawAXCgIDs else { return false }
+        let cgID = seat.cgWindowID
+        guard !isOnScreen, !rawAXCgIDs.contains(cgID),
+              let handle = subscribedElement(pid: pid, cgWindowID: cgID) else {
+            seat.absentProbe = nil
+            return false
+        }
+        let now = uptimeProvider()
+        var probe = seat.absentProbe ?? AbsentSeatProbeState(nextProbeUptime: now)
+        defer { seat.absentProbe = probe }
+        guard let evidence else { return false }
+
+        let firstHiddenAgeMs = probe.firstHidden.map { Int(((now - $0.uptime) * 1_000).rounded()) }
+        let verdict = AbsentSeatReleaseDecision.verdict(AbsentSeatReleaseDecision.Input(
+            evidenceMatchesSeat: evidence.request.seatToken == seat.token
+                && evidence.request.cgWindowID == cgID
+                && evidence.request.instanceID == handle.instanceID,
+            element: evidence.element,
+            spaces: evidence.spaces,
+            firstHidden: probe.firstHidden,
+            cgWindowID: cgID,
+            instanceID: evidence.request.instanceID,
+            now: now
+        ))
+        switch verdict {
+        case .release:
+            break
+        case .markFirst:
+            probe.firstHidden = AbsentSeatProbeState.FirstHiddenMark(
+                uptime: now, cgWindowID: cgID, instanceID: evidence.request.instanceID
+            )
+            probe.nextProbeUptime = now + AbsentSeatReleaseDecision.confirmMinInterval
+        case .holdMark:
+            if let first = probe.firstHidden {
+                probe.nextProbeUptime = first.uptime + AbsentSeatReleaseDecision.confirmMinInterval
+            }
+        case .notHidden:
+            probe.firstHidden = nil
+        }
+        recordAbsenceProbe(
+            evidence: evidence, verdict: verdict, pid: pid, bundleID: bundleID,
+            context: context, firstHiddenAgeMs: firstHiddenAgeMs
+        )
+        return verdict == .release
+    }
+
+    private func recordAbsenceProbe(
+        evidence: AbsentSeatProbeEvidence,
+        verdict: AbsentSeatReleaseDecision.Verdict?,
+        discardReason: String? = nil,
+        pid: pid_t,
+        bundleID: String?,
+        context: InventoryReconcileContext?,
+        firstHiddenAgeMs: Int?
+    ) {
+        guard inventoryLog.isEnabled else { return }
+        let element: String
+        var minimized: Bool?
+        var errorCode: Int32?
+        switch evidence.element {
+        case .dead: element = "dead"; errorCode = AXError.invalidUIElement.rawValue
+        case .alive(let value): element = "alive"; minimized = value
+        case .unknown(let code): element = "unknown"; errorCode = code
+        }
+        let verdictName: String
+        switch verdict {
+        case .release: verdictName = "release"
+        case .markFirst: verdictName = "markFirst"
+        case .holdMark: verdictName = "holdMark"
+        case .notHidden(let reason): verdictName = "notHidden:\(reason.rawValue)"
+        case nil: verdictName = "discarded:\(discardReason ?? "unknown")"
+        }
+        inventoryLog.record(.absenceProbe(InventoryAbsenceProbePayload(
+            context: context,
+            pid: pid,
+            bundleID: bundleID,
+            seatToken: evidence.request.seatToken,
+            cgWindowID: evidence.request.cgWindowID,
+            instanceID: evidence.request.instanceID,
+            element: element,
+            elementMinimized: minimized,
+            elementErrorCode: errorCode,
+            windowSpaceIDs: evidence.windowSpaceIDs,
+            currentSpaceIDs: evidence.currentSpaceIDs.map { $0.sorted() },
+            spaceClass: evidence.spaces.rawValue,
+            verdict: verdictName,
+            probeCount: evidence.request.probeCount,
+            firstHiddenAgeMs: firstHiddenAgeMs
+        )))
+    }
+
+    private func subscribedElement(pid: pid_t, cgWindowID: CGWindowID) -> (element: AXUIElement, instanceID: UInt64)? {
+        #if DEBUG
+        if let overrides = subscribedElementOverridesForTesting[pid] { return overrides[cgWindowID] }
+        #endif
+        return observers[pid]?.subscribedElement(cgWindowID: cgWindowID)
+    }
+
+    /// Picks this pid's due absence probes (earliest first, at most `maxProbesPerRead`) for a read
+    /// being dispatched now, and charges their budget at dispatch: a landing that is later
+    /// discarded must not make the same candidate eligible again on the next read.
+    private func takeDueAbsenceProbes(pid: pid_t) -> [AbsentSeatProbeRequest] {
+        guard absentSeatReleaseEnabled, var app = apps[pid] else { return [] }
+        let now = uptimeProvider()
+        let due = app.windowOrder
+            .compactMap { id -> (CGWindowID, AbsentSeatProbeState)? in
+                guard let probe = app.windowsByID[id]?.absentProbe, probe.nextProbeUptime <= now else { return nil }
+                return (id, probe)
+            }
+            .sorted { $0.1.nextProbeUptime < $1.1.nextProbeUptime }
+            .prefix(AbsentSeatReleaseDecision.maxProbesPerRead)
+        guard !due.isEmpty else { return [] }
+        var requests: [AbsentSeatProbeRequest] = []
+        for (cgID, state) in due {
+            guard let token = app.windowsByID[cgID]?.token,
+                  let handle = subscribedElement(pid: pid, cgWindowID: cgID) else {
+                app.windowsByID[cgID]?.absentProbe = nil
+                continue
+            }
+            var probe = state
+            probe.probeCount += 1
+            probe.nextProbeUptime = now + AbsentSeatReleaseDecision.backoff(afterDispatch: probe.probeCount)
+            app.windowsByID[cgID]?.absentProbe = probe
+            requests.append(AbsentSeatProbeRequest(
+                cgWindowID: cgID, seatToken: token, element: handle.element,
+                instanceID: handle.instanceID, probeCount: probe.probeCount
+            ))
+        }
+        apps[pid] = app
+        return requests
+    }
+
+    private func hasDueAbsenceProbe(pid: pid_t) -> Bool {
+        guard absentSeatReleaseEnabled, let app = apps[pid] else { return false }
+        let now = uptimeProvider()
+        return app.windowOrder.contains { (app.windowsByID[$0]?.absentProbe?.nextProbeUptime ?? .infinity) <= now }
+    }
+
+    /// After a landing: dispatch a read now if a probe is due, or arm one timer for the earliest
+    /// probe due before the next 5s tick (later ones are dispatched by `reconcile()`).
+    private func armAbsenceProbes(pid: pid_t) {
+        cancelAbsenceProbeTimer(pid: pid)
+        guard absentSeatReleaseEnabled, let app = apps[pid] else { return }
+        guard let next = app.windowOrder.compactMap({ app.windowsByID[$0]?.absentProbe?.nextProbeUptime }).min() else {
+            return
+        }
+        let delay = next - uptimeProvider()
+        if delay <= 0 {
+            scheduleEventRead(pid: pid, source: .absenceProbe)
+            return
+        }
+        guard delay < 5 else { return }
+        let item = DispatchWorkItem { [weak self] in
+            MainActor.assumeIsolated {
+                guard let self else { return }
+                self.absenceProbeTimers.removeValue(forKey: pid)
+                self.armAbsenceProbes(pid: pid)
+            }
+        }
+        absenceProbeTimers[pid] = item
+        DispatchQueue.main.asyncAfter(deadline: .now() + delay, execute: item)
+    }
+
+    private func cancelAbsenceProbeTimer(pid: pid_t) {
+        absenceProbeTimers.removeValue(forKey: pid)?.cancel()
+    }
+
+    /// Minimize / restore / create / destroy / hide / unhide change what a pending "hidden" mark
+    /// meant, and none of their handlers runs `reconcileSeats`, so the marks are dropped here.
+    private func clearFirstHiddenMarks(pid: pid_t) {
+        guard var app = apps[pid] else { return }
+        var touched = false
+        for id in app.windowOrder where app.windowsByID[id]?.absentProbe?.firstHidden != nil {
+            app.windowsByID[id]?.absentProbe?.firstHidden = nil
+            touched = true
+        }
+        if touched { apps[pid] = app }
     }
 
     private func inventoryReconcileContext(
@@ -1315,6 +1538,7 @@ final class AppTracker: ObservableObject {
                 appOrder.removeAll { $0 == stalePID }
                 clearInventoryDiagnostics(pid: stalePID)
                 gateStates.removeValue(forKey: stalePID)
+                cancelAbsenceProbeTimer(pid: stalePID)
                 invalidateEventReads(pid: stalePID)
                 elementCache.removeAll(pid: stalePID)
             }
@@ -1344,6 +1568,7 @@ final class AppTracker: ObservableObject {
         if let app = apps[pid] { recordProcessGoneSeats(app: app) }
         clearInventoryDiagnostics(pid: pid)
         gateStates.removeValue(forKey: pid)
+        cancelAbsenceProbeTimer(pid: pid)
         scanMemos.removeValue(forKey: pid)
         scanDirtyPIDs.remove(pid)
         scanCandidateCache = nil
@@ -1367,12 +1592,14 @@ final class AppTracker: ObservableObject {
 
     private func handleAppHidden(pid: pid_t) {
         markReconcileGateDirty(pid: pid)
+        clearFirstHiddenMarks(pid: pid)
         apps[pid]?.isHidden = true
         rebuildSnapshot()
     }
 
     private func handleAppUnhidden(pid: pid_t) {
         markReconcileGateDirty(pid: pid)
+        clearFirstHiddenMarks(pid: pid)
         apps[pid]?.isHidden = false
         rebuildSnapshot()
     }
@@ -1503,6 +1730,7 @@ final class AppTracker: ObservableObject {
         observers.removeValue(forKey: pid)
         clearInventoryDiagnostics(pid: pid)
         gateStates.removeValue(forKey: pid)
+        cancelAbsenceProbeTimer(pid: pid)
         scanMemos.removeValue(forKey: pid)
         scanDirtyPIDs.remove(pid)
         scanCandidateCache = nil
@@ -1655,12 +1883,14 @@ final class AppTracker: ObservableObject {
 
     private func handleWindowCreated(pid: pid_t) {
         markReconcileGateDirty(pid: pid)
+        clearFirstHiddenMarks(pid: pid)
         scheduleEventRead(pid: pid, source: .windowCreated)
     }
 
     private func handleWindowDestroyed(pid: pid_t, cgWindowID: CGWindowID) {
         guard apps[pid] != nil else { return }
         markReconcileGateDirty(pid: pid)
+        clearFirstHiddenMarks(pid: pid)
         invalidateEventReads(pid: pid)
         destroyedCGIDs[cgWindowID] = Date()
         purgeFromSeatHistories(cgWindowID)
@@ -1676,6 +1906,7 @@ final class AppTracker: ObservableObject {
 
     private func handleWindowMinimized(pid: pid_t, cgWindowID: CGWindowID) {
         markReconcileGateDirty(pid: pid)
+        clearFirstHiddenMarks(pid: pid)
         invalidateEventReads(pid: pid)
         apps[pid]?.windowsByID[cgWindowID]?.isMinimized = true
         apps[pid]?.windowsByID[cgWindowID]?.isFocused = false
@@ -1684,6 +1915,7 @@ final class AppTracker: ObservableObject {
 
     private func handleWindowDeminiaturized(pid: pid_t, cgWindowID: CGWindowID) {
         markReconcileGateDirty(pid: pid)
+        clearFirstHiddenMarks(pid: pid)
         invalidateEventReads(pid: pid)
         apps[pid]?.windowsByID[cgWindowID]?.isMinimized = false
         rebuildSnapshot()
@@ -1733,19 +1965,28 @@ final class AppTracker: ObservableObject {
             token: nextEventReadToken,
             mutationGeneration: mutationGenerations[pid, default: 0],
             identity: processIdentity(pid: pid, bundleID: apps[pid]?.bundleIdentifier),
-            source: source
+            source: source,
+            absenceProbes: takeDueAbsenceProbes(pid: pid)
         )
         pendingEventReads[pid] = request
         let reader = self.reader
         let cgSnapshotProvider = self.cgSnapshotProvider
         let probeProvider = self.onScreenWindowIDsProvider
+        let prober = self.absentSeatProber
         let ticket = makeCGSnapshotReuseTicket(pid: pid)
 
         Task.detached { [weak self] in
             let result = reader.inventoryWindows(forPID: pid, messagingTimeout: 0.1)
+            // Absence probes run only on a readable round, after the AX list and before the CG
+            // capture: a window shown again meanwhile is then on-screen in the table that decides.
+            var evidence: [AbsentSeatProbeEvidence] = []
+            if !request.absenceProbes.isEmpty, case .success = result {
+                evidence = request.absenceProbes.map { prober.probe($0, messagingTimeout: 0.1) }
+            }
             // 顺序硬规则：先探针、后全拍（理由见 CGSnapshotReuseDecision 头注释）。
             let acquisition: CGSnapshotAcquisition
-            switch CGSnapshotReuseDecision.preVerdict(ticket.input) {
+            switch request.absenceProbes.isEmpty
+                ? CGSnapshotReuseDecision.preVerdict(ticket.input) : .captureWithoutProbe {
             case .captureWithoutProbe:
                 acquisition = CGSnapshotAcquisition(
                     snapshot: cgSnapshotProvider(), probeIDs: nil, fresh: true, ticket: ticket
@@ -1782,13 +2023,15 @@ final class AppTracker: ObservableObject {
                     )
                 }
             }
+            let landedEvidence = evidence
             await MainActor.run { [weak self] in
                 self?.noteCGSnapshotAcquisition(acquisition)
                 self?.completeEventRead(
                     pid: pid,
                     request: request,
                     result: result,
-                    cgSnapshot: acquisition.snapshot
+                    cgSnapshot: acquisition.snapshot,
+                    absenceEvidence: landedEvidence
                 )
             }
         }
@@ -1863,7 +2106,8 @@ final class AppTracker: ObservableObject {
         pid: pid_t,
         request: PendingEventRead,
         result: AXWindowReadResult,
-        cgSnapshot: AppTrackerCGWindowSnapshot
+        cgSnapshot: AppTrackerCGWindowSnapshot,
+        absenceEvidence: [AbsentSeatProbeEvidence] = []
     ) -> EventReadLanding {
         guard pendingEventReads[pid]?.token == request.token else { return .staleToken }
         pendingEventReads.removeValue(forKey: pid)
@@ -1879,9 +2123,11 @@ final class AppTracker: ObservableObject {
 
         let readOutcome: InventoryAXReadOutcome
         let eligible: [AXWindowSnapshot]
+        var rawAXCgIDs: Set<CGWindowID>?
         switch result {
         case .success(let windows):
             readOutcome = .success(count: windows.count)
+            rawAXCgIDs = Set(windows.compactMap(\.cgWindowID))
             let application = eligibilityApplication(for: app)
             eligible = windows.filter {
                 isEligible($0, application: application, cgSnapshot: cgSnapshot)
@@ -1890,6 +2136,8 @@ final class AppTracker: ObservableObject {
             readOutcome = .unread(errorCode: error.rawValue)
             eligible = []
         }
+        var evidenceByCgID: [CGWindowID: AbsentSeatProbeEvidence] = [:]
+        for item in absenceEvidence { evidenceByCgID[item.request.cgWindowID] = item }
         let seatsChanged = reconcileSeats(
             pid: pid,
             cgSnapshot: cgSnapshot,
@@ -1897,7 +2145,9 @@ final class AppTracker: ObservableObject {
             source: request.source,
             preloadedEligible: eligible,
             preloadedReadOutcome: readOutcome,
-            preloadedReadMode: .timed
+            preloadedReadMode: .timed,
+            rawAXCgIDs: rawAXCgIDs,
+            absenceEvidence: evidenceByCgID
         )
         return .reconciled(seatsChanged: seatsChanged)
     }
@@ -1906,9 +2156,23 @@ final class AppTracker: ObservableObject {
         pid: pid_t,
         request: PendingEventRead,
         result: AXWindowReadResult,
-        cgSnapshot: AppTrackerCGWindowSnapshot
+        cgSnapshot: AppTrackerCGWindowSnapshot,
+        absenceEvidence: [AbsentSeatProbeEvidence] = []
     ) {
-        switch landEventRead(pid: pid, request: request, result: result, cgSnapshot: cgSnapshot) {
+        let landing = landEventRead(
+            pid: pid, request: request, result: result, cgSnapshot: cgSnapshot,
+            absenceEvidence: absenceEvidence
+        )
+        if case .reconciled = landing {} else {
+            for item in absenceEvidence {
+                recordAbsenceProbe(
+                    evidence: item, verdict: nil,
+                    discardReason: { if case .staleToken = landing { return "staleToken" }; return "skipped" }(),
+                    pid: pid, bundleID: apps[pid]?.bundleIdentifier, context: nil, firstHiddenAgeMs: nil
+                )
+            }
+        }
+        switch landing {
         case .staleToken:
             return
         case .skipped:
@@ -1921,6 +2185,7 @@ final class AppTracker: ObservableObject {
             }
         }
         consumeTrailingEventRead(pid: pid)
+        armAbsenceProbes(pid: pid)
     }
 
     private func consumeTrailingEventRead(pid: pid_t) {
@@ -2027,6 +2292,7 @@ final class AppTracker: ObservableObject {
             appOrder.removeAll { $0 == pid }
             clearInventoryDiagnostics(pid: pid)
             gateStates.removeValue(forKey: pid)
+            cancelAbsenceProbeTimer(pid: pid)
             invalidateEventReads(pid: pid)
             elementCache.removeAll(pid: pid)
             changed = true
@@ -2040,6 +2306,10 @@ final class AppTracker: ObservableObject {
         if let timeout = periodicReconcileTimeout, eventAXAsyncEnabled {
             // 死进程清扫的删除立即上屏，不等批读落地。
             if changed { rebuildSnapshot(onScreenCGIDs: cgSnapshot.onScreenWindowIDs) }
+            // Due absence probes ride single-pid reads; the batch then skips those pids (in flight).
+            for pid in appOrder where pendingEventReads[pid] == nil && hasDueAbsenceProbe(pid: pid) {
+                scheduleEventRead(pid: pid, source: .absenceProbe)
+            }
             schedulePeriodicBatchRead(cgSnapshot: cgSnapshot, timeout: timeout)
         } else {
             // 旧路径（DOCK_RECONCILE_AX_TIMEOUT_MS=0 或 DOCK_EVENT_AX_ASYNC=0）：主线程逐 pid 不限时同步读。
@@ -2110,7 +2380,10 @@ final class AppTracker: ObservableObject {
             lastRoundChanged: gate?.lastRoundChanged ?? true,
             observerActive: observerActive(pid: pid),
             allSeatsSubscribed: allSeatsSubscribed(pid: pid, app: app),
-            uptimeSinceLastFullRead: gate.map { uptimeProvider() - $0.lastFullReadUptime } ?? .infinity
+            uptimeSinceLastFullRead: gate.map { uptimeProvider() - $0.lastFullReadUptime } ?? .infinity,
+            seatOnScreenChanged: absentSeatReleaseEnabled && gate.map {
+                $0.lastSeatOnScreenIDs != Set(app.windowOrder).intersection(cgSnapshot.onScreenWindowIDs)
+            } ?? false
         )
         return PeriodicReconcileSkipDecision.verdict(input) == .skip
     }
@@ -2147,7 +2420,10 @@ final class AppTracker: ObservableObject {
             }
         }
         if changed { rebuildSnapshot(onScreenCGIDs: cgSnapshot.onScreenWindowIDs) }
-        for pid in landedPIDs { consumeTrailingEventRead(pid: pid) }
+        for pid in landedPIDs {
+            consumeTrailingEventRead(pid: pid)
+            armAbsenceProbes(pid: pid)
+        }
     }
 
     /// `cgSnapshot`：reconcile tick 把当轮 CG 捕获传进来 → 走探测门控（CG 在场判据 + 记忆）并
@@ -2521,7 +2797,9 @@ final class AppTracker: ObservableObject {
         now: Date,
         eligible: [AXWindowSnapshot],
         readOutcome: InventoryAXReadOutcome,
-        readMode: InventoryReconcileReadMode = .timed
+        readMode: InventoryReconcileReadMode = .timed,
+        rawAXCgIDs: Set<CGWindowID>? = nil,
+        absenceEvidence: [CGWindowID: AbsentSeatProbeEvidence] = [:]
     ) -> Bool {
         reconcileSeats(
             pid: pid,
@@ -2530,9 +2808,29 @@ final class AppTracker: ObservableObject {
             source: .periodicReconcile,
             preloadedEligible: eligible,
             preloadedReadOutcome: readOutcome,
-            preloadedReadMode: readMode
+            preloadedReadMode: readMode,
+            rawAXCgIDs: rawAXCgIDs,
+            absenceEvidence: absenceEvidence
         )
     }
+
+    #if DEBUG
+    func setSubscribedElementForTesting(pid: pid_t, cgWindowID: CGWindowID, element: AXUIElement?, instanceID: UInt64) {
+        var overrides = subscribedElementOverridesForTesting[pid] ?? [:]
+        overrides[cgWindowID] = element.map { ($0, instanceID) }
+        subscribedElementOverridesForTesting[pid] = overrides
+    }
+
+    func takeDueAbsenceProbesForTesting(pid: pid_t) -> [AbsentSeatProbeRequest] {
+        takeDueAbsenceProbes(pid: pid)
+    }
+
+    func clearFirstHiddenMarksViaHideForTesting(pid: pid_t) {
+        handleAppHidden(pid: pid)
+    }
+
+    var absenceProbeTimerPIDsForTesting: Set<pid_t> { Set(absenceProbeTimers.keys) }
+    #endif
 
     func scheduleEventReadForTesting(pid: pid_t, source: InventoryReconcileSource) {
         scheduleEventRead(pid: pid, source: source)

@@ -39,6 +39,8 @@ final class AppWindowObserver {
     /// Wall-clock budget for one retry attempt, checked before every call after the first.
     static let retryTimeLimit: TimeInterval = 0.05
 
+    private static let dropsDestroyNotifications = DebugSwitch.simulateNoDestroy.isEnabled()
+
     init(pid: pid_t, clock: @escaping () -> TimeInterval = { ProcessInfo.processInfo.systemUptime }) {
         self.pid = pid
         self.clock = clock
@@ -115,6 +117,12 @@ final class AppWindowObserver {
         subscriptions.isCovered(cgWindowID: cgWindowID)
     }
 
+    /// The element this window is subscribed with and its instance, for the absence probe
+    /// (`AbsentSeatReleaseDecision`). Nil when the window was never registered.
+    func subscribedElement(cgWindowID: CGWindowID) -> (element: AXUIElement, instanceID: UInt64)? {
+        subscriptions.record(for: cgWindowID).map { ($0.element.e, $0.instanceID) }
+    }
+
     /// Drops subscriptions whose window is in none of `keep`; returns them for diagnostics.
     func retainSubscriptions(keep: Set<CGWindowID>) -> [(cgWindowID: CGWindowID, instanceID: UInt64)] {
         subscriptions.retain(keep: keep)
@@ -178,6 +186,7 @@ final class AppWindowObserver {
         } else if notifStr == (kAXFocusedWindowChangedNotification as String) {
             onFocusedWindowChanged?(pid)
         } else if notifStr == (kAXUIElementDestroyedNotification as String) {
+            if Self.dropsDestroyNotifications { return }
             // A destroyed element can no longer resolve its window id (`_AXUIElementGetWindow`
             // fails), so the subscription ledger is the lookup.
             if let hit = subscriptions.noteDestroyed(element: AXElementKey(e: element)) {
@@ -185,11 +194,15 @@ final class AppWindowObserver {
                 onWindowDestroyed?(pid, hit.cgWindowID)
             }
         } else if notifStr == (kAXWindowMiniaturizedNotification as String) {
-            if let cgID = AXWindowReader.cgWindowID(for: element) {
+            // Ledger fallback: a dropped minimize would leave `seat.isMinimized` false, and the
+            // absence fallback relies on that flag for subscribed windows.
+            if let cgID = AXWindowReader.cgWindowID(for: element)
+                ?? subscriptions.cgWindowID(forElement: AXElementKey(e: element)) {
                 onWindowMinimized?(pid, cgID)
             }
         } else if notifStr == (kAXWindowDeminiaturizedNotification as String) {
-            if let cgID = AXWindowReader.cgWindowID(for: element) {
+            if let cgID = AXWindowReader.cgWindowID(for: element)
+                ?? subscriptions.cgWindowID(forElement: AXElementKey(e: element)) {
                 onWindowDeminiaturized?(pid, cgID)
             }
         } else if notifStr == (kAXTitleChangedNotification as String) {

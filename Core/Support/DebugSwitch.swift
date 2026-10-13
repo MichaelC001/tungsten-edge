@@ -23,6 +23,8 @@ enum DebugSwitch: String, CaseIterable, Sendable {
     case cgSnapshotReuse = "DOCK_CG_SNAPSHOT_REUSE"
     /// AX 元素缓存（AXElementCache）
     case axElementCache = "DOCK_AX_ELEMENT_CACHE"
+    /// Releases the seat of a window hidden without a destroy notification (`AbsentSeatReleaseDecision`)
+    case absentSeatRelease = "DOCK_ABSENT_SEAT_RELEASE"
     /// 切前台走 SkyLight 私有接口
     case skylightFocus = "DOCK_SKYLIGHT_FOCUS"
     /// AX 窗口句柄快速路径
@@ -111,6 +113,9 @@ enum DebugSwitch: String, CaseIterable, Sendable {
     case windowLiftTrace = "DOCK_WINDOW_LIFT_TRACE"
     /// 实验：最小化失败时退回 App 级 hide
     case minimizeAppFallback = "DOCK_MINIMIZE_APP_FALLBACK"
+    /// Acceptance aid: drop every per-window destroy notification, imitating an app that hides
+    /// windows without posting one (B站 1.18), so `DOCK_ABSENT_SEAT_RELEASE` can be exercised locally
+    case simulateNoDestroy = "DOCK_SIMULATE_NO_DESTROY"
 
     // MARK: 取值型（调用点自己解析）
     /// 周期对账 AX 读超时毫秒（默认 100；0 = 旧同步路径）
@@ -169,7 +174,7 @@ enum DebugSwitch: String, CaseIterable, Sendable {
     var kind: Kind {
         switch self {
         case .eventAxAsync, .reconcileSkip, .scanGate, .frontmostCache,
-             .cgSnapshotReuse, .axElementCache, .skylightFocus, .fastWindowHandle,
+             .cgSnapshotReuse, .axElementCache, .absentSeatRelease, .skylightFocus, .fastWindowHandle,
              .badgeTargeted, .badgePause, .minimizeSettleGate, .handoffActiveGrace,
              .handoffActivePrediction, .staleActiveGuard, .dragLanding, .liquidGlass, .liquidGlassDockRefraction,
              .liquidGlassDiagonalHighlight, .liquidGlassHighlightBoost, .stripBalancedInsets,
@@ -180,7 +185,8 @@ enum DebugSwitch: String, CaseIterable, Sendable {
             return .killSwitch
         case .displayTrace, .launchTrace, .chipProbe, .clickTrace,
              .hoverTrace, .edgehoverTrace, .stripWheelTrace, .chipAnimTrace, .labelProbe,
-             .spaceIntentTrace, .scrollReverserTrace, .windowLiftTrace, .minimizeAppFallback:
+             .spaceIntentTrace, .scrollReverserTrace, .windowLiftTrace, .minimizeAppFallback,
+             .simulateNoDestroy:
             return .trace
         case .reconcileAxTimeoutMs, .seedAxTimeoutMs, .dragFlightMs, .labelAnim, .inventoryLog,
              .panelLevel, .panelMaterial, .panelSaturation, .panelThickness,

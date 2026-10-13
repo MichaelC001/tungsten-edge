@@ -21,6 +21,9 @@ import Foundation
 /// - `phantomCandidate`：有 everSeenVisible == false 的座位——它可能在没有任何事件的情况下
 ///   开启缺席 episode，强制读保证 phantom 自愈时延与改造前完全一致（≤ 10s grace + 5s tick）。
 /// - `lastRoundChanged`：上一轮落地座位签名或影子池有变 → 收敛未完成，继续连读。
+/// - `seatOnScreenChanged`: a seated window went on- or off-screen since the last full read. A window
+///   an app hides without any AX notification changes neither the CG id set nor the dirty flag; this
+///   is what lets the absence fallback (`AbsentSeatReleaseDecision`) notice it within one tick.
 enum PeriodicReconcileSkipDecision {
     static let defaultMaxSkipInterval: TimeInterval = 30
 
@@ -38,6 +41,7 @@ enum PeriodicReconcileSkipDecision {
         var allSeatsSubscribed: Bool
         var uptimeSinceLastFullRead: TimeInterval
         var maxSkipInterval: TimeInterval = PeriodicReconcileSkipDecision.defaultMaxSkipInterval
+        var seatOnScreenChanged: Bool = false
     }
 
     enum Reason: String, Equatable {
@@ -52,6 +56,7 @@ enum PeriodicReconcileSkipDecision {
         case absenceClockRunning
         case phantomCandidate
         case lastRoundChanged
+        case seatOnScreenChanged
     }
 
     enum Verdict: Equatable {
@@ -68,6 +73,7 @@ enum PeriodicReconcileSkipDecision {
         if input.lastReadWasUnread { return .fullRead(.lastReadUnread) }
         if input.dirtySinceLastRead { return .fullRead(.dirtyEvents) }
         if input.currentCGIDs != lastObserved { return .fullRead(.cgSetChanged) }
+        if input.seatOnScreenChanged { return .fullRead(.seatOnScreenChanged) }
         if input.hasAbsenceClock { return .fullRead(.absenceClockRunning) }
         if input.hasPhantomCandidate { return .fullRead(.phantomCandidate) }
         if input.lastRoundChanged { return .fullRead(.lastRoundChanged) }
