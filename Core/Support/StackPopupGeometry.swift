@@ -244,6 +244,16 @@ enum DrawerGridShape {
         return ids.count
     }
 
+    /// The count the columns come from: the one this showing opened with (`DrawerColumnHold`), else
+    /// the settled one. Only a drawer empty with nothing converting out is the hint plate — the
+    /// last cell dragged out keeps its plate until the release. A showing that opened empty holds
+    /// the hint plate's columns, so its first member dragged back out does not read as empty.
+    static func columnBasis(heldCount: Int?, settledCount: Int, actualCount: Int) -> Int {
+        if actualCount == 0 && settledCount == 0 { return 0 }
+        guard let heldCount else { return settledCount }
+        return heldCount == 0 ? StackGridLayout.noteMinColumns : heldCount
+    }
+
     /// Columns come from `settledCount`; rows follow `actualCount` and never drop below one
     /// while the two differ. Only a drawer empty on both counts is the hint plate.
     static func resolve(settledCount: Int, actualCount: Int, limits: StackGridLayout.Limits) -> Result {
@@ -269,6 +279,42 @@ enum DrawerGridShape {
         let visibleRows = min(rows, max(1, maxRows))
         return Result(layout: .init(columns: columns, visibleRows: visibleRows, scrolls: rows > visibleRows),
                       showsHint: false)
+    }
+}
+
+/// The open drawer's column basis: the count its first render of a showing saw, held until the
+/// drawer is ordered out. A release, a drop from outside or an app quitting then only adds or
+/// removes rows; columns change at the next opening, which has no animation. Reshaping the open
+/// plate on a release lays the cells out at once while the window takes 0.22s to follow.
+struct DrawerColumnHold {
+    private(set) var isShowing = false
+    /// Bumped when a closed drawer starts showing.
+    private(set) var showing = 0
+    private var heldShowing: Int?
+    private var heldCount = 0
+
+    /// Returns whether a new showing began. Reopening a plate still on screen (mid fade-out)
+    /// keeps the old one; a plate that is not on screen always starts a new one, whichever path
+    /// ordered it out.
+    @discardableResult
+    mutating func begin(plateOnScreen: Bool) -> Bool {
+        guard !(isShowing && plateOnScreen) else { return false }
+        isShowing = true
+        showing &+= 1
+        return true
+    }
+
+    mutating func end() { isShowing = false }
+
+    /// The held count, captured from `settled` on the first call of a showing. A closed drawer
+    /// holds nothing (another screen's view, the prewarmed host).
+    mutating func heldCount(capturing settled: Int) -> Int? {
+        guard isShowing else { return nil }
+        if heldShowing != showing {
+            heldShowing = showing
+            heldCount = settled
+        }
+        return heldCount
     }
 }
 

@@ -115,6 +115,8 @@ final class PanelCoordinator: NSObject {
     /// The drawer plate's arrow. One for the coordinator's lifetime: the drawer host is built once
     /// and holds on to it. Written only by `syncDrawerArrow`.
     let drawerArrow = StackPopupArrowModel()
+    /// The drawer's showings: the open plate holds its columns (`DrawerShowingModel`).
+    let drawerShowing = DrawerShowingModel()
     /// Keeps the arrow on the capsule while the drawer's frame animates (`syncDrawerArrow`).
     var drawerArrowFollowTimer: Timer?
     /// 跨面板拖动（拖卡进抽屉 路线 C）的唯一权威：载体面板 + 鼠标监视器 + 落点收尾都在它里面。

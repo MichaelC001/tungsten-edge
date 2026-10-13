@@ -25,6 +25,8 @@ extension PanelCoordinator {
         guard let host = ensureDrawerHost(limits: limits) else { return }
         let (panel, hosting) = host
         HoverTrace.action("drawerOpen", phase: "host")
+        // Before the first measurement: that render captures the count the columns hold to.
+        drawerShowing.begin(plateOnScreen: panel.isVisible)
 
         // 首帧就位（owner 2026-07-06「不丝滑」主因之一）：orderFront **前**同步量真实尺寸,
         // 首帧即最终大小,不再「旧尺寸弹出→瞬间校正」。量不到合理值退回 lastDrawerSize,
@@ -140,6 +142,7 @@ extension PanelCoordinator {
     private func makeDrawerRootView(limits: StackGridLayout.Limits) -> DrawerRootView {
         DrawerRootView(limits: limits,
                        arrow: drawerArrow,
+                       showing: drawerShowing,
                        // Next main-loop turn: `fittingSize` reads zero inside the SwiftUI update
                        // that reports the new size; `layoutPanels` measures it outside.
                        onPanelSizeChange: { [weak self] _ in
@@ -251,6 +254,7 @@ extension PanelCoordinator {
                 guard let self, !self.drawerWantsOpen else { return }   // 淡出中又开了 → 别 orderOut
                 panel.orderOut(nil)
                 self.drawerArrow.scrollGeneration &+= 1   // next open starts at the grid's top
+                self.drawerShowing.end()
             }
         })
     }
@@ -273,6 +277,7 @@ extension PanelCoordinator {
         drawerPanel?.alphaValue = 0
         drawerPanel?.orderOut(nil)
         drawerArrow.scrollGeneration &+= 1
+        drawerShowing.end()
     }
 
     private func dismissDrawerIfOutside() {

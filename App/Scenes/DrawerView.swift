@@ -21,6 +21,8 @@ struct DrawerView: View {
     let limits: StackGridLayout.Limits
     /// The plate's arrow, kept on the capsule by the coordinator.
     let arrow: StackPopupArrowModel
+    /// This showing's held column basis. No default — without it the columns follow every release.
+    @ObservedObject var showing: DrawerShowingModel
     /// The plate's size changed: the coordinator re-lays out the drawer window. No default —
     /// without it the window stops following its content.
     let onPanelSizeChange: (CGSize) -> Void
@@ -130,17 +132,18 @@ struct DrawerView: View {
 
     // MARK: - Body
 
-    /// The grid's shape, held still while a conversion is in flight (`DrawerGridShape`). The
+    /// The grid's shape (`DrawerGridShape`): columns from the count this showing opened with
+    /// (`DrawerShowingModel`), else from the members with a conversion in flight undone. The
     /// columns count `visibleMembers` alone, so an outside drag's slot never changes them; its
     /// cells may add a row.
     private func gridShape(cellIDs: [String]) -> DrawerGridShape.Result {
         let delta = dragController.drawerConversionDelta
-        return DrawerGridShape.resolve(
-            settledCount: DrawerGridShape.settledCount(visibleIDs: visibleMembers,
-                                                       convertedInID: delta.convertedInID,
-                                                       convertedOutID: delta.convertedOutID),
-            actualCount: cellIDs.count,
-            limits: limits)
+        let settled = DrawerGridShape.settledCount(visibleIDs: visibleMembers,
+                                                   convertedInID: delta.convertedInID,
+                                                   convertedOutID: delta.convertedOutID)
+        let basis = DrawerGridShape.columnBasis(heldCount: showing.heldCount(capturing: settled),
+                                                settledCount: settled, actualCount: cellIDs.count)
+        return DrawerGridShape.resolve(settledCount: basis, actualCount: cellIDs.count, limits: limits)
     }
 
     var body: some View {
@@ -617,6 +620,27 @@ private struct DrawerChipFramePreferenceKey: PreferenceKey {
     }
 }
 
+/// The drawer's showings (`DrawerColumnHold`), owned by the coordinator so a rootView swap on a
+/// limits change keeps the held count. `begin` must run before the opening's first measurement:
+/// the published bump makes that render capture the count, so the first frame is the natural shape.
+@MainActor
+final class DrawerShowingModel: ObservableObject {
+    @Published private(set) var showing = 0
+    private var hold = DrawerColumnHold()
+
+    func begin(plateOnScreen: Bool) {
+        guard hold.begin(plateOnScreen: plateOnScreen) else { return }
+        showing = hold.showing
+    }
+
+    /// At `orderOut`, not at the fade's start: a change during the fade must not reshape a plate
+    /// still on screen, and reopening mid-fade keeps the columns.
+    func end() { hold.end() }
+
+    /// Written from `body`: a cache, not view state — nothing observes it.
+    func heldCount(capturing settled: Int) -> Int? { hold.heldCount(capturing: settled) }
+}
+
 /// 抽屉宿主的根视图：`DrawerView` + 它的八个环境对象。
 ///
 /// 存在的唯一理由是给 `PanelCoordinator` 一个**可命名**的宿主类型 `NSHostingView<DrawerRootView>`：
@@ -625,6 +649,7 @@ private struct DrawerChipFramePreferenceKey: PreferenceKey {
 struct DrawerRootView: View {
     let limits: StackGridLayout.Limits
     let arrow: StackPopupArrowModel
+    let showing: DrawerShowingModel
     let onPanelSizeChange: (CGSize) -> Void
     let usesLiquidGlass: Bool
     let isDrawerOpen: () -> Bool
@@ -644,6 +669,7 @@ struct DrawerRootView: View {
     var body: some View {
         DrawerView(limits: limits,
                    arrow: arrow,
+                   showing: showing,
                    onPanelSizeChange: onPanelSizeChange,
                    usesLiquidGlass: usesLiquidGlass,
                    isDrawerOpen: isDrawerOpen,

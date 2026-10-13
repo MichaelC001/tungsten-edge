@@ -63,6 +63,72 @@ final class StackPopupGeometryTests: XCTestCase {
         }
     }
 
+    /// The open drawer's shape through `columnBasis`, as `DrawerView.gridShape` builds it.
+    private func openShape(held: Int?, settled: Int, actual: Int) -> DrawerGridShape.Result {
+        DrawerGridShape.resolve(
+            settledCount: DrawerGridShape.columnBasis(heldCount: held, settledCount: settled, actualCount: actual),
+            actualCount: actual, limits: drawerLimits)
+    }
+
+    /// The release keeps the shape the drag showed: no new columns, no new plate size.
+    func testOpenDrawerKeepsItsShapeAcrossTheRelease() {
+        let limits = StackGridLayout.Limits(maxColumns: 7, nominalRows: 5, fitRows: 5, fitRowsWithNote: 5)
+        func shape(_ held: Int?, _ settled: Int, _ actual: Int) -> StackGridLayout.Result {
+            DrawerGridShape.resolve(
+                settledCount: DrawerGridShape.columnBasis(heldCount: held, settledCount: settled, actualCount: actual),
+                actualCount: actual, limits: limits).layout
+        }
+        // 25 → 26 is 5 × 5 → 7 × 4 at rest; the open drawer stays on five columns and scrolls.
+        XCTAssertEqual(StackGridLayout.resolve(cellCount: 26, limits: limits, hasNote: false).columns, 7)
+        let converting = shape(25, 25, 26)
+        XCTAssertEqual(converting, .init(columns: 5, visibleRows: 5, scrolls: true))
+        XCTAssertEqual(shape(25, 26, 26), converting)                                   // committed
+        // Dragging one out of 26: seven columns through the release.
+        XCTAssertEqual(shape(26, 26, 25), shape(26, 25, 25))
+        XCTAssertEqual(shape(26, 25, 25).columns, 7)
+        // An outside drop: the slot's cells, then the members they became.
+        XCTAssertEqual(shape(25, 25, 27), shape(25, 27, 27))
+        // Nothing held (closed drawer): the native rule.
+        XCTAssertEqual(shape(nil, 26, 26), StackGridLayout.resolve(cellCount: 26, limits: limits, hasNote: false))
+    }
+
+    func testOpenDrawerThroughTheEmptyBoundary() {
+        // Last one dragged out: one cell, no hint, while it is out; back in, the same; released, the hint.
+        let leaving = openShape(held: 1, settled: 1, actual: 0)
+        XCTAssertEqual(leaving.layout, .init(columns: 1, visibleRows: 1, scrolls: false))
+        XCTAssertFalse(leaving.showsHint)
+        XCTAssertEqual(openShape(held: 1, settled: 1, actual: 1).layout.columns, 1)
+        XCTAssertTrue(openShape(held: 1, settled: 0, actual: 0).showsHint)
+        // Opened empty, one dragged in: the hint plate's three columns while converting and after.
+        let entering = openShape(held: 0, settled: 0, actual: 1)
+        XCTAssertEqual(entering.layout, .init(columns: 3, visibleRows: 1, scrolls: false))
+        XCTAssertEqual(openShape(held: 0, settled: 1, actual: 1), entering)
+        XCTAssertFalse(entering.showsHint)
+        // Same showing: that one dragged back out keeps the plate; only its release is the hint.
+        XCTAssertEqual(openShape(held: 0, settled: 1, actual: 0).layout, entering.layout)
+        XCTAssertFalse(openShape(held: 0, settled: 1, actual: 0).showsHint)
+        XCTAssertEqual(openShape(held: 0, settled: 1, actual: 1), entering)            // back in
+        XCTAssertTrue(openShape(held: 0, settled: 0, actual: 0).showsHint)             // released out
+        XCTAssertEqual(openShape(held: 0, settled: 2, actual: 2).layout.columns, 3)    // a second one in
+    }
+
+    func testColumnHoldCapturesOncePerShowing() {
+        var hold = DrawerColumnHold()
+        XCTAssertNil(hold.heldCount(capturing: 5))                   // closed: nothing held
+        XCTAssertTrue(hold.begin(plateOnScreen: false))
+        XCTAssertEqual(hold.heldCount(capturing: 25), 25)
+        XCTAssertEqual(hold.heldCount(capturing: 26), 25)            // same showing
+        XCTAssertFalse(hold.begin(plateOnScreen: true))              // reopened mid fade-out
+        XCTAssertEqual(hold.heldCount(capturing: 30), 25)
+        hold.end()
+        XCTAssertNil(hold.heldCount(capturing: 26))
+        XCTAssertTrue(hold.begin(plateOnScreen: false))
+        XCTAssertEqual(hold.heldCount(capturing: 26), 26)
+        // Ordered out by a path that never called `end`: the next opening still starts afresh.
+        XCTAssertTrue(hold.begin(plateOnScreen: false))
+        XCTAssertEqual(hold.heldCount(capturing: 12), 12)
+    }
+
     func testDrawerSettledCountUndoesTheConversionByID() {
         let visible = ["a", "b", "c"]
         XCTAssertEqual(DrawerGridShape.settledCount(visibleIDs: visible, convertedInID: nil, convertedOutID: nil), 3)
