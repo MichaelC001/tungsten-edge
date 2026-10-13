@@ -401,7 +401,12 @@ struct DrawerView: View {
     /// 这一格的悬停反馈是不是该按住：正被拎着（`.onHover` 在透明期间照样为 true）、
     /// 或刚落定而指针还没动（`DragController.hoverHoldPayload`）。任务条那边由整条跟踪区在源头压住，
     /// 抽屉的 `LauncherChip` 各自挂 `.onHover`，只能在这里按格子压。
+    ///
+    /// While a drag is live every cell holds still, as the strip does while the button is down:
+    /// a cell lifting under the passing carrier makes the drawer's glass plate re-render, and the
+    /// carried icon stutters.
     private func isHoverSuppressed(_ id: String) -> Bool {
+        if dragController.draggingPayload != nil || externalGhost != nil { return true }
         if let p = dragController.hoverHoldPayload, p.source == .drawer, p.id == id { return true }
         return isSlotHidden(id)
     }
