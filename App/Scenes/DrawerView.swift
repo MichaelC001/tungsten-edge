@@ -155,6 +155,7 @@ struct DrawerView: View {
                                 layout: shape.layout,
                                 plate: .drawer,
                                 usesLiquidGlass: usesLiquidGlass,
+                                appearance: .alwaysDark,
                                 arrow: arrow,
                                 onPanelSizeChange: onPanelSizeChange,
                                 gridAnimation: .easeInOut(duration: DrawerAnimation.duration),
@@ -364,6 +365,8 @@ struct DrawerView: View {
     /// （`ChipSnapshotter`），渲染格子和渲染载体必须是同一份代码、同一批参数。
     /// 外面那层入场动画 / 拖动时置 0 的透明度 / 手势都不能进快照，所以留在 `drawerChip` 里。
     private func drawerChipContent(_ id: String, running: Bool) -> some View {
+        // The drawer's plate is always dark (`StackPopupAppearance.alwaysDark`); the cell takes it
+        // here, not from the chrome, so the drag carrier's snapshots of it are dark too.
         LauncherChip(bundleID: id,
                      isRunning: running,
                      isHidden: running ? isHiddenInSnapshot(id) : false,
@@ -399,6 +402,7 @@ struct DrawerView: View {
                      hoverSuppressed: isHoverSuppressed(id),
                      onLaunch: { runtime.beginLaunch(id) },
                      onPrimaryAction: onPrimaryAction)
+            .environment(\.colorScheme, .dark)
     }
 
     /// 这一格的悬停反馈是不是该按住：正被拎着（`.onHover` 在透明期间照样为 true）、

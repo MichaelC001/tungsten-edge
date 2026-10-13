@@ -1,10 +1,10 @@
 import AppKit
 import SwiftUI
 
-/// The plate of the folder / shelf / Trash popup: the native Dock's stack material — regular Liquid
-/// Glass in its dark appearance, whatever the system appearance is — shaped by one path that
-/// carries the arrow. Below macOS 26 (or with glass switched off) a dark frosted plate takes the
-/// same outline.
+/// The plate of the folder / shelf / Trash popup and the drawer: the native Dock's stack material —
+/// regular Liquid Glass, in the window's appearance or (`forcesDark`, the drawer) always dark —
+/// shaped by one path that carries the arrow. Below macOS 26 (or with glass switched off) a
+/// frosted plate takes the same outline.
 ///
 /// The view is `arrowHeight` taller than the plate: the arrow hangs in that strip.
 struct StackPopupBackdrop: View {
@@ -12,6 +12,7 @@ struct StackPopupBackdrop: View {
     /// Arrow centre from the plate's left edge.
     let arrowCenterX: CGFloat
     let usesLiquidGlass: Bool
+    let forcesDark: Bool
 
     @Environment(\.colorScheme) private var colorScheme
     private var theme: DockThemeTokens { .resolved(for: colorScheme) }
@@ -19,10 +20,10 @@ struct StackPopupBackdrop: View {
     var body: some View {
         Group {
             if #available(macOS 26.0, *), usesLiquidGlass {
-                StackGlassPlate(plateSize: plateSize, arrowCenterX: arrowCenterX)
+                StackGlassPlate(plateSize: plateSize, arrowCenterX: arrowCenterX, forcesDark: forcesDark)
             } else {
                 let shape = StackPopupShape(plateSize: plateSize, arrowCenterX: arrowCenterX)
-                StackFrostedPlate()
+                StackFrostedPlate(forcesDark: forcesDark)
                     .clipShape(shape)
                     .overlay(shape.stroke(theme.stackPopupHairline.color, lineWidth: 0.5))
                     .dockShadow(theme.stackPopupShadow)
@@ -49,9 +50,10 @@ struct StackPopupShape: Shape {
 private struct StackGlassPlate: NSViewRepresentable {
     let plateSize: CGSize
     let arrowCenterX: CGFloat
+    let forcesDark: Bool
 
     func makeNSView(context: Context) -> StackGlassContainer {
-        let view = StackGlassContainer()
+        let view = StackGlassContainer(forcesDark: forcesDark)
         view.apply(plateSize: plateSize, arrowCenterX: arrowCenterX)
         return view
     }
@@ -68,13 +70,13 @@ final class StackGlassContainer: NSView {
     private var plateSize = CGSize.zero
     private var arrowCenterX: CGFloat = 0
 
-    override init(frame frameRect: NSRect) {
-        super.init(frame: frameRect)
+    init(forcesDark: Bool) {
+        super.init(frame: .zero)
         glass.contentView = NSView()
         glass.style = .regular
-        // On the view, not the window: the app is pinned to `.aqua` and everything else in this
-        // panel (menus included) stays light.
-        glass.appearance = NSAppearance(named: .darkAqua)
+        // On the view, not the window: everything else in the panel (the cells' menus included)
+        // keeps the app's appearance.
+        if forcesDark { glass.appearance = NSAppearance(named: .darkAqua) }
         glass.cornerRadius = StackPopupMetrics.cornerRadius
         addSubview(glass)
     }
@@ -107,14 +109,28 @@ final class StackGlassContainer: NSView {
 }
 
 private struct StackFrostedPlate: NSViewRepresentable {
+    let forcesDark: Bool
+
     func makeNSView(context: Context) -> NSVisualEffectView {
         let view = NSVisualEffectView()
-        view.material = .hudWindow
         view.blendingMode = .behindWindow
         view.state = .active
-        view.appearance = NSAppearance(named: .darkAqua)
+        apply(to: view, colorScheme: context.environment.colorScheme)
         return view
     }
 
-    func updateNSView(_ view: NSVisualEffectView, context: Context) {}
+    // SwiftUI re-runs update on an appearance change, never re-creates the view.
+    func updateNSView(_ view: NSVisualEffectView, context: Context) {
+        apply(to: view, colorScheme: context.environment.colorScheme)
+    }
+
+    /// Dark (and the drawer): the HUD plate as before. Light: HUD stays dark in either appearance,
+    /// so a popover plate, which follows the window's.
+    private func apply(to view: NSVisualEffectView, colorScheme: ColorScheme) {
+        let dark = forcesDark || colorScheme == .dark
+        let material: NSVisualEffectView.Material = dark ? .hudWindow : .popover
+        if view.material != material { view.material = material }
+        let appearance = dark ? NSAppearance(named: .darkAqua) : nil
+        if view.appearance?.name != appearance?.name { view.appearance = appearance }
+    }
 }

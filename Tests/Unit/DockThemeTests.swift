@@ -154,14 +154,17 @@ final class DockThemeTests: XCTestCase {
         }
     }
 
-    /// The stack popup is the one dark surface (the native Dock's stack grid is dark glass in both
-    /// system appearances): black text on it would vanish the way white does on the light bar.
-    func testStackPopupForegroundsAreWhite() {
-        for tint in [theme.stackPopupText, theme.stackPopupNote, theme.stackPopupGlyph,
-                     theme.stackPopupBackFill, theme.stackPopupHairline, theme.stackPopupSeparator] {
-            XCTAssertEqual(tint.base, .white)
+    /// The stack popup follows the appearance (macOS 27's native stack grid is light glass with dark
+    /// text in light mode, dark glass with white text in dark mode): each column's foregrounds are the
+    /// opposite of its plate.
+    func testStackPopupForegroundsContrastWithTheirPlate() {
+        for (column, base) in [(theme, DockTintBase.black), (dark, DockTintBase.white)] {
+            for tint in [column.stackPopupText, column.stackPopupNote, column.stackPopupGlyph,
+                         column.stackPopupBackFill, column.stackPopupHairline, column.stackPopupSeparator] {
+                XCTAssertEqual(tint.base, base)
+            }
+            XCTAssertGreaterThan(column.stackPopupText.opacity, column.stackPopupNote.opacity)
         }
-        XCTAssertGreaterThan(theme.stackPopupText.opacity, theme.stackPopupNote.opacity)
     }
 
     /// The frosted fallback's shadow lives in the popup window's own transparent border.
@@ -320,15 +323,15 @@ final class DockThemeTests: XCTestCase {
                           "the active / inactive difference is the only on-desktop cue")
     }
 
-    /// The stack popup is dark glass in both appearances, and its views may resolve either column
-    /// (some sit inside a forced `.dark` environment, the backdrop does not).
-    func testStackPopupTokensAreIdenticalInBothColumns() {
-        XCTAssertEqual(dark.stackPopupText, theme.stackPopupText)
-        XCTAssertEqual(dark.stackPopupNote, theme.stackPopupNote)
-        XCTAssertEqual(dark.stackPopupGlyph, theme.stackPopupGlyph)
-        XCTAssertEqual(dark.stackPopupBackFill, theme.stackPopupBackFill)
-        XCTAssertEqual(dark.stackPopupHairline, theme.stackPopupHairline)
-        XCTAssertEqual(dark.stackPopupSeparator, theme.stackPopupSeparator)
+    /// The dark column is the drawer's (forced dark) and dark mode's: the values it had when the
+    /// popup was dark in both appearances, unchanged.
+    func testStackPopupDarkColumnKeepsItsValues() {
+        XCTAssertEqual(dark.stackPopupText, .white(0.95))
+        XCTAssertEqual(dark.stackPopupNote, .white(0.6))
+        XCTAssertEqual(dark.stackPopupGlyph, .white(124.0 / 255.0))
+        XCTAssertEqual(dark.stackPopupBackFill, .white(60.0 / 255.0))
+        XCTAssertEqual(dark.stackPopupHairline, .white(0.18))
+        XCTAssertEqual(dark.stackPopupSeparator, .white(0.1))
         XCTAssertEqual(dark.stackPopupShadow, theme.stackPopupShadow)
         XCTAssertEqual(dark.shelfTile, theme.shelfTile, "the shelf tile is opaque art, not a tint")
     }

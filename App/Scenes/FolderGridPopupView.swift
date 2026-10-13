@@ -228,6 +228,7 @@ struct FolderGridPopupView: View {
                          layout: layout,
                          plate: .stack,
                          usesLiquidGlass: usesLiquidGlass,
+                         appearance: .followsAppearance,
                          arrow: context.arrow,
                          onPanelSizeChange: onContentResize,
                          onBack: drillStack.isEmpty ? nil : { _ = drillStack.removeLast() },
@@ -401,7 +402,7 @@ struct FolderGridCell: View {
                 .interpolation(.high)
                 .aspectRatio(contentMode: .fit)
                 .foregroundStyle(theme.stackPopupGlyph.color)
-                .blendMode(.plusLighter)
+                .blendMode(colorScheme == .dark ? .plusLighter : .plusDarker)
         } else {
             Image(nsImage: staticIcon ?? thumbnail ?? resolvedIcon ?? Self.placeholderIcon)
                 .resizable()
@@ -464,8 +465,11 @@ enum NativeStackArtwork {
         return image
     }()
 
-    /// A grey plate with a lighter chevron; the native grid composites it plus-lighter.
-    static let backButton: NSImage? = dockBundle?.image(forResource: "back-button-dark")
+    /// Dark: a grey plate with a lighter chevron, composited plus-lighter. Light: a white plate
+    /// with a darker chevron, composited plus-darker.
+    static func backButton(dark: Bool) -> NSImage? { dark ? backButtonDark : backButtonLight }
+    private static let backButtonDark: NSImage? = dockBundle?.image(forResource: "back-button-dark")
+    private static let backButtonLight: NSImage? = dockBundle?.image(forResource: "back-button-light")
 
     static let finderAppIcon: NSImage = FolderIconResolver.resolve("/System/Library/CoreServices/Finder.app")
 
@@ -477,6 +481,11 @@ enum NativeStackArtwork {
     /// The soft shadow under each fan item.
     static let stackItemShadow: NSImage? = dockBundle?.image(forResource: "stackitemshadow")
 
-    /// The fan's top cell (「Open in Finder」 / 「N More in Finder」).
-    static let openInFinder64: NSImage? = dockBundle?.image(forResource: "openinfinder64")
+    /// The fan's top cell (「Open in Finder」 / 「N More in Finder」): a template, tinted and blended
+    /// onto its round plate.
+    static let openInFinder64: NSImage? = {
+        guard let image = dockBundle?.image(forResource: "openinfinder64") else { return nil }
+        image.isTemplate = true
+        return image
+    }()
 }

@@ -304,14 +304,16 @@ struct DockThemeTokens: Equatable {
 
     // MARK: Folder / shelf / Trash popup
 
-    // The one fixed-dark surface of this light table: the native Dock's stack grid is dark glass
-    // with white text in both system appearances, so these are white where everything else on
-    // the bar is black. Values are native readings, not taste.
+    // Native readings, not taste. macOS 27's stack grid follows the appearance: light glass with
+    // near-black text in light mode, dark glass with white text in dark mode. The drawer forces the
+    // dark column whatever the appearance (`StackPopupAppearance.alwaysDark`).
     /// Title and cell names.
     let stackPopupText: DockTint
     /// The status line (empty shelf, Trash state, unreadable folder).
     let stackPopupNote: DockTint
-    /// 「Open in Finder」 ring, composited plus-lighter: the native glyph reads backdrop + 124.
+    /// 「Open in Finder」 ring. Dark: composited plus-lighter, the native glyph reads backdrop + 124.
+    /// Light: composited plus-darker, black 0.5 takes 127 off the backdrop (native (18,69,101) on
+    /// (145,196,228)).
     let stackPopupGlyph: DockTint
     /// Back-button plate when the Dock's own art cannot be loaded (plus-lighter is not used there).
     let stackPopupBackFill: DockTint
@@ -418,12 +420,13 @@ extension DockThemeTokens {
         folderDropRing: .black(0.45),
         folderThumbHairline: .black(0.15),
 
-        stackPopupText: .white(0.95),
-        stackPopupNote: .white(0.6),
-        stackPopupGlyph: .white(124.0 / 255.0),
-        stackPopupBackFill: .white(60.0 / 255.0),
-        stackPopupHairline: .white(0.18),
-        stackPopupSeparator: .white(0.1),
+        // Native light: text (22,27,34) on a (150,199,237) plate.
+        stackPopupText: .black(0.86),
+        stackPopupNote: .black(0.5),
+        stackPopupGlyph: .black(0.5),
+        stackPopupBackFill: .black(0.08),
+        stackPopupHairline: .black(0.12),
+        stackPopupSeparator: .black(0.1),
         stackPopupShadow: DockShadow(tint: .black(0.3), radius: 18, y: 6),
 
         // 2026-08-17 对着原生截图的边缘剖面定的（黑底、@2x）：
@@ -501,13 +504,12 @@ extension DockThemeTokens {
         folderDropRing: .white(0.9),
         folderThumbHairline: .white(0.3),
 
-        // The stack popup is dark in both appearances: same values, by construction.
-        stackPopupText: light.stackPopupText,
-        stackPopupNote: light.stackPopupNote,
-        stackPopupGlyph: light.stackPopupGlyph,
-        stackPopupBackFill: light.stackPopupBackFill,
-        stackPopupHairline: light.stackPopupHairline,
-        stackPopupSeparator: light.stackPopupSeparator,
+        stackPopupText: .white(0.95),
+        stackPopupNote: .white(0.6),
+        stackPopupGlyph: .white(124.0 / 255.0),
+        stackPopupBackFill: .white(60.0 / 255.0),
+        stackPopupHairline: .white(0.18),
+        stackPopupSeparator: .white(0.1),
         stackPopupShadow: light.stackPopupShadow,
 
         // The native dark bubble *is* the system's regular glass in its dark appearance: fill

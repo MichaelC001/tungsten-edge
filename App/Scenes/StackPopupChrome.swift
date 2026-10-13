@@ -20,6 +20,13 @@ struct StackPopupContext {
     let arrow: StackPopupArrowModel
 }
 
+/// Whose appearance a stack plate takes. The folder, shelf and Trash popups follow the system's
+/// (macOS 27's native stack is light glass with dark text in light mode); the drawer stays dark.
+enum StackPopupAppearance {
+    case followsAppearance
+    case alwaysDark
+}
+
 /// The frame shared by the folder, shelf and Trash popups, laid out like the native Dock's stack
 /// grid: title row, optional status line, grid, and the plate with its arrow. Width and height are
 /// derived from `layout` — never measured.
@@ -31,6 +38,8 @@ struct StackPopupChrome<Grid: View>: View {
     /// The plate's frame and cells (`StackPlateMetrics`). No default: the plate's size derives from it.
     let plate: StackPlateMetrics
     let usesLiquidGlass: Bool
+    /// No default: an omission must not compile into the wrong appearance.
+    let appearance: StackPopupAppearance
     @ObservedObject var arrow: StackPopupArrowModel
     /// The popup window's new size whenever the plate's changes. No default: without it the
     /// window stops following its content.
@@ -43,7 +52,10 @@ struct StackPopupChrome<Grid: View>: View {
     /// The cells; they land in a `LazyVGrid` of `layout.columns` fixed columns.
     @ViewBuilder let grid: () -> Grid
 
-    @Environment(\.colorScheme) private var colorScheme
+    @Environment(\.colorScheme) private var environmentScheme
+    /// The chrome's own title, note, separator and back button read this, not the environment:
+    /// the `.dark` it puts on its content does not reach back up to itself.
+    private var colorScheme: ColorScheme { appearance == .alwaysDark ? .dark : environmentScheme }
     private var theme: DockThemeTokens { .resolved(for: colorScheme) }
     private typealias Metrics = StackPopupMetrics
 
@@ -72,13 +84,13 @@ struct StackPopupChrome<Grid: View>: View {
             GeometryReader { proxy in
                 StackPopupBackdrop(plateSize: proxy.size,
                                    arrowCenterX: proxy.size.width / 2 + arrow.offsetFromCenter,
-                                   usesLiquidGlass: usesLiquidGlass)
+                                   usesLiquidGlass: usesLiquidGlass,
+                                   forcesDark: appearance == .alwaysDark)
             }
         }
         .padding(.bottom, Metrics.arrowHeight)
         .padding(Metrics.panelMargin)
-        // Only so the system scroller draws its light knob on this dark plate; nothing reads it.
-        .environment(\.colorScheme, .dark)
+        .modifier(StackPopupSchemeModifier(appearance: appearance))
         // Derived, not measured: `fittingSize` read inside this update returns zero.
         .onChange(of: plateSize) { onPanelSizeChange(Metrics.panelSize(forPlate: $0)) }
     }
@@ -106,8 +118,10 @@ struct StackPopupChrome<Grid: View>: View {
     private var backButton: some View {
         if let onBack {
             Group {
-                if let art = NativeStackArtwork.backButton {
-                    Image(nsImage: art).blendMode(.plusLighter)
+                if let art = NativeStackArtwork.backButton(dark: colorScheme == .dark) {
+                    // Dark art is a grey plate added onto the glass, light art a white one
+                    // darkened onto it: either way only the chevron shows.
+                    Image(nsImage: art).blendMode(colorScheme == .dark ? .plusLighter : .plusDarker)
                 } else {
                     Image(systemName: "chevron.left")
                         .font(.system(size: 11, weight: .semibold))
@@ -159,6 +173,19 @@ struct StackPopupChrome<Grid: View>: View {
             cells
                 .frame(height: gridHeight, alignment: .top)
                 .padding(.leading, plate.sidePadding)
+        }
+    }
+}
+
+/// The drawer's plate is dark whatever the system's appearance: its cells, text tokens and the
+/// system scroller's knob read `.dark` there. The other popups take the window's appearance.
+private struct StackPopupSchemeModifier: ViewModifier {
+    let appearance: StackPopupAppearance
+
+    func body(content: Content) -> some View {
+        switch appearance {
+        case .alwaysDark: content.environment(\.colorScheme, .dark)
+        case .followsAppearance: content
         }
     }
 }

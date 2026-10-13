@@ -43,6 +43,7 @@ struct TrashGridPopupView: View {
                          layout: layout,
                          plate: .stack,
                          usesLiquidGlass: usesLiquidGlass,
+                         appearance: .followsAppearance,
                          arrow: context.arrow,
                          onPanelSizeChange: onContentResize,
                          gridAnimation: .easeInOut(duration: DrawerAnimation.duration),

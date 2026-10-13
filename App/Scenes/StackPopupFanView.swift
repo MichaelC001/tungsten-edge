@@ -72,6 +72,11 @@ final class StackPopupFanView: NSView, NSDraggingSource {
     /// The fan flies open. `completion` runs when the flight ends (at once with reduced motion).
     func playOpen(reducedMotion: Bool, completion: @escaping () -> Void) {
         layoutSubtreeIfNeeded()
+        // The landed pose is the model, animated or not (reduced motion only skips the flight).
+        CATransaction.begin()
+        CATransaction.setDisableActions(true)
+        itemViews.forEach { $0.settle() }
+        CATransaction.commit()
         guard !reducedMotion else {
             completion()
             return
@@ -188,8 +193,13 @@ private final class FanItemView: NSView {
 
     private let shadowView = NSImageView()
     private let iconView = NSImageView()
+    private let glyphView = NSView()
+    private let topCell = NSView()
+    private let pressShade = NSView()
     private let label: NSView
     private let rotation: CGFloat
+    /// The top cell's template glyph: blended onto its round plate like the grid's.
+    private var isGlyph = false
 
     init(item: StackFanItem, layoutItem: StackFanLayout.Item) {
         rotation = layoutItem.rotation
@@ -214,14 +224,44 @@ private final class FanItemView: NSView {
             iconView.frame = bounds
         case .openInFinder:
             // The template glyph sits on a round plate (radius 28, inset 4) and casts no shadow.
-            addSubview(Self.makeRoundPlate(frame: bounds.insetBy(dx: 4, dy: 4)))
-            iconView.image = NativeStackArtwork.openInFinder64 ?? NativeStackArtwork.finderAppIcon
-            iconView.contentTintColor = .labelColor
-            iconView.frame = bounds
+            // Plate, glyph and press shade are one piece: the native presses and fades it whole.
+            let plateFrame = bounds.insetBy(dx: 4, dy: 4)
+            topCell.frame = bounds
+            topCell.wantsLayer = true
+            topCell.addSubview(Self.makeRoundPlate(frame: plateFrame))
+            addSubview(topCell)
+            if let glyph = NativeStackArtwork.openInFinder64?.cgImage(forProposedRect: nil, context: nil, hints: nil) {
+                // Painted, not an image view: a tinted template image view neither takes the tint at
+                // full strength nor blends.
+                glyphView.frame = bounds
+                glyphView.wantsLayer = true
+                let mask = CALayer()
+                mask.contents = glyph
+                mask.contentsGravity = .resizeAspect
+                mask.frame = bounds
+                glyphView.layer?.mask = mask
+                topCell.addSubview(glyphView)
+                isGlyph = true
+            } else {
+                iconView.image = NativeStackArtwork.finderAppIcon
+                iconView.frame = bounds
+            }
         }
         iconView.imageScaling = .scaleProportionallyUpOrDown
         iconView.wantsLayer = true
-        addSubview(iconView)
+        iconView.layerUsesCoreImageFilters = true
+        if isGlyph {
+            // Multiplying by grey 0.4 = black at 0.6 over it; a filter cannot reach the glass.
+            pressShade.frame = bounds.insetBy(dx: 4, dy: 4)
+            pressShade.wantsLayer = true
+            pressShade.layer?.backgroundColor = NSColor(white: 0, alpha: 0.6).cgColor
+            pressShade.layer?.cornerRadius = pressShade.frame.width / 2
+            pressShade.isHidden = true
+            topCell.addSubview(pressShade)
+        } else {
+            addSubview(iconView)
+        }
+        styleGlyph()
 
         let labelRect = StackFanLayout.labelRect(for: layoutItem).offsetBy(dx: side / 2, dy: side / 2)
         label.frame = labelRect
@@ -230,6 +270,29 @@ private final class FanItemView: NSView {
     }
 
     required init?(coder: NSCoder) { fatalError("init(coder:) has not been implemented") }
+
+    override func viewDidChangeEffectiveAppearance() {
+        super.viewDidChangeEffectiveAppearance()
+        styleGlyph()
+    }
+
+    override func viewDidMoveToWindow() {
+        super.viewDidMoveToWindow()
+        styleGlyph()
+    }
+
+    /// Native: light mode darkens the plate under the arrow by black 0.5 (plus-darker), dark mode
+    /// lightens it (plus-lighter) — the grid's `stackPopupGlyph`, same numbers.
+    private func styleGlyph() {
+        guard isGlyph else { return }
+        let dark = effectiveAppearance.bestMatch(from: [.aqua, .darkAqua]) == .darkAqua
+        let tint = (dark ? DockThemeTokens.dark : .light).stackPopupGlyph
+        guard let layer = glyphView.layer else { return }
+        layer.backgroundColor = (tint.base == .white ? NSColor(white: 1, alpha: tint.opacity)
+                                                      : NSColor(white: 0, alpha: tint.opacity)).cgColor
+        // Core Animation's own plus-lighter / plus-darker.
+        layer.compositingFilter = dark ? "plusL" : "plusD"
+    }
 
     /// The icon's square in the fan view's coordinates (unturned; for the drag image).
     var iconFrameInFan: CGRect { frame }
@@ -240,17 +303,27 @@ private final class FanItemView: NSView {
         iconView.image = image
     }
 
+    /// What fades on close: the top cell whole (plate and glyph), else the icon.
+    private var drawnView: NSView { isGlyph ? topCell : iconView }
+
     /// Pressed: the icon multiplied by grey 0.4, as the native item.
     func setPressed(_ pressed: Bool) {
+        if isGlyph {
+            pressShade.isHidden = !pressed
+            return
+        }
         guard pressed, let dim = CIFilter(name: "CIColorMatrix") else {
-            iconView.contentFilters = []
+            drawnView.contentFilters = []
             return
         }
         dim.setDefaults()
-        dim.setValue(CIVector(x: 0.4, y: 0, z: 0, w: 0), forKey: "inputRVector")
-        dim.setValue(CIVector(x: 0, y: 0.4, z: 0, w: 0), forKey: "inputGVector")
-        dim.setValue(CIVector(x: 0, y: 0, z: 0.4, w: 0), forKey: "inputBVector")
-        iconView.contentFilters = [dim]
+        // Core Image multiplies in linear light: 0.133 there is ×0.4 on screen (0.4 itself read 170
+        // on a white page instead of 102).
+        let k: CGFloat = 0.1329
+        dim.setValue(CIVector(x: k, y: 0, z: 0, w: 0), forKey: "inputRVector")
+        dim.setValue(CIVector(x: 0, y: k, z: 0, w: 0), forKey: "inputGVector")
+        dim.setValue(CIVector(x: 0, y: 0, z: k, w: 0), forKey: "inputBVector")
+        drawnView.contentFilters = [dim]
     }
 
     // MARK: Building
@@ -346,25 +419,40 @@ private final class FanItemView: NSView {
         }
     }
 
+    /// The item's turn, on `sublayerTransform`: AppKit resets a layer-backed view's own `transform`
+    /// at its next geometry sync, which left every landed item upright.
+    private var turnedTransform: CATransform3D {
+        Self.transform(scale: 1, rotation: rotation, about: centerPivot)
+    }
+
+    /// The landed pose as the model value.
+    func settle() {
+        layer?.sublayerTransform = turnedTransform
+    }
+
     func addOpenAnimation(from pile: CGRect, to item: StackFanLayout.Item) {
         guard let layer else { return }
         let start = CGPoint(x: pile.midX, y: pile.midY)
-        let finalTransform = Self.transform(scale: 1, rotation: rotation, about: centerPivot)
-        layer.transform = finalTransform
+        let turned = turnedTransform
 
         let flight = CAKeyframeAnimation(keyPath: "position")
         flight.values = Self.arc(from: start, to: item.center).map { NSValue(point: position(forCenter: $0)) }
         flight.calculationMode = .paced
         flight.timingFunction = PopoverAnimation.fanCurve()
 
-        let turn = CABasicAnimation(keyPath: "transform")
-        turn.fromValue = NSValue(caTransform3D: Self.transform(scale: pile.width / StackFanLayout.itemSide,
+        let grow = CABasicAnimation(keyPath: "transform")
+        grow.fromValue = NSValue(caTransform3D: Self.transform(scale: pile.width / StackFanLayout.itemSide,
                                                                rotation: 0, about: centerPivot))
-        turn.toValue = NSValue(caTransform3D: finalTransform)
+        grow.toValue = NSValue(caTransform3D: CATransform3DIdentity)
+        grow.timingFunction = CAMediaTimingFunction(name: .default)
+
+        let turn = CABasicAnimation(keyPath: "sublayerTransform")
+        turn.fromValue = NSValue(caTransform3D: CATransform3DIdentity)
+        turn.toValue = NSValue(caTransform3D: turned)
         turn.timingFunction = CAMediaTimingFunction(name: .default)
 
         let group = CAAnimationGroup()
-        group.animations = [flight, turn]
+        group.animations = [flight, grow, turn]
         group.duration = PopoverAnimation.stackDuration
         layer.add(group, forKey: "fanOpen")
 
@@ -403,6 +491,7 @@ private final class FanItemView: NSView {
         let liveCenter = CGPoint(x: livePosition.x - anchor.x * side + side / 2,
                                  y: livePosition.y - anchor.y * side + side / 2)
         let liveTransform = presentation?.transform ?? layer.transform
+        let liveTurn = presentation?.sublayerTransform ?? layer.sublayerTransform
         layer.removeAllAnimations()
         let end = CGPoint(x: pile.midX, y: pile.midY)
         let endTransform = Self.transform(scale: pile.width / side, rotation: 0, about: centerPivot)
@@ -412,13 +501,18 @@ private final class FanItemView: NSView {
         flight.calculationMode = .paced
         flight.timingFunction = PopoverAnimation.fanCurve()
 
-        let turn = CABasicAnimation(keyPath: "transform")
-        turn.fromValue = NSValue(caTransform3D: liveTransform)
-        turn.toValue = NSValue(caTransform3D: endTransform)
+        let shrink = CABasicAnimation(keyPath: "transform")
+        shrink.fromValue = NSValue(caTransform3D: liveTransform)
+        shrink.toValue = NSValue(caTransform3D: endTransform)
+        shrink.timingFunction = CAMediaTimingFunction(name: .default)
+
+        let turn = CABasicAnimation(keyPath: "sublayerTransform")
+        turn.fromValue = NSValue(caTransform3D: liveTurn)
+        turn.toValue = NSValue(caTransform3D: CATransform3DIdentity)
         turn.timingFunction = CAMediaTimingFunction(name: .default)
 
         let group = CAAnimationGroup()
-        group.animations = [flight, turn]
+        group.animations = [flight, shrink, turn]
         group.duration = duration
         group.fillMode = .forwards
         group.isRemovedOnCompletion = false
@@ -440,7 +534,7 @@ private final class FanItemView: NSView {
             labelLayer.add(shrink, forKey: "fanCloseScale")
             Self.fade(labelLayer, to: 0, beginAfter: 0, duration: duration, timing: .linear)
         }
-        if let icon = iconView.layer {
+        if let icon = drawnView.layer {
             switch iconFade {
             case .none:
                 break
