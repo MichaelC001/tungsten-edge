@@ -28,6 +28,9 @@ struct DockStripView: View {
     /// 这块屏的窗口卡。**显式传入、无默认值**：漏传就是每块屏都画全部窗口、④ 静默退化成 ③。
     /// ③↔④ 切换不重建单元（key 列表相同），所以是否过滤看 `settingsStore.taskbarScreenPlacement`。
     let displayUUID: String?
+    /// This unit's open-popup look for folder chips. A long-lived root view does not see
+    /// environment changes, so it is observed here; no default.
+    @ObservedObject var folderPopupPresence: FolderPopupPresence
 
     /// 本条是不是当前拖动的活动表面。没人认领（抽屉起拖尚未转正）时人人可动——谁的条框含着指针谁转正并认领。
     var ownsActiveDrag: Bool {
@@ -55,7 +58,10 @@ struct DockStripView: View {
     private var theme: DockThemeTokens { .resolved(for: colorScheme) }
 
     /// 文件夹 chip 点击 → 弹窗 toggle（path + chip 可视矩形·屏幕坐标）。PanelCoordinator 注入。
-    var onFolderPopupToggle: (String, CGRect) -> Void = { _, _ in }
+    var onFolderPopupToggle: (String, CGRect, FolderPopupOrigin) -> Void = { _, _, _ in }
+    /// A folder chip whose popup is open starts to drag: the popup closes at once, so the chip
+    /// and its carrier go back to the cover before the carrier is drawn.
+    var onFolderDragWillBegin: () -> Void = {}
     /// 中转格点击 → 中转弹窗 toggle（chip 可视矩形·屏幕坐标）。PanelCoordinator 注入。
     var onShelfPopupToggle: (CGRect) -> Void = { _ in }
     /// 废纸篓点击 → 废纸篓弹窗 toggle（chip 可视矩形·屏幕坐标）。PanelCoordinator 注入。
@@ -1220,6 +1226,11 @@ struct DockStripView: View {
                         .onChanged { value in
                             if dragController.draggingPayload == nil {
                                 let slot = folderChipFrames[entry.id]
+                                if folderPopupPresence.style(for: path) != nil {
+                                    onFolderDragWillBegin()
+                                    // The bitmap prepared on mouse-down shows the open look.
+                                    prepareDragCandidate(entry, id: path, slot: slot, projection: projection)
+                                }
                                 let grab: CGSize = slot.map {
                                     CGSize(width: $0.midX - value.startLocation.x,
                                            height: $0.midY - value.startLocation.y)
@@ -1339,6 +1350,7 @@ struct DockStripView: View {
                 cover: folderCoverStore.covers[path],
                 sortOrder: pinnedFolderStore.sortOrder(for: path),
                 displayMode: pinnedFolderStore.displayMode(for: path),
+                viewMode: pinnedFolderStore.viewMode(for: path),
                 onTap: { folderPrimaryTap(path) },
                 onPreview: { folderShowPreview(path) },
                 onOpenInFinder: { openFolderInFinder(path) },
@@ -1346,7 +1358,9 @@ struct DockStripView: View {
                 onRemove: { pinnedFolderStore.remove(path) },
                 onSetSortOrder: { pinnedFolderStore.setSortOrder($0, for: path) },
                 onSetDisplayMode: { pinnedFolderStore.setDisplayMode($0, for: path) },
+                onSetViewMode: { pinnedFolderStore.setViewMode($0, for: path) },
                 isDropTarget: externalDropTarget == .moveInto(path: path),
+                openStyle: folderPopupPresence.style(for: path),
                 scale: dockScale,
                 hoverStyle: hoverStyle,
                 isHovered: hovered

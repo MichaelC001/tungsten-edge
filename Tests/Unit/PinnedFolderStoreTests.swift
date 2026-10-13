@@ -60,4 +60,25 @@ final class PinnedFolderStoreTests: XCTestCase {
         XCTAssertFalse(store.isUnopenedSeed(downloads.path))
         XCTAssertEqual(defaults.stringArray(forKey: "pinnedFolderUnopenedSeeds"), [])
     }
+
+    // MARK: - View content as
+
+    func testViewModeDefaultsToAutomaticAndPersistsPerFolder() {
+        let defaults = makeDefaults()
+        let store = PinnedFolderStore(defaults: defaults)
+        store.add("/Users/example/Projects")
+        XCTAssertEqual(store.viewMode(for: "/Users/example/Projects"), .automatic)
+        store.setViewMode(.list, for: "/Users/example/Projects/")
+        XCTAssertEqual(PinnedFolderStore(defaults: defaults).viewMode(for: "/Users/example/Projects"), .list)
+    }
+
+    func testUnpinningForgetsTheViewMode() {
+        let defaults = makeDefaults()
+        let store = PinnedFolderStore(defaults: defaults)
+        store.add("/Users/example/Projects")
+        store.setViewMode(.fan, for: "/Users/example/Projects")
+        store.remove("/Users/example/Projects")
+        XCTAssertTrue(store.viewModes.isEmpty)
+        XCTAssertEqual(defaults.dictionary(forKey: "pinnedFolderViewModes") as? [String: String], [:])
+    }
 }

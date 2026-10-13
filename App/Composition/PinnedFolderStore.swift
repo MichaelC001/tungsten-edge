@@ -9,6 +9,8 @@ final class PinnedFolderStore: ObservableObject {
     @Published private(set) var sortOrders: [String: String] = [:]
     /// Per-folder "Display as" (normalized path → FolderDisplayMode.rawValue). Absent = stack.
     @Published private(set) var displayModes: [String: String] = [:]
+    /// Per-folder "View content as" (normalized path → FolderViewMode.rawValue). Absent = automatic.
+    @Published private(set) var viewModes: [String: String] = [:]
     /// Pinned by us, not by the user, and not opened yet: nothing may read such a folder (no cover
     /// enumeration, no watcher), or a privacy-protected one — Downloads — raises the system's
     /// access prompt at first launch with no user action behind it. Cleared by the first open.
@@ -17,6 +19,7 @@ final class PinnedFolderStore: ObservableObject {
     private let key = "pinnedFolderPaths"
     private let sortKey = "pinnedFolderSortOrders"
     private let displayModeKey = "pinnedFolderDisplayModes"
+    private let viewModeKey = "pinnedFolderViewModes"
     private let unopenedSeedKey = "pinnedFolderUnopenedSeeds"
 
     init(defaults: UserDefaults = .standard) {
@@ -24,6 +27,7 @@ final class PinnedFolderStore: ObservableObject {
         folderPaths = defaults.stringArray(forKey: key) ?? []
         sortOrders = defaults.dictionary(forKey: sortKey) as? [String: String] ?? [:]
         displayModes = defaults.dictionary(forKey: displayModeKey) as? [String: String] ?? [:]
+        viewModes = defaults.dictionary(forKey: viewModeKey) as? [String: String] ?? [:]
         unopenedSeedPaths = Set(defaults.stringArray(forKey: unopenedSeedKey) ?? [])
     }
 
@@ -103,6 +107,9 @@ final class PinnedFolderStore: ObservableObject {
         if displayModes.removeValue(forKey: normalized) != nil {
             defaults.set(displayModes, forKey: displayModeKey)
         }
+        if viewModes.removeValue(forKey: normalized) != nil {
+            defaults.set(viewModes, forKey: viewModeKey)
+        }
         persist()
     }
 
@@ -126,6 +133,17 @@ final class PinnedFolderStore: ObservableObject {
         guard displayModes[normalized] != mode.rawValue else { return }
         displayModes[normalized] = mode.rawValue
         defaults.set(displayModes, forKey: displayModeKey)
+    }
+
+    func viewMode(for path: String) -> FolderViewMode {
+        FolderViewMode(rawValue: viewModes[Self.normalized(path)] ?? "") ?? .default
+    }
+
+    func setViewMode(_ mode: FolderViewMode, for path: String) {
+        let normalized = Self.normalized(path)
+        guard viewModes[normalized] != mode.rawValue else { return }
+        viewModes[normalized] = mode.rawValue
+        defaults.set(viewModes, forKey: viewModeKey)
     }
 
     private func persist() {

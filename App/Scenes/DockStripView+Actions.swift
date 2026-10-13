@@ -43,7 +43,7 @@ extension DockStripView {
             width: frame.width,
             height: frame.height
         )
-        onFolderPopupToggle(path, screenRect)
+        onFolderPopupToggle(path, screenRect, .pinnedFolder)
     }
 
     /// strip 空间帧 → 屏幕矩形（stripPoint(from:) 的逆；弹窗锚点用）。
@@ -60,7 +60,7 @@ extension DockStripView {
         for path in pinnedFolderStore.folderPaths {
             let entryID = StripEntry.pinnedFolder(path: path).id
             if let frame = folderChipFrames[entryID], frame.contains(p) {
-                onFolderPopupToggle(path, stripFrameToScreen(frame))
+                onFolderPopupToggle(path, stripFrameToScreen(frame), .pinnedFolder)
                 return
             }
         }
@@ -85,7 +85,7 @@ extension DockStripView {
             DispatchQueue.global(qos: .userInitiated).async {
                 do {
                     let url = try FinderWindowContentsReader.folderURLViaAppleEvents(for: aeTarget)
-                    DispatchQueue.main.async { onToggle(url.path, anchor) }
+                    DispatchQueue.main.async { onToggle(url.path, anchor, .finderWindowPreview) }
                 } catch {
                     logger.error("finder-window-preview AppleEvents failed: \(String(describing: error), privacy: .public)")
                     DispatchQueue.main.async { NSSound.beep() }
@@ -102,7 +102,7 @@ extension DockStripView {
         do {
             switch try reader.target(for: ref) {
             case .folderURL(let url):
-                onToggle(url.path, anchor)
+                onToggle(url.path, anchor, .finderWindowPreview)
             case .appleEvents(let aeTarget):
                 resolveViaAppleEvents(aeTarget)
             }

@@ -466,4 +466,15 @@ enum NativeStackArtwork {
     static let backButton: NSImage? = dockBundle?.image(forResource: "back-button-dark")
 
     static let finderAppIcon: NSImage = FolderIconResolver.resolve("/System/Library/CoreServices/Finder.app")
+
+    /// The square + arrow a stack's tile shows while it is open as a fan or grid.
+    static func pileArrow(dark: Bool) -> NSImage? { dark ? pileArrowDark : pileArrowLight }
+    private static let pileArrowLight: NSImage? = dockBundle?.image(forResource: "s-pileArrow")
+    private static let pileArrowDark: NSImage? = dockBundle?.image(forResource: "s-pileArrow2")
+
+    /// The soft shadow under each fan item.
+    static let stackItemShadow: NSImage? = dockBundle?.image(forResource: "stackitemshadow")
+
+    /// The fan's top cell (「Open in Finder」 / 「N More in Finder」).
+    static let openInFinder64: NSImage? = dockBundle?.image(forResource: "openinfinder64")
 }

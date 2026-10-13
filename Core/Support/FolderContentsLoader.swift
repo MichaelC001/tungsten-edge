@@ -7,6 +7,7 @@ enum FolderSortOrder: String, CaseIterable {
     case name
     case dateAdded      // 默认：添加日期,最新在前（与旧版唯一排序口径一致）
     case dateModified   // 修改日期,最新在前
+    case dateCreated    // Date Created, newest first; sits after Date Modified as on the native Dock
     case kind
 
     static let `default`: FolderSortOrder = .dateAdded
@@ -16,6 +17,7 @@ enum FolderSortOrder: String, CaseIterable {
         case .name: return String(localized: "Name")
         case .dateAdded: return String(localized: "Date Added")
         case .dateModified: return String(localized: "Date Modified")
+        case .dateCreated: return String(localized: "Date Created")
         case .kind: return String(localized: "Kind")
         }
     }
@@ -34,6 +36,28 @@ enum FolderDisplayMode: String, CaseIterable {
         switch self {
         case .folder: return String(localized: "Folder")
         case .stack: return String(localized: "Stack")
+        }
+    }
+}
+
+/// How a pinned folder's popup shows its contents (the native Dock's 「显示内容为」). rawValue is
+/// persisted (`PinnedFolderStore.viewModes`); declaration order is the native menu order.
+/// `automatic` picks fan or grid by how many items fit the screen's height
+/// (`FolderViewResolution`).
+enum FolderViewMode: String, CaseIterable {
+    case fan
+    case grid
+    case list
+    case automatic
+
+    static let `default`: FolderViewMode = .automatic
+
+    var menuTitle: String {
+        switch self {
+        case .fan: return String(localized: "Fan")
+        case .grid: return String(localized: "Grid")
+        case .list: return String(localized: "List")
+        case .automatic: return String(localized: "Automatic")
         }
     }
 }
@@ -67,10 +91,16 @@ enum FolderContentsLoader {
         var dateModified: Date?
         /// false = the path exists but this process may not read it (privacy permission).
         var isAccessible = true
+        var dateCreated: Date? = nil
+        /// A bundle that Finder shows as one file (an app, a `.rtfd`): never a subfolder.
+        var isPackage = false
+        /// A Finder alias or a symlink.
+        var isAlias = false
     }
 
     static func load(directory: URL) throws -> [Entry] {
-        let keys: [URLResourceKey] = [.isDirectoryKey, .addedToDirectoryDateKey, .contentModificationDateKey]
+        let keys: [URLResourceKey] = [.isDirectoryKey, .addedToDirectoryDateKey, .contentModificationDateKey,
+                                      .creationDateKey, .isPackageKey, .isAliasFileKey]
         let urls = try FileManager.default.contentsOfDirectory(
             at: directory,
             includingPropertiesForKeys: keys,
@@ -83,7 +113,10 @@ enum FolderContentsLoader {
                 name: FileManager.default.displayName(atPath: url.path),
                 isDirectory: values?.isDirectory ?? false,
                 dateAdded: values?.addedToDirectoryDate,
-                dateModified: values?.contentModificationDate
+                dateModified: values?.contentModificationDate,
+                dateCreated: values?.creationDate,
+                isPackage: values?.isPackage ?? false,
+                isAlias: values?.isAliasFile ?? false
             )
         }
     }
@@ -110,6 +143,13 @@ enum FolderContentsLoader {
             return entries.sorted { a, b in
                 let da = a.dateModified ?? a.dateAdded ?? .distantPast
                 let db = b.dateModified ?? b.dateAdded ?? .distantPast
+                if da != db { return da > db }
+                return a.name.localizedStandardCompare(b.name) == .orderedAscending
+            }
+        case .dateCreated:
+            return entries.sorted { a, b in
+                let da = a.dateCreated ?? a.dateModified ?? .distantPast
+                let db = b.dateCreated ?? b.dateModified ?? .distantPast
                 if da != db { return da > db }
                 return a.name.localizedStandardCompare(b.name) == .orderedAscending
             }
@@ -157,7 +197,8 @@ enum FolderContentsLoader {
     /// Unreadable paths stay as `isAccessible == false` entries: without the folder's privacy
     /// permission an existing file looks the same as a deleted one to `fileExists`.
     static func entries(forPaths paths: [String]) -> [Entry] {
-        let keys: [URLResourceKey] = [.isDirectoryKey, .addedToDirectoryDateKey, .contentModificationDateKey]
+        let keys: [URLResourceKey] = [.isDirectoryKey, .addedToDirectoryDateKey, .contentModificationDateKey,
+                                      .creationDateKey]
         return paths.compactMap { path in
             let reachability = FileReachability.of(path: path)
             guard reachability != .missing else { return nil }
@@ -172,7 +213,8 @@ enum FolderContentsLoader {
                 name: FileManager.default.displayName(atPath: path),
                 isDirectory: values?.isDirectory ?? false,
                 dateAdded: values?.addedToDirectoryDate,
-                dateModified: values?.contentModificationDate
+                dateModified: values?.contentModificationDate,
+                dateCreated: values?.creationDate
             )
         }
     }

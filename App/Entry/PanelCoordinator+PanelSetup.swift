@@ -32,9 +32,11 @@ extension PanelCoordinator {
             usesLiquidGlass: usesLiquidGlass,
             stripSurfaceID: stripSurfaceID,
             displayUUID: fixedUnitDisplayUUID,
-            onFolderPopupToggle: { [weak self] path, anchorRect in
-                self?.toggleFolderPopup(path: path, anchorVisibleRect: anchorRect)
+            folderPopupPresence: folderPopupPresence,
+            onFolderPopupToggle: { [weak self] path, anchorRect, origin in
+                self?.toggleFolderPopup(path: path, anchorVisibleRect: anchorRect, origin: origin)
             },
+            onFolderDragWillBegin: { [weak self] in self?.closeFolderPopup(immediately: true) },
             onShelfPopupToggle: { [weak self] anchorRect in
                 self?.toggleShelfPopup(anchorVisibleRect: anchorRect)
             },

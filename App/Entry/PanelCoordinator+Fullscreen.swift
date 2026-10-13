@@ -369,7 +369,7 @@ extension PanelCoordinator {
         orderDockSurfaceOut()
         capsulePanel?.orderOut(nil)
         drawerPanel?.orderOut(nil)
-        folderPopupPanel?.orderOut(nil)
+        folderPopupPanels.forEach { $0.orderOut(nil) }
         windowTitleTooltipPanel?.orderOut(nil)
     }
 

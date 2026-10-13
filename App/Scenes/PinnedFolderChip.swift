@@ -1,6 +1,41 @@
 import AppKit
 import SwiftUI
 
+/// How a pinned folder's chip looks while its popup is open, as on the native Dock: fan and grid
+/// swap the cover for the Dock's 「square + arrow」 and dim it; the list only dims.
+enum FolderChipOpenStyle: Equatable {
+    case pileArrow
+    case dimmedOnly
+}
+
+/// Which folder's popup is open on this unit and how its chip should look. One per
+/// `PanelCoordinator` unit, so on mirrored bars only the screen that opened it changes. Written
+/// and cleared by popup sessions only; a clear from a session that has already been replaced
+/// leaves the newer value alone.
+@MainActor
+final class FolderPopupPresence: ObservableObject {
+    struct State: Equatable {
+        var path: String
+        var style: FolderChipOpenStyle
+        var sessionID: Int
+    }
+
+    @Published private(set) var state: State?
+
+    func show(path: String, style: FolderChipOpenStyle, sessionID: Int) {
+        state = State(path: path, style: style, sessionID: sessionID)
+    }
+
+    func clear(sessionID: Int) {
+        guard state?.sessionID == sessionID else { return }
+        state = nil
+    }
+
+    func style(for path: String) -> FolderChipOpenStyle? {
+        state?.path == path ? state?.style : nil
+    }
+}
+
 /// Pinned folder chip: the cover alone, at app-icon size in an icon-card slot, like a native
 /// Dock stack. The name lives in the hover bubble (`DockStripView.bubbleTitle`) and in `.help`.
 ///
@@ -14,6 +49,8 @@ struct PinnedFolderChip: View {
     let sortOrder: FolderSortOrder
     /// "Display as": folder = the folder's own icon only; stack = a pile of its first items.
     let displayMode: FolderDisplayMode
+    /// "View content as": how the popup shows the folder (fan / grid / list / automatic).
+    let viewMode: FolderViewMode
     let onTap: () -> Void
     /// 内容预览（右键「预览内容」；左键在 preview 模式下也走这个）。
     let onPreview: () -> Void
@@ -23,7 +60,11 @@ struct PinnedFolderChip: View {
     let onRemove: () -> Void
     let onSetSortOrder: (FolderSortOrder) -> Void
     let onSetDisplayMode: (FolderDisplayMode) -> Void
+    let onSetViewMode: (FolderViewMode) -> Void
     var isDropTarget = false
+    /// The look while this folder's popup is open; nil = closed. No default: the drag carrier is
+    /// drawn through the same call and must show what the chip shows.
+    let openStyle: FolderChipOpenStyle?
     /// 任务条尺寸档位的缩放系数。中档 = 1.0，此时所有尺寸与历史字面值逐像素相同。
     /// **故意不给默认值**——漏传必须是编译错误，见 AGENTS《Taskbar Size Tiers》。
     let scale: CGFloat
@@ -72,7 +113,14 @@ struct PinnedFolderChip: View {
         // Folder mode, an empty folder and a cover not loaded yet all show the folder's own icon.
         let layers = displayMode == .folder ? [] : (cover?.layers ?? [])
         return ZStack {
-            if layers.isEmpty {
+            if openStyle == .pileArrow, let pile = NativeStackArtwork.pileArrow(dark: colorScheme == .dark) {
+                // Open as fan or grid: the Dock's square + arrow, swapped in on the same frame.
+                Image(nsImage: pile)
+                    .resizable()
+                    .interpolation(.high)
+                    .aspectRatio(contentMode: .fit)
+                    .frame(width: slot, height: slot)
+            } else if layers.isEmpty {
                 // The folder's own icon fills the slot like an app icon, as on the native Dock;
                 // the stack's front-layer geometry would draw it a size smaller and lower than
                 // its neighbours.
@@ -90,6 +138,8 @@ struct PinnedFolderChip: View {
             }
         }
         .frame(width: slot, height: slot)
+        // Selected while open, as the native tile: multiplied by grey 0.4, no transition.
+        .colorMultiply(openStyle == nil ? .white : Color(white: Self.openDimming))
         .overlay {
             RoundedRectangle(cornerRadius: visible * Self.visibleCornerFraction, style: .continuous)
                 .strokeBorder(theme.folderDropRing.color(active: isDropTarget), lineWidth: 1.5)
@@ -97,6 +147,9 @@ struct PinnedFolderChip: View {
         }
         .scaleEffect(isDropTarget ? 1.08 : 1)
     }
+
+    /// The native tile's selection filter (`multiplyColor`, grey 0.4).
+    private static let openDimming: CGFloat = 0.4
 
     /// Same squircle fraction as the self-drawn shelf tile (drop-target ring only).
     private static let visibleCornerFraction: CGFloat = 0.215
@@ -160,6 +213,13 @@ struct PinnedFolderChip: View {
             menu.addItem(item)
         }
         menu.addItem(.separator())
+        menu.addItem(Self.sectionHeader(String(localized: "View content as")))
+        for mode in FolderViewMode.allCases {
+            let item = ClosureMenuItem(mode.menuTitle) { onSetViewMode(mode) }
+            item.state = mode == viewMode ? .on : .off
+            menu.addItem(item)
+        }
+        menu.addItem(.separator())
         menu.addItem(ClosureMenuItem(String(localized: "Add Folder…")) { onAddFolder() })
         menu.addItem(ClosureMenuItem(String(localized: "Remove from Taskbar")) { onRemove() })
         return menu
@@ -167,7 +227,7 @@ struct PinnedFolderChip: View {
 
     /// The system's own group title (small, bold, grey — the native Dock menu's look) on macOS 14+;
     /// below that, the greyed non-clickable item `AppMenuFragments` already uses.
-    private static func sectionHeader(_ title: String) -> NSMenuItem {
+    static func sectionHeader(_ title: String) -> NSMenuItem {
         if #available(macOS 14.0, *) {
             return NSMenuItem.sectionHeader(title: title)
         }

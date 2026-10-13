@@ -20,6 +20,25 @@ enum PopoverAnimation {
     static func curve() -> CAMediaTimingFunction {
         CAMediaTimingFunction(controlPoints: 0.2, 0.9, 0.3, 1.0)
     }
+
+    /// Native stack open / close, measured: grid and fan both take 0.25s. Change only against a
+    /// new native reading.
+    static let stackDuration: TimeInterval = 0.25
+    /// The grid's curve is Core Animation's default (the native animator sets none).
+    static func gridCurve() -> CAMediaTimingFunction {
+        CAMediaTimingFunction(controlPoints: 0.25, 0.1, 0.25, 1)
+    }
+    /// The fan's item positions fly on ease-in-ease-out (fit error 0.010 against the recording).
+    static func fanCurve() -> CAMediaTimingFunction {
+        CAMediaTimingFunction(name: .easeInEaseOut)
+    }
+}
+
+/// Where a folder popup was asked for. Only a pinned folder's own chip reads its view mode and
+/// shows the open look on the chip; a Finder window's preview is always the grid.
+enum FolderPopupOrigin {
+    case pinnedFolder
+    case finderWindowPreview
 }
 
 @MainActor
@@ -129,36 +148,68 @@ final class PanelCoordinator: NSObject {
     var isSuspendedForPermissionLoss = false
     var drawerLocalMonitor: Any?
     var drawerGlobalMonitor: Any?
-    // MARK: 文件夹/中转弹窗状态（单面板复用 = 天然「同时只有一个弹窗」）
-    /// 共享弹窗当前装的内容：固定文件夹网格或中转网格。
+    // MARK: 文件夹/中转弹窗状态（一次只有一个活的会话，外加最多一个正在收起的）
+    /// 共享弹窗当前装的内容：固定文件夹、中转站或废纸篓。
     enum PopupContent: Equatable {
         case folder(path: String)
         case shelf
         case trash
     }
-    var folderPopupPanel: NSPanel?
-    /// 弹窗真正承载 SwiftUI 的 hosting view（contentView 是普通 NSView 容器,fittingSize 读这个）。
-    var folderPopupContentHost: NSView?
+    /// One showing of the popup, from open to the end of its close animation. Every asynchronous
+    /// write-back (content resize, deferred re-measure, frame tween, animation completion, menu
+    /// return) carries the session's id and is dropped when that session is no longer the one it
+    /// belongs to: an exiting session's content is still alive and may still report.
+    final class FolderPopupSession {
+        enum Presentation: Equatable { case grid, fan, list }
+        let id: Int
+        let content: PopupContent
+        let origin: FolderPopupOrigin
+        let presentation: Presentation
+        let anchor: CGRect
+        /// nil for the list, which is a menu.
+        var panel: NSPanel?
+        var contentHost: NSView?
+        var arrow: StackPopupArrowModel?
+        var listMenu: StackPopupListMenu?
+        var fanView: NSView?
+        /// The transparent panel above the bar that catches clicks while the fan flies open.
+        var clickCatcher: NSPanel?
+        var openedAt = Date()
+
+        init(id: Int, content: PopupContent, origin: FolderPopupOrigin, presentation: Presentation, anchor: CGRect) {
+            self.id = id
+            self.content = content
+            self.origin = origin
+            self.presentation = presentation
+            self.anchor = anchor
+        }
+    }
+    /// The live session: it takes clicks, counts in hit tests and holds off auto-hide.
+    var activePopupSession: FolderPopupSession?
+    /// The session playing its close animation, at most one; it ignores the mouse.
+    var exitingPopupSession: FolderPopupSession?
+    /// The windows on screen: the live session's and the exiting one's, so the old popup shrinks
+    /// back while the new one grows, as on the native Dock. Each session gets its own window.
+    var folderPopupPanels: [NSPanel] = []
+    var popupSessionCounter = 0
+    var popupReopenCooldown = StackReopenCooldown()
+    /// The open folder's chip look (pile arrow / dimmed), read by this unit's strip.
+    let folderPopupPresence = FolderPopupPresence()
     var popupLocalMonitor: Any?
     var popupGlobalMonitor: Any?
     var lastPopupTargetFrame: NSRect = .zero
-    /// 弹窗锚点（chip 可视矩形,屏幕坐标）。click-away 判定要排除它——监视器在 mouseDown 关、
-    /// chip 的 onTapGesture 在 mouseUp 又开,不排除锚点则同 chip 点击永远无法收合。
-    var popupAnchorVisibleRect: CGRect = .zero
-    /// The open popup's arrow; rewritten by `setFolderPopupFrame` with every frame.
-    var folderPopupArrow: StackPopupArrowModel?
+    /// The live session's anchor chip (screen coordinates); `.zero` when none is open.
+    var popupAnchorVisibleRect: CGRect { activePopupSession?.anchor ?? .zero }
     /// 当前弹窗内容（nil = 没开）。
-    var openPopupContent: PopupContent?
+    var openPopupContent: PopupContent? { activePopupSession?.content }
     /// 便捷视图：仅当弹窗装的是文件夹时给 path（排序订阅/移除关窗等文件夹专属逻辑用）。
     var openPopupPath: String? {
         if case let .folder(path) = openPopupContent { return path }
         return nil
     }
-    /// 弹窗**逻辑**开关态（淡出动画期间面板还可见但逻辑上已关,同 drawerWantsOpen）。
-    var folderPopupWantsOpen = false
+    /// 弹窗**逻辑**开关态（收起动画期间面板还可见但逻辑上已关,同 drawerWantsOpen）。
+    var folderPopupWantsOpen: Bool { activePopupSession != nil }
     var lastPopupSize = CGSize(width: 424, height: 240)
-    /// 开窗时刻：入场窗口期（250ms）内的重定位一律瞬时,不与入场淡入叠加出晃动。
-    var popupOpenedAt: Date = .distantPast
     /// 弹窗切换/重定位的手搓逐帧插值 timer（按 centerX/bottomY/width/height 插值,取代
     /// NSWindow.animator().setFrame 的原始 x/y/宽/高线性插值——后者没有锚点概念,两个文件夹
     /// frame 相对位置一变,生长方向就随机偏向某个角落,而不是稳定的"贴底、水平居中"）。
@@ -184,6 +235,7 @@ final class PanelCoordinator: NSObject {
     var windowTitleTooltipHost: ManualPanelHost?
     var pinnedFolderStoreSubscription: AnyCancellable?
     var pinnedFolderSortSubscription: AnyCancellable?
+    var pinnedFolderViewModeSubscription: AnyCancellable?
     var snapshotWidthSubscription: AnyCancellable?
     var drawerStoreWidthSubscription: AnyCancellable?
     var messagingStoreWidthSubscription: AnyCancellable?
@@ -467,12 +519,10 @@ final class PanelCoordinator: NSObject {
         drawerHosting = nil
         drawerHostedLimits = nil
         stopDrawerArrowFollow()
-        folderPopupContentHost = nil
-        folderPopupArrow = nil
         windowTitleTooltipHosting = nil
         windowTitleTooltipHost = nil
         tearDownTaskbarGlassBackground()
-        for panel in [dockPanel, capsulePanel, drawerPanel, folderPopupPanel, windowTitleTooltipPanel] {
+        for panel in [dockPanel, capsulePanel, drawerPanel, windowTitleTooltipPanel] + folderPopupPanels {
             guard let panel else { continue }
             panel.contentView = NSView()
             panel.orderOut(nil)
@@ -481,7 +531,7 @@ final class PanelCoordinator: NSObject {
         dockPanel = nil
         capsulePanel = nil
         drawerPanel = nil
-        folderPopupPanel = nil
+        folderPopupPanels = []
         windowTitleTooltipPanel = nil
         // 面板全拆了，「上次提交过的目标」随之作废——留着会让重建后的第一次布局被误判成
         // 「目标没变」而跳过，条就停在旧几何上。

@@ -1,19 +1,21 @@
 import XCTest
 
-/// FolderSortOrder 四种排序纯函数（FolderContentsLoader.sorted(_:by:)）。
+/// FolderSortOrder 五种排序纯函数（FolderContentsLoader.sorted(_:by:)）。
 final class FolderSortTests: XCTestCase {
     private func entry(
         _ name: String,
         isDirectory: Bool = false,
         added: TimeInterval? = nil,
-        modified: TimeInterval? = nil
+        modified: TimeInterval? = nil,
+        created: TimeInterval? = nil
     ) -> FolderContentsLoader.Entry {
         FolderContentsLoader.Entry(
             url: URL(fileURLWithPath: "/tmp/\(name)"),
             name: name,
             isDirectory: isDirectory,
             dateAdded: added.map { Date(timeIntervalSince1970: $0) },
-            dateModified: modified.map { Date(timeIntervalSince1970: $0) }
+            dateModified: modified.map { Date(timeIntervalSince1970: $0) },
+            dateCreated: created.map { Date(timeIntervalSince1970: $0) }
         )
     }
 
@@ -45,6 +47,20 @@ final class FolderSortTests: XCTestCase {
         ], by: .dateModified)
         XCTAssertEqual(sorted.map(\.name),
                        ["modified-late", "no-modified-uses-added", "modified-early"])
+    }
+
+    func testDateCreatedNewestFirstWithFallbackToDateModified() {
+        let sorted = FolderContentsLoader.sorted([
+            entry("created-early", created: 100),
+            entry("created-late", created: 300),
+            entry("no-created-uses-modified", modified: 200),
+        ], by: .dateCreated)
+        XCTAssertEqual(sorted.map(\.name),
+                       ["created-late", "no-created-uses-modified", "created-early"])
+    }
+
+    func testMenuOrderIsTheNativeOrder() {
+        XCTAssertEqual(FolderSortOrder.allCases, [.name, .dateAdded, .dateModified, .dateCreated, .kind])
     }
 
     func testKindSortGroupsDirectoriesFirst() {
