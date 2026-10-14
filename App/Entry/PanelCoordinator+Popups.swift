@@ -221,10 +221,53 @@ extension PanelCoordinator {
         activePopupSession = session
         setAutoHideInhibitor(.folderPopupOpen, active: true)
         if origin == .pinnedFolder, case let .folder(path) = content {
-            folderPopupPresence.show(path: path, style: presentation == .list ? .dimmedOnly : .pileArrow,
-                                     sessionID: session.id)
+            if presentation == .list {
+                folderPopupPresence.show(path: path, style: .dimmedOnly, sessionID: session.id)
+                folderPopupWillShow(path: path)
+            } else {
+                folderPopupPresence.show(path: path, style: .opening, sessionID: session.id)
+            }
         }
         return session
+    }
+
+    /// A pinned folder's fan or grid shows on the same frame as its chip's square + arrow, as on
+    /// the native Dock. A new popup window reaches the screen 40–100ms after the bar's own update,
+    /// so it goes on screen transparent first and `reveal` runs — window shown, open animation,
+    /// chip swapped, in one turn — once Core Animation reports it has the window's layers. Any
+    /// other popup reveals at once. The timer covers a report that never comes.
+    private func revealWhenRendered(_ session: FolderPopupSession, panel: NSPanel,
+                                    reveal: @escaping () -> Void) {
+        guard session.origin == .pinnedFolder, case .folder = session.content,
+              let layer = panel.contentView?.layer else {
+            reveal()
+            return
+        }
+        panel.alphaValue = 0
+        var revealed = false
+        let revealOnce = { [weak self, weak session, weak panel] in
+            guard !revealed, let self, let session, let panel, self.activePopupSession === session else { return }
+            revealed = true
+            panel.alphaValue = 1
+            reveal()
+            self.showOpenChip(for: session)
+        }
+        let probe = CABasicAnimation(keyPath: "opacity")
+        probe.fromValue = 1
+        probe.toValue = 1
+        probe.duration = 1.0 / 60
+        probe.delegate = AnimationStartSignal(revealOnce)
+        layer.add(probe, forKey: "renderProbe")
+        DispatchQueue.main.asyncAfter(deadline: .now() + Self.revealFallbackDelay, execute: revealOnce)
+    }
+
+    private static let revealFallbackDelay: TimeInterval = 0.15
+
+    private func showOpenChip(for session: FolderPopupSession) {
+        guard activePopupSession === session, session.origin == .pinnedFolder,
+              case let .folder(path) = session.content else { return }
+        folderPopupPresence.show(path: path, style: .pileArrow, sessionID: session.id)
+        folderPopupWillShow(path: path)
     }
 
     /// A fresh window per session. A borderless transparent window lets clicks through its clear
@@ -305,9 +348,9 @@ extension PanelCoordinator {
         }
         // The arrow's position was only known with the frame: lay it out before the first show.
         hosting.layoutSubtreeIfNeeded()
+        revealWhenRendered(session, panel: panel) { [weak self] in self?.playGridOpen(session) }
         panel.orderFrontRegardless()
         pinOverlappingPanelIfNeeded(panel)
-        playGridOpen(session)
         session.openedAt = Date()
 
         // 弹出后复测 fittingSize（双重 defer 等 SwiftUI 布局完成）——同步量偏差时的兜底校正,瞬时。
@@ -377,8 +420,13 @@ extension PanelCoordinator {
             session.listMenu?.cancelTracking()
         case .grid, .fan:
             guard let panel = session.panel else { return }
-            if immediately || !panel.isVisible || NSWorkspace.shared.accessibilityDisplayShouldReduceMotion {
+            // Not revealed yet: nothing on screen to fly back, and the chip still looks closed.
+            let userClose = !immediately && panel.isVisible && panel.alphaValue > 0
+            if !userClose || NSWorkspace.shared.accessibilityDisplayShouldReduceMotion {
                 endPopupWindow(of: session)
+                if userClose, session.origin == .pinnedFolder, case let .folder(path) = session.content {
+                    folderPopupWillClose(path: path)
+                }
                 return
             }
             finishExitingPopupSession()
@@ -395,6 +443,9 @@ extension PanelCoordinator {
                 playFanClose(session)
             } else {
                 playGridClose(session)
+            }
+            if session.origin == .pinnedFolder, case let .folder(path) = session.content {
+                folderPopupWillClose(path: path)
             }
         }
     }
@@ -763,8 +814,10 @@ extension PanelCoordinator {
         fan.loadThumbnails(scale: dock.backingScaleFactor)
         session.openedAt = Date()
         installPopupMonitors()
-        fan.playOpen(reducedMotion: reducedMotion) { [weak self] in
-            Task { @MainActor [weak self] in self?.fanDidLand(sessionID: id) }
+        revealWhenRendered(session, panel: panel) {
+            fan.playOpen(reducedMotion: reducedMotion) { [weak self] in
+                Task { @MainActor [weak self] in self?.fanDidLand(sessionID: id) }
+            }
         }
     }
 

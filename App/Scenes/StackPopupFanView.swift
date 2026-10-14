@@ -52,7 +52,9 @@ final class StackPopupFanView: NSView, NSDraggingSource {
         bounds.origin = windowFrame.origin
         for (index, item) in items.enumerated() {
             let view = FanItemView(item: item, layoutItem: layout.items[index])
-            addSubview(view)
+            // The first item on top, as in the chip's pile: landing back on it in the reverse
+            // order shows the back layers' bottoms over the front one.
+            addSubview(view, positioned: .below, relativeTo: itemViews.last)
             itemViews.append(view)
         }
     }
@@ -97,7 +99,14 @@ final class StackPopupFanView: NSView, NSDraggingSource {
         CATransaction.begin()
         CATransaction.setCompletionBlock(completion)
         for (index, view) in itemViews.enumerated() {
-            let fade: FanItemView.CloseFade = stackShown ? (index < FolderCoverPile.depths.count ? .none : .late) : .early
+            let fade: FanItemView.CloseFade
+            if case .openInFinder = items[index].kind {
+                fade = .inFlight
+            } else if stackShown {
+                fade = index < FolderCoverPile.depths.count ? .none : .late
+            } else {
+                fade = .early
+            }
             view.addCloseAnimation(to: pileRects[index], from: layout.items[index], fade: fade)
         }
         CATransaction.commit()
@@ -189,7 +198,9 @@ final class StackPopupFanView: NSView, NSDraggingSource {
 /// turned with the item. The view is the item's 64pt square; the capsule and shadow overhang it.
 @MainActor
 private final class FanItemView: NSView {
-    enum CloseFade { case none, late, early }
+    /// `inFlight`: 「Open in Finder」 is gone before the items land (native, measured: out by
+    /// about 70% of the flight), never on the pile.
+    enum CloseFade { case none, late, early, inFlight }
 
     private let shadowView = NSImageView()
     private let iconView = NSImageView()
@@ -542,6 +553,8 @@ private final class FanItemView: NSView {
                 Self.fade(icon, to: 0, beginAfter: duration - 0.05, duration: 0.1, timing: .linear)
             case .early:
                 Self.fade(icon, to: 0, beginAfter: duration / 3, duration: duration * 2 / 3, timing: .linear)
+            case .inFlight:
+                Self.fade(icon, to: 0, beginAfter: 0, duration: duration * 0.7, timing: .linear)
             }
         }
     }

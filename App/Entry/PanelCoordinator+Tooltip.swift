@@ -17,6 +17,7 @@ extension PanelCoordinator {
             // 理由留在 `WindowTitleTooltipRequest` 的注释里。
             if windowTitleTooltipSuppressedChipID == request.chipID { return }
             windowTitleTooltipSuppressedChipID = nil
+            windowTitleTooltipSuppressedRequest = nil
             cancelWindowTitleTooltipLinger()
 
             HoverTrace.hover(chipID: request.chipID, entered: true)
@@ -29,6 +30,7 @@ extension PanelCoordinator {
             HoverTrace.hover(chipID: chipID, entered: false)
             if windowTitleTooltipSuppressedChipID == chipID {
                 windowTitleTooltipSuppressedChipID = nil
+                windowTitleTooltipSuppressedRequest = nil
             }
             guard windowTitleTooltipRequest?.chipID == chipID else { return }
             // `.exit` 现在的含义很干脆：**指针没压在任何一张卡上**——分区分隔线那道宽缝、
@@ -174,7 +176,11 @@ extension PanelCoordinator {
         // （原生 Dock 的应用名是直接出现的）。同理离开也是直接收，见 `.exit` 分支。
         panel.alphaValue = 1
         // A bar card's bubble can overlap the open drawer's bottom row: never under a raised one.
-        let level = drawerWantsOpen ? max(drawerPanel?.level ?? .floating, .floating) : .floating
+        var level = drawerWantsOpen ? max(drawerPanel?.level ?? .floating, .floating) : .floating
+        // Over a folder popup flying back into its chip, as the native Dock's label is.
+        if let exiting = exitingPopupSession?.panel, exiting.isVisible, exiting.level >= level {
+            level = NSWindow.Level(rawValue: exiting.level.rawValue + 1)
+        }
         if panel.level != level { panel.level = level }
         if !panel.isVisible { panel.orderFrontRegardless() }
         pinOverlappingPanelIfNeeded(panel)
@@ -186,17 +192,49 @@ extension PanelCoordinator {
         guard windowTitleTooltipLocalMonitor == nil, windowTitleTooltipGlobalMonitor == nil else { return }
         let mask: NSEvent.EventTypeMask = [.leftMouseDown, .rightMouseDown, .otherMouseDown]
         windowTitleTooltipLocalMonitor = NSEvent.addLocalMonitorForEvents(matching: mask) { [weak self] event in
-            self?.dismissWindowTitleTooltip(suppressCurrentUntilExit: true)
+            self?.dismissWindowTitleTooltipOnMouseDown(event.type)
             return event
         }
-        windowTitleTooltipGlobalMonitor = NSEvent.addGlobalMonitorForEvents(matching: mask) { [weak self] _ in
-            self?.dismissWindowTitleTooltip(suppressCurrentUntilExit: true)
+        windowTitleTooltipGlobalMonitor = NSEvent.addGlobalMonitorForEvents(matching: mask) { [weak self] event in
+            self?.dismissWindowTitleTooltipOnMouseDown(event.type)
         }
     }
 
+    /// A press on a pinned folder keeps its name, as the native Dock's stack label does: the
+    /// popup's first frame takes it off (`folderPopupWillShow`), its close brings it back.
+    private func dismissWindowTitleTooltipOnMouseDown(_ type: NSEvent.EventType) {
+        if type == .leftMouseDown, let request = windowTitleTooltipRequest,
+           request.chipID.hasPrefix(Self.folderChipIDPrefix),
+           request.anchorVisibleRect.contains(NSEvent.mouseLocation) { return }
+        dismissWindowTitleTooltip(suppressCurrentUntilExit: true)
+    }
+
+    static let folderChipIDPrefix = "folder-"
+
+    /// The folder's popup is on screen: its name goes until the pointer leaves or the popup closes.
+    func folderPopupWillShow(path: String) {
+        guard windowTitleTooltipRequest?.chipID == Self.folderChipIDPrefix + path else { return }
+        dismissWindowTitleTooltip(suppressCurrentUntilExit: true)
+    }
+
+    /// The folder's popup started closing with the pointer still on its chip: the name is back on
+    /// the close's first frame, over the items flying in.
+    func folderPopupWillClose(path: String) {
+        guard let request = windowTitleTooltipSuppressedRequest,
+              request.chipID == Self.folderChipIDPrefix + path,
+              windowTitleTooltipSuppressedChipID == request.chipID,
+              request.anchorVisibleRect.contains(NSEvent.mouseLocation) else { return }
+        windowTitleTooltipSuppressedChipID = nil
+        windowTitleTooltipSuppressedRequest = nil
+        windowTitleTooltipRequest = request
+        installWindowTitleTooltipMouseMonitors()
+        presentWindowTitleTooltip(request)
+    }
+
     func dismissWindowTitleTooltip(suppressCurrentUntilExit: Bool = false) {
-        if suppressCurrentUntilExit, let chipID = windowTitleTooltipRequest?.chipID {
-            windowTitleTooltipSuppressedChipID = chipID
+        if suppressCurrentUntilExit, let request = windowTitleTooltipRequest {
+            windowTitleTooltipSuppressedChipID = request.chipID
+            windowTitleTooltipSuppressedRequest = request
         }
         cancelWindowTitleTooltipLinger()
         stopWindowTitleTooltipWatchdog()

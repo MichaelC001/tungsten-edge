@@ -34,6 +34,19 @@ enum PopoverAnimation {
     }
 }
 
+/// Runs once when Core Animation reports the animation started, i.e. the render server has
+/// taken the transaction that carried it.
+final class AnimationStartSignal: NSObject, CAAnimationDelegate {
+    private var onStart: (() -> Void)?
+
+    init(_ onStart: @escaping () -> Void) { self.onStart = onStart }
+
+    func animationDidStart(_ anim: CAAnimation) {
+        onStart?()
+        onStart = nil
+    }
+}
+
 /// Where a folder popup was asked for. Only a pinned folder's own chip reads its view mode and
 /// shows the open look on the chip; a Finder window's preview is always the grid.
 enum FolderPopupOrigin {
@@ -231,6 +244,8 @@ final class PanelCoordinator: NSObject {
     var windowTitleTooltipPanel: NSPanel?
     var windowTitleTooltipRequest: WindowTitleTooltipRequest?
     var windowTitleTooltipSuppressedChipID: String?
+    /// The request a suppression took off screen: a closing folder popup brings it back.
+    var windowTitleTooltipSuppressedRequest: WindowTitleTooltipRequest?
     var windowTitleTooltipLingerTimer: Timer?
     /// 只在气泡在屏上时跑的看门狗，见 `startWindowTitleTooltipWatchdog`。
     var windowTitleTooltipWatchdog: Timer?

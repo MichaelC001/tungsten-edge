@@ -4,6 +4,8 @@ import SwiftUI
 /// How a pinned folder's chip looks while its popup is open, as on the native Dock: fan and grid
 /// swap the cover for the Dock's 「square + arrow」; the list keeps the cover and dims it.
 enum FolderChipOpenStyle: Equatable {
+    /// The popup is ordered in but not revealed yet: the chip still looks closed (and pressed).
+    case opening
     case pileArrow
     case dimmedOnly
     /// A fan of a folder shown as a stack is closing: the slot stays empty, because the items
@@ -95,6 +97,15 @@ struct PinnedFolderChip: View {
 
     @Environment(\.colorScheme) private var colorScheme
     private var theme: DockThemeTokens { .resolved(for: colorScheme) }
+    /// Mouse down on the chip: the native tile darkens at once and stays dark until the popup's
+    /// first frame swaps it — `.opening` carries the dimming from the click to the reveal.
+    @State private var isPressed = false
+    /// The popup took over during this press: the open look replaces the dimming at once.
+    @State private var pressSawPopup = false
+
+    private var showsPressed: Bool {
+        (isPressed && !pressSawPopup) || openStyle == .opening
+    }
 
     /// Hover behaves exactly like an app icon card: the standard tier changes no pixels (the
     /// name bubble is the feedback), the quiet tier gets the shared 1.10 bottom-anchored lift.
@@ -120,9 +131,17 @@ struct PinnedFolderChip: View {
                              scale: scale)
         .contentShape(Rectangle())
         .onTapGesture { onTap() }
+        // After the tap, as on the other chips: attached before it, it takes the click.
+        .chipPressGesture(isPressed: $isPressed)
         .nativeContextMenu { buildMenu() }
         .help(folderName)
         .animation(.easeOut(duration: 0.12), value: isDropTarget)
+        .onChange(of: isPressed) { pressed in
+            if pressed { pressSawPopup = false }
+        }
+        .onChange(of: openStyle) { style in
+            if style != .opening, isPressed { pressSawPopup = true }
+        }
     }
 
     /// The icon-card slot (40pt) with the cover and the drop-target ring, lifted as one piece.
@@ -161,7 +180,7 @@ struct PinnedFolderChip: View {
         .frame(width: slot, height: slot)
         // The list leaves the cover and dims it; fan and grid show the square + arrow undimmed
         // (native reads it at the art's own brightness).
-        .colorMultiply(openStyle == .dimmedOnly ? Color(white: Self.openDimming) : .white)
+        .colorMultiply(openStyle == .dimmedOnly || showsPressed ? Color(white: Self.openDimming) : .white)
         .overlay {
             RoundedRectangle(cornerRadius: visible * Self.visibleCornerFraction, style: .continuous)
                 .strokeBorder(theme.folderDropRing.color(active: isDropTarget), lineWidth: 1.5)
@@ -170,8 +189,8 @@ struct PinnedFolderChip: View {
         .scaleEffect(isDropTarget ? 1.08 : 1)
     }
 
-    /// The native list's dimmed tile, read off the screen: ×0.476 on every channel (the Dock's code
-    /// multiplies by 0.4, but that is not what reaches the screen).
+    /// The native list's dimmed tile and the pressed tile, read off the screen: ×0.476–0.48 on
+    /// every channel (the Dock's code multiplies by 0.4, but that is not what reaches the screen).
     private static let openDimming: CGFloat = 0.476
 
     /// Same squircle fraction as the self-drawn shelf tile (drop-target ring only).
