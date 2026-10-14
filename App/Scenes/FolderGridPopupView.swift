@@ -284,8 +284,8 @@ struct FolderGridPopupView: View {
 }
 
 /// One cell of the stack grid, to the native measurements in `StackPopupMetrics`: a 100pt icon
-/// and one line of name. No hover highlight — the native grid has none. Shared by the folder,
-/// shelf and Trash popups.
+/// and one line of name. No hover highlight — the native grid has none. Shared by the folder and
+/// shelf popups.
 /// `dragURL` non-nil attaches the system file drag (dragging a real file out to another app).
 struct FolderGridCell: View {
     /// Asks for a QuickLook content thumbnail on top of the type icon.
@@ -441,7 +441,7 @@ struct StackCellLabel: View {
 }
 
 extension FolderGridCell {
-    /// The tail cell shared by the folder and Trash popups. Uses the Dock's own
+    /// The folder popup's tail cell. Uses the Dock's own
     /// `openinfinder` artwork (ring + turn arrow), read from the system at runtime rather than
     /// copied into the bundle; falls back to the Finder icon if a future macOS drops the file.
     static func openInFinder(onTap: @escaping () -> Void) -> FolderGridCell {

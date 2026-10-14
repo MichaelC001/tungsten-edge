@@ -9,7 +9,7 @@ final class FinderTrashTests: XCTestCase {
             for trigger in TrashPermissionTrigger.allCases {
                 XCTAssertEqual(trigger.shouldAskUser(status: status),
                                status == .notDetermined
-                                   && (trigger == .ownDrop || trigger == .emptyCommand || trigger == .panelOpened))
+                                   && (trigger == .ownDrop || trigger == .emptyCommand || trigger == .chipOpened))
             }
         }
     }
@@ -133,19 +133,13 @@ final class FinderTrashTests: XCTestCase {
             titles: TrashWindowLookup.titles(localizedName: "Corbeille")), "min")
     }
 
-    func testListingParsesFinderURLsSortsAndTruncates() {
-        let listing = TrashListingPlan.build(urlStrings: [
-            "file:///Users/me/.Trash/b%20doc.pdf", "file:///Users/me/.Trash/Folder/",
-            "not a url", "file:///Users/me/.Trash/a.png"
-        ], limit: 2)
-        guard case let .loaded(items, hidden) = listing else { return XCTFail("\(listing)") }
-        XCTAssertEqual(items.map(\.name), ["a.png", "b doc.pdf"])
-        XCTAssertEqual(hidden, 1)
-        XCTAssertFalse(items[0].isDirectory)
-        XCTAssertEqual(TrashListingPlan.build(urlStrings: ["file:///Users/me/.Trash/Folder/"]),
-                       .loaded(items: [TrashItem(url: URL(string: "file:///Users/me/.Trash/Folder/")!,
-                                                 name: "Folder", isDirectory: true)], hiddenCount: 0))
-        XCTAssertEqual(TrashListingPlan.build(urlStrings: []), .loaded(items: [], hiddenCount: 0))
+    /// An open still waiting for its window absorbs further clicks; once it lands (or times out)
+    /// a click opens again.
+    func testOpenPlanActivatesExistingWaitsForPendingAndOtherwiseOpens() {
+        XCTAssertEqual(TrashOpenPlan.decide(existingWindowID: "w", openPending: true), .activate(windowID: "w"))
+        XCTAssertEqual(TrashOpenPlan.decide(existingWindowID: "w", openPending: false), .activate(windowID: "w"))
+        XCTAssertEqual(TrashOpenPlan.decide(existingWindowID: nil, openPending: true), .waitForPending)
+        XCTAssertEqual(TrashOpenPlan.decide(existingWindowID: nil, openPending: false), .open)
     }
 
     func testTrashPathsMatchWholeComponentsOnlyInsideATrash() {

@@ -302,14 +302,14 @@ struct DockThemeTokens: Equatable {
     /// 真缩略图封面的细描边（图标封面不描边）。
     let folderThumbHairline: DockTint
 
-    // MARK: Folder / shelf / Trash popup
+    // MARK: Folder / shelf popup
 
     // Native readings, not taste. macOS 27's stack grid follows the appearance: light glass with
     // near-black text in light mode, dark glass with white text in dark mode. The drawer forces the
     // dark column whatever the appearance (`StackPopupAppearance.alwaysDark`).
     /// Title and cell names.
     let stackPopupText: DockTint
-    /// The status line (empty shelf, Trash state, unreadable folder).
+    /// The status line (empty shelf, unreadable folder).
     let stackPopupNote: DockTint
     /// 「Open in Finder」 ring. Dark: composited plus-lighter, the native glyph reads backdrop + 124.
     /// Light: composited plus-darker, black 0.5 takes 127 off the backdrop (native (18,69,101) on

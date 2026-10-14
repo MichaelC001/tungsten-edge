@@ -5,7 +5,7 @@ import QuartzCore
 import SwiftUI
 import os
 
-// PanelCoordinator · folder / shelf / Trash popups: one live session at a time, each in its own
+// PanelCoordinator · folder / shelf popups: one live session at a time, each in its own
 // window (the old one shrinks back while the new one opens), open/close animation, click-away.
 /// CAMediaTimingFunction 的数值求解版：CALayer 隐式动画只能按"单一属性"整体插值，
 /// 而弹窗切换要按 centerX/bottomY/width/height 四个语义量分别插值再拼回 frame，
@@ -74,19 +74,10 @@ extension PanelCoordinator {
         }
     }
 
-    func toggleTrashPopup(anchorVisibleRect: CGRect) {
-        if openPopupContent == .trash {
-            closeFolderPopup()
-        } else if allowsPopupOpening(.trash) {
-            openTrashPopup(anchorVisibleRect: anchorVisibleRect)
-        }
-    }
-
     private static func cooldownKey(_ content: PopupContent) -> String {
         switch content {
         case let .folder(path): return path
         case .shelf: return "\u{0}shelf"
-        case .trash: return "\u{0}trash"
         }
     }
 
@@ -177,30 +168,6 @@ extension PanelCoordinator {
                 isFolderPinned: { [weak self] url in self?.pinnedFolderStore.contains(url.path) ?? true }
             ))
         }
-    }
-
-    /// Opens on whatever listing the store still holds and refreshes from Finder behind it: a loaded
-    /// Finder answers the listing in ~1s, far too long to hold the first frame for.
-    private func openTrashPopup(anchorVisibleRect: CGRect) {
-        let store = TrashStateStore.shared
-        let session = beginPopupSession(content: .trash, origin: .pinnedFolder,
-                                        presentation: .grid, anchor: anchorVisibleRect)
-        let id = session.id
-        presentGridPopup(session) { [weak self, runtime] context in
-            NSHostingView(rootView: TrashGridPopupView(
-                trashStore: store,
-                context: context,
-                usesLiquidGlass: self?.usesLiquidGlass ?? false,
-                onClosePopup: { [weak self] in self?.closeFolderPopup(sessionID: id) },
-                onContentResize: { [weak self] size in self?.repositionFolderPopup(sessionID: id, animated: true, contentSize: size) },
-                onOpenInFinder: { [weak self] in
-                    self?.closeFolderPopup(sessionID: id)
-                    TrashStateStore.openTrashWindow(runtime: runtime, store: store)
-                }
-            ))
-        }
-        // After presenting: the session that just went away cleared the listing when it closed.
-        store.loadItems()
     }
 
     /// Type icons warmed before the popup shows: one screenful on a large display.
@@ -409,7 +376,6 @@ extension PanelCoordinator {
         guard let session = activePopupSession else { return }
         activePopupSession = nil
         popupReopenCooldown.noteClosed(path: Self.cooldownKey(session.content), at: CACurrentMediaTime())
-        if session.content == .trash { TrashStateStore.shared.clearListing() }
         setAutoHideInhibitor(.folderPopupOpen, active: false)
         removePopupMonitors()
         cancelFolderPopupFrameTween()   // 关闭时任何在飞的 tween 都要停,免得 orderOut 之后还偷偷挪 frame

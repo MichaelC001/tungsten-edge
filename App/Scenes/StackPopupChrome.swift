@@ -20,19 +20,19 @@ struct StackPopupContext {
     let arrow: StackPopupArrowModel
 }
 
-/// Whose appearance a stack plate takes. The folder, shelf and Trash popups follow the system's
+/// Whose appearance a stack plate takes. The folder and shelf popups follow the system's
 /// (macOS 27's native stack is light glass with dark text in light mode); the drawer stays dark.
 enum StackPopupAppearance {
     case followsAppearance
     case alwaysDark
 }
 
-/// The frame shared by the folder, shelf and Trash popups, laid out like the native Dock's stack
+/// The frame shared by the folder and shelf popups, laid out like the native Dock's stack
 /// grid: title row, optional status line, grid, and the plate with its arrow. Width and height are
 /// derived from `layout` — never measured.
 struct StackPopupChrome<Grid: View>: View {
     let title: String
-    /// A line between title and grid; the native grid has none (empty shelf, Trash state).
+    /// A line between title and grid; the native grid has none (empty shelf, unreadable folder).
     let note: String?
     let layout: StackGridLayout.Result
     /// The plate's frame and cells (`StackPlateMetrics`). No default: the plate's size derives from it.

@@ -253,7 +253,6 @@
 		A00000000000000000009321 /* ShelfChip.swift in Sources */ = {isa = PBXBuildFile; fileRef = A00000000000000000009320 /* ShelfChip.swift */; };
 		A00000000000000000009AA1 /* ShelfTrayArt.swift in Sources */ = {isa = PBXBuildFile; fileRef = A00000000000000000009AA0 /* ShelfTrayArt.swift */; };
 		A00000000000000000009331 /* ShelfGridPopupView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A00000000000000000009330 /* ShelfGridPopupView.swift */; };
-		A0000000000000000000FF51 /* TrashGridPopupView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A0000000000000000000FF50 /* TrashGridPopupView.swift */; };
 		A00000000000000000009341 /* StripDropRoutingTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A00000000000000000009340 /* StripDropRoutingTests.swift */; };
 		A00000000000000000009351 /* ShelfLogicTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A00000000000000000009350 /* ShelfLogicTests.swift */; };
 		A00000000000000000009361 /* FolderChipDropZone.swift in Sources */ = {isa = PBXBuildFile; fileRef = A00000000000000000009360 /* FolderChipDropZone.swift */; };
@@ -899,7 +898,6 @@
 		A00000000000000000009320 /* ShelfChip.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ShelfChip.swift; sourceTree = "<group>"; };
 		A00000000000000000009AA0 /* ShelfTrayArt.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ShelfTrayArt.swift; sourceTree = "<group>"; };
 		A00000000000000000009330 /* ShelfGridPopupView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ShelfGridPopupView.swift; sourceTree = "<group>"; };
-		A0000000000000000000FF50 /* TrashGridPopupView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TrashGridPopupView.swift; sourceTree = "<group>"; };
 		A00000000000000000009340 /* StripDropRoutingTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StripDropRoutingTests.swift; sourceTree = "<group>"; };
 		A00000000000000000009350 /* ShelfLogicTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ShelfLogicTests.swift; sourceTree = "<group>"; };
 		A00000000000000000009360 /* FolderChipDropZone.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FolderChipDropZone.swift; sourceTree = "<group>"; };
@@ -1094,7 +1092,6 @@
 				A00000000000000000009320 /* ShelfChip.swift */,
 				A00000000000000000009AA0 /* ShelfTrayArt.swift */,
 				A00000000000000000009330 /* ShelfGridPopupView.swift */,
-				A0000000000000000000FF50 /* TrashGridPopupView.swift */,
 				A0000000000000000000BD10 /* StackPopupBackdrop.swift */,
 				A0000000000000000000BD20 /* StackPopupChrome.swift */,
 				F838FFD821C90E1884C4A68B /* StackPopupFanView.swift */,
@@ -1870,7 +1867,6 @@
 					A00000000000000000009321 /* ShelfChip.swift in Sources */,
 				A00000000000000000009AA1 /* ShelfTrayArt.swift in Sources */,
 					A00000000000000000009331 /* ShelfGridPopupView.swift in Sources */,
-					A0000000000000000000FF51 /* TrashGridPopupView.swift in Sources */,
 					A0000000000000000000BD11 /* StackPopupBackdrop.swift in Sources */,
 					A0000000000000000000BD21 /* StackPopupChrome.swift in Sources */,
 					F5EFCCD7DAE3FD4442484305 /* StackPopupFanView.swift in Sources */,

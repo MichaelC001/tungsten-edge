@@ -42,14 +42,15 @@ extension TrashStateStore {
 }
 
 extension TrashStateStore {
-    /// "Open in Finder" from the chip menu and the popup: the existing Trash window if there is one
-    /// (never a second one), otherwise the non-activating open followed by the reveal.
+    /// The chip's click and its menu's Open: the existing Trash window if there is one (never a
+    /// second one), otherwise the non-activating open followed by the reveal — unless an earlier
+    /// open is still waiting for its window, which brings it forward when it lands.
     static func openTrashWindow(runtime: AppRuntime, store: TrashStateStore) {
-        if let windowID = TrashWindowLookup.actionWindowID(snapshot: runtime.snapshot,
-                                                           titles: TrashWindowLookup.liveTitles) {
-            runtime.activate(windowID: windowID)
-        } else {
-            store.openTrash()
+        let existing = TrashWindowLookup.actionWindowID(snapshot: runtime.snapshot, titles: TrashWindowLookup.liveTitles)
+        switch TrashOpenPlan.decide(existingWindowID: existing, openPending: runtime.hasPendingAppearance) {
+        case let .activate(windowID): runtime.activate(windowID: windowID)
+        case .waitForPending: break
+        case .open: store.openTrash()
         }
     }
 }

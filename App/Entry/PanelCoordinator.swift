@@ -166,7 +166,6 @@ final class PanelCoordinator: NSObject {
     enum PopupContent: Equatable {
         case folder(path: String)
         case shelf
-        case trash
     }
     /// One showing of the popup, from open to the end of its close animation. Every asynchronous
     /// write-back (content resize, deferred re-measure, frame tween, animation completion, menu

@@ -10,8 +10,6 @@ final class TrashStateStoreTests: XCTestCase {
         var activations: [@MainActor () -> Void] = []
         var opens = 0
         var reveals = 0
-        var lists: [@MainActor ([String]?) -> Void] = []
-        var revealed: [URL] = []
         var asks: [Bool] = []
         func permission(ask: Bool, completion: @escaping @MainActor (FinderAutomationStatus) -> Void) {
             asks.append(ask); permissions.append((ask, completion))
@@ -22,8 +20,6 @@ final class TrashStateStoreTests: XCTestCase {
         }
         func activateFinder(completion: @escaping @MainActor () -> Void) { activations.append(completion) }
         func openTrash() { opens += 1 }
-        func listItemURLs(completion: @escaping @MainActor ([String]?) -> Void) { lists.append(completion) }
-        func reveal(_ url: URL) { revealed.append(url) }
         func cancelPending() {}
     }
 
@@ -282,39 +278,54 @@ final class TrashStateStoreTests: XCTestCase {
         XCTAssertTrue(client.empties.isEmpty)
     }
 
-    func testPopupListingAsksOnceAndDeniedLeavesItUnavailable() {
+    /// A chip click asks a never-asked user once and reads after the answer; once the status is
+    /// known it sends Finder nothing, so repeated clicks never add a count.
+    func testChipClickAsksOnlyWhileUndetermined() {
         let client = FakeClient()
         let store = make(client)
         client.permissions.removeFirst().1(.notDetermined)
-        store.loadItems()
-        XCTAssertEqual(store.listing, .loading)
+        store.askPermissionIfUndetermined()
+        XCTAssertEqual(client.asks, [false, false])
         client.permissions.removeFirst().1(.notDetermined)
-        XCTAssertTrue(client.permissions[0].0)
+        XCTAssertEqual(client.asks, [false, false, true])
         client.permissions.removeFirst().1(.granted)
-        client.lists.removeFirst()(["file:///Users/me/.Trash/x.txt"])
-        XCTAssertEqual(store.listing, .loaded(items: [TrashItem(url: URL(string: "file:///Users/me/.Trash/x.txt")!,
-                                                                name: "x.txt", isDirectory: false)], hiddenCount: 0))
         XCTAssertEqual(store.status, .granted)
-        // A reveal brings the Trash window forward like an open does.
-        store.revealItem(URL(string: "file:///Users/me/.Trash/x.txt")!)
-        XCTAssertEqual(client.revealed.count, 1)
-        XCTAssertEqual(client.reveals, 1)
-        let loaded = store.listing
-        store.clearListing()
-        // Closed: the listing stays (the fading popup still renders it), but a mutation no longer
-        // asks Finder for it.
-        XCTAssertEqual(store.listing, loaded)
-        client.permissions.removeAll()
-        store.noteTrashedInApp()
-        XCTAssertTrue(client.lists.isEmpty)
-        // The next open shows the last listing at once instead of 正在读取, then refreshes.
-        client.permissions.removeAll()
-        store.loadItems()
-        XCTAssertEqual(store.listing, loaded)
-        // Denied: nothing is listed and the popup degrades.
+        // The answer is followed by a fresh read.
+        client.permissions.removeFirst().1(.granted)
+        client.counts.removeFirst()(.count(2))
+        XCTAssertTrue(store.isFull)
+        let asked = client.asks.count
+        store.askPermissionIfUndetermined()
+        store.askPermissionIfUndetermined()
+        XCTAssertEqual(client.asks.count, asked)
+        XCTAssertTrue(client.counts.isEmpty)
+    }
+
+    /// Before the launch read answers the status is unknown: the click only opens the window, and
+    /// the next click asks.
+    func testChipClickBeforeLaunchReadSendsNothing() {
+        let client = FakeClient()
+        let store = make(client)
+        store.askPermissionIfUndetermined()
+        XCTAssertEqual(client.asks, [false])
+        client.permissions.removeFirst().1(.notDetermined)
+        store.askPermissionIfUndetermined()
+        XCTAssertEqual(client.asks, [false, false])
+    }
+
+    func testChipClickDeniedStillRereadsAndSendsNothingAfterwards() {
+        let client = FakeClient()
+        let store = make(client)
+        client.permissions.removeFirst().1(.notDetermined)
+        store.askPermissionIfUndetermined()
+        client.permissions.removeFirst().1(.notDetermined)
         client.permissions.removeFirst().1(.denied)
-        XCTAssertTrue(client.lists.isEmpty)
-        XCTAssertEqual(store.listing, .unavailable)
+        XCTAssertEqual(store.status, .denied)
+        XCTAssertFalse(client.permissions.isEmpty, "the permission step discarded the read in flight")
+        client.permissions.removeAll()
+        let asked = client.asks.count
+        store.askPermissionIfUndetermined()
+        XCTAssertEqual(client.asks.count, asked)
     }
 
     func testSuccessfulDropAsksAndOldReadCannotClearFullIcon() async {

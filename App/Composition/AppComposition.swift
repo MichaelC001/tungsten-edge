@@ -212,6 +212,9 @@ final class AppRuntime: ObservableObject {
 
     private var pendingAppearanceStartedAt = Date()
 
+    /// An `activateWhenAppears` request is still waiting for its window.
+    var hasPendingAppearance: Bool { pendingAppearanceFind != nil }
+
     private func resolvePendingAppearance() {
         guard let find = pendingAppearanceFind, let windowID = find(snapshot) else { return }
         pendingAppearanceFind = nil

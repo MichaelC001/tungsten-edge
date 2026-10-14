@@ -4,8 +4,8 @@ import SwiftUI
 /// `DOCK_STACK_POPUP_SNAPSHOT=<folder>`: draws that folder's popup content — the real
 /// `FolderGridPopupView`, sorted by name as the native Dock sorts — in a window parked far
 /// off-screen and writes it to `<tmp>/tungsten-stack-popup.png`, so titles, icons, thumbnails and
-/// names can be diffed against a native capture without anyone clicking. `shelf` and `trash`
-/// instead of a path draw those two popups. The plate is not in the
+/// names can be diffed against a native capture without anyone clicking. `shelf` instead of a
+/// path draws the shelf popup. The plate is not in the
 /// picture (glass and frosted backdrops only exist composited on screen); neither is anything
 /// blended against it.
 @MainActor
@@ -19,7 +19,7 @@ enum StackPopupSnapshotProbe {
             return
         }
         let url = URL(fileURLWithPath: folder)
-        let isFolder = folder != "shelf" && folder != "trash"
+        let isFolder = folder != "shelf"
         let entries = isFolder
             ? FolderContentsLoader.sorted((try? FolderContentsLoader.load(directory: url)) ?? [], by: .name)
             : []
@@ -35,8 +35,6 @@ enum StackPopupSnapshotProbe {
         switch folder {
         case "shelf":
             content = AnyView(ShelfGridPopupView(shelfStore: ShelfStore(), context: context, usesLiquidGlass: false))
-        case "trash":
-            content = AnyView(TrashGridPopupView(trashStore: .shared, context: context, usesLiquidGlass: false))
         default:
             content = AnyView(FolderGridPopupView(rootURL: url, initialEntries: entries, sortOrder: .name,
                                                   context: context, usesLiquidGlass: false))
