@@ -151,7 +151,10 @@ final class StackPopupListMenu: NSObject, NSMenuDelegate {
         let image = (source.copy() as? NSImage) ?? source
         image.size = NSSize(width: 16, height: 16)
         item.image = image
+        // The property only exists in the macOS 27 SDK (Swift 6.4); CI still builds with Xcode 26.
+        #if compiler(>=6.4)
         if #available(macOS 27.0, *) { item.preferredImageVisibility = .visible }
+        #endif
     }
 
     private static func aliasTargetIsFolder(_ url: URL) -> Bool {
