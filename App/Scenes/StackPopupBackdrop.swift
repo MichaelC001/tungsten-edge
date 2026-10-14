@@ -1,7 +1,7 @@
 import AppKit
 import SwiftUI
 
-/// The plate of the folder / shelf popup and the drawer: the native Dock's stack material —
+/// The plate of the folder / shelf / Trash popup and the drawer: the native Dock's stack material —
 /// regular Liquid Glass, in the window's appearance or (`forcesDark`, the drawer) always dark —
 /// shaped by one path that carries the arrow. Below macOS 26 (or with glass switched off) a
 /// frosted plate takes the same outline.

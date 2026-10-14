@@ -65,6 +65,7 @@ struct DockStripView: View {
     /// 中转格点击 → 中转弹窗 toggle（chip 可视矩形·屏幕坐标）。PanelCoordinator 注入。
     var onShelfPopupToggle: (CGRect) -> Void = { _ in }
     /// 废纸篓点击 → 废纸篓弹窗 toggle（chip 可视矩形·屏幕坐标）。PanelCoordinator 注入。
+    var onTrashPopupToggle: (CGRect) -> Void = { _ in }
     /// 「添加文件夹…」统一入口（NSOpenPanel 归 AppDelegate 管）。
     var onAddFolder: () -> Void = {}
     /// 外部文件命中固定文件夹 chip 后，上抛给 composition 层在后台执行搬运。

@@ -7,6 +7,9 @@ final class FinderTrashClient: FinderTrashClienting {
     /// Dedicated and serial: an interactive empty blocks here until Finder's own dialog closes
     /// (up to 600s), which must never hold a thread of the shared user-action queue.
     private let commandQueue = DispatchQueue(label: "com.tungsten.edge.trash-command", qos: .userInitiated)
+    /// Listing and reveal for the popup: off `stateQueue` so a slow listing never delays the icon's
+    /// count reads, off `commandQueue` so it never queues behind an interactive empty.
+    private let listQueue = DispatchQueue(label: "com.tungsten.edge.trash-list", qos: .userInitiated)
     private let lock = NSLock()
     private var generation: UInt64 = 0
     private static let logger = Logger(subsystem: "com.caye.macosdockcc.v2", category: "FinderTrash")
@@ -104,6 +107,40 @@ final class FinderTrashClient: FinderTrashClienting {
         }
     }
 
+    /// `URL of every item of trash`, one round trip (a loaded Finder takes ~1s). nil = Finder did not
+    /// answer or refused; an empty Trash is `[]`.
+    func listItemURLs(completion: @escaping @MainActor ([String]?) -> Void) {
+        let gen = currentGeneration()
+        listQueue.async { [self] in
+            guard currentGeneration() == gen,
+                  let trash = Self.trashObject(),
+                  let every = Self.everyItem(of: trash),
+                  let urls = Self.propertySpecifier(FinderTrashEvent.urlProperty, of: every) else {
+                DispatchQueue.main.async { completion(nil) }
+                return
+            }
+            let event = Self.event(eventClass: FinderTrashEvent.core, id: FinderTrashEvent.getData)
+            event.setParam(urls, forKeyword: keyDirectObject)
+            let strings = Self.sendForStrings(event, timeout: 10)
+            Self.logger.info("废纸篓列表 count=\(strings?.count ?? -1)")
+            guard currentGeneration() == gen else { return }
+            DispatchQueue.main.async { completion(strings) }
+        }
+    }
+
+    /// Finder's `reveal`: selects the item in the Trash window without activating Finder — the only
+    /// scriptable road to "put back" (the user presses ⌘⌫ there). Bringing that window forward is
+    /// the caller's job, as with `openTrash`.
+    func reveal(_ url: URL) {
+        let gen = currentGeneration()
+        listQueue.async { [self] in
+            guard currentGeneration() == gen else { return }
+            let event = Self.event(eventClass: FinderTrashEvent.miscellaneous, id: FinderTrashEvent.reveal)
+            event.setParam(NSAppleEventDescriptor(fileURL: url), forKeyword: keyDirectObject)
+            _ = Self.send(event, options: FinderTrashEvent.countOptions, timeout: 5, isCount: false)
+        }
+    }
+
     /// Fallback open through Finder's own `odoc` event, which does not activate Finder either.
     private func sendOpenEvent(generation gen: UInt64) {
         commandQueue.async { [self] in
@@ -130,6 +167,16 @@ final class FinderTrashClient: FinderTrashClienting {
                         data: NSAppleEventDescriptor(typeCode: property), container: container)
     }
 
+    /// `every item of <container>`. The ordinal's bytes are the OSType in **native** order — that is
+    /// what AppleScript itself sends (`AEDebugSends`); big-endian bytes make Finder answer -1728.
+    private static func everyItem(of container: NSAppleEventDescriptor) -> NSAppleEventDescriptor? {
+        var ordinal = FinderTrashEvent.absoluteAll
+        let data = Data(bytes: &ordinal, count: MemoryLayout<UInt32>.size)
+        guard let all = NSAppleEventDescriptor(descriptorType: DescType(typeAbsoluteOrdinal), data: data) else { return nil }
+        return objectSpecifier(desiredClass: FinderTrashEvent.itemClass, form: OSType(formAbsolutePosition),
+                               data: all, container: container)
+    }
+
     private static func objectSpecifier(desiredClass: UInt32, form: OSType, data: NSAppleEventDescriptor,
                                         container: NSAppleEventDescriptor) -> NSAppleEventDescriptor? {
         let record = NSAppleEventDescriptor.record()
@@ -138,6 +185,27 @@ final class FinderTrashClient: FinderTrashClienting {
         record.setDescriptor(data, forKeyword: AEKeyword(keyAEKeyData))
         record.setDescriptor(container, forKeyword: AEKeyword(keyAEContainer))
         return record.coerce(toDescriptorType: typeObjectSpecifier)
+    }
+
+    /// Reply → list of strings. Finder may answer a single item as a bare string, and an error
+    /// number in the reply is a failure even though the send succeeded.
+    private static func sendForStrings(_ event: NSAppleEventDescriptor, timeout: TimeInterval) -> [String]? {
+        do {
+            let reply = try event.sendEvent(options: FinderTrashEvent.countOptions, timeout: timeout)
+            if let error = reply.paramDescriptor(forKeyword: keyErrorNumber)?.int32Value, error != 0 {
+                logger.info("废纸篓列表失败 code=\(error)")
+                return nil
+            }
+            guard let list = reply.paramDescriptor(forKeyword: keyDirectObject) else { return nil }
+            guard list.descriptorType == DescType(typeAEList) else {
+                return list.stringValue.map { [$0] } ?? []
+            }
+            guard list.numberOfItems > 0 else { return [] }
+            return (1...list.numberOfItems).compactMap { list.atIndex($0)?.stringValue }
+        } catch {
+            logger.info("废纸篓列表发送失败 code=\((error as NSError).code)")
+            return nil
+        }
     }
 
     private static func send(_ event: NSAppleEventDescriptor, options: NSAppleEventDescriptor.SendOptions,

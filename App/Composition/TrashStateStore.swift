@@ -1,5 +1,6 @@
 import AppKit
 import Combine
+import UniformTypeIdentifiers
 
 protocol FinderTrashClienting {
     func permission(ask: Bool, completion: @escaping @MainActor (FinderAutomationStatus) -> Void)
@@ -7,6 +8,8 @@ protocol FinderTrashClienting {
     func empty(interactive: Bool, completion: @escaping @MainActor (FinderTrashOutcome) -> Void)
     func activateFinder(completion: @escaping @MainActor () -> Void)
     func openTrash()
+    func listItemURLs(completion: @escaping @MainActor ([String]?) -> Void)
+    func reveal(_ url: URL)
     func cancelPending()
 }
 
@@ -15,6 +18,13 @@ final class TrashStateStore: ObservableObject {
     @Published private(set) var isFull = false
     @Published private(set) var status = FinderAutomationStatus.unavailable
     @Published private(set) var isEmptying = false
+    /// The popup's contents. Kept across closes: the next open shows it at once while Finder
+    /// answers again (~1s when a dead network mount stalls it), and the fading-out popup keeps
+    /// rendering it — emptying it on close made the panel collapse to two cells mid-fade (owner: 残影).
+    @Published private(set) var listing = TrashListing.idle
+    private var listSequence: UInt64 = 0
+    /// Whether the popup is showing, so mutations refresh only an open popup.
+    private var popupShowing = false
 
     private let client: FinderTrashClienting
     private let fileTrasher: @Sendable (URL) throws -> Void
@@ -101,6 +111,9 @@ final class TrashStateStore: ObservableObject {
     private func invalidate() {
         lifetime &+= 1
         permissionSequence &+= 1
+        listSequence &+= 1
+        listing = .idle
+        popupShowing = false
         client.cancelPending()
         reducer.disabled()
         latestStamp = nil
@@ -303,20 +316,48 @@ final class TrashStateStore: ObservableObject {
         let source = reducer.mutationEnded(id, successfulDirection: direction)
         publish()
         if let source { requestRead(source) }
+        if popupShowing { loadItems() }
     }
 
-    /// A click on the chip is a deliberate act on the Trash, so a never-asked user gets the
-    /// automation prompt here once (`.chipOpened`). Only while the status is `.notDetermined`: any
-    /// other status sends nothing, so repeated clicks never bypass `refreshIfTrashChanged` — a count
-    /// parks Finder's main thread while the click is restoring its window. The permission step
-    /// discards any read in flight, so a fresh read follows either answer.
-    func askPermissionIfUndetermined() {
-        guard active, status == .notDetermined else { return }
+    /// The popup's listing. Opening the popup is a deliberate act on the Trash, so a never-asked
+    /// user gets the automation prompt here once (`.panelOpened`); denied → `.unavailable` and the
+    /// popup keeps only Open in Finder. The permission step discards any read in flight, so a fresh
+    /// read follows either way.
+    func loadItems() {
+        guard active else { return }
         let life = lifetime
-        obtainPermission(trigger: .chipOpened) { [weak self] _ in
-            guard let self, self.active, self.lifetime == life else { return }
-            self.requestRead(.external)
+        listSequence &+= 1
+        let sequence = listSequence
+        popupShowing = true
+        if case .loaded = listing {} else { listing = .loading }
+        obtainPermission(trigger: .panelOpened) { [weak self] granted in
+            guard let self, self.active, self.lifetime == life, self.listSequence == sequence else { return }
+            guard granted else {
+                self.listing = .unavailable
+                self.requestRead(.external)
+                return
+            }
+            self.client.listItemURLs { [weak self] urls in
+                guard let self, self.active, self.lifetime == life, self.listSequence == sequence else { return }
+                self.listing = urls.map { TrashListingPlan.build(urlStrings: $0) } ?? .unavailable
+                self.requestRead(.external)
+            }
         }
+    }
+
+    /// The popup closed: stop any load in flight and stop refreshing on mutations. The listing
+    /// itself stays for the fade-out and the next open.
+    func clearListing() {
+        listSequence &+= 1
+        popupShowing = false
+    }
+
+    /// Selects one item in the Trash window (Finder's `reveal`, non-activating) and brings that
+    /// window forward the way `openTrash` does.
+    func revealItem(_ url: URL) {
+        guard active else { return }
+        client.reveal(url)
+        revealOpenedWindow()
     }
 
     func noteTrashedInApp() {

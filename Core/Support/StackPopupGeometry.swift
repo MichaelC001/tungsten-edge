@@ -1,7 +1,7 @@
 import CoreGraphics
 import Foundation
 
-/// Every number of the folder / shelf popup, measured off the native Dock's stack grid
+/// Every number of the folder / shelf / Trash popup, measured off the native Dock's stack grid
 /// (macOS 27, AX frames plus screenshots over a solid backdrop). They are the look, not tuning
 /// knobs: change one only against a new native measurement.
 enum StackPopupMetrics {
@@ -25,7 +25,7 @@ enum StackPopupMetrics {
     static let backButtonOrigin = CGPoint(x: 15.5, y: 7)
     static let backButtonSize = CGSize(width: 21, height: 22)
 
-    /// A status line between title and grid (no native counterpart: empty shelf, unreadable folder).
+    /// A status line between title and grid (no native counterpart: empty shelf, Trash state).
     static let noteHeight: CGFloat = 36
 
     static let arrowHeight: CGFloat = 8
@@ -49,7 +49,7 @@ enum StackPopupMetrics {
     /// The scroller sits in the plate's right padding, not over the last column.
     static let scrollerGutter: CGFloat = 14
 
-    /// The folder / shelf plate (`StackPlateMetrics.stack`); its width never depends on scrolling.
+    /// The folder / shelf / Trash plate (`StackPlateMetrics.stack`); its width never depends on scrolling.
     static func plateSize(columns: Int, rows: Int, hasNote: Bool) -> CGSize {
         StackPlateMetrics.stack.plateSize(columns: columns, rows: rows, hasNote: hasNote, scrolls: false)
     }
@@ -60,7 +60,7 @@ enum StackPopupMetrics {
     }
 }
 
-/// One grid cell's numbers. The folder / shelf popups use `native`. The drawer's are read
+/// One grid cell's numbers. The folder / shelf / Trash popups use `native`. The drawer's are read
 /// off the system Apps panel (owner 2026-10-04, his screenshots at 2x): icons 112.5pt apart, rows
 /// 102pt apart, a 62pt visible icon body (= a 76pt icon), a 13pt name 2pt under the icon, cut at
 /// its tail.

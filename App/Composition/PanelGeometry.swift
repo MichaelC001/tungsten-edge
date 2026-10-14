@@ -376,7 +376,7 @@ enum PanelGeometry {
         )
     }
 
-    // MARK: Folder / shelf popup
+    // MARK: Folder / shelf / Trash popup
     //
     // The popup window is the plate plus a transparent `StackPopupMetrics.panelMargin` border on
     // every side (the glass's own shadow lives there) and the arrow strip under the plate. These

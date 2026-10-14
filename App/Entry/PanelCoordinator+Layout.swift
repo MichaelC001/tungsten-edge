@@ -148,6 +148,7 @@ extension PanelCoordinator {
             .receive(on: DispatchQueue.main)
             .sink { [weak self] _ in
                 guard let self else { return }
+                if self.folderPopupWantsOpen, self.openPopupContent == .trash { self.closeFolderPopup() }
                 DispatchQueue.main.async { [weak self] in self?.relayout(animated: true) }
             }
         dockPanelHeightSubscription = heightResizePresentation
