@@ -385,6 +385,12 @@ extension PanelCoordinator {
             exitingPopupSession = session
             // A popup on its way out takes no clicks: they land on whatever the user aimed at.
             panel.ignoresMouseEvents = true
+            // It shrinks or flies back into the chip over the bar's glass, as on the native Dock.
+            // Same level as the bar is not enough: the click on the chip that closes it orders the
+            // bar's windows above it.
+            let barLevel = ([dockPanel?.level, dockGlassBackgroundPanel?.level].compactMap { $0 } + [.floating])
+                .map(\.rawValue).max() ?? NSWindow.Level.floating.rawValue
+            panel.level = NSWindow.Level(rawValue: barLevel + 1)
             if session.presentation == .fan {
                 playFanClose(session)
             } else {
@@ -403,6 +409,7 @@ extension PanelCoordinator {
 
     /// Off screen and gone: dropping the content stops its directory watcher.
     private func endPopupWindow(of session: FolderPopupSession) {
+        folderPopupPresence.endLanding(sessionID: session.id)
         for panel in [session.panel, session.clickCatcher].compactMap({ $0 }) {
             panel.contentView?.layer?.removeAllAnimations()
             panel.orderOut(nil)
@@ -798,6 +805,7 @@ extension PanelCoordinator {
         let stackShown = pinnedFolderStore.displayMode(for: path) == .stack
             && !(folderCoverStore.covers[path]?.layers.isEmpty ?? true)
         let id = session.id
+        if stackShown { folderPopupPresence.beginLanding(path: path, sessionID: id) }
         fan.playClose(stackShown: stackShown) { [weak self] in
             Task { @MainActor [weak self] in
                 guard let self, self.exitingPopupSession?.id == id else { return }

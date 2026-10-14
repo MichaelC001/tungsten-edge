@@ -1226,7 +1226,7 @@ struct DockStripView: View {
                         .onChanged { value in
                             if dragController.draggingPayload == nil {
                                 let slot = folderChipFrames[entry.id]
-                                if folderPopupPresence.style(for: path) != nil {
+                                if folderPopupPresence.isOpen(path) {
                                     onFolderDragWillBegin()
                                     // The bitmap prepared on mouse-down shows the open look.
                                     prepareDragCandidate(entry, id: path, slot: slot, projection: projection)

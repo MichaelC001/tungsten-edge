@@ -6,6 +6,9 @@ import SwiftUI
 enum FolderChipOpenStyle: Equatable {
     case pileArrow
     case dimmedOnly
+    /// A fan of a folder shown as a stack is closing: the slot stays empty, because the items
+    /// flying back land as the pile itself.
+    case landing
 }
 
 /// Which folder's popup is open on this unit and how its chip should look. One per
@@ -21,6 +24,9 @@ final class FolderPopupPresence: ObservableObject {
     }
 
     @Published private(set) var state: State?
+    /// The closing fan whose items are still on their way into the chip; separate from `state`,
+    /// which the next popup takes over while this one is still landing.
+    @Published private(set) var landing: State?
 
     func show(path: String, style: FolderChipOpenStyle, sessionID: Int) {
         state = State(path: path, style: style, sessionID: sessionID)
@@ -31,9 +37,22 @@ final class FolderPopupPresence: ObservableObject {
         state = nil
     }
 
-    func style(for path: String) -> FolderChipOpenStyle? {
-        state?.path == path ? state?.style : nil
+    func beginLanding(path: String, sessionID: Int) {
+        landing = State(path: path, style: .landing, sessionID: sessionID)
     }
+
+    func endLanding(sessionID: Int) {
+        guard landing?.sessionID == sessionID else { return }
+        landing = nil
+    }
+
+    /// Open beats landing: a folder reopened mid-landing shows its open look.
+    func style(for path: String) -> FolderChipOpenStyle? {
+        if state?.path == path { return state?.style }
+        return landing?.path == path ? .landing : nil
+    }
+
+    func isOpen(_ path: String) -> Bool { state?.path == path }
 }
 
 /// Pinned folder chip: the cover alone, at app-icon size in an icon-card slot, like a native
@@ -113,7 +132,9 @@ struct PinnedFolderChip: View {
         // Folder mode, an empty folder and a cover not loaded yet all show the folder's own icon.
         let layers = displayMode == .folder ? [] : (cover?.layers ?? [])
         return ZStack {
-            if openStyle == .pileArrow, let pile = NativeStackArtwork.pileArrow(dark: colorScheme == .dark) {
+            if openStyle == .landing {
+                Color.clear
+            } else if openStyle == .pileArrow, let pile = NativeStackArtwork.pileArrow(dark: colorScheme == .dark) {
                 // Open as fan or grid: the Dock's square + arrow, swapped in on the same frame.
                 Image(nsImage: pile)
                     .resizable()
