@@ -1,5 +1,6 @@
 import AppKit
 import Combine
+import OSLog
 import Sparkle
 
 /// Sparkle 的薄封装。**两个界面入口（状态栏菜单 / 设置窗口）只认这一个对象**，
@@ -21,6 +22,17 @@ import Sparkle
 ///
 /// 所以这里声明支持 gentle reminders，并在真正要展示更新时把 App 带到前台。
 /// 用户主动点「检查更新」的那条路不受影响（Sparkle 保证用户发起的检查一定置前）。
+///
+/// ## Why the quiet re-sighting aborts the session instead of hiding the window
+///
+/// Sparkle's own gentle-reminder hook (`standardUserDriverShouldHandleShowingScheduledUpdate`
+/// returning `NO`) keeps the update session *open* — the alert exists but is not shown, so the
+/// delegate's reminder can bring it back with `checkForUpdates`. An open session also blocks
+/// every later scheduled check (`SPUUpdater` only schedules the next one when a session ends),
+/// so a user who dismissed the alert once never heard about a newer release until relaunch.
+/// The 「same version, one interruption」 rule therefore lives in
+/// `updater(_:shouldProceedWithUpdate:updateCheck:)`: throwing there aborts the session before
+/// any UI, Sparkle schedules the next check as usual, and the menu-bar badge keeps reminding.
 @MainActor
 final class SparkleUpdateService: NSObject, ObservableObject, UpdateControlling {
     /// Sparkle 是否处于可以发起检查的状态（正在检查、正在下载时为 false）。
@@ -42,6 +54,11 @@ final class SparkleUpdateService: NSObject, ObservableObject, UpdateControlling 
     /// 已经为哪个版本抢过一次前台。**只在内存里**——不落盘就没有新的数据边界，
     /// 代价只是重启钨极后同一个版本会再当面提醒一次，这可以接受。
     private var announcedVersion: String?
+
+    private let logger = Logger(subsystem: "com.caye.macosdockcc.v2", category: "update")
+
+    /// Domain of the error thrown to abort a quiet re-sighting; Sparkle logs it once per aborted check.
+    private static let quietAbortErrorDomain = "com.caye.macosdockcc.v2.update"
 
     /// 自动检查更新。设置窗口那个勾选项直接读写它。
     ///
@@ -104,35 +121,13 @@ extension SparkleUpdateService: SPUStandardUserDriverDelegate {
     /// 声明我们会自己管"温和提醒"。不声明的话下面几个回调 Sparkle 根本不会调。
     nonisolated var supportsGentleScheduledUpdateReminders: Bool { true }
 
-    /// 这一轮定时检查，要不要让 Sparkle 自己开更新窗口。
-    ///
-    /// 返回 `false` = 「我自己用界面提示，你别开窗」，正是 Sparkle 给 gentle reminders
-    /// 留的口子。判定归纯函数 `ScheduledUpdatePresentation`：同一个版本只在第一次开窗，
-    /// 之后交给菜单栏图标上的小圆点。
-    ///
-    /// ⚠️ **这个回调里不许有副作用**（Sparkle 头文件明写），所以只读 `announcedVersion`，
-    /// 记录留给下面的 `willHandleShowingUpdate`。用户主动发起的检查不会走到这里。
-    nonisolated func standardUserDriverShouldHandleShowingScheduledUpdate(
-        _ update: SUAppcastItem,
-        andInImmediateFocus immediateFocus: Bool
-    ) -> Bool {
-        // Sparkle 在主线程调这个同步回调；`assumeIsolated` 只是把这一事实告诉编译器，
-        // 不能改成 Task——那样这里就没有返回值可给了。
-        MainActor.assumeIsolated {
-            ScheduledUpdatePresentation.decide(
-                version: update.displayVersionString,
-                userInitiated: false,
-                announcedVersion: announcedVersion
-            ) == .announce
-        }
-    }
-
     /// Sparkle 即将展示一个更新。
     ///
     /// `state.userInitiated == false` 表示这是**定时检查**的结果——`.accessory` 应用的这种
     /// 更新窗会被压在所有窗口后面，不 activate 就等于没提示（2026-07-29 那次「检查更新失效」
-    /// 是同一个病）。所以第一次遇见某个版本时把 App 带到前台；同一个版本的后续几轮由
-    /// 上面那个回调挡在开窗之前，只留状态栏的小圆点。
+    /// 是同一个病）。所以第一次遇见某个版本时把 App 带到前台。A scheduled re-sighting of the
+    /// same version never reaches this point: `updater(_:shouldProceedWithUpdate:updateCheck:)`
+    /// aborts it before Sparkle builds the alert, so only the menu-bar badge remains.
     ///
     /// 用户自己点出来的检查不碰 activate：那条路 Sparkle 已经保证置前。
     nonisolated func standardUserDriverWillHandleShowingUpdate(
@@ -155,6 +150,8 @@ extension SparkleUpdateService: SPUStandardUserDriverDelegate {
                 self.announcedVersion = version
                 NSApp.activate(ignoringOtherApps: true)
             case .remindQuietly, .deferToSparkle:
+                // `.remindQuietly` is unreachable here (aborted in `shouldProceedWithUpdate`);
+                // Sparkle brings user-initiated alerts forward itself.
                 break
             }
         }
@@ -162,6 +159,56 @@ extension SparkleUpdateService: SPUStandardUserDriverDelegate {
 }
 
 extension SparkleUpdateService: SPUUpdaterDelegate {
+    /// Sparkle picked `updateItem` from the appcast and asks whether to go on with it.
+    ///
+    /// A **background** check that finds the version already announced in this run is aborted
+    /// here by throwing. Nothing reaches the screen (`SPUScheduledUpdateDriver` surfaces errors
+    /// only after an alert was shown), `updaterDidNotFindUpdate` is not on this path so
+    /// `pendingUpdateVersion` and the badge survive, and — the point of it — the session ends,
+    /// so Sparkle schedules the next check and a *newer* version can announce itself at the next
+    /// tick. Doing this through `standardUserDriverShouldHandleShowingScheduledUpdate` instead
+    /// would hold the session open and silently stop all later checks (see the type comment).
+    ///
+    /// User-initiated checks always proceed: the badge row's `checkForUpdates()` relies on that
+    /// to bring the alert back.
+    func updater(
+        _ updater: SPUUpdater,
+        shouldProceedWithUpdate updateItem: SUAppcastItem,
+        updateCheck: SPUUpdateCheck
+    ) throws {
+        let version = updateItem.displayVersionString
+        let outcome = ScheduledUpdatePresentation.decide(
+            version: version,
+            userInitiated: updateCheck == .updates,
+            announcedVersion: announcedVersion
+        )
+        guard outcome == .remindQuietly else { return }
+        // The badge normally already shows this version; re-asserting it costs nothing and
+        // covers a reminder lost to a transient state change.
+        pendingUpdateVersion = version
+        throw NSError(
+            domain: Self.quietAbortErrorDomain,
+            code: 1,
+            userInfo: [
+                NSLocalizedDescriptionKey:
+                    "Update \(version) was already announced in this run; the menu-bar badge carries the reminder."
+            ]
+        )
+    }
+
+    /// One line per scheduled check so「为什么没查更新」has evidence in Console
+    /// (`log show --predicate 'subsystem == "com.caye.macosdockcc.v2" AND category == "update"'`).
+    /// Silence here after an update was found is exactly the bug this file guards against.
+    func updater(_ updater: SPUUpdater, willScheduleUpdateCheckAfterDelay delay: TimeInterval) {
+        logger.info("next scheduled update check in \(Int(delay), privacy: .public)s")
+    }
+
+    /// `DOCK_UPDATE_FEED_URL` points Sparkle at a test appcast (e.g. one served from localhost)
+    /// so an unpublished feed can be checked end to end; unset → `SUFeedURL` from Info.plist.
+    func feedURLString(for updater: SPUUpdater) -> String? {
+        DebugSwitch.updateFeedURL.value()
+    }
+
     /// 用户对这次更新做了选择。装了 / 跳过了 / 稍后再说——前两种要把状态栏的提示撤掉。
     ///
     /// 「稍后再说」(`.dismiss`) **不撤**：那正是「我知道了，但先不弄」，小圆点留着才对，

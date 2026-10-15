@@ -11,11 +11,16 @@ import Foundation
 /// 所以我们一直无条件把 App 带到前台。这在「一天查一次」时还好，改成 6 小时之后就变成骚扰：
 /// 用户关掉窗口，几小时后又被抢一次前台，而他早就知道有新版了。
 ///
-/// Sparkle 为这件事留了口子（`standardUserDriverShouldHandleShowingScheduledUpdate:`：
-/// 返回 `NO` 表示「这一轮我自己用界面提示，别开窗」）。于是分工变成：
+/// 于是分工变成：
 ///
 /// - **同一个版本的第一次**：照旧开窗 + 抢前台，保证用户一定看得见；
 /// - **第二次及以后**：不开窗、不抢前台，改由菜单栏图标上的小圆点持续提醒。
+///
+/// How `.remindQuietly` is carried out matters: the caller aborts that check in
+/// `updater(_:shouldProceedWithUpdate:updateCheck:)` so Sparkle's session ends and the next
+/// scheduled check still happens. Sparkle's own hook for this
+/// (`standardUserDriverShouldHandleShowingScheduledUpdate` returning `NO`) keeps the session
+/// open and thereby stops every later check — a newer release would never be noticed.
 ///
 /// 提示本身不归这里管：状态栏那个点从「发现新版」一直留到用户装了、跳过了，或后续检查
 /// 发现已经没有更新为止。
@@ -23,7 +28,7 @@ enum ScheduledUpdatePresentation {
     enum Outcome: Equatable {
         /// 让 Sparkle 开更新窗口，并且我们把 App 带到前台。**同一版本只会得到一次。**
         case announce
-        /// 不开窗、不抢前台，只留状态栏提示。
+        /// 不开窗、不抢前台，只留状态栏提示 — the check is aborted before any UI so the session ends.
         case remindQuietly
         /// 用户自己点的「检查更新」。Sparkle 保证这条路一定置前，我们不插手。
         case deferToSparkle

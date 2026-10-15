@@ -170,6 +170,8 @@ enum DebugSwitch: String, CaseIterable, Sendable {
     case liquidGlassContentInset = "DOCK_LIQUID_GLASS_CONTENT_INSET"
     /// Private `NSGlassEffectView` variant for the plate (default 3 = the Dock's own material); `off` = SwiftUI plate
     case liquidGlassSystemVariant = "DOCK_LIQUID_GLASS_SYSTEM_VARIANT"
+    /// Appcast URL override for probing an unpublished feed (`SparkleUpdateService.feedURLString(for:)`)
+    case updateFeedURL = "DOCK_UPDATE_FEED_URL"
 
     var kind: Kind {
         switch self {
@@ -194,7 +196,7 @@ enum DebugSwitch: String, CaseIterable, Sendable {
              .liquidGlassWhiteOverlay, .liquidGlassDimming, .liquidGlassBorder, .liquidGlassBorderEdge,
              .liquidGlassBorderCut, .liquidGlassBorderSpread, .liquidGlassBorderWidth, .liquidGlassBorderInner,
              .liquidGlassBackgroundOpacity, .liquidGlassWindowBlur, .liquidGlassContentInset,
-             .liquidGlassSystemVariant, .stackPopupSnapshot:
+             .liquidGlassSystemVariant, .stackPopupSnapshot, .updateFeedURL:
             return .value
         }
     }
