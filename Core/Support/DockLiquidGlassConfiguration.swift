@@ -73,6 +73,13 @@ struct DockLiquidGlassConfiguration: Equatable {
     /// 设这个值，会二次合成纵向光照（受控彩条实测：顶部/底部平均亮度从约 131/127
     /// 放大成 101/163）。
     let windowBlurRadius: Double
+    /// The WindowServer blur radius worth asking for, or nil when it is 0: a 0 radius asks for
+    /// nothing, so no SkyLight call is made for it and its outcome can never decide the render path
+    /// (the old guard on that call is the suspected cause of the macOS 26.x frosted-plate fallback).
+    var requestedWindowBlurRadius: UInt32? {
+        guard windowBlurRadius > 0 else { return nil }
+        return UInt32(min(windowBlurRadius.rounded(), 64))
+    }
     /// 玻璃形状先外扩再内缩的量，给玻璃自己的边缘渲染留余量。
     let contentInset: Double
     /// 背景窗口根图层的黑底不透明度。**不是观感参数**：WindowServer 需要一块非零 alpha 的

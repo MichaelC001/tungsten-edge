@@ -20,10 +20,13 @@ struct DiagnosticReport: Equatable {
     var increaseContrast: Bool
     var displays: [String]
     var glassPath: String
+    /// Whether the taskbar's glass composite is actually up (`glassPath` is only the configuration).
+    var glassComposite: String
     var glassTint: String?
     /// What each private variant number resolves to on this system.
     var glassVariants: [GlassReading]
-    /// What the live glass panels actually carry.
+    /// What the live glass panels actually carry, hidden ones included (an auto-hidden bar is
+    /// still the bar; the label says so).
     var glassPanels: [GlassReading]
 
     var text: String {
@@ -37,6 +40,7 @@ struct DiagnosticReport: Equatable {
             "accessibility: reduceTransparency=\(reduceTransparency ? 1 : 0) increaseContrast=\(increaseContrast ? 1 : 0)",
             "displays: \(Self.joined(displays, separator: ", "))",
             "glass path: \(glassPath)",
+            "glass composite: \(glassComposite)",
             "glass tint: \(glassTint ?? "unset")",
             "glass variants: \(Self.joined(glassVariants.map(Self.line), separator: " | "))",
             "glass panels: \(Self.joined(glassPanels.map(Self.line), separator: " | "))",

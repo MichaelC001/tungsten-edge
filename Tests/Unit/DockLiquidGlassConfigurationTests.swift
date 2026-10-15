@@ -146,6 +146,16 @@ final class DockLiquidGlassConfigurationTests: XCTestCase {
         }
     }
 
+    /// A 0 radius means no SkyLight call at all: the call is tuning, and its outcome must never
+    /// decide whether the bar gets the glass composite.
+    func testWindowBlurIsOnlyRequestedForAPositiveRadius() {
+        XCTAssertNil(DockLiquidGlassConfiguration.resolve(environment: [:]).requestedWindowBlurRadius)
+        XCTAssertNil(resolve(["DOCK_LIQUID_GLASS_WINDOW_BLUR": "0"]).requestedWindowBlurRadius)
+        XCTAssertEqual(resolve(["DOCK_LIQUID_GLASS_WINDOW_BLUR": "6"]).requestedWindowBlurRadius, 6)
+        XCTAssertEqual(resolve(["DOCK_LIQUID_GLASS_WINDOW_BLUR": "5.6"]).requestedWindowBlurRadius, 6)
+        XCTAssertEqual(resolve(["DOCK_LIQUID_GLASS_WINDOW_BLUR": "64"]).requestedWindowBlurRadius, 64)
+    }
+
     /// 背景窗口 = 内容窗口减掉 20pt 阴影透明边后的可视底板，高度由 `DockPanelHeight.metrics` 决定
     /// （92 − 2×20 = 52 是旧中档面板高，这里只是个几何样本），**不再有玻璃自带的第二套高度**。
     func testBackgroundFrameIsTheVisiblePlateInsideTheShadowPadding() {

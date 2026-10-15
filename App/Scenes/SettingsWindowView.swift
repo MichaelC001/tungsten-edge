@@ -1067,17 +1067,32 @@ extension DiagnosticReport {
                 "\(Int($0.frame.width))x\(Int($0.frame.height))@\(Int($0.backingScaleFactor))x"
             },
             glassPath: glassPath(),
+            glassComposite: glassComposite(),
             glassTint: UserDefaults.standard.object(forKey: "NSGlassTintAmount").map { "\($0)" },
             glassVariants: glassVariantReadings(),
+            // Hidden panels stay listed: an auto-hidden bar reads "none" otherwise, which looks
+            // like "no glass" — the very thing this line exists to tell apart.
             glassPanels: NSApp.windows
-                .filter { $0 is DockLiquidGlassPanel && $0.isVisible }
+                .filter { $0 is DockLiquidGlassPanel }
                 .map { window in
                     GlassReading(
-                        label: "\(Int(window.frame.width))x\(Int(window.frame.height))",
+                        label: "\(Int(window.frame.width))x\(Int(window.frame.height))"
+                            + (window.isVisible ? "" : " hidden"),
                         reading: window.contentView?.layer.flatMap { TEDockGlassDescribeLayer($0) }
                     )
                 }
         )
+    }
+
+    /// `glassPath` is the configuration; this is what the running bar actually got. The glass
+    /// composite exists exactly when its background panel does (`PanelCoordinator.usesLiquidGlass`),
+    /// and that panel keeps its view for the bar's whole life, so counting those windows is the
+    /// same answer every unit would give.
+    private static func glassComposite() -> String {
+        guard DockGlassPresentation.shouldAttemptTaskbarComposite else { return "off (frosted path)" }
+        let backgrounds = NSApp.windows.filter { $0.contentView is DockTaskbarLiquidGlassBackgroundView }.count
+        guard backgrounds > 0 else { return "down (bar on the frosted fallback)" }
+        return "up (\(backgrounds) background panel\(backgrounds == 1 ? "" : "s"))"
     }
 
     private static func glassPath() -> String {

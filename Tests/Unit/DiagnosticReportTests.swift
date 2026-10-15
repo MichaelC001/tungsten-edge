@@ -12,12 +12,16 @@ final class DiagnosticReportTests: XCTestCase {
             increaseContrast: true,
             displays: ["1512x982@2x", "2560x1440@1x"],
             glassPath: "variant 3",
+            glassComposite: "up (1 background panel)",
             glassTint: "0.4",
             glassVariants: [
                 .init(label: "0", reading: "L0.85 N0.40 R-27.00 B5.00 K77"),
                 .init(label: "3", reading: nil),
             ],
-            glassPanels: [.init(label: "1512x94", reading: "L0.00 N0.00 R-29.88 B5.42 K77")]
+            glassPanels: [
+                .init(label: "1512x94", reading: "L0.00 N0.00 R-29.88 B5.42 K77"),
+                .init(label: "240x94 hidden", reading: "L0.00 N0.00 R-29.88 B5.42 K77"),
+            ]
         )
     }
 
@@ -31,9 +35,10 @@ final class DiagnosticReportTests: XCTestCase {
         accessibility: reduceTransparency=0 increaseContrast=1
         displays: 1512x982@2x, 2560x1440@1x
         glass path: variant 3
+        glass composite: up (1 background panel)
         glass tint: 0.4
         glass variants: 0=L0.85 N0.40 R-27.00 B5.00 K77 | 3=unreadable
-        glass panels: 1512x94=L0.00 N0.00 R-29.88 B5.42 K77
+        glass panels: 1512x94=L0.00 N0.00 R-29.88 B5.42 K77 | 240x94 hidden=L0.00 N0.00 R-29.88 B5.42 K77
         """)
     }
 

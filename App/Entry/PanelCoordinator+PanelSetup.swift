@@ -117,18 +117,21 @@ extension PanelCoordinator {
         backgroundView.autoresizingMask = [.width, .height]
         panel.contentView = backgroundView
 
-        let blurRadius = UInt32(configuration.windowBlurRadius.rounded())
-        guard TEDockGlassSetWindowBackgroundBlurRadius(panel.windowNumber, blurRadius) else {
-            panel.contentView = nil
-            panel.close()
-            return nil
+        // The blur call is tuning only (default radius 0 = no call), and its failure must never
+        // decide the render path: this used to be a guard that dropped the whole composite, which
+        // is the suspected way macOS 26.x users lost the glass (why the call failed there is unknown).
+        if let blurRadius = configuration.requestedWindowBlurRadius,
+           !TEDockGlassSetWindowBackgroundBlurRadius(panel.windowNumber, blurRadius) {
+            print("[glass] window blur radius \(blurRadius) rejected by WindowServer; continuing without it")
         }
         return (panel, backgroundView)
     }
 
     func tearDownTaskbarGlassBackground() {
         guard let background = dockGlassBackgroundPanel else { return }
-        _ = TEDockGlassSetWindowBackgroundBlurRadius(background.windowNumber, 0)
+        if DockGlassPresentation.configuration.requestedWindowBlurRadius != nil {
+            _ = TEDockGlassSetWindowBackgroundBlurRadius(background.windowNumber, 0)
+        }
         background.contentView = nil
         background.orderOut(nil)
         background.close()
