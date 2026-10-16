@@ -59,6 +59,8 @@ enum DebugSwitch: String, CaseIterable, Sendable {
     case fullscreenIntent = "DOCK_FULLSCREEN_INTENT"
     /// 全屏判定问 SkyLight 空间类型
     case fullscreenSlsVerdict = "DOCK_FULLSCREEN_SLS_VERDICT"
+    /// 整屏覆盖窗口（frame≈整屏兜底）藏条后盯住它离屏即重判
+    case overlayWindowWatch = "DOCK_OVERLAY_WINDOW_WATCH"
     /// 常驻所有桌面的成员资格修复（issue #19）
     case spaceMembershipRepair = "DOCK_SPACE_MEMBERSHIP_REPAIR"
     /// 常驻面板钉进私有空间（桌面互滑不发灰）
@@ -180,7 +182,7 @@ enum DebugSwitch: String, CaseIterable, Sendable {
              .badgeTargeted, .badgePause, .minimizeSettleGate, .handoffActiveGrace,
              .handoffActivePrediction, .staleActiveGuard, .dragLanding, .liquidGlass, .liquidGlassDockRefraction,
              .liquidGlassDiagonalHighlight, .liquidGlassHighlightBoost, .stripBalancedInsets,
-             .spaceIntent, .fullscreenIntent, .fullscreenSlsVerdict, .spaceMembershipRepair,
+             .spaceIntent, .fullscreenIntent, .fullscreenSlsVerdict, .overlayWindowWatch, .spaceMembershipRepair,
              .overlaySpace, .scrollReverser, .windowLift, .windowLiftAnim, .windowLiftTiles,
              .menuHoverSuspend, .hoverMonitorLean, .stripHoverPoll, .resizeCursor, .chipPressDown, .titleSettle,
              .finderReopenEvent:

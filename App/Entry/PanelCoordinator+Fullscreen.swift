@@ -136,12 +136,13 @@ extension PanelCoordinator {
         let expectedIntentGeneration = fullscreenIntentTransaction?.generation
         let expectedSpaceHoldGeneration = explicitSpaceHoldGeneration ?? fullscreenSpaceHold?.generation
         Task.detached { [weak self] in
-            let verdict = Self.detectFullscreenViaAX(pid: frontPID, screenCGFrame: screenCGFrame)
+            let probe = Self.detectFullscreenViaAX(pid: frontPID, screenCGFrame: screenCGFrame)
             await MainActor.run { [weak self] in
                 guard let self else { return }
                 guard probeGeneration == self.fullscreenProbeGeneration else {
                     return
                 }
+                let verdict = probe.verdict
                 // 三态 → 交给现有 `applyFullscreenVisibility` 的仍是一个布尔；保持 / 120ms 确认 /
                 // 终审序列一概不变，变的只是「焦点窗口在别的屏上」时那个布尔从哪来：
                 // 多屏下（③④，以及固定档的条不在焦点屏时）AX 对本屏说不出话，改问 SkyLight
@@ -182,8 +183,69 @@ extension PanelCoordinator {
                     isFinalSpaceHoldWindowedConfirmation: isFinalSpaceHoldWindowedConfirmation,
                     isFinalSpaceIntentVerdict: isFinalSpaceIntentVerdict
                 )
+                self.reconcileOverlayWindowWatch(overlayWindowID: probe.overlayWindowID)
             }
         }
+    }
+
+    // MARK: - Overlay-hide watch (frame≈screen fallback has no ending event)
+
+    /// Runs after every AX verdict has been applied. A fullscreen verdict that came from the frame
+    /// fallback carries the window id and (re)arms the watch; any other outcome — revealed, held, or
+    /// fullscreen by the native flag — disarms it. The watch is not evidence by itself: a tick only
+    /// asks the AX path to judge again.
+    private func reconcileOverlayWindowWatch(overlayWindowID: CGWindowID?) {
+        guard let overlayWindowID, visibilityState.hideReasons.contains(.fullscreen) else {
+            endOverlayWindowWatch()
+            return
+        }
+        beginOverlayWindowWatch(windowID: overlayWindowID)
+    }
+
+    private func beginOverlayWindowWatch(windowID: CGWindowID) {
+        guard Self.overlayWindowWatchEnabled else { return }
+        if overlayWindowWatchID == windowID, overlayWindowWatchTimer != nil { return }
+        endOverlayWindowWatch()
+        overlayWindowWatchID = windowID
+        let timer = Timer(timeInterval: OverlayWindowWatch.tickInterval, repeats: true) { [weak self] _ in
+            Task { @MainActor [weak self] in self?.overlayWindowWatchTick() }
+        }
+        timer.tolerance = 0.05
+        RunLoop.main.add(timer, forMode: .common)
+        overlayWindowWatchTimer = timer
+    }
+
+    func endOverlayWindowWatch() {
+        overlayWindowWatchTimer?.invalidate()
+        overlayWindowWatchTimer = nil
+        overlayWindowWatchID = nil
+    }
+
+    private func overlayWindowWatchTick() {
+        guard let windowID = overlayWindowWatchID,
+              visibilityState.hideReasons.contains(.fullscreen),
+              let screenCGFrame = currentPanelScreenCGFrame() else {
+            endOverlayWindowWatch()
+            return
+        }
+        let observation = Self.cgWindowObservation(of: windowID)
+        guard OverlayWindowWatch.shouldRecheck(
+            isOnscreen: observation?.isOnscreen,
+            bounds: observation?.bounds,
+            screenCGFrame: screenCGFrame
+        ) else { return }
+        endOverlayWindowWatch()
+        triggerAsyncFullscreenCheck(source: "overlay-gone-ax")
+    }
+
+    /// nil = the window no longer exists in the window server.
+    nonisolated private static func cgWindowObservation(of windowID: CGWindowID) -> (isOnscreen: Bool, bounds: CGRect?)? {
+        guard let list = CGWindowListCopyWindowInfo([.optionIncludingWindow], windowID) as? [[String: Any]],
+              let info = list.first(where: { ($0[kCGWindowNumber as String] as? NSNumber)?.uint32Value == windowID })
+        else { return nil }
+        let isOnscreen = (info[kCGWindowIsOnscreen as String] as? Bool) ?? false
+        let bounds = (info[kCGWindowBounds as String] as? NSDictionary).flatMap { CGRect(dictionaryRepresentation: $0 as CFDictionary) }
+        return (isOnscreen, bounds)
     }
 
     private func fullscreenReconcileIfNeeded() {
@@ -614,15 +676,22 @@ extension PanelCoordinator {
         return Self.toCGRect(panelCurrentScreen(panel: panel))
     }
 
+    struct FullscreenAXProbe {
+        let verdict: FullscreenAXVerdict
+        /// Set only when `.fullscreen` came from the frame≈screen fallback (no AXFullScreen flag):
+        /// the window the overlay-hide watch keeps an eye on. Native fullscreen never sets it.
+        let overlayWindowID: CGWindowID?
+    }
+
     /// 焦点窗口读不到（pid 为 nil / 无焦点窗口）仍是 `.windowed`——与三态引入前的 false 逐字等价。
-    nonisolated private static func detectFullscreenViaAX(pid: pid_t?, screenCGFrame: CGRect) -> FullscreenAXVerdict {
-        guard let pid else { return .windowed }
+    nonisolated private static func detectFullscreenViaAX(pid: pid_t?, screenCGFrame: CGRect) -> FullscreenAXProbe {
+        guard let pid else { return FullscreenAXProbe(verdict: .windowed, overlayWindowID: nil) }
         let reader = AXWindowReader()
         let appElement = AXUIElementCreateApplication(pid)
         _ = AXUIElementSetMessagingTimeout(appElement, 0.5)
 
         guard let focused = reader.elementAttribute(kAXFocusedWindowAttribute as CFString, from: appElement) else {
-            return .windowed
+            return FullscreenAXProbe(verdict: .windowed, overlayWindowID: nil)
         }
         _ = AXUIElementSetMessagingTimeout(focused, 0.5)
 
@@ -631,16 +700,19 @@ extension PanelCoordinator {
         // AX kAXPositionAttribute uses CG coordinates (top-left origin) — matches screenCGFrame directly
         let windowFrame = reader.frame(of: focused, maxAttempts: 1)
         // Only the frame fallback consults the layer, so skip the CG round-trip for native fullscreen.
-        let windowLayer = isAXFullscreen
-            ? nil
-            : reader.cgWindowID(for: focused, maxAttempts: 1).flatMap(Self.cgWindowLayer(of:))
+        let cgWindowID = isAXFullscreen ? nil : reader.cgWindowID(for: focused, maxAttempts: 1)
+        let windowLayer = cgWindowID.flatMap(Self.cgWindowLayer(of:))
 
-        return FullscreenWindowClassifier.classify(
+        let verdict = FullscreenWindowClassifier.classify(
             role: role,
             isAXFullscreen: isAXFullscreen,
             windowFrame: windowFrame,
             windowLayer: windowLayer,
             screenCGFrame: screenCGFrame
+        )
+        return FullscreenAXProbe(
+            verdict: verdict,
+            overlayWindowID: verdict == .fullscreen && !isAXFullscreen ? cgWindowID : nil
         )
     }
 

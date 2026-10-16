@@ -43,6 +43,25 @@ enum FullscreenSpaceHoldDecision {
     }
 }
 
+/// A hide decided by the frame≈screen fallback (a screen-covering overlay without the AXFullScreen
+/// flag, e.g. LaunchOS's full-screen launcher) has no event that ends it: the app may order the window
+/// out without changing the active application, so the bar would otherwise wait for the 5s reconcile.
+/// While hidden that way the window is watched through one single-window CG query per tick; the moment
+/// it is gone, off screen or no longer covering the screen, the AX verdict is re-run.
+enum OverlayWindowWatch {
+    static let tickInterval: TimeInterval = 0.25
+
+    /// `isOnscreen == nil` means the window no longer exists.
+    static func shouldRecheck(isOnscreen: Bool?, bounds: CGRect?, screenCGFrame: CGRect) -> Bool {
+        guard let isOnscreen, isOnscreen, let bounds else { return true }
+        let t = FullscreenWindowClassifier.frameTolerance
+        return abs(bounds.width - screenCGFrame.width) >= t
+            || abs(bounds.height - screenCGFrame.height) >= t
+            || abs(bounds.minX - screenCGFrame.minX) >= t
+            || abs(bounds.minY - screenCGFrame.minY) >= t
+    }
+}
+
 /// 「常驻所有桌面」的成员资格修复（issue #19）。
 ///
 /// macOS 会在**一个全屏空间被销毁的那一刻，把当时处于隐藏状态的 `.canJoinAllSpaces` 窗口

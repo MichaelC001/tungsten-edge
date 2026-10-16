@@ -368,6 +368,12 @@ final class PanelCoordinator: NSObject {
     var fullscreenSpaceHoldGeneration: UInt64 = 0
     var fullscreenSpaceHold: FullscreenSpaceHold?
     var fullscreenSpaceHoldTimer: Timer?
+    /// Overlay-hide watch (`OverlayWindowWatch`): the CG window whose frame-fallback verdict hid the bar.
+    /// Kill switch `DOCK_OVERLAY_WINDOW_WATCH=0` (falls back to the 5s reconcile alone).
+    static let overlayWindowWatchEnabled =
+        DebugSwitch.overlayWindowWatch.isEnabled(in: ProcessInfo.processInfo.environment)
+    var overlayWindowWatchTimer: Timer?
+    var overlayWindowWatchID: CGWindowID?
     /// Control+←/→ 预测隐藏。**默认开**，关掉用 `DOCK_SPACE_INTENT=0`
     ///（判定在 `FullscreenIntentMonitor` 的 `spaceSwitchEnabled`）。与窗口级意图事务共用
     /// `visibilityState` 的 `.fullscreenTransitionPending` 槽位，因此两者互斥、同时只能有一个。
@@ -477,6 +483,7 @@ final class PanelCoordinator: NSObject {
         fullscreenReconcileTimer?.invalidate()
         fullscreenIntentTimeoutTimer?.invalidate()
         fullscreenSpaceHoldTimer?.invalidate()
+        overlayWindowWatchTimer?.invalidate()
         fullscreenSpaceIntentTimer?.invalidate()
         fullscreenSpaceIntentVerdictTimer?.invalidate()
         MainActor.assumeIsolated {
@@ -524,6 +531,7 @@ final class PanelCoordinator: NSObject {
         fullscreenSpaceHoldTimer?.invalidate()
         fullscreenSpaceHoldTimer = nil
         fullscreenSpaceHold = nil
+        endOverlayWindowWatch()
         clearFullscreenSpaceArrowIntent()
 
         closeDrawer()

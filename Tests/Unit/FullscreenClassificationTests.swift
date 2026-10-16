@@ -3,6 +3,34 @@ import XCTest
 final class FullscreenClassificationTests: XCTestCase {
     private let screen = CGRect(x: 0, y: 0, width: 1512, height: 982)
 
+    // LaunchOS's full-screen launcher (probed 2026-10-16): role AXWindow / subrole AXSystemDialog, frame equal
+    // to the whole screen, CG layer 1000, no AXFullScreen flag. The frame fallback hides the bar for it, and
+    // closing it fires no activation change — `OverlayWindowWatch` below is what ends that hide.
+    func testScreenSizedOverlayWithoutAXFlagIsFullscreen() {
+        XCTAssertEqual(FullscreenWindowClassifier.classify(
+            role: "AXWindow", isAXFullscreen: false, windowFrame: screen, windowLayer: 1000, screenCGFrame: screen),
+            .fullscreen)
+    }
+
+    func testOverlayWatchKeepsWaitingWhileTheWindowStillCoversTheScreen() {
+        XCTAssertFalse(OverlayWindowWatch.shouldRecheck(isOnscreen: true, bounds: screen, screenCGFrame: screen))
+        let nudged = screen.insetBy(dx: 2, dy: 2)
+        XCTAssertFalse(OverlayWindowWatch.shouldRecheck(isOnscreen: true, bounds: nudged, screenCGFrame: screen))
+    }
+
+    func testOverlayWatchRechecksWhenTheWindowIsGoneOrOrderedOut() {
+        XCTAssertTrue(OverlayWindowWatch.shouldRecheck(isOnscreen: nil, bounds: nil, screenCGFrame: screen))
+        XCTAssertTrue(OverlayWindowWatch.shouldRecheck(isOnscreen: false, bounds: screen, screenCGFrame: screen))
+        XCTAssertTrue(OverlayWindowWatch.shouldRecheck(isOnscreen: true, bounds: nil, screenCGFrame: screen))
+    }
+
+    func testOverlayWatchRechecksWhenTheWindowStopsCoveringTheScreen() {
+        let shrunk = CGRect(x: 100, y: 80, width: 1200, height: 800)
+        XCTAssertTrue(OverlayWindowWatch.shouldRecheck(isOnscreen: true, bounds: shrunk, screenCGFrame: screen))
+        let moved = screen.offsetBy(dx: 1512, dy: 0)
+        XCTAssertTrue(OverlayWindowWatch.shouldRecheck(isOnscreen: true, bounds: moved, screenCGFrame: screen))
+    }
+
     // 回归：Finder 桌面伪窗口（role=AXScrollArea，frame 恰好等于整屏）不得判为全屏
     func testDesktopPseudoWindowWithExactScreenFrameIsNotFullscreen() {
         XCTAssertFalse(FullscreenWindowClassifier.isFullscreen(
