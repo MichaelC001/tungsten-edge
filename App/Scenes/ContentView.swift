@@ -2,6 +2,8 @@ import AppKit
 import SwiftUI
 
 struct ContentView: View {
+    @Environment(\.displayScale) private var displayScale
+    @Environment(\.colorScheme) private var colorScheme
     let snapshot: DockSnapshot
     let hasRequiredPermissions: Bool
     let observationStatusText: String
@@ -272,7 +274,9 @@ struct ContentView: View {
 
     private func appIcon(for item: StripItem) -> some View {
         ZStack(alignment: .bottomTrailing) {
-            Image(nsImage: AppIconResolver.icon(for: item.bundleIdentifier ?? item.appID))
+            Image(nsImage: AppIconResolver.icon(for: item.bundleIdentifier ?? item.appID, points: 28,
+                                                 displayScale: displayScale, colorScheme: colorScheme,
+                                                 allowsRendering: true))
                 .resizable()
                 .aspectRatio(contentMode: .fit)
                 .frame(width: 28, height: 28)
@@ -441,7 +445,21 @@ enum AppIconResolver {
     /// 重算两块屏的条——全都在付这笔钱。它是「面板动画帧率感」那张卡里可量化的最大单项。
     /// 条目数 = 出现过的 bundle id 数（几十个），永远住得下；只在主线程（SwiftUI body / 位图快照）调用。
     private static var cache: [String: NSImage] = [:]
+    @MainActor private static let bitmaps = IconBitmapCache()
 
+    /// The icon as a chip draws it: rendered at exactly `points × displayScale` pixels, in the
+    /// appearance of `colorScheme` (an icon may carry a dark rendition). `allowsRendering: false`
+    /// during a height drag — see `IconBitmapCache`. Why not the multi-rep image: `IconBitmapRenderer`.
+    @MainActor
+    static func icon(for bundleIdentifier: String, points: CGFloat, displayScale: CGFloat,
+                     colorScheme: ColorScheme, allowsRendering: Bool) -> NSImage {
+        bitmaps.image(name: bundleIdentifier, points: points, displayScale: displayScale,
+                      appearance: NSAppearance(named: colorScheme == .dark ? .darkAqua : .aqua),
+                      allowsRendering: allowsRendering) { icon(for: bundleIdentifier) }
+    }
+
+    /// The system icon with its small plated renditions removed — the source every rendered size
+    /// comes from; chips draw the sized variant above.
     static func icon(for bundleIdentifier: String) -> NSImage {
         if let cached = cache[bundleIdentifier] {
             return cached

@@ -58,7 +58,7 @@ struct TrashGridPopupView: View {
                 onOpenInFinder()
             }
             if canEmpty {
-                FolderGridCell(iconPath: nil, staticIcon: Self.emptyIcon, label: String(localized: "Empty Trash…")) {
+                FolderGridCell(iconPath: nil, staticIcon: emptyIcon, label: String(localized: "Empty Trash…")) {
                     // The confirmation is modal; the popup's click-away monitor would close it anyway.
                     onClosePopup()
                     trashStore.emptyTrash()
@@ -87,8 +87,11 @@ struct TrashGridPopupView: View {
         return menu
     }
 
-    /// The light rendition on purpose, whatever the app's appearance (`TrashIconArt`).
-    private static let emptyIcon: NSImage = TrashIconArt.lightFull
+    @Environment(\.displayScale) private var displayScale
+    /// The light rendition on purpose, whatever the app's appearance (`TrashIconArt`), at the cell's pixel size.
+    private var emptyIcon: NSImage {
+        TrashIconArt.image(isFull: true, points: StackPopupMetrics.iconSize, displayScale: displayScale, allowsRendering: true)
+    }
 }
 
 /// Type icons by extension: the files themselves cannot be read without Full Disk Access.

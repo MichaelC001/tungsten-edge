@@ -12,10 +12,13 @@ struct TrashChip: View {
     let onOpen: () -> Void
     let onEmpty: () -> Void
     @State private var isPressed = false
-    @Environment(\.colorScheme) private var colorScheme
+    @Environment(\.displayScale) private var displayScale
+    /// A height drag is a new icon size every tick: reuse the rendered bitmap until it ends.
+    @Environment(\.isPanelHeightResizing) private var isPanelHeightResizing
 
     var body: some View {
-        Image(nsImage: TrashIconArt.image(isFull: isFull, colorScheme: colorScheme))
+        Image(nsImage: TrashIconArt.image(isFull: isFull, points: ChipPillMetrics.bareIconSlot * scale,
+                                          displayScale: displayScale, allowsRendering: !isPanelHeightResizing))
             .resizable()
             .aspectRatio(contentMode: .fit)
             .frame(width: ChipPillMetrics.bareIconSlot * scale, height: ChipPillMetrics.bareIconSlot * scale)
@@ -52,26 +55,20 @@ struct TrashChip: View {
     }
 }
 
-/// The Trash icon is the light one in both appearances, as on the native Dock. The system image
-/// carries a dark rendition that AppKit picks under `darkAqua` — and SwiftUI's `colorScheme`
-/// environment does not override that choice — so in dark the light rendition is resolved
-/// explicitly. In light the system image is used untouched, which keeps that look pixel-identical.
+/// The Trash icon is the light rendition in both appearances, as on the native Dock. The system
+/// image carries a dark rendition that AppKit picks under `darkAqua` — and SwiftUI's `colorScheme`
+/// environment does not override that choice — so the bitmap is always rendered under `aqua`.
+/// Rendered at the exact pixel size (`IconBitmapRenderer`): a single-`CGImage` copy of the light
+/// rendition is minified by the layer from 1024px in one bilinear step — that was the 锯齿.
 enum TrashIconArt {
-    static func image(isFull: Bool, colorScheme: ColorScheme) -> NSImage {
-        if colorScheme == .dark { return isFull ? lightFull : lightEmpty }
-        return NSImage(named: isFull ? NSImage.trashFullName : NSImage.trashEmptyName) ?? NSImage()
-    }
+    @MainActor private static let bitmaps = IconBitmapCache()
 
-    static let lightEmpty = resolveLight(NSImage.trashEmptyName)
-    static let lightFull = resolveLight(NSImage.trashFullName)
-
-    private static func resolveLight(_ name: NSImage.Name) -> NSImage {
-        guard let source = NSImage(named: name) else { return NSImage() }
-        var resolved: CGImage?
-        NSAppearance(named: .aqua)?.performAsCurrentDrawingAppearance {
-            var rect = CGRect(origin: .zero, size: CGSize(width: 512, height: 512))
-            resolved = source.cgImage(forProposedRect: &rect, context: nil, hints: nil)
+    @MainActor
+    static func image(isFull: Bool, points: CGFloat, displayScale: CGFloat, allowsRendering: Bool) -> NSImage {
+        let name = isFull ? NSImage.trashFullName : NSImage.trashEmptyName
+        return bitmaps.image(name: name, points: points, displayScale: displayScale,
+                             appearance: NSAppearance(named: .aqua), allowsRendering: allowsRendering) {
+            NSImage(named: name) ?? NSImage()
         }
-        return resolved.map { NSImage(cgImage: $0, size: source.size) } ?? source
     }
 }

@@ -541,9 +541,13 @@ private struct DrawerCapsuleAppIcon: View {
 
     @State private var bounceUp = false
     @State private var bounceTimer: Timer?
+    @Environment(\.displayScale) private var displayScale
+    @Environment(\.colorScheme) private var colorScheme
+    @Environment(\.isPanelHeightResizing) private var isPanelHeightResizing
 
     var body: some View {
-        Image(nsImage: AppIconResolver.icon(for: bundleID))
+        Image(nsImage: AppIconResolver.icon(for: bundleID, points: size, displayScale: displayScale,
+                                             colorScheme: colorScheme, allowsRendering: !isPanelHeightResizing))
             .resizable()
             .aspectRatio(contentMode: .fit)
             .frame(width: size, height: size)

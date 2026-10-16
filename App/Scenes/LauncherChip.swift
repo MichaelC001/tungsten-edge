@@ -74,6 +74,9 @@ struct LauncherChip: View {
     private var theme: DockThemeTokens { .resolved(for: colorScheme) }
     /// 见 `EnvironmentValues.isDragCarrierSnapshot`：拍副本时不画圆点、不烘投影。
     @Environment(\.isDragCarrierSnapshot) private var isDragCarrierSnapshot
+    @Environment(\.displayScale) private var displayScale
+    /// A height drag is a new icon size every tick: reuse the rendered bitmap until it ends.
+    @Environment(\.isPanelHeightResizing) private var isPanelHeightResizing
 
     /// `.selfTracked` 时才用得上（抽屉）。任务条走 `.resolved(…)`，这份状态原地不动。
     @State private var selfHovering = false
@@ -190,7 +193,8 @@ struct LauncherChip: View {
     }
 
     private func icon(size: CGFloat, bounceLift: CGFloat) -> some View {
-        Image(nsImage: AppIconResolver.icon(for: bundleID))
+        Image(nsImage: AppIconResolver.icon(for: bundleID, points: size, displayScale: displayScale,
+                                             colorScheme: colorScheme, allowsRendering: !isPanelHeightResizing))
             .resizable()
             .aspectRatio(contentMode: .fit)
             .frame(width: size, height: size)

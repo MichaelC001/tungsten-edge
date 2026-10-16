@@ -200,6 +200,8 @@
 		A0000000000000000000FA11 /* LauncherChipVisualPlanTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A0000000000000000000FA10 /* LauncherChipVisualPlanTests.swift */; };
 		A0000000000000000000EA11 /* FrontWindowIndicatorDecisionTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A0000000000000000000EA10 /* FrontWindowIndicatorDecisionTests.swift */; };
 		A0000000000000000000FF01 /* LaunchGateDecision.swift in Sources */ = {isa = PBXBuildFile; fileRef = A0000000000000000000FF00 /* LaunchGateDecision.swift */; };
+		A00000000000000000001C01 /* IconRenditionChoice.swift in Sources */ = {isa = PBXBuildFile; fileRef = A00000000000000000001C00 /* IconRenditionChoice.swift */; };
+		A00000000000000000001C21 /* IconBitmapRenderer.swift in Sources */ = {isa = PBXBuildFile; fileRef = A00000000000000000001C20 /* IconBitmapRenderer.swift */; };
 		B10000000000000000000008 /* BadgeReadPlan.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10000000000000000000106 /* BadgeReadPlan.swift */; };
 		B1000000000000000000000E /* HoverPollThrottle.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10000000000000000000109 /* HoverPollThrottle.swift */; };
 		B1000000000000000000010E /* MinimizeHandoffTarget.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1000000000000000000010D /* MinimizeHandoffTarget.swift */; };
@@ -222,6 +224,7 @@
 		D90000000000000000000204 /* TaskbarPerDisplaySeedController.swift in Sources */ = {isa = PBXBuildFile; fileRef = D90000000000000000000004 /* TaskbarPerDisplaySeedController.swift */; };
 		D90000000000000000000209 /* DisplayTopologyStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10000000000000000000136 /* DisplayTopologyStore.swift */; };
 		A0000000000000000000FF02 /* LaunchGateDecision.swift in Sources */ = {isa = PBXBuildFile; fileRef = A0000000000000000000FF00 /* LaunchGateDecision.swift */; };
+		A00000000000000000001C02 /* IconRenditionChoice.swift in Sources */ = {isa = PBXBuildFile; fileRef = A00000000000000000001C00 /* IconRenditionChoice.swift */; };
 		B10000000000000000000009 /* BadgeReadPlan.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10000000000000000000106 /* BadgeReadPlan.swift */; };
 		B1000000000000000000000F /* HoverPollThrottle.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10000000000000000000109 /* HoverPollThrottle.swift */; };
 		B1000000000000000000010F /* MinimizeHandoffTarget.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1000000000000000000010D /* MinimizeHandoffTarget.swift */; };
@@ -234,6 +237,7 @@
 		B10000000000000000000203 /* StripSharedAffixTrim.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10000000000000000000201 /* StripSharedAffixTrim.swift */; };
 		B10000000000000000000145 /* StripPointerBox.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10000000000000000000143 /* StripPointerBox.swift */; };
 		A0000000000000000000FF11 /* LaunchGateDecisionTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A0000000000000000000FF10 /* LaunchGateDecisionTests.swift */; };
+		A00000000000000000001C11 /* IconRenditionChoiceTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A00000000000000000001C10 /* IconRenditionChoiceTests.swift */; };
 		A0000000000000000000FF21 /* AppLaunchTargetDecision.swift in Sources */ = {isa = PBXBuildFile; fileRef = A0000000000000000000FF20 /* AppLaunchTargetDecision.swift */; };
 		A0000000000000000000FF22 /* AppLaunchTargetDecision.swift in Sources */ = {isa = PBXBuildFile; fileRef = A0000000000000000000FF20 /* AppLaunchTargetDecision.swift */; };
 		A0000000000000000000FF31 /* AppLaunchTargetDecisionTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A0000000000000000000FF30 /* AppLaunchTargetDecisionTests.swift */; };
@@ -852,6 +856,8 @@
 		A0000000000000000000FA00 /* LauncherChipVisualPlan.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LauncherChipVisualPlan.swift; sourceTree = "<group>"; };
 		A0000000000000000000EA00 /* FrontWindowIndicatorDecision.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FrontWindowIndicatorDecision.swift; sourceTree = "<group>"; };
 		A0000000000000000000FF00 /* LaunchGateDecision.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LaunchGateDecision.swift; sourceTree = "<group>"; };
+		A00000000000000000001C00 /* IconRenditionChoice.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = IconRenditionChoice.swift; sourceTree = "<group>"; };
+		A00000000000000000001C20 /* IconBitmapRenderer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = IconBitmapRenderer.swift; sourceTree = "<group>"; };
 		B10000000000000000000106 /* BadgeReadPlan.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BadgeReadPlan.swift; sourceTree = "<group>"; };
 		B10000000000000000000109 /* HoverPollThrottle.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HoverPollThrottle.swift; sourceTree = "<group>"; };
 		B1000000000000000000010D /* MinimizeHandoffTarget.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MinimizeHandoffTarget.swift; sourceTree = "<group>"; };
@@ -878,6 +884,7 @@
 		A0000000000000000000FA10 /* LauncherChipVisualPlanTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LauncherChipVisualPlanTests.swift; sourceTree = "<group>"; };
 		A0000000000000000000EA10 /* FrontWindowIndicatorDecisionTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FrontWindowIndicatorDecisionTests.swift; sourceTree = "<group>"; };
 		A0000000000000000000FF10 /* LaunchGateDecisionTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LaunchGateDecisionTests.swift; sourceTree = "<group>"; };
+		A00000000000000000001C10 /* IconRenditionChoiceTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = IconRenditionChoiceTests.swift; sourceTree = "<group>"; };
 		A0000000000000000000FF30 /* AppLaunchTargetDecisionTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppLaunchTargetDecisionTests.swift; sourceTree = "<group>"; };
 		A0000000000000000000FF40 /* WindowDisplayTitleTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WindowDisplayTitleTests.swift; sourceTree = "<group>"; };
 		A0000000000000000000FB00 /* DockThemeTokens.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DockThemeTokens.swift; sourceTree = "<group>"; };
@@ -1060,6 +1067,7 @@
 			isa = PBXGroup;
 			children = (
 				A7A500000000000000000006 /* TrashChip.swift */,
+				A00000000000000000001C20 /* IconBitmapRenderer.swift */,
 				A7A500000000000000000007 /* DockStripView+Trash.swift */,
 				E90000000000000000000030 /* DockStripView+ExternalDrop.swift */,
 				E90000000000000000000031 /* DockStripView+Projection.swift */,
@@ -1156,6 +1164,7 @@
 				A0000000000000000000FA00 /* LauncherChipVisualPlan.swift */,
 				A0000000000000000000EA00 /* FrontWindowIndicatorDecision.swift */,
 				A0000000000000000000FF00 /* LaunchGateDecision.swift */,
+				A00000000000000000001C00 /* IconRenditionChoice.swift */,
 				B10000000000000000000106 /* BadgeReadPlan.swift */,
 				B10000000000000000000109 /* HoverPollThrottle.swift */,
 				B1000000000000000000010D /* MinimizeHandoffTarget.swift */,
@@ -1470,6 +1479,7 @@
 				A0000000000000000000FA10 /* LauncherChipVisualPlanTests.swift */,
 				A0000000000000000000EA10 /* FrontWindowIndicatorDecisionTests.swift */,
 				A0000000000000000000FF10 /* LaunchGateDecisionTests.swift */,
+				A00000000000000000001C10 /* IconRenditionChoiceTests.swift */,
 				A0000000000000000000FF30 /* AppLaunchTargetDecisionTests.swift */,
 				A0000000000000000000FF40 /* WindowDisplayTitleTests.swift */,
 				A0000000000000000000FD00 /* DockThemeTests.swift */,
@@ -1705,6 +1715,7 @@
 				A7A500000000000000000068 /* FinderAutomationPermission.swift in Sources */,
 				A7A500000000000000000069 /* FinderTrashClient.swift in Sources */,
 				A7A50000000000000000006A /* TrashChip.swift in Sources */,
+				A00000000000000000001C21 /* IconBitmapRenderer.swift in Sources */,
 				A7A50000000000000000006B /* DockStripView+Trash.swift in Sources */,
 				E90000000000000000001030 /* DockStripView+ExternalDrop.swift in Sources */,
 				E90000000000000000001031 /* DockStripView+Projection.swift in Sources */,
@@ -1840,6 +1851,7 @@
 					A0000000000000000000FA01 /* LauncherChipVisualPlan.swift in Sources */,
 					A0000000000000000000EA01 /* FrontWindowIndicatorDecision.swift in Sources */,
 					A0000000000000000000FF01 /* LaunchGateDecision.swift in Sources */,
+					A00000000000000000001C01 /* IconRenditionChoice.swift in Sources */,
 					B10000000000000000000008 /* BadgeReadPlan.swift in Sources */,
 					B1000000000000000000000E /* HoverPollThrottle.swift in Sources */,
 					B1000000000000000000010E /* MinimizeHandoffTarget.swift in Sources */,
@@ -2073,6 +2085,7 @@
 				A0000000000000000000FA02 /* LauncherChipVisualPlan.swift in Sources */,
 				A0000000000000000000EA02 /* FrontWindowIndicatorDecision.swift in Sources */,
 				A0000000000000000000FF02 /* LaunchGateDecision.swift in Sources */,
+				A00000000000000000001C02 /* IconRenditionChoice.swift in Sources */,
 				B10000000000000000000009 /* BadgeReadPlan.swift in Sources */,
 				B1000000000000000000000F /* HoverPollThrottle.swift in Sources */,
 				B1000000000000000000010F /* MinimizeHandoffTarget.swift in Sources */,
@@ -2115,6 +2128,7 @@
 				A0000000000000000000FA11 /* LauncherChipVisualPlanTests.swift in Sources */,
 				A0000000000000000000EA11 /* FrontWindowIndicatorDecisionTests.swift in Sources */,
 				A0000000000000000000FF11 /* LaunchGateDecisionTests.swift in Sources */,
+				A00000000000000000001C11 /* IconRenditionChoiceTests.swift in Sources */,
 				A0000000000000000000FF31 /* AppLaunchTargetDecisionTests.swift in Sources */,
 				A0000000000000000000FF41 /* WindowDisplayTitleTests.swift in Sources */,
 				A0000000000000000000FD01 /* DockThemeTests.swift in Sources */,

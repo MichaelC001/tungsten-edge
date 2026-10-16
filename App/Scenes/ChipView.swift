@@ -77,6 +77,9 @@ struct ChipView: View {
     /// 见 `EnvironmentValues.isDragCarrierSnapshot`：拍副本时不画圆点、不烘投影。
     @Environment(\.isDragCarrierSnapshot) private var isDragCarrierSnapshot
     @Environment(\.chipPillUsesGlass) private var pillUsesGlass
+    @Environment(\.displayScale) private var displayScale
+    /// A height drag is a new icon size every tick: reuse the rendered bitmap until it ends.
+    @Environment(\.isPanelHeightResizing) private var isPanelHeightResizing
     var drawerTap: (() -> Void)? = nil
     /// 外部手势（重击/中键预览）触发的脉冲信号：nonce 变化即触发一次 fireTapPulse，
     /// 给活访达窗口预览那 ~200ms 反查延迟一个"点到了"的即时确认。默认 0 = 不脉冲。
@@ -417,7 +420,9 @@ struct ChipView: View {
     // MARK: - Shared Icon
 
     private func appIcon(size: CGFloat) -> some View {
-        Image(nsImage: AppIconResolver.icon(for: item.bundleIdentifier ?? item.appID))
+        Image(nsImage: AppIconResolver.icon(for: item.bundleIdentifier ?? item.appID, points: size,
+                                             displayScale: displayScale, colorScheme: colorScheme,
+                                             allowsRendering: !isPanelHeightResizing))
             .resizable()
             .aspectRatio(contentMode: .fit)
             .frame(width: size, height: size)
