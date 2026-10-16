@@ -107,6 +107,8 @@ struct SettingsWindowContent: View {
                         Spacer(minLength: 12)
                         appearanceCards
                     }
+                    frontWindowBarToggle
+                        .toggleStyle(.switch)
                     HStack {
                         Text("Show/hide taskbar shortcut")
                         Spacer(minLength: 12)
@@ -139,6 +141,15 @@ struct SettingsWindowContent: View {
                         Text("Appearance")
                     } control: {
                         appearanceCards
+                    }
+                    Divider().opacity(0.5)
+                    groupRow {
+                        Text("Mark the active window with a bar")
+                    } control: {
+                        frontWindowBarToggle
+                            .toggleStyle(.switch)
+                            .controlSize(.small)
+                            .labelsHidden()
                     }
                     Divider().opacity(0.5)
                     groupRow {
@@ -462,6 +473,13 @@ struct SettingsWindowContent: View {
         Toggle(
             "Reverse mouse scroll direction",
             isOn: binding(get: { store.scrollReverserEnabled }, set: store.setScrollReverserEnabled)
+        )
+    }
+
+    private var frontWindowBarToggle: some View {
+        Toggle(
+            "Mark the active window with a bar",
+            isOn: binding(get: { store.frontWindowBar }, set: store.setFrontWindowBar)
         )
     }
 

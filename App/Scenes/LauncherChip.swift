@@ -201,12 +201,12 @@ struct LauncherChip: View {
 
     /// 同 `ChipView`：拖起来的副本不画圆点（原生 Dock 同款）。
     @ViewBuilder
-    private func runningDot(visual: LauncherChipVisualPlan.Visual, diameter: CGFloat) -> some View {
+    private func runningDot(visual: LauncherChipVisualPlan.Visual, diameter: CGFloat, bottomPadding: CGFloat) -> some View {
         if visual.showsRunningDot && !isDragCarrierSnapshot {
             Circle()
                 .fill(theme.runningDot.color)
                 .frame(width: diameter, height: diameter)
-                .padding(.bottom, 2)
+                .padding(.bottom, bottomPadding)
         }
     }
 
@@ -227,14 +227,18 @@ struct LauncherChip: View {
             }
             .frame(width: ChipPillMetrics.cardWidth * scale,
                    height: ChipPillMetrics.chipHeight * scale)
-            .overlay(alignment: .bottom) { runningDot(visual: visual, diameter: 4) }
+            .overlay(alignment: .bottom) {
+                runningDot(visual: visual, diameter: ChipPillMetrics.runningDotSize * scale,
+                           bottomPadding: ChipPillMetrics.runningDotBottomPadding * scale)
+            }
         case .stackCell:
             // The folder popup's cell with an app in it. The dot sits in the icon's own
-            // transparent bottom margin, between the artwork and the name.
+            // transparent bottom margin (~7pt of the 76pt icon) and hangs 1pt below the icon frame,
+            // into the label gap: ~4pt clear of the artwork, 1pt above the label box.
             let cell = StackCellMetrics.drawer
             VStack(spacing: cell.labelGap) {
                 icon(size: cell.iconSize, bounceLift: 6 * scale)
-                    .overlay(alignment: .bottom) { runningDot(visual: visual, diameter: 4) }
+                    .overlay(alignment: .bottom) { runningDot(visual: visual, diameter: 4, bottomPadding: -1) }
                 StackCellLabel(text: displayName, metrics: cell)
             }
             .padding(.top, cell.iconTop)

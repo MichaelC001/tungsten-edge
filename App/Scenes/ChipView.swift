@@ -202,9 +202,9 @@ struct ChipView: View {
             if showRunningDot && !isDragCarrierSnapshot {
                 Capsule()
                     .fill(theme.runningDot.color)
-                    .frame(width: isFrontWindow ? ChipPillMetrics.frontWindowBarWidth : ChipPillMetrics.runningDotSize,
-                           height: ChipPillMetrics.runningDotSize)
-                    .padding(.bottom, ChipPillMetrics.runningDotBottomPadding)
+                    .frame(width: (isFrontWindow ? ChipPillMetrics.frontWindowBarWidth : ChipPillMetrics.runningDotSize) * scale,
+                           height: (isFrontWindow ? ChipPillMetrics.frontWindowBarHeight : ChipPillMetrics.runningDotSize) * scale)
+                    .padding(.bottom, ChipPillMetrics.runningDotBottomPadding * scale)
                     .animation(.easeInOut(duration: ChipPillMetrics.frontWindowBarAnimation), value: isFrontWindow)
             }
         }
@@ -317,7 +317,7 @@ struct ChipView: View {
             Spacer(minLength: 0)
         }
         .frame(height: ChipPillMetrics.chipHeight * scale)
-        // Front-window bar under the pill, on the same baseline as the icon cards' dots. Titled cards
+        // Front-window bar under the pill, on the same bottom edge as the icon cards' dots. Titled cards
         // have no resting dot, so the bar grows out of nothing; the carrier bitmap leaves it out
         // like the dot (see `isDragCarrierSnapshot`). Placed before the scale modifiers so it moves
         // with the pill (size-tiers rule).
@@ -325,10 +325,10 @@ struct ChipView: View {
             if !isDragCarrierSnapshot {
                 Capsule()
                     .fill(theme.runningDot.color)
-                    .frame(width: isFrontWindow ? ChipPillMetrics.frontWindowBarWidth : 0,
-                           height: ChipPillMetrics.runningDotSize)
+                    .frame(width: isFrontWindow ? ChipPillMetrics.frontWindowBarWidth * scale : 0,
+                           height: ChipPillMetrics.frontWindowBarHeight * scale)
                     .opacity(isFrontWindow ? 1 : 0)
-                    .padding(.bottom, ChipPillMetrics.runningDotBottomPadding)
+                    .padding(.bottom, ChipPillMetrics.runningDotBottomPadding * scale)
                     .animation(.easeInOut(duration: ChipPillMetrics.frontWindowBarAnimation), value: isFrontWindow)
             }
         }

@@ -106,13 +106,16 @@ enum ChipPillMetrics {
     /// 有一半是大小，不只是颜色。
     static let bareIconVisibleSlot: CGFloat = 32.5
 
-    /// The running dot under an icon card: 4pt, unscaled, 2pt above the card's bottom edge
-    /// (native Dock reading). The same capsule stretches to `frontWindowBarWidth` on the card
-    /// whose window is in front (`FrontWindowIndicatorDecision`); titled cards draw no resting
-    /// dot and grow the bar from nothing. Both numbers are unscaled like the dot itself.
+    /// The running dot under an icon card, at the native 54pt bar; every strip site multiplies by
+    /// `scale` (size-tiers rule), so dot, bar and gap keep their proportion to the icon. The same
+    /// capsule stretches to `frontWindowBarWidth` on the card whose window is in front
+    /// (`FrontWindowIndicatorDecision`); titled cards draw no resting dot and grow the bar from
+    /// nothing. The bar is thinner than the dot and shares its bottom edge. The drawer's stack
+    /// cells do not scale and keep their own literals.
     static let runningDotSize: CGFloat = 4
-    static let runningDotBottomPadding: CGFloat = 2
-    static let frontWindowBarWidth: CGFloat = 14
+    static let runningDotBottomPadding: CGFloat = 4
+    static let frontWindowBarWidth: CGFloat = 12
+    static let frontWindowBarHeight: CGFloat = 3
     static let frontWindowBarAnimation: TimeInterval = 0.18
 
     /// Where an icon card's visible artwork ends, as a fraction of the card's height — the anchor

@@ -20893,103 +20893,103 @@
         }
       }
     },
-    "Mark the Front Window": {
+    "Mark the active window with a bar": {
       "extractionState": "manual",
       "localizations": {
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Mark the Front Window"
+            "value": "Mark the active window with a bar"
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "标出最前面的窗口"
+            "value": "用横条标记当前窗口"
           }
         },
         "zh-Hant": {
           "stringUnit": {
             "state": "translated",
-            "value": "標示最前方的視窗"
+            "value": "以橫條標示現用視窗"
           }
         },
         "ja": {
           "stringUnit": {
             "state": "translated",
-            "value": "最前面のウインドウを示す"
+            "value": "アクティブなウインドウをバーで示す"
           }
         },
         "de": {
           "stringUnit": {
             "state": "translated",
-            "value": "Vorderstes Fenster markieren"
+            "value": "Aktives Fenster mit Balken markieren"
           }
         },
         "fr": {
           "stringUnit": {
             "state": "translated",
-            "value": "Signaler la fenêtre au premier plan"
+            "value": "Marquer la fenêtre active avec une barre"
           }
         },
         "es": {
           "stringUnit": {
             "state": "translated",
-            "value": "Marcar la ventana en primer plano"
+            "value": "Marcar la ventana activa con una barra"
           }
         },
         "es-419": {
           "stringUnit": {
             "state": "translated",
-            "value": "Marcar la ventana en primer plano"
+            "value": "Marcar la ventana activa con una barra"
           }
         },
         "pt-BR": {
           "stringUnit": {
             "state": "translated",
-            "value": "Marcar a janela em primeiro plano"
+            "value": "Marcar a janela ativa com uma barra"
           }
         },
         "pt-PT": {
           "stringUnit": {
             "state": "translated",
-            "value": "Marcar a janela em primeiro plano"
+            "value": "Marcar a janela ativa com uma barra"
           }
         },
         "it": {
           "stringUnit": {
             "state": "translated",
-            "value": "Evidenzia la finestra in primo piano"
+            "value": "Evidenzia la finestra attiva con una barra"
           }
         },
         "ko": {
           "stringUnit": {
             "state": "translated",
-            "value": "맨 앞 윈도우 표시"
+            "value": "활성 윈도우를 막대로 표시"
           }
         },
         "ru": {
           "stringUnit": {
             "state": "translated",
-            "value": "Отмечать переднее окно"
+            "value": "Отмечать активное окно полоской"
           }
         },
         "tr": {
           "stringUnit": {
             "state": "translated",
-            "value": "Öndeki pencereyi işaretle"
+            "value": "Etkin pencereyi çubukla işaretle"
           }
         },
         "hi": {
           "stringUnit": {
             "state": "translated",
-            "value": "सबसे आगे की विंडो चिह्नित करें"
+            "value": "सक्रिय विंडो को पट्टी से चिह्नित करें"
           }
         },
         "vi": {
           "stringUnit": {
             "state": "translated",
-            "value": "Đánh dấu cửa sổ phía trước"
+            "value": "Đánh dấu cửa sổ đang hoạt động bằng một thanh"
           }
         }
       }
