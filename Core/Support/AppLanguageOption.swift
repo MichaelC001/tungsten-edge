@@ -2,7 +2,7 @@ import Foundation
 
 /// 界面语言选单的档位（2026-09-01 由三档收成两档、删掉「跟随系统」，owner 拍板；
 /// 2026-09-24 扩到六档，加繁中 / 日 / 德 / 法；三档那版见 `Docs/27`）。
-/// Twelve tiers since the Spanish / Portuguese / Italian / Korean round: Spanish and Portuguese
+/// Sixteen tiers since Russian / Turkish / Hindi / Vietnamese joined: Spanish and Portuguese
 /// each ship two regional files (`es` + `es-419`, `pt-BR` + `pt-PT`) so every region sees the
 /// system words of its own Mac.
 ///
@@ -31,6 +31,10 @@ enum AppLanguageOption: String, CaseIterable, Equatable {
     case portuguesePortugal
     case italian
     case korean
+    case russian
+    case turkish
+    case hindi
+    case vietnamese
 
     /// 当前该显示哪一档。
     ///
@@ -39,7 +43,7 @@ enum AppLanguageOption: String, CaseIterable, Equatable {
     ///   分不清「没设过」和「显式设置」。要用 `CFPreferencesCopyAppValue` /
     ///   `persistentDomain(forName:)` 取本域值传进来。
     /// - `effectiveLocalization`: 此刻**真正加载的那份 `.lproj`**（`Bundle.main.preferredLocalizations.first`）。
-    ///   没设过、或域里是我们没有的语言（用户在系统设置里给本 app 选了俄语这类）时按它回答：
+    ///   没设过、或域里是我们没有的语言（用户在系统设置里给本 app 选了阿拉伯语这类）时按它回答：
     ///   a language we do not ship really falls back to English, so the menu shows English too.
     ///
     /// **兜底方向是英文，不是中文**：只有认得出的语言码才命中对应档。写反了会让英文系统的用户
@@ -73,6 +77,12 @@ enum AppLanguageOption: String, CaseIterable, Equatable {
         case "fr": return .french
         case "it": return .italian
         case "ko": return .korean
+        case "ru": return .russian
+        case "tr": return .turkish
+        // Hindi in Latin script (`hi-Latn`) is a language of its own to the system, which loads
+        // English for it rather than our Devanagari `hi.lproj`.
+        case "hi": return parts.contains("latn") ? nil : .hindi
+        case "vi": return .vietnamese
         case "es": return regionalVariant(of: code, among: [.spanish, .spanishLatinAmerica])
         case "pt": return regionalVariant(of: code, among: [.portugueseBrazil, .portuguesePortugal])
         default: return nil
@@ -112,6 +122,10 @@ enum AppLanguageOption: String, CaseIterable, Equatable {
         case .portuguesePortugal: return "pt-PT"
         case .italian: return "it"
         case .korean: return "ko"
+        case .russian: return "ru"
+        case .turkish: return "tr"
+        case .hindi: return "hi"
+        case .vietnamese: return "vi"
         }
     }
 
@@ -132,6 +146,10 @@ enum AppLanguageOption: String, CaseIterable, Equatable {
         case .portuguesePortugal: return "Português (Portugal)"
         case .italian: return "Italiano"
         case .korean: return "한국어"
+        case .russian: return "Русский"
+        case .turkish: return "Türkçe"
+        case .hindi: return "हिन्दी"
+        case .vietnamese: return "Tiếng Việt"
         }
     }
 }

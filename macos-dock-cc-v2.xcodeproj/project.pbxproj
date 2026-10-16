@@ -1650,6 +1650,10 @@
 				"pt-PT",
 				it,
 				ko,
+				ru,
+				tr,
+				hi,
+				vi,
 			);
 			mainGroup = A0000000000000000000001C;
 			productRefGroup = A00000000000000000000023 /* Products */;
