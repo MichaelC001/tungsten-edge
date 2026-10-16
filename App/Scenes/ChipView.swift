@@ -68,6 +68,10 @@ struct ChipView: View {
     ///（live 区 = `item.isAppLevelFallback`，消息区主窗卡 = 恒 true）；普通窗口卡自己就是
     /// 那个窗口，恒 false。**故意不给默认值**——漏传必须是编译错误（同 `scale` 那条铁律）。
     let showsWindowListInMenu: Bool
+    /// This chip stands for the window that is in front right now (`StripProjection.frontWindowChipIDs`):
+    /// the running dot stretches into a short bar. **No default on purpose** — an omission must be a
+    /// compile error (same rule as `scale`): the two strip call sites both have the projection in hand.
+    let isFrontWindow: Bool
     var iconOnly: Bool = false
     var showRunningDot: Bool = false
     /// 见 `EnvironmentValues.isDragCarrierSnapshot`：拍副本时不画圆点、不烘投影。
@@ -196,10 +200,12 @@ struct ChipView: View {
         // 位图在圆点那块因此是**透明**的，交接那一轮条上卡的圆点直接透出来——不会闪也不会晚。
         .overlay(alignment: .bottom) {
             if showRunningDot && !isDragCarrierSnapshot {
-                Circle()
+                Capsule()
                     .fill(theme.runningDot.color)
-                    .frame(width: 4, height: 4)
-                    .padding(.bottom, 2)
+                    .frame(width: isFrontWindow ? ChipPillMetrics.frontWindowBarWidth : ChipPillMetrics.runningDotSize,
+                           height: ChipPillMetrics.runningDotSize)
+                    .padding(.bottom, ChipPillMetrics.runningDotBottomPadding)
+                    .animation(.easeInOut(duration: ChipPillMetrics.frontWindowBarAnimation), value: isFrontWindow)
             }
         }
         // 未读角标：**必须挂在两个缩放之前**，否则图标放大 / 按下回缩时它一动不动
@@ -311,6 +317,21 @@ struct ChipView: View {
             Spacer(minLength: 0)
         }
         .frame(height: ChipPillMetrics.chipHeight * scale)
+        // Front-window bar under the pill, on the same baseline as the icon cards' dots. Titled cards
+        // have no resting dot, so the bar grows out of nothing; the carrier bitmap leaves it out
+        // like the dot (see `isDragCarrierSnapshot`). Placed before the scale modifiers so it moves
+        // with the pill (size-tiers rule).
+        .overlay(alignment: .bottom) {
+            if !isDragCarrierSnapshot {
+                Capsule()
+                    .fill(theme.runningDot.color)
+                    .frame(width: isFrontWindow ? ChipPillMetrics.frontWindowBarWidth : 0,
+                           height: ChipPillMetrics.runningDotSize)
+                    .opacity(isFrontWindow ? 1 : 0)
+                    .padding(.bottom, ChipPillMetrics.runningDotBottomPadding)
+                    .animation(.easeInOut(duration: ChipPillMetrics.frontWindowBarAnimation), value: isFrontWindow)
+            }
+        }
         .padding(.horizontal, ChipPillMetrics.titledCardInset * scale)
         // 安静档的悬停反馈：整块轻微放大（标准档那一档的反馈是名字气泡 + 药丸提亮）。
         //

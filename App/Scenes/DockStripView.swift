@@ -1332,6 +1332,7 @@ struct DockStripView: View {
                      isHovered: hovered,
                      // 只有 app-* 兜底卡（访达常驻 / 保留兜底）代表整个应用；普通窗口卡不列。
                      showsWindowListInMenu: item.isAppLevelFallback,
+                     isFrontWindow: projection.frontWindowChipIDs.contains(item.id),
                      showRunningDot: true,
                      pulseNonce: chipPulseNonces[item.id] ?? 0,
                      badgeText: windowBadge,
@@ -1399,6 +1400,7 @@ struct DockStripView: View {
                              isHovered: hovered,
                              // 消息区图标恒代表整个应用（主窗开着也一样），列出全部窗口。
                              showsWindowListInMenu: true,
+                             isFrontWindow: projection.frontWindowChipIDs.contains(main.id),
                              iconOnly: true, showRunningDot: true,
                              badgeText: badge,
                              slotHidden: draggingMessagingBundleID == bid)

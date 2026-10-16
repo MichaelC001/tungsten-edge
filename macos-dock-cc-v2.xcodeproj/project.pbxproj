@@ -194,8 +194,11 @@
 		A00000000000000000009402 /* LauncherMenuPlan.swift in Sources */ = {isa = PBXBuildFile; fileRef = A00000000000000000009400 /* LauncherMenuPlan.swift */; };
 		A00000000000000000009411 /* LauncherMenuPlanTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A00000000000000000009410 /* LauncherMenuPlanTests.swift */; };
 		A0000000000000000000FA01 /* LauncherChipVisualPlan.swift in Sources */ = {isa = PBXBuildFile; fileRef = A0000000000000000000FA00 /* LauncherChipVisualPlan.swift */; };
+		A0000000000000000000EA01 /* FrontWindowIndicatorDecision.swift in Sources */ = {isa = PBXBuildFile; fileRef = A0000000000000000000EA00 /* FrontWindowIndicatorDecision.swift */; };
 		A0000000000000000000FA02 /* LauncherChipVisualPlan.swift in Sources */ = {isa = PBXBuildFile; fileRef = A0000000000000000000FA00 /* LauncherChipVisualPlan.swift */; };
+		A0000000000000000000EA02 /* FrontWindowIndicatorDecision.swift in Sources */ = {isa = PBXBuildFile; fileRef = A0000000000000000000EA00 /* FrontWindowIndicatorDecision.swift */; };
 		A0000000000000000000FA11 /* LauncherChipVisualPlanTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A0000000000000000000FA10 /* LauncherChipVisualPlanTests.swift */; };
+		A0000000000000000000EA11 /* FrontWindowIndicatorDecisionTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A0000000000000000000EA10 /* FrontWindowIndicatorDecisionTests.swift */; };
 		A0000000000000000000FF01 /* LaunchGateDecision.swift in Sources */ = {isa = PBXBuildFile; fileRef = A0000000000000000000FF00 /* LaunchGateDecision.swift */; };
 		B10000000000000000000008 /* BadgeReadPlan.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10000000000000000000106 /* BadgeReadPlan.swift */; };
 		B1000000000000000000000E /* HoverPollThrottle.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10000000000000000000109 /* HoverPollThrottle.swift */; };
@@ -847,6 +850,7 @@
 		A00000000000000000009930 /* FileMoverTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FileMoverTests.swift; sourceTree = "<group>"; };
 		A00000000000000000009400 /* LauncherMenuPlan.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LauncherMenuPlan.swift; sourceTree = "<group>"; };
 		A0000000000000000000FA00 /* LauncherChipVisualPlan.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LauncherChipVisualPlan.swift; sourceTree = "<group>"; };
+		A0000000000000000000EA00 /* FrontWindowIndicatorDecision.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FrontWindowIndicatorDecision.swift; sourceTree = "<group>"; };
 		A0000000000000000000FF00 /* LaunchGateDecision.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LaunchGateDecision.swift; sourceTree = "<group>"; };
 		B10000000000000000000106 /* BadgeReadPlan.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BadgeReadPlan.swift; sourceTree = "<group>"; };
 		B10000000000000000000109 /* HoverPollThrottle.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HoverPollThrottle.swift; sourceTree = "<group>"; };
@@ -872,6 +876,7 @@
 		A00000000000000000009580 /* AppMembershipMenuPlan.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppMembershipMenuPlan.swift; sourceTree = "<group>"; };
 		A00000000000000000009410 /* LauncherMenuPlanTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LauncherMenuPlanTests.swift; sourceTree = "<group>"; };
 		A0000000000000000000FA10 /* LauncherChipVisualPlanTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LauncherChipVisualPlanTests.swift; sourceTree = "<group>"; };
+		A0000000000000000000EA10 /* FrontWindowIndicatorDecisionTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FrontWindowIndicatorDecisionTests.swift; sourceTree = "<group>"; };
 		A0000000000000000000FF10 /* LaunchGateDecisionTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LaunchGateDecisionTests.swift; sourceTree = "<group>"; };
 		A0000000000000000000FF30 /* AppLaunchTargetDecisionTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppLaunchTargetDecisionTests.swift; sourceTree = "<group>"; };
 		A0000000000000000000FF40 /* WindowDisplayTitleTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WindowDisplayTitleTests.swift; sourceTree = "<group>"; };
@@ -1149,6 +1154,7 @@
 				F1F0000000000000000000A0 /* AppLanguageOption.swift */,
 				F1D0000000000000000000A0 /* DocumentUsageRanking.swift */,
 				A0000000000000000000FA00 /* LauncherChipVisualPlan.swift */,
+				A0000000000000000000EA00 /* FrontWindowIndicatorDecision.swift */,
 				A0000000000000000000FF00 /* LaunchGateDecision.swift */,
 				B10000000000000000000106 /* BadgeReadPlan.swift */,
 				B10000000000000000000109 /* HoverPollThrottle.swift */,
@@ -1462,6 +1468,7 @@
 				A00000000000000000009930 /* FileMoverTests.swift */,
 				A00000000000000000009410 /* LauncherMenuPlanTests.swift */,
 				A0000000000000000000FA10 /* LauncherChipVisualPlanTests.swift */,
+				A0000000000000000000EA10 /* FrontWindowIndicatorDecisionTests.swift */,
 				A0000000000000000000FF10 /* LaunchGateDecisionTests.swift */,
 				A0000000000000000000FF30 /* AppLaunchTargetDecisionTests.swift */,
 				A0000000000000000000FF40 /* WindowDisplayTitleTests.swift */,
@@ -1831,6 +1838,7 @@
 					F3A0000000000000000000A1 /* DiagnosticReport.swift in Sources */,
 					F1E0000000000000000000C1 /* FeedbackAttachment.swift in Sources */,
 					A0000000000000000000FA01 /* LauncherChipVisualPlan.swift in Sources */,
+					A0000000000000000000EA01 /* FrontWindowIndicatorDecision.swift in Sources */,
 					A0000000000000000000FF01 /* LaunchGateDecision.swift in Sources */,
 					B10000000000000000000008 /* BadgeReadPlan.swift in Sources */,
 					B1000000000000000000000E /* HoverPollThrottle.swift in Sources */,
@@ -2063,6 +2071,7 @@
 				A00000000000000000009912 /* FileMover.swift in Sources */,
 				A00000000000000000009402 /* LauncherMenuPlan.swift in Sources */,
 				A0000000000000000000FA02 /* LauncherChipVisualPlan.swift in Sources */,
+				A0000000000000000000EA02 /* FrontWindowIndicatorDecision.swift in Sources */,
 				A0000000000000000000FF02 /* LaunchGateDecision.swift in Sources */,
 				B10000000000000000000009 /* BadgeReadPlan.swift in Sources */,
 				B1000000000000000000000F /* HoverPollThrottle.swift in Sources */,
@@ -2104,6 +2113,7 @@
 				A00000000000000000009931 /* FileMoverTests.swift in Sources */,
 				A00000000000000000009411 /* LauncherMenuPlanTests.swift in Sources */,
 				A0000000000000000000FA11 /* LauncherChipVisualPlanTests.swift in Sources */,
+				A0000000000000000000EA11 /* FrontWindowIndicatorDecisionTests.swift in Sources */,
 				A0000000000000000000FF11 /* LaunchGateDecisionTests.swift in Sources */,
 				A0000000000000000000FF31 /* AppLaunchTargetDecisionTests.swift in Sources */,
 				A0000000000000000000FF41 /* WindowDisplayTitleTests.swift in Sources */,

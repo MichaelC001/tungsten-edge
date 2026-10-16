@@ -106,6 +106,15 @@ enum ChipPillMetrics {
     /// 有一半是大小，不只是颜色。
     static let bareIconVisibleSlot: CGFloat = 32.5
 
+    /// The running dot under an icon card: 4pt, unscaled, 2pt above the card's bottom edge
+    /// (native Dock reading). The same capsule stretches to `frontWindowBarWidth` on the card
+    /// whose window is in front (`FrontWindowIndicatorDecision`); titled cards draw no resting
+    /// dot and grow the bar from nothing. Both numbers are unscaled like the dot itself.
+    static let runningDotSize: CGFloat = 4
+    static let runningDotBottomPadding: CGFloat = 2
+    static let frontWindowBarWidth: CGFloat = 14
+    static let frontWindowBarAnimation: TimeInterval = 0.18
+
     /// Where an icon card's visible artwork ends, as a fraction of the card's height — the anchor
     /// an app dropped in from Finder grows from (the native Dock grows it up from the icon's
     /// bottom). Not the card's bottom: the icon slot is centred in the taller card and the artwork
