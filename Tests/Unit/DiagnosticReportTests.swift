@@ -13,6 +13,7 @@ final class DiagnosticReportTests: XCTestCase {
             displays: ["1512x982@2x", "2560x1440@1x"],
             glassPath: "variant 3",
             glassComposite: "up (1 background panel)",
+            glassRefresh: "supported",
             glassTint: "0.4",
             glassVariants: [
                 .init(label: "0", reading: "L0.85 N0.40 R-27.00 B5.00 K77"),
@@ -36,6 +37,7 @@ final class DiagnosticReportTests: XCTestCase {
         displays: 1512x982@2x, 2560x1440@1x
         glass path: variant 3
         glass composite: up (1 background panel)
+        glass refresh: supported
         glass tint: 0.4
         glass variants: 0=L0.85 N0.40 R-27.00 B5.00 K77 | 3=unreadable
         glass panels: 1512x94=L0.00 N0.00 R-29.88 B5.42 K77 | 240x94 hidden=L0.00 N0.00 R-29.88 B5.42 K77

@@ -22,6 +22,8 @@ struct DiagnosticReport: Equatable {
     var glassPath: String
     /// Whether the taskbar's glass composite is actually up (`glassPath` is only the configuration).
     var glassComposite: String
+    /// Whether this AppKit still has the hook the glass view uses to re-sample its window state.
+    var glassRefresh: String
     var glassTint: String?
     /// What each private variant number resolves to on this system.
     var glassVariants: [GlassReading]
@@ -41,6 +43,7 @@ struct DiagnosticReport: Equatable {
             "displays: \(Self.joined(displays, separator: ", "))",
             "glass path: \(glassPath)",
             "glass composite: \(glassComposite)",
+            "glass refresh: \(glassRefresh)",
             "glass tint: \(glassTint ?? "unset")",
             "glass variants: \(Self.joined(glassVariants.map(Self.line), separator: " | "))",
             "glass panels: \(Self.joined(glassPanels.map(Self.line), separator: " | "))",

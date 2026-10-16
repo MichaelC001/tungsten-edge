@@ -1086,6 +1086,8 @@ extension DiagnosticReport {
             },
             glassPath: glassPath(),
             glassComposite: glassComposite(),
+            glassRefresh: TEDockGlassSupportsWindowStateRefresh()
+                ? "supported" : "unsupported (no _windowChangedKeyState)",
             glassTint: UserDefaults.standard.object(forKey: "NSGlassTintAmount").map { "\($0)" },
             glassVariants: glassVariantReadings(),
             // Hidden panels stay listed: an auto-hidden bar reads "none" otherwise, which looks
