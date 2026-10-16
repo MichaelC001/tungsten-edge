@@ -34,6 +34,9 @@ enum FinderTrashEvent {
     static let urlProperty: UInt32 = 0x7055524c
     static let reveal: UInt32 = 0x6d766973
     static let miscellaneous: UInt32 = 0x6d697363
+    /// `aevt` / `odoc`: the open-documents event, on Finder's `trash` object the merged Trash window.
+    static let application: UInt32 = 0x61657674
+    static let openDocuments: UInt32 = 0x6f646f63
     /// `kAEAll`, the ordinal of `every item`.
     static let absoluteAll: UInt32 = 0x616c6c20
     static let noConsentPrompt: UInt = 0x00020000

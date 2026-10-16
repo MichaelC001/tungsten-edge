@@ -7,8 +7,8 @@ final class FinderTrashClient: FinderTrashClienting {
     /// Dedicated and serial: an interactive empty blocks here until Finder's own dialog closes
     /// (up to 600s), which must never hold a thread of the shared user-action queue.
     private let commandQueue = DispatchQueue(label: "com.tungsten.edge.trash-command", qos: .userInitiated)
-    /// Listing and reveal for the popup: off `stateQueue` so a slow listing never delays the icon's
-    /// count reads, off `commandQueue` so it never queues behind an interactive empty.
+    /// Listing, reveal and the window open: off `stateQueue` so a slow listing never delays the
+    /// icon's count reads, off `commandQueue` so none of them queues behind an interactive empty.
     private let listQueue = DispatchQueue(label: "com.tungsten.edge.trash-list", qos: .userInitiated)
     private let lock = NSLock()
     private var generation: UInt64 = 0
@@ -82,28 +82,48 @@ final class FinderTrashClient: FinderTrashClienting {
         }
     }
 
-    /// Never activates Finder: activation also raises Finder's last-used window over the current app.
-    /// Bringing the Trash window forward on its own is the caller's job. Off the main thread: the
-    /// LaunchServices lookup and the open request both block, and with Finder loaded the first open
-    /// of a process kept the main thread from reaching the open call for ~1.9s (2026-09-15).
+    /// Opens Finder's Trash window: `odoc` on Finder's `trash` object first, because that window is
+    /// Finder's merged view (the home Trash plus every volume's `.Trashes/<uid>`), while a window on
+    /// the `~/.Trash` folder shows the home Trash alone — a user with a volume's files in the Trash
+    /// saw 4 items where the Dock's Trash showed 38. The folder open stays as the fallback for a
+    /// refused event (Automation denied, Finder's -8072). A timed-out event gets no fallback: Finder
+    /// usually opens the window late, and a second open would make two. Never activates Finder on
+    /// either path: activation also raises Finder's last-used window over the current app; bringing
+    /// the Trash window forward is the caller's job. Off the main thread: the event waits for its
+    /// reply, and the LaunchServices lookup and the open request both block (with Finder loaded the
+    /// first open of a process kept the main thread from reaching the open call for ~1.9s).
     func openTrash() {
         let gen = currentGeneration()
-        DispatchQueue.global(qos: .userInitiated).async { [self] in
+        listQueue.async { [self] in
             guard currentGeneration() == gen else { return }
             let startedAt = Date()
-            let url = FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent(".Trash")
-            guard let finderURL = NSWorkspace.shared.urlForApplication(withBundleIdentifier: "com.apple.finder") else {
-                sendOpenEvent(generation: gen)
-                return
+            if let trash = Self.trashObject() {
+                let event = Self.event(eventClass: FinderTrashEvent.application, id: FinderTrashEvent.openDocuments)
+                event.setParam(trash, forKeyword: keyDirectObject)
+                let outcome = Self.send(event, options: FinderTrashEvent.countOptions, timeout: 5, isCount: false)
+                Self.logger.info("打开废纸篓 odoc issuedMs=\(Int(Date().timeIntervalSince(startedAt) * 1000)) outcome=\(String(describing: outcome), privacy: .public)")
+                switch outcome {
+                case .succeeded, .timedOut, .cancelled: return
+                default: break
+                }
             }
-            let configuration = NSWorkspace.OpenConfiguration()
-            configuration.activates = false
-            NSWorkspace.shared.open([url], withApplicationAt: finderURL, configuration: configuration) { [self] _, error in
-                Self.logger.info("打开废纸篓 issuedMs=\(Int(Date().timeIntervalSince(startedAt) * 1000)) error=\(String(describing: error), privacy: .public)")
-                guard let error else { return }
-                Self.logger.error("open trash failed error=\(String(describing: error), privacy: .public)")
-                sendOpenEvent(generation: gen)
-            }
+            guard currentGeneration() == gen else { return }
+            openHomeTrashFolder(startedAt: startedAt)
+        }
+    }
+
+    /// Fallback: Finder opens the `~/.Trash` folder itself (no Automation consent needed), without
+    /// activating. This window shows the home Trash only, see `openTrash`.
+    private func openHomeTrashFolder(startedAt: Date) {
+        let url = FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent(".Trash")
+        guard let finderURL = NSWorkspace.shared.urlForApplication(withBundleIdentifier: "com.apple.finder") else {
+            Self.logger.error("open trash folder failed: Finder not found")
+            return
+        }
+        let configuration = NSWorkspace.OpenConfiguration()
+        configuration.activates = false
+        NSWorkspace.shared.open([url], withApplicationAt: finderURL, configuration: configuration) { _, error in
+            Self.logger.info("打开废纸篓文件夹 issuedMs=\(Int(Date().timeIntervalSince(startedAt) * 1000)) error=\(String(describing: error), privacy: .public)")
         }
     }
 
@@ -137,16 +157,6 @@ final class FinderTrashClient: FinderTrashClienting {
             guard currentGeneration() == gen else { return }
             let event = Self.event(eventClass: FinderTrashEvent.miscellaneous, id: FinderTrashEvent.reveal)
             event.setParam(NSAppleEventDescriptor(fileURL: url), forKeyword: keyDirectObject)
-            _ = Self.send(event, options: FinderTrashEvent.countOptions, timeout: 5, isCount: false)
-        }
-    }
-
-    /// Fallback open through Finder's own `odoc` event, which does not activate Finder either.
-    private func sendOpenEvent(generation gen: UInt64) {
-        commandQueue.async { [self] in
-            guard currentGeneration() == gen, let trash = Self.trashObject() else { return }
-            let event = Self.event(eventClass: 0x61657674, id: 0x6f646f63)
-            event.setParam(trash, forKeyword: keyDirectObject)
             _ = Self.send(event, options: FinderTrashEvent.countOptions, timeout: 5, isCount: false)
         }
     }
