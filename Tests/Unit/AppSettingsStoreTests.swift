@@ -110,6 +110,14 @@ final class AppSettingsStoreTests: XCTestCase {
     }
 
     @MainActor
+    func testFrontWindowBarDefaultsToOffAndPersists() {
+        let defaults = makeDefaults()
+        let store = AppSettingsStore(defaults: defaults)
+        XCTAssertFalse(store.frontWindowBar)
+        store.setFrontWindowBar(true)
+        XCTAssertTrue(AppSettingsStore(defaults: defaults).frontWindowBar)
+    }
+
     func testShowShelfDefaultsToOnAndPersists() {
         let defaults = makeDefaults()
         XCTAssertTrue(AppSettingsStore(defaults: defaults).showShelf, "默认显示中转格，升级不改变现有观感")

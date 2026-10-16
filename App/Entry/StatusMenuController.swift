@@ -79,6 +79,7 @@ final class StatusMenuController: NSObject, NSMenuDelegate {
     private let showShelfItem = NSMenuItem(title: String(localized: "Show Shelf"), action: #selector(toggleShowShelf), keyEquivalent: "")
     private let showTrashItem = NSMenuItem(title: String(localized: "Show Trash"), action: #selector(toggleShowTrash), keyEquivalent: "")
     private let hoverNameItem = NSMenuItem(title: String(localized: "Show app name on hover"), action: #selector(toggleHoverName), keyEquivalent: "")
+    private let frontWindowBarItem = NSMenuItem(title: String(localized: "Mark the Front Window"), action: #selector(toggleFrontWindowBar), keyEquivalent: "")
     private let windowLiftItem = NSMenuItem(title: String(localized: "Keep maximized windows above the taskbar"), action: #selector(toggleWindowLift), keyEquivalent: "")
     private let nativeDockSliderView: PreferenceSliderMenuItemView
     private let edgeSliderView: PreferenceSliderMenuItemView
@@ -260,7 +261,7 @@ final class StatusMenuController: NSObject, NSMenuDelegate {
         taskbarScreenItem.isHidden = true
         menu.addItem(taskbarScreenItem)
 
-        // 四个开关。设置窗口里它们各带一行灰色说明，菜单里没有副标题的位置，
+        // 五个开关。设置窗口里它们各带一行灰色说明，菜单里没有副标题的位置，
         // 说明随搬家一并删除（owner 2026-09-01 拍板接受这个代价）。
         showShelfItem.target = self
         menu.addItem(showShelfItem)
@@ -268,6 +269,8 @@ final class StatusMenuController: NSObject, NSMenuDelegate {
         menu.addItem(showTrashItem)
         hoverNameItem.target = self
         menu.addItem(hoverNameItem)
+        frontWindowBarItem.target = self
+        menu.addItem(frontWindowBarItem)
         windowLiftItem.target = self
         menu.addItem(windowLiftItem)
         menu.addItem(.separator())
@@ -492,12 +495,13 @@ final class StatusMenuController: NSObject, NSMenuDelegate {
         refreshTaskbarPreferenceStates()
     }
 
-    /// 钨极组四项的勾选。**只改 `state`，不增删行也不翻 `isHidden`**，
+    /// 钨极组五项的勾选。**只改 `state`，不增删行也不翻 `isHidden`**，
     /// 所以菜单开着时调用也安全（不受 `allowsLayoutChange` 约束）。
     private func refreshTaskbarPreferenceStates() {
         showShelfItem.state = store.showShelf ? .on : .off
         showTrashItem.state = store.showTrash ? .on : .off
         hoverNameItem.state = store.hoverStyle.isExpressive ? .on : .off
+        frontWindowBarItem.state = store.frontWindowBar ? .on : .off
         windowLiftItem.state = store.windowLiftEnabled ? .on : .off
     }
 
@@ -704,6 +708,11 @@ final class StatusMenuController: NSObject, NSMenuDelegate {
     /// 不是独立的布尔字段——设置窗口那版也是这么读写的，别在这里另开一个镜像。
     @objc private func toggleHoverName() {
         store.setHoverStyle(store.hoverStyle.isExpressive ? .quiet : .standard)
+        refreshCheckmarks()
+    }
+
+    @objc private func toggleFrontWindowBar() {
+        store.setFrontWindowBar(!store.frontWindowBar)
         refreshCheckmarks()
     }
 

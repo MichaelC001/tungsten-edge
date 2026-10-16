@@ -279,10 +279,12 @@ extension DockStripView {
         } else {
             draggingID = nil
         }
-        let frontWindowChipIDs = FrontWindowIndicatorDecision.frontWindowChipIDs(
-            items: snapshotItems,
-            optimisticStates: runtime.optimisticStatesByWindowID
-        )
+        let frontWindowChipIDs: Set<String> = settingsStore.frontWindowBar
+            ? FrontWindowIndicatorDecision.frontWindowChipIDs(
+                items: snapshotItems,
+                optimisticStates: runtime.optimisticStatesByWindowID
+            )
+            : []
         return StripProjection(
             snapshotItems: snapshotItems,
             snapshotBundleIDs: snapshotBundleIDs,
