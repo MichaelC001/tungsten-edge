@@ -213,6 +213,19 @@ enum DockGlassPresentation {
 
     static var usesSystemVariant: Bool { activeSystemVariant != nil }
 
+    /// The system-variant plates hosted in `window`, for diagnostics: their material is the one a
+    /// same-size reference can be built for. Empty on the SwiftUI-clear and frosted paths.
+    static func systemVariantGlassViews(in window: NSWindow) -> [NSView] {
+        guard #available(macOS 26.0, *), let root = window.contentView else { return [] }
+        var found: [NSView] = []
+        var pending: [NSView] = [root]
+        while let view = pending.popLast() {
+            if view is DockSystemGlassEffectView { found.append(view) }
+            pending.append(contentsOf: view.subviews)
+        }
+        return found
+    }
+
     /// 能不能给任务条建玻璃合成。三道门：系统 ≥ 26、开关打开、SkyLight 的两个符号都取到。
     static var shouldAttemptTaskbarComposite: Bool {
         let glassAvailable: Bool

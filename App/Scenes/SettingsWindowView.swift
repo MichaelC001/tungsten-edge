@@ -1090,18 +1090,84 @@ extension DiagnosticReport {
                 ? "supported" : "unsupported (no _windowChangedKeyState)",
             glassTint: UserDefaults.standard.object(forKey: "NSGlassTintAmount").map { "\($0)" },
             glassVariants: glassVariantReadings(),
-            // Hidden panels stay listed: an auto-hidden bar reads "none" otherwise, which looks
-            // like "no glass" — the very thing this line exists to tell apart.
-            glassPanels: NSApp.windows
-                .filter { $0 is DockLiquidGlassPanel }
-                .map { window in
-                    GlassReading(
-                        label: "\(Int(window.frame.width))x\(Int(window.frame.height))"
-                            + (window.isVisible ? "" : " hidden"),
-                        reading: window.contentView?.layer.flatMap { TEDockGlassDescribeLayer($0) }
-                    )
-                }
+            glassPanels: livePanelReadings(),
+            glassPanelsAtFirstActivation: panelsAtFirstActivation
         )
+    }
+
+    /// Hidden panels stay listed: an auto-hidden bar reads "none" otherwise, which looks like
+    /// "no glass" — the very thing this line exists to tell apart.
+    private static func livePanelReadings() -> [GlassReading] {
+        NSApp.windows
+            .filter { $0 is DockLiquidGlassPanel }
+            .map { window in
+                GlassReading(
+                    label: "\(Int(window.frame.width))x\(Int(window.frame.height))"
+                        + (window.isVisible ? "" : " hidden"),
+                    reading: window.contentView?.layer.flatMap { TEDockGlassDescribeLayer($0) },
+                    state: glassState(of: window)
+                )
+            }
+    }
+
+    private static var panelsAtFirstActivation: [GlassReading]?
+    private static var firstActivationObserver: NSObjectProtocol?
+
+    /// Records the live panels the first time the app becomes active with the bar up. AppKit posts
+    /// `willBecomeActive` before it re-samples the window state into the glass (on 27.0 the
+    /// re-sample lands after `didBecomeActive`; `scratch/order_probe.swift`), so this is a reading
+    /// the activation has not touched yet. One shot, for those panels only — later faults and
+    /// panels rebuilt after a display change are not covered. An activation before the bar
+    /// exists (permission onboarding) is skipped, not consumed.
+    static func armFirstActivationSnapshot() {
+        guard firstActivationObserver == nil, panelsAtFirstActivation == nil else { return }
+        firstActivationObserver = NotificationCenter.default.addObserver(
+            forName: NSApplication.willBecomeActiveNotification, object: nil, queue: .main
+        ) { _ in
+            let panels = livePanelReadings()
+            guard !panels.isEmpty else { return }
+            panelsAtFirstActivation = panels
+            if let observer = firstActivationObserver { NotificationCenter.default.removeObserver(observer) }
+            firstActivationObserver = nil
+        }
+    }
+
+    /// The window state baked into a system-variant plate, told apart by two never-shown windows
+    /// of the plate's own size: a plain `NSWindow` (inactive) and a `DockLiquidGlassPanel` (its
+    /// predicates answer active). Nil for panels on another material.
+    private static func glassState(of window: NSWindow) -> GlassState? {
+        guard let variant = DockGlassPresentation.activeSystemVariant,
+              let plate = DockGlassPresentation.systemVariantGlassViews(in: window).first,
+              let reading = plate.layer.flatMap({ TEDockGlassDescribeLayer($0) }) else { return nil }
+        let size = plate.bounds.size
+        return classify(
+            reading: reading,
+            inactive: referenceReading(variant: variant, size: size, activePredicates: false),
+            active: referenceReading(variant: variant, size: size, activePredicates: true)
+        )
+    }
+
+    /// `TEDockGlassDescribeVariant` at a chosen size and window class. Main thread, from a user
+    /// action only: it builds a throwaway window.
+    private static func referenceReading(variant: Int, size: NSSize, activePredicates: Bool) -> String? {
+        guard #available(macOS 26.0, *), size.width > 0, size.height > 0 else { return nil }
+        let frame = NSRect(origin: .zero, size: size)
+        let window: NSWindow = activePredicates
+            ? DockLiquidGlassPanel(contentRect: frame, styleMask: .borderless, backing: .buffered, defer: true)
+            : NSWindow(contentRect: frame, styleMask: .borderless, backing: .buffered, defer: true)
+        window.isReleasedWhenClosed = false
+        defer { window.close() }
+        let glass = NSGlassEffectView(frame: frame)
+        glass.contentView = NSView(frame: frame)
+        guard TEDockGlassSetSystemVariant(glass, variant) else { return nil }
+        window.contentView = NSView(frame: frame)
+        window.contentView?.addSubview(glass)
+        window.contentView?.layoutSubtreeIfNeeded()
+        window.displayIfNeeded()
+        // The live plate re-samples once after attach (`DockSystemGlassEffectView`); mirror it so
+        // the reference is what that plate would read, not what a plain view reads.
+        _ = TEDockGlassRefreshWindowState(glass)
+        return glass.layer.flatMap { TEDockGlassDescribeLayer($0) }
     }
 
     /// `glassPath` is the configuration; this is what the running bar actually got. The glass

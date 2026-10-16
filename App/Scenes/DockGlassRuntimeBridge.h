@@ -24,8 +24,9 @@ BOOL TEDockGlassSetPath(id glassView, CGPathRef _Nullable path);
 /// One reading per distinct `glassBackground` filter under `layer` ("L0.85 N0.40 R-27.00 B5.00 S1.25
 /// O0.50 K77": lighten fill, normal fill, refraction, blur, face saturation, blur opacity, key count),
 /// joined by " + "; nil when there is none. B / S / O are the inputs AppKit changes between a window
-/// it holds active and one it holds inactive (27.0: B1.30 S1.25 O0.50 vs B5.42 S1.00 O1.00).
-/// Diagnostics only — nothing may branch on it.
+/// it holds active and one it holds inactive (27.0: B1.30 S1.25 O0.50 at any size vs B5.42 S1.00
+/// O1.00 at 54pt tall — the inactive blur radius grows with the view's height, so compare only
+/// against a reference of the same size). Diagnostics only — nothing may branch on it.
 NSString * _Nullable TEDockGlassDescribeLayer(id layer);
 /// The same reading for the material AppKit resolves for `variant`, from a throwaway glass view in a
 /// never-shown window. Main thread only, and never from inside a SwiftUI update.
