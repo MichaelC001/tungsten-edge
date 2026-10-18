@@ -165,6 +165,8 @@
 		A00000000000000000009231 /* PinnedFolderCoverStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = A00000000000000000009230 /* PinnedFolderCoverStore.swift */; };
 		A00000000000000000009261 /* FileItemMenuBuilder.swift in Sources */ = {isa = PBXBuildFile; fileRef = A00000000000000000009260 /* FileItemMenuBuilder.swift */; };
 		A00000000000000000009291 /* FolderSortTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A00000000000000000009290 /* FolderSortTests.swift */; };
+		A0000000000000000000D001 /* DroppedApplication.swift in Sources */ = {isa = PBXBuildFile; fileRef = A0000000000000000000D000 /* DroppedApplication.swift */; };
+		A0000000000000000000D002 /* DroppedApplication.swift in Sources */ = {isa = PBXBuildFile; fileRef = A0000000000000000000D000 /* DroppedApplication.swift */; };
 		A00000000000000000009301 /* StripDropRouting.swift in Sources */ = {isa = PBXBuildFile; fileRef = A00000000000000000009300 /* StripDropRouting.swift */; };
 		A00000000000000000009302 /* StripDropRouting.swift in Sources */ = {isa = PBXBuildFile; fileRef = A00000000000000000009300 /* StripDropRouting.swift */; };
 		A0000000000000000000BD01 /* StackPopupGeometry.swift in Sources */ = {isa = PBXBuildFile; fileRef = A0000000000000000000BD00 /* StackPopupGeometry.swift */; };
@@ -834,6 +836,7 @@
 		A00000000000000000009230 /* PinnedFolderCoverStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PinnedFolderCoverStore.swift; sourceTree = "<group>"; };
 		A00000000000000000009260 /* FileItemMenuBuilder.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FileItemMenuBuilder.swift; sourceTree = "<group>"; };
 		A00000000000000000009290 /* FolderSortTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FolderSortTests.swift; sourceTree = "<group>"; };
+		A0000000000000000000D000 /* DroppedApplication.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DroppedApplication.swift; sourceTree = "<group>"; };
 		A00000000000000000009300 /* StripDropRouting.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StripDropRouting.swift; sourceTree = "<group>"; };
 		A0000000000000000000BD00 /* StackPopupGeometry.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StackPopupGeometry.swift; sourceTree = "<group>"; };
 		FCA183BC074DA8A0A9134B0E /* StackFanGeometry.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StackFanGeometry.swift; sourceTree = "<group>"; };
@@ -1149,6 +1152,7 @@
 				A00000000000000000009220 /* FolderContentsLoader.swift */,
 				A00000000000000000000F02 /* FolderInteraction.swift */,
 				A00000000000000000000F03 /* FinderAppleEventMatcher.swift */,
+				A0000000000000000000D000 /* DroppedApplication.swift */,
 				A00000000000000000009300 /* StripDropRouting.swift */,
 				D7A0000000000000000000A0 /* DrawerAppDrop.swift */,
 				D7A0000000000000000000D0 /* ExternalDragSpringLoad.swift */,
@@ -1831,6 +1835,7 @@
 					A00000000000000000009221 /* FolderContentsLoader.swift in Sources */,
 					A00000000000000000009231 /* PinnedFolderCoverStore.swift in Sources */,
 					A00000000000000000009261 /* FileItemMenuBuilder.swift in Sources */,
+					A0000000000000000000D001 /* DroppedApplication.swift in Sources */,
 					A00000000000000000009301 /* StripDropRouting.swift in Sources */,
 					D7A0000000000000000000A1 /* DrawerAppDrop.swift in Sources */,
 					D7A0000000000000000000D1 /* ExternalDragSpringLoad.swift in Sources */,
@@ -2072,6 +2077,7 @@
 				A00000000000000000009202 /* PinnedFolderStore.swift in Sources */,
 				A00000000000000000009281 /* FolderContentsLoaderTests.swift in Sources */,
 				A00000000000000000009291 /* FolderSortTests.swift in Sources */,
+				A0000000000000000000D002 /* DroppedApplication.swift in Sources */,
 				A00000000000000000009302 /* StripDropRouting.swift in Sources */,
 				D7A0000000000000000000A2 /* DrawerAppDrop.swift in Sources */,
 				D7A0000000000000000000D2 /* ExternalDragSpringLoad.swift in Sources */,

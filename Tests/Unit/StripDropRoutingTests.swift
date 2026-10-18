@@ -486,4 +486,39 @@ final class StripDropRoutingTests: XCTestCase {
                                                                    isFinder: b.2, hasEntryOnStrip: b.3), "\(b)")
         }
     }
+
+    /// `/Applications/Safari.app` is a symlink since macOS 13: a link or Finder alias to an app is
+    /// that app, resolved to the bundle `Bundle(url:)` can read; a link to anything else is not.
+    func testSymlinkAndAliasToAnAppAreThatApp() throws {
+        let fm = FileManager.default
+        let root = fm.temporaryDirectory.appendingPathComponent("strip-drop-\(UUID().uuidString)")
+        defer { try? fm.removeItem(at: root) }
+        let app = root.appendingPathComponent("Fake.app")
+        try fm.createDirectory(at: app.appendingPathComponent("Contents"), withIntermediateDirectories: true)
+        let info: [String: Any] = ["CFBundleIdentifier": "com.example.fake", "CFBundlePackageType": "APPL"]
+        try PropertyListSerialization.data(fromPropertyList: info, format: .xml, options: 0)
+            .write(to: app.appendingPathComponent("Contents/Info.plist"))
+        let folder = root.appendingPathComponent("Folder")
+        try fm.createDirectory(at: folder, withIntermediateDirectories: true)
+        let link = root.appendingPathComponent("Link.app")
+        try fm.createSymbolicLink(at: link, withDestinationURL: app)
+        let folderLink = root.appendingPathComponent("FolderLink.app")
+        try fm.createSymbolicLink(at: folderLink, withDestinationURL: folder)
+        let brokenLink = root.appendingPathComponent("Broken.app")
+        try fm.createSymbolicLink(at: brokenLink, withDestinationURL: root.appendingPathComponent("Missing.app"))
+        let alias = root.appendingPathComponent("Alias")
+        try URL.writeBookmarkData(try app.bookmarkData(options: .suitableForBookmarkFile), to: alias)
+
+        let home = fm.homeDirectoryForCurrentUser
+        for item in [app, link, alias] {
+            // What the keep / stash paths read downstream: the returned URL must open as the bundle.
+            let bundleURL = DroppedApplication.bundleURL(for: item, homeDirectory: home)
+            XCTAssertEqual(bundleURL.flatMap { Bundle(url: $0)?.bundleIdentifier }, "com.example.fake",
+                           item.lastPathComponent)
+        }
+        for item in [folder, folderLink, brokenLink] {
+            XCTAssertNil(DroppedApplication.bundleURL(for: item, homeDirectory: home), item.lastPathComponent)
+        }
+        XCTAssertNil(DroppedApplication.bundleURL(for: URL(string: "https://example.com/Fake.app")!, homeDirectory: home))
+    }
 }

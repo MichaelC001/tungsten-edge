@@ -165,7 +165,7 @@ struct StripFileDropDelegate: DropDelegate {
             guard !urls.isEmpty else { return }
             // 落定这一刻按**真实 URL** 再判一次应用身份（悬停期读的是拖放剪贴板，只用来
             // 决定高亮和光标）。分流是硬的：`onCommit` 收到的绝不含应用。
-            let applications = urls.filter(DragPasteboardInspector.isApplication)
+            let applications = urls.compactMap(DragPasteboardInspector.applicationURL)
             let files = urls.filter { !DragPasteboardInspector.isApplication($0) }
             if !applications.isEmpty {
                 onCommitApplications(applications, location)
@@ -248,7 +248,7 @@ struct StripFileDropDelegate: DropDelegate {
             let dragged = pasteboard.readObjects(forClasses: [NSURL.self]) as? [URL] ?? []
             // Trash items are filtered before the app check: a mixed drag keeps only the rest.
             let urls = dragged.filter { !isInsideTrash($0) }
-            let apps = urls.filter(isApplication)
+            let apps = urls.compactMap(applicationURL)
             let appIDs = apps.map { Bundle(url: $0)?.bundleIdentifier }
             var seen = Set<String>()
             let next = Session(
@@ -267,13 +267,14 @@ struct StripFileDropDelegate: DropDelegate {
             return next
         }
 
-        /// 是不是应用 bundle。先问 UTType（认得改过大小写 / 没有扩展名的 bundle），
-        /// 读不到再退到扩展名。`.app` 本身就是目录，所以**不能**用 `isDirectoryKey` 判。
+        /// 是不是应用 bundle（替身、访达别名按它指向的那个算）。判法见 `DroppedApplication`。
         static func isApplication(_ url: URL) -> Bool {
-            if let type = (try? url.resourceValues(forKeys: [.contentTypeKey]))?.contentType {
-                return type.conforms(to: .application)
-            }
-            return url.pathExtension.lowercased() == "app"
+            applicationURL(url) != nil
+        }
+
+        /// The bundle to read for a dragged item — its symlink / alias target when it is one.
+        static func applicationURL(_ url: URL) -> URL? {
+            DroppedApplication.bundleURL(for: url, homeDirectory: FileManager.default.homeDirectoryForCurrentUser)
         }
     }
 
