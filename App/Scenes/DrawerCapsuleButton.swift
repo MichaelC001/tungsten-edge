@@ -566,6 +566,7 @@ final class DrawerCapsuleScrollView: NSView {
 /// One directly clickable app in the capsule. Owns only the launch bounce; hover and press
 /// are applied by the capsule, which owns the hit cells.
 private struct DrawerCapsuleAppIcon: View {
+    @ObservedObject private var iconRevision = AppIconRevision.shared
     let bundleID: String
     let size: CGFloat
     let bounceHeight: CGFloat
