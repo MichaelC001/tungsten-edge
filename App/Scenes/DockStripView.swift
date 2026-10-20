@@ -371,7 +371,16 @@ struct DockStripView: View {
         // `StripHoverResolution` 算。每张卡各自挂 `.onHover` 的老做法漏格又带方向性，
         // 成因与实测数据见那个类型的注释。
         .background(StripPointerTracker { pointer in
+            // Arrow once per entry, not per tick: re-asserting every tick fights cursors the
+            // foreground app keeps over the bar.
+            let enteredBar = pointerBox.value == nil && pointer != nil
             pointerBox.value = pointer
+            if enteredBar {
+                onInteractiveResize(.pointerEnteredBar(hitTest: { currentPointer in
+                    (isInContent: stripRootScreenRect != .zero && stripRootScreenRect.contains(currentPointer),
+                     isInGrip: resizeGripZoneClaims(atScreen: currentPointer))
+                }))
+            }
             refreshHoveredEntry(frames: stripHoverFrames, origin: stripRootScreenRect)
             // Grip-zone hover for the ▲▼ glyph; rides the same ≤60Hz poll, `nil` on leave or while a press is held.
             onInteractiveResize(.hover(pointer.flatMap { resizeGripHoverClaims(atScreen: $0) ? $0 : nil }))
