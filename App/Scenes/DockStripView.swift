@@ -1349,6 +1349,7 @@ struct DockStripView: View {
             PinnedFolderChip(
                 path: path,
                 cover: folderCoverStore.covers[path],
+                folderIcon: folderCoverStore.folderIcon(forPath: path, dark: colorScheme == .dark),
                 sortOrder: pinnedFolderStore.sortOrder(for: path),
                 displayMode: pinnedFolderStore.displayMode(for: path),
                 viewMode: pinnedFolderStore.viewMode(for: path),

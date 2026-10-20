@@ -36,6 +36,17 @@ final class PinnedFolderCoverStore: ObservableObject {
     private var lastGeneration = 0
     /// coverFilePath|modDate → 缩略图；封面文件没变就不再生成。
     private let thumbnailCache = NSCache<NSString, NSImage>()
+    /// path → the folder's own icon as last handed out. Every redraw must get the same object
+    /// while the icon looks the same: a fresh `NSImage` is a different SwiftUI `Image`, and inside
+    /// a reorder's spring transaction SwiftUI crossfades it — the chip dims for ~0.2s while its
+    /// neighbours slide. `NSWorkspace` returns a new object on every call, so sameness is decided
+    /// by `iconFingerprint`, never by identity.
+    private var folderIcons: [String: HeldFolderIcon] = [:]
+    private struct HeldFolderIcon {
+        let dark: Bool
+        let fingerprint: [UInt8]
+        let image: NSImage
+    }
     /// 逐文件夹排序方式（AppDelegate 注入,读 PinnedFolderStore）：封面 = 当前排序下最前的几项,
     /// 与弹窗网格同口径（原生 Stacks 同款：改排序,chip 封面跟着换）。
     private let sortOrderProvider: (String) -> FolderSortOrder
@@ -58,6 +69,9 @@ final class PinnedFolderCoverStore: ObservableObject {
     /// 与 PinnedFolderStore.folderPaths 对账：多退少补 watcher，全量刷新一次封面。
     func sync(paths: [String]) {
         let wanted = Set(paths)
+        for gone in Array(folderIcons.keys) where !wanted.contains(gone) {
+            folderIcons[gone] = nil
+        }
         for gone in Array(watchers.keys) where !wanted.contains(gone) {
             watchers[gone]?.stop()
             watchers[gone] = nil
@@ -139,6 +153,41 @@ final class PinnedFolderCoverStore: ObservableObject {
                 }
             }
         }
+    }
+
+    /// The folder's own icon for the chip: re-read on every call, so a custom icon set in Finder
+    /// shows on the next redraw — unopened seeds included, which no watcher covers — but the held
+    /// object is returned while the icon looks the same. Reads only the icon, never the contents,
+    /// so an unopened seed stays unread.
+    func folderIcon(forPath path: String, dark: Bool) -> NSImage {
+        let fresh = Self.icon(forPath: path)
+        let fingerprint = Self.iconFingerprint(fresh, dark: dark)
+        if let held = folderIcons[path], held.dark == dark, held.fingerprint == fingerprint {
+            return held.image
+        }
+        folderIcons[path] = HeldFolderIcon(dark: dark, fingerprint: fingerprint, image: fresh)
+        return fresh
+    }
+
+    /// The icon drawn at 16×16 under a fixed appearance: tells a changed icon from a re-fetched
+    /// identical one for ~0.06ms, where comparing `tiffRepresentation`s costs ~37ms.
+    private static func iconFingerprint(_ image: NSImage, dark: Bool) -> [UInt8] {
+        let side = 16
+        var bytes = [UInt8](repeating: 0, count: side * side * 4)
+        bytes.withUnsafeMutableBytes { buffer in
+            guard let space = CGColorSpace(name: CGColorSpace.sRGB),
+                  let context = CGContext(data: buffer.baseAddress, width: side, height: side,
+                                          bitsPerComponent: 8, bytesPerRow: side * 4, space: space,
+                                          bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue),
+                  let appearance = NSAppearance(named: dark ? .darkAqua : .aqua) else { return }
+            appearance.performAsCurrentDrawingAppearance {
+                NSGraphicsContext.saveGraphicsState()
+                NSGraphicsContext.current = NSGraphicsContext(cgContext: context, flipped: false)
+                image.draw(in: NSRect(x: 0, y: 0, width: side, height: side))
+                NSGraphicsContext.restoreGraphicsState()
+            }
+        }
+        return bytes
     }
 
     /// NSWorkspace 图标是共享缓存对象，必须 `.copy()` 再改 size（AppMenuFragments 同款惯例）。
