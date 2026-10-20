@@ -96,6 +96,14 @@ final class SettingsWindowController: NSObject, NSWindowDelegate {
         // tabState 与 feedbackDraft 有意不重置：重开回到同一标签，写了一半的反馈还在。
     }
 
+    /// A window losing key keeps its first responder, so a recorder left recording would still
+    /// be recording when the user clicks back and swallow the next ⌘W as the new hot key.
+    func windowDidResignKey(_ notification: Notification) {
+        guard let window, notification.object as? NSWindow === window,
+              window.firstResponder is HotKeyRecorderNSView else { return }
+        window.makeFirstResponder(nil)
+    }
+
     // MARK: 标签页
 
     /// 防 NSToolbar 自动校验把图标项置灰（我们的五个标签恒可点）。
