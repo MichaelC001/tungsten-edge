@@ -151,10 +151,15 @@ final class PinnedFolderCoverStore: ObservableObject {
             // Record the new stamps before the enumeration: when it is slower than the next app
             // switch, the same change would otherwise restart it and void the pending result.
             guard var layers = layerStamps[folder] else { continue }
-            for entry in checked where entry.key == folder && layers.keys.contains(entry.path) {
+            var changed: [String] = []
+            for entry in checked where entry.key == folder {
+                guard let recorded = layers[entry.path], recorded != entry.stamp else { continue }
                 layers.updateValue(entry.stamp, forKey: entry.path)
+                changed.append(entry.path)
             }
             layerStamps[folder] = layers
+            // The popup caches the same icons by path; without this it still shows the old one.
+            FolderIconResolver.discard(paths: changed)
             Self.logger.debug("封面图标变了：\(folder, privacy: .public)")
             refresh(path: folder)
         }

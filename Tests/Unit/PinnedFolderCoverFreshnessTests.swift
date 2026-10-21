@@ -53,6 +53,7 @@ final class PinnedFolderCoverFreshnessTests: XCTestCase {
     func testMissingStampsCompareByPresence() {
         let unreadable: [String: [String: AppIconStamp?]] = [folder: [app: AppIconStamp?.none]]
         XCTAssertEqual(PinnedFolderCoverFreshness.foldersNeedingRefresh(recorded: unreadable, checked: [checked(app, nil)]), [])
+        XCTAssertEqual(PinnedFolderCoverFreshness.foldersNeedingRefresh(recorded: unreadable, checked: [checked(app, stamp(1))]), [folder])
         let readable: [String: [String: AppIconStamp?]] = [folder: [app: stamp(1)]]
         XCTAssertEqual(PinnedFolderCoverFreshness.foldersNeedingRefresh(recorded: readable, checked: [checked(app, nil)]), [folder])
     }
