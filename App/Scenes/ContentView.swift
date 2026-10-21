@@ -461,18 +461,18 @@ enum AppIconResolver {
         snapshot: {
             cache.compactMap { bundleID, cached in
                 guard let path = cached.path else { return nil }
-                return AppIconFreshnessChecker.Entry(bundleID: bundleID, path: path, stamp: cached.stamp)
+                return AppIconFreshnessChecker.Entry(key: bundleID, path: path, stamp: cached.stamp)
             }
         },
         didCheck: { entries in
             var invalidated = false
             for entry in entries {
                 // A cache miss may have replaced this entry while the filesystem check ran.
-                guard let current = cache[entry.bundleID], current.path == entry.path,
+                guard let current = cache[entry.key], current.path == entry.path,
                       current.stamp != entry.stamp else { continue }
-                cache.removeValue(forKey: entry.bundleID)
-                bitmaps.removeAll(name: entry.bundleID)
-                logger.debug("图标变了：\(entry.bundleID, privacy: .public)")
+                cache.removeValue(forKey: entry.key)
+                bitmaps.removeAll(name: entry.key)
+                logger.debug("图标变了：\(entry.key, privacy: .public)")
                 invalidated = true
             }
             if invalidated { AppIconRevision.shared.advance() }

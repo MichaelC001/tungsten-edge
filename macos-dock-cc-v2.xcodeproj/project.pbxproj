@@ -209,6 +209,7 @@
 		A10CF0000000000000000001 /* AppIconFreshness.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10CF0000000000000000000 /* AppIconFreshness.swift */; };
 		A10CF0000000000000000002 /* AppIconFreshness.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10CF0000000000000000000 /* AppIconFreshness.swift */; };
 		A10CF0000000000000000011 /* AppIconStampTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10CF0000000000000000010 /* AppIconStampTests.swift */; };
+		A10CF0000000000000000021 /* PinnedFolderCoverFreshnessTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10CF0000000000000000020 /* PinnedFolderCoverFreshnessTests.swift */; };
 		B10000000000000000000008 /* BadgeReadPlan.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10000000000000000000106 /* BadgeReadPlan.swift */; };
 		B1000000000000000000000E /* HoverPollThrottle.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10000000000000000000109 /* HoverPollThrottle.swift */; };
 		B1000000000000000000010E /* MinimizeHandoffTarget.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1000000000000000000010D /* MinimizeHandoffTarget.swift */; };
@@ -869,6 +870,7 @@
 		A00000000000000000001C20 /* IconBitmapRenderer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = IconBitmapRenderer.swift; sourceTree = "<group>"; };
 		A10CF0000000000000000000 /* AppIconFreshness.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppIconFreshness.swift; sourceTree = "<group>"; };
 		A10CF0000000000000000010 /* AppIconStampTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppIconStampTests.swift; sourceTree = "<group>"; };
+		A10CF0000000000000000020 /* PinnedFolderCoverFreshnessTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PinnedFolderCoverFreshnessTests.swift; sourceTree = "<group>"; };
 		B10000000000000000000106 /* BadgeReadPlan.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BadgeReadPlan.swift; sourceTree = "<group>"; };
 		B10000000000000000000109 /* HoverPollThrottle.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HoverPollThrottle.swift; sourceTree = "<group>"; };
 		B1000000000000000000010D /* MinimizeHandoffTarget.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MinimizeHandoffTarget.swift; sourceTree = "<group>"; };
@@ -1495,6 +1497,7 @@
 				A0000000000000000000FF10 /* LaunchGateDecisionTests.swift */,
 				A00000000000000000001C10 /* IconRenditionChoiceTests.swift */,
 				A10CF0000000000000000010 /* AppIconStampTests.swift */,
+				A10CF0000000000000000020 /* PinnedFolderCoverFreshnessTests.swift */,
 				A0000000000000000000FF30 /* AppLaunchTargetDecisionTests.swift */,
 				A0000000000000000000FF40 /* WindowDisplayTitleTests.swift */,
 				A0000000000000000000FD00 /* DockThemeTests.swift */,
@@ -2108,6 +2111,7 @@
 				A00000000000000000001C02 /* IconRenditionChoice.swift in Sources */,
 				A10CF0000000000000000002 /* AppIconFreshness.swift in Sources */,
 				A10CF0000000000000000011 /* AppIconStampTests.swift in Sources */,
+				A10CF0000000000000000021 /* PinnedFolderCoverFreshnessTests.swift in Sources */,
 				B10000000000000000000009 /* BadgeReadPlan.swift in Sources */,
 				B1000000000000000000000F /* HoverPollThrottle.swift in Sources */,
 				B1000000000000000000010F /* MinimizeHandoffTarget.swift in Sources */,

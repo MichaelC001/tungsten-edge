@@ -44,7 +44,8 @@ final class AppIconRevision: ObservableObject {
 @MainActor
 final class AppIconFreshnessChecker {
     struct Entry: Sendable {
-        let bundleID: String
+        /// Who owns the path: a bundle id in `AppIconResolver`, a pinned folder in `PinnedFolderCoverStore`.
+        let key: String
         let path: String
         let stamp: AppIconStamp?
     }
@@ -72,7 +73,7 @@ final class AppIconFreshnessChecker {
         isChecking = true
         queue.async {
             let checked = entries.map {
-                Entry(bundleID: $0.bundleID, path: $0.path, stamp: AppIconStamp.stamp(atPath: $0.path))
+                Entry(key: $0.key, path: $0.path, stamp: AppIconStamp.stamp(atPath: $0.path))
             }
             DispatchQueue.main.async {
                 self.didCheck(checked)
@@ -83,5 +84,24 @@ final class AppIconFreshnessChecker {
                 }
             }
         }
+    }
+}
+
+/// The pinned folder cover's half of the check; the store lives in `PinnedFolderCoverStore`.
+enum PinnedFolderCoverFreshness {
+    static func packageLayerPaths(in stack: [FolderContentsLoader.Entry]) -> [String] {
+        stack.filter(\.isPackage).map(\.url.path)
+    }
+
+    /// Folders with a layer whose fresh stamp differs from the one recorded *now* — not when the
+    /// check started: a folder its watcher refreshed meanwhile is compared against its new layers.
+    static func foldersNeedingRefresh(recorded: [String: [String: AppIconStamp?]],
+                                      checked: [AppIconFreshnessChecker.Entry]) -> Set<String> {
+        var folders = Set<String>()
+        for entry in checked {
+            guard let layers = recorded[entry.key], let stamp = layers[entry.path], stamp != entry.stamp else { continue }
+            folders.insert(entry.key)
+        }
+        return folders
     }
 }

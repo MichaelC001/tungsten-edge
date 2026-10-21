@@ -1,4 +1,5 @@
 import AppKit
+import OSLog
 import QuickLookThumbnailing
 
 /// A pinned folder chip's cover: the first items of the folder's current sort, stacked like a
@@ -53,11 +54,34 @@ final class PinnedFolderCoverStore: ObservableObject {
     /// `PinnedFolderStore.isUnopenedSeed`: such a folder shows its plain icon and is not read or
     /// watched until the user opens it (reading Downloads raises the system's access prompt).
     private let isUnopenedSeed: (String) -> Bool
+    /// path → { package layer → its `AppIconStamp` as enumerated }. A custom icon set in Finder
+    /// rewrites the bundle, not the pinned folder, so no watcher fires; the stamps are re-`stat`ed
+    /// on app activation instead (never on a timer, `Docs/26`). Packages only: `AppIconStamp` looks
+    /// inside the directory, and a plain subfolder may be a privacy-protected one — Downloads, an
+    /// unopened seed included.
+    private var layerStamps: [String: [String: AppIconStamp?]] = [:]
+    private static let logger = Logger(subsystem: "com.caye.macosdockcc.v2", category: "PinnedFolderCoverStore")
+    private var activationObserver: NSObjectProtocol?
+    private lazy var layerIconChecker = AppIconFreshnessChecker(
+        snapshot: { [weak self] in
+            guard let self else { return [] }
+            return self.layerStamps.flatMap { folder, layers in
+                layers.map { AppIconFreshnessChecker.Entry(key: folder, path: $0.key, stamp: $0.value) }
+            }
+        },
+        didCheck: { [weak self] entries in self?.refreshFolders(withChangedLayers: entries) }
+    )
 
     init(sortOrderProvider: @escaping (String) -> FolderSortOrder = { _ in .default },
-         isUnopenedSeed: @escaping (String) -> Bool = { _ in false }) {
+         isUnopenedSeed: @escaping (String) -> Bool = { _ in false },
+         notificationCenter: NotificationCenter = NSWorkspace.shared.notificationCenter) {
         self.sortOrderProvider = sortOrderProvider
         self.isUnopenedSeed = isUnopenedSeed
+        activationObserver = notificationCenter.addObserver(
+            forName: NSWorkspace.didActivateApplicationNotification, object: nil, queue: .main
+        ) { [weak self] _ in
+            DispatchQueue.main.async { [weak self] in self?.layerIconChecker.requestCheck() }
+        }
     }
 
     /// 提取命中且排序一致的热缓存。如果为 nil，调用方应执行同步的 preload 兜底。
@@ -78,10 +102,12 @@ final class PinnedFolderCoverStore: ObservableObject {
             covers[gone] = nil
             cache[gone] = nil
             generations[gone] = nil
+            layerStamps[gone] = nil
         }
         for path in paths {
             if isUnopenedSeed(path) {
                 covers[path] = FolderCover(layers: [])
+                layerStamps[path] = nil
                 continue
             }
             if watchers[path] == nil {
@@ -105,11 +131,32 @@ final class PinnedFolderCoverStore: ObservableObject {
             let entries = (try? FolderContentsLoader.load(directory: folderURL)) ?? []
             let sortedEntries = FolderContentsLoader.sorted(entries, by: order)
             let stack = FolderContentsLoader.coverEntries(in: sortedEntries)
+            // Stamped before `publishCover` reads the icons: a change landing in between costs
+            // one extra refresh on the next activation, never a missed one.
+            let stamps = Dictionary(
+                PinnedFolderCoverFreshness.packageLayerPaths(in: stack).map { ($0, AppIconStamp.stamp(atPath: $0)) },
+                uniquingKeysWith: { first, _ in first }
+            )
             await MainActor.run { [weak self] in
                 guard let self, self.generations[path] == generation else { return }
                 self.cache[path] = CacheEntry(order: order, entries: sortedEntries)
+                self.layerStamps[path] = stamps.isEmpty ? nil : stamps
                 self.publishCover(path: path, stack: stack, generation: generation)
             }
+        }
+    }
+
+    private func refreshFolders(withChangedLayers checked: [AppIconFreshnessChecker.Entry]) {
+        for folder in PinnedFolderCoverFreshness.foldersNeedingRefresh(recorded: layerStamps, checked: checked) {
+            // Record the new stamps before the enumeration: when it is slower than the next app
+            // switch, the same change would otherwise restart it and void the pending result.
+            guard var layers = layerStamps[folder] else { continue }
+            for entry in checked where entry.key == folder && layers.keys.contains(entry.path) {
+                layers.updateValue(entry.stamp, forKey: entry.path)
+            }
+            layerStamps[folder] = layers
+            Self.logger.debug("封面图标变了：\(folder, privacy: .public)")
+            refresh(path: folder)
         }
     }
 
