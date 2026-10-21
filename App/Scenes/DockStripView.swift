@@ -342,6 +342,7 @@ struct DockStripView: View {
             onHoverMoved: { externalDropHoverMoved($0) },
             onHoverEnded: { isLanding in externalDropHoverEnded(isLanding: isLanding) },
             onCommit: { target, urls in handleExternalDrop(target, urls: urls) },
+            onCommitTrash: { urls in handleTrashDrop(urls) },
             onCommitApplications: { urls, location in
                 handleExternalApplicationDrop(urls, atX: location.x)
             },
